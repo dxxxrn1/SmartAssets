@@ -1,0 +1,152 @@
+// ─── Asset Data ──────────────────────────────────────────────────────────────
+// Sample luxury collectibles — mirrors the prototype's ASSETS array
+
+export const ASSETS = [
+  {
+    id: 1,
+    name: 'Rolex Daytona 116500LN',
+    category: 'Luxury Watch',
+    price: '£34,500',
+    priceNum: 34500,
+    image: 'https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=600&h=600&fit=crop&auto=format',
+    badge: 'Verified',
+    owner: 'James Harrington',
+    year: 2019,
+    condition: 'Excellent',
+    cert: 'SA-CERT-2024-0047',
+    trending: true,
+    shares: 100,
+    sharePrice: 345,
+    sharesSold: 67,
+  },
+  {
+    id: 2,
+    name: "Basquiat 'Irony of Negro Policeman'",
+    category: 'Fine Art',
+    price: '£1,240,000',
+    priceNum: 1240000,
+    image: 'https://images.unsplash.com/photo-1579783901586-d88db74b4fe4?w=600&h=600&fit=crop&auto=format',
+    badge: 'Verified',
+    owner: 'Meridian Gallery Ltd',
+    year: 1981,
+    condition: 'Museum Grade',
+    cert: 'SA-CERT-2023-0011',
+    trending: false,
+    shares: 500,
+    sharePrice: 2480,
+    sharesSold: 312,
+  },
+  {
+    id: 3,
+    name: '1967 Ferrari 330 GTC',
+    category: 'Classic Car',
+    price: '£890,000',
+    priceNum: 890000,
+    image: 'https://images.unsplash.com/photo-1592198084033-aade902d1aae?w=600&h=600&fit=crop&auto=format',
+    badge: 'Pending',
+    owner: 'Fontaine Motorsport',
+    year: 1967,
+    condition: 'Restored',
+    cert: 'SA-CERT-2024-0082',
+    trending: true,
+    shares: 200,
+    sharePrice: 4450,
+    sharesSold: 0,
+  },
+  {
+    id: 4,
+    name: 'Pétrus 2000 (12 bottles)',
+    category: 'Fine Wine',
+    price: '£28,200',
+    priceNum: 28200,
+    image: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&h=600&fit=crop&auto=format',
+    badge: 'Verified',
+    owner: 'Cellar Grand',
+    year: 2000,
+    condition: 'Perfect',
+    cert: 'SA-CERT-2024-0063',
+    trending: false,
+    shares: 60,
+    sharePrice: 470,
+    sharesSold: 43,
+  },
+];
+
+export const CATEGORIES = ['All', 'Watches', 'Art', 'Cars', 'Wine', 'Jewellery'];
+
+export const VAULT_ASSETS = [
+  {
+    id: 1,
+    name: 'Rolex Daytona 116500LN',
+    category: 'Luxury Watch',
+    price: '£34,500',
+    image: 'https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=300&h=300&fit=crop&auto=format',
+    badge: 'Verified',
+    gain: '+£2,100',
+    gainPct: '+6.5%',
+    positive: true,
+    shares: null,
+  },
+  {
+    id: 2,
+    name: 'Basquiat — 12 shares',
+    category: 'Fine Art · Fractional',
+    price: '£29,760',
+    image: 'https://images.unsplash.com/photo-1579783901586-d88db74b4fe4?w=300&h=300&fit=crop&auto=format',
+    badge: 'Verified',
+    gain: '+£1,480',
+    gainPct: '+5.2%',
+    positive: true,
+    shares: 12,
+  },
+  {
+    id: 3,
+    name: 'Pétrus 2000 — 8 shares',
+    category: 'Fine Wine · Fractional',
+    price: '£3,760',
+    image: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=300&h=300&fit=crop&auto=format',
+    badge: 'Verified',
+    gain: '+£320',
+    gainPct: '+9.3%',
+    positive: true,
+    shares: 8,
+  },
+];
+
+export const ONBOARDING_SLIDES = [
+  {
+    title: 'Every Asset, Verified',
+    sub: 'Professional appraisers review physical condition, provenance, and authenticity before listing.',
+    icon: '🔍',
+    image: 'https://images.unsplash.com/photo-1614680376593-902f74cf0d41?w=600&h=420&fit=crop&auto=format',
+  },
+  {
+    title: 'Blockchain Certificates',
+    sub: 'Each verified collectible receives a permanent, tamper-proof digital certificate stored securely.',
+    icon: '⛓️',
+    image: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=600&h=420&fit=crop&auto=format',
+  },
+  {
+    title: 'Invest in Fractions',
+    sub: 'Co-own fine art, watches, or vintage sports cars. Start fractional ownership from £100 per share.',
+    icon: '📊',
+    image: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=600&h=420&fit=crop&auto=format',
+  },
+];
+
+export const PROVENANCE_EVENTS = [
+  { date: '14 Mar 2024', title: 'Submitted to SmartAssets', detail: 'Uploaded with complete documentation', icon: '◆' },
+  { date: '18 Mar 2024', title: 'Appraiser Inspection — Dr. Chen', detail: 'Physical condition confirmed: Museum Grade.', icon: '✓' },
+  { date: '20 Mar 2024', title: 'Blockchain Certificate Issued', detail: 'SA-CERT-2024-0047', icon: '⛓' },
+  { date: '12 Sep 2021', title: 'Purchased at Auction', detail: "Christie's London — Lot 247. Hammer price £29,800", icon: '🔨' },
+  { date: '05 Jan 2019', title: 'Original Retail Purchase', detail: 'Rolex Authorised Dealer, New Bond St, London', icon: '🏪' },
+  { date: 'Nov 2019', title: 'Manufactured in Switzerland', detail: 'Rolex SA, Geneva. Serial #7J42189', icon: '🏭' },
+];
+
+export const HEALTH_SCORES = [
+  { label: 'Authenticity Verification', score: 98, color: '#10B981' },
+  { label: 'Physical Condition Grade', score: 94, color: '#10B981' },
+  { label: 'Market Demand Liquidity', score: 86, color: '#0284C7' },
+  { label: 'Price Comps Alignment', score: 91, color: '#0284C7' },
+  { label: 'Fraud Pattern Risk', score: 2, color: '#10B981', invert: true },
+];
