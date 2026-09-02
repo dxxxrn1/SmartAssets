@@ -14,11 +14,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SCREENS, TABS } from '../constants/navigation';
 import { useColors } from '../constants/theme';
+import { useAuth } from '../context/AuthContext';
 
 // ─── Screen imports ────────────────────────────────────────────────────────────
 import SplashScreen      from '../screens/SplashScreen';
 import OnboardingScreen  from '../screens/OnboardingScreen';
 import LoginScreen       from '../screens/LoginScreen';
+import RegisterScreen    from '../screens/RegisterScreen';
 import HomeScreen        from '../screens/HomeScreen';
 import SearchScreen      from '../screens/SearchScreen';
 import ListAssetScreen   from '../screens/ListAssetScreen';
@@ -139,45 +141,53 @@ function MainTabs({ isDark }) {
 // ── Root stack ────────────────────────────────────────────────────────────────
 export default function Navigation() {
   const [isDark, setIsDark] = useState(false);
+  const { isAuthenticated } = useAuth();
 
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {/* ── Auth screens ── */}
-        <Stack.Screen name={SCREENS.SPLASH}>
-          {(props) => <SplashScreen {...props} isDark={isDark} />}
-        </Stack.Screen>
-        <Stack.Screen name={SCREENS.ONBOARDING}>
-          {(props) => <OnboardingScreen {...props} isDark={isDark} />}
-        </Stack.Screen>
-        <Stack.Screen name={SCREENS.LOGIN}>
-          {(props) => <LoginScreen {...props} isDark={isDark} />}
-        </Stack.Screen>
-
-        {/* ── Main tab shell ── */}
-        <Stack.Screen name={SCREENS.MAIN_TABS}>
-          {(props) => <MainTabs {...props} isDark={isDark} />}
-        </Stack.Screen>
-
-        {/* ── Detail screens (pushed over tabs) ── */}
-        <Stack.Screen name={SCREENS.ASSET_DETAIL}>
-          {(props) => <AssetDetailScreen {...props} isDark={isDark} />}
-        </Stack.Screen>
-        <Stack.Screen name={SCREENS.CERTIFICATE}>
-          {(props) => <CertificateScreen {...props} isDark={isDark} />}
-        </Stack.Screen>
-        <Stack.Screen name={SCREENS.PROVENANCE}>
-          {(props) => <ProvenanceScreen {...props} isDark={isDark} />}
-        </Stack.Screen>
-        <Stack.Screen name={SCREENS.HEALTH_REPORT}>
-          {(props) => <HealthReportScreen {...props} isDark={isDark} />}
-        </Stack.Screen>
-        <Stack.Screen name={SCREENS.CHECKOUT}>
-          {(props) => <CheckoutScreen {...props} isDark={isDark} />}
-        </Stack.Screen>
-        <Stack.Screen name={SCREENS.VERIFICATION}>
-          {(props) => <VerificationScreen {...props} isDark={isDark} />}
-        </Stack.Screen>
+        {!isAuthenticated ? (
+          // ── Auth screens: Only accessible before login ──
+          <>
+            <Stack.Screen name={SCREENS.SPLASH}>
+              {(props) => <SplashScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.ONBOARDING}>
+              {(props) => <OnboardingScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.LOGIN}>
+              {(props) => <LoginScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.REGISTER}>
+              {(props) => <RegisterScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+          </>
+        ) : (
+          // ── App screens: Strictly accessible ONLY to authenticated registered users ──
+          <>
+            <Stack.Screen name={SCREENS.MAIN_TABS}>
+              {(props) => <MainTabs {...props} isDark={isDark} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.ASSET_DETAIL}>
+              {(props) => <AssetDetailScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.CERTIFICATE}>
+              {(props) => <CertificateScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.PROVENANCE}>
+              {(props) => <ProvenanceScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.HEALTH_REPORT}>
+              {(props) => <HealthReportScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.CHECKOUT}>
+              {(props) => <CheckoutScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.VERIFICATION}>
+              {(props) => <VerificationScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+          </>
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );

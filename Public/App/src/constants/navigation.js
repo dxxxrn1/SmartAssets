@@ -6,6 +6,7 @@ export const SCREENS = {
   SPLASH: 'Splash',
   ONBOARDING: 'Onboarding',
   LOGIN: 'Login',
+  REGISTER: 'Register',
 
   // Main tab shell
   MAIN_TABS: 'MainTabs',

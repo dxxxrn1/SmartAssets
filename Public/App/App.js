@@ -1,19 +1,18 @@
 // ─── SmartAssets — React Native Entry Point ───────────────────────────────────
-// Mounts the full navigation tree (all 13 screens from the Figma prototype)
-//
-// Required packages (run once):
-//   npx expo install @react-navigation/native @react-navigation/native-stack @react-navigation/bottom-tabs
-//   npx expo install react-native-screens react-native-safe-area-context
+// Mounts AuthProvider, full navigation tree, and SafeAreaProvider
 
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
+import { AuthProvider } from './src/context/AuthContext';
 
 export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="auto" />
-      <AppNavigator />
+      <AuthProvider>
+        <AppNavigator />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

@@ -1,7 +1,7 @@
 // ─── HomeScreen ───────────────────────────────────────────────────────────────
 // Market tab — portfolio stats card, category filter, asset card list
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,17 +10,55 @@ import {
   FlatList,
   Image,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
 import { ASSETS, CATEGORIES } from '../constants/data';
 import { Badge } from '../components/ui';
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext';
+import { getUserVault } from '../services/api';
 
 export default function HomeScreen({ navigation, isDark }) {
   const c = useColors(isDark);
+  const { user, token, logout } = useAuth();
   const [activeCategory, setActiveCategory] = useState('All');
+  const [vaultSummary, setVaultSummary] = useState({
+    totalValueFormatted: '£0',
+    totalCount: 0,
+    wholeCount: 0,
+    fractionalCount: 0,
+    gainText: '+0.0% MoM',
+  });
+
+  // Load user-isolated vault data
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      if (token) {
+        getUserVault(token)
+          .then((res) => {
+            if (isMounted && res?.summary) {
+              setVaultSummary(res.summary);
+            }
+          })
+          .catch((err) => console.warn('Vault fetch error:', err.message));
+      }
+      return () => {
+        isMounted = false;
+      };
+    }, [token])
+  );
+
+  const handleLogout = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out of SmartAssets?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign Out', style: 'destructive', onPress: logout },
+    ]);
+  };
 
   const filtered =
     activeCategory === 'All'
@@ -41,17 +79,36 @@ export default function HomeScreen({ navigation, isDark }) {
         <View style={styles.header}>
           <View>
             <Text style={[styles.greeting, { color: c.muted }]}>Welcome back,</Text>
-            <Text style={[styles.username, { color: c.warm }]}>James Harrington</Text>
+            <Text style={[styles.username, { color: c.warm }]}>
+              {user?.fullName || user?.email?.split('@')[0] || 'Member'}
+            </Text>
+            {user?.walletAddress ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                <Ionicons name="wallet-outline" size={12} color={c.primary} />
+                <Text style={{ color: c.primary, fontSize: 11, fontWeight: '600' }}>
+                  {user.walletAddress.slice(0, 6)}...{user.walletAddress.slice(-4)} (Web3)
+                </Text>
+              </View>
+            ) : null}
           </View>
-          {/* Notification bell */}
-          <TouchableOpacity
-            style={[styles.iconBtn, { backgroundColor: c.card, borderColor: c.border }]}
-          >
-            <Feather name="bell" size={17} color={c.warm} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {/* Notification bell */}
+            <TouchableOpacity
+              style={[styles.iconBtn, { backgroundColor: c.card, borderColor: c.border }]}
+            >
+              <Feather name="bell" size={17} color={c.warm} />
+            </TouchableOpacity>
+            {/* Logout button */}
+            <TouchableOpacity
+              style={[styles.iconBtn, { backgroundColor: c.card, borderColor: c.border }]}
+              onPress={handleLogout}
+            >
+              <Feather name="log-out" size={16} color={c.red} />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* ── Portfolio Stats Card ── */}
+        {/* ── Portfolio Stats Card (User-Specific) ── */}
         <View
           style={[
             styles.portfolioCard,
@@ -62,16 +119,22 @@ export default function HomeScreen({ navigation, isDark }) {
           ]}
         >
           <View style={styles.portfolioHeader}>
-            <Text style={[styles.portfolioLabel, { color: c.primary }]}>PORTFOLIO VALUE</Text>
+            <Text style={[styles.portfolioLabel, { color: c.primary }]}>YOUR PORTFOLIO VALUE</Text>
             <View style={[styles.gainBadge, { backgroundColor: c.greenBg, flexDirection: 'row', alignItems: 'center', gap: 3 }]}>
               <Feather name="trending-up" size={12} color={c.green} />
-              <Text style={[styles.gainText, { color: c.green }]}>+4.2% MoM</Text>
+              <Text style={[styles.gainText, { color: c.green }]}>{vaultSummary.gainText}</Text>
             </View>
           </View>
-          <Text style={[styles.portfolioValue, { color: c.warm }]}>£124,380</Text>
+          <Text style={[styles.portfolioValue, { color: c.warm }]}>
+            {vaultSummary.totalValueFormatted}
+          </Text>
 
           <View style={styles.statsRow}>
-            {[['12', 'Assets'], ['3', 'Verified'], ['£8,240', 'Gain']].map(([v, l]) => (
+            {[
+              [String(vaultSummary.totalCount), 'Holdings'],
+              [String(vaultSummary.wholeCount), 'Whole'],
+              [String(vaultSummary.fractionalCount), 'Fractional'],
+            ].map(([v, l]) => (
               <View
                 key={l}
                 style={[styles.statCell, { backgroundColor: c.card, borderColor: c.border }]}
