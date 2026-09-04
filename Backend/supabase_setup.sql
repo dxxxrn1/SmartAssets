@@ -1,7 +1,7 @@
 -- ─── SmartAssets — Supabase Database Setup ────────────────────────────────────
 -- Run this SQL in your Supabase Dashboard → SQL Editor → New Query → Run
 
--- 1. Create or update the profiles table
+-- 1. Profiles table
 CREATE TABLE IF NOT EXISTS public.profiles (
   id              UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name       TEXT NOT NULL,
@@ -10,10 +10,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Ensure wallet_address column exists if profiles already existed
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS wallet_address TEXT UNIQUE;
 
--- 2. Create the user_holdings table (isolated per user)
+-- 2. User Holdings table (personal vault, isolated per user)
 CREATE TABLE IF NOT EXISTS public.user_holdings (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -25,61 +24,92 @@ CREATE TABLE IF NOT EXISTS public.user_holdings (
   gain_pct    TEXT DEFAULT '0%',
   positive    BOOLEAN DEFAULT true,
   image       TEXT,
-  asset_type  TEXT DEFAULT 'whole', -- 'whole' or 'fractional'
+  asset_type  TEXT DEFAULT 'whole',
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Grant table permissions
+-- 3. Marketplace Assets table (Dynamic Assets)
+CREATE TABLE IF NOT EXISTS public.assets (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  name            TEXT NOT NULL,
+  category        TEXT NOT NULL,
+  price           TEXT NOT NULL,
+  price_num       NUMERIC NOT NULL DEFAULT 0,
+  year            INTEGER NOT NULL DEFAULT 2024,
+  condition       TEXT NOT NULL DEFAULT 'Mint',
+  description     TEXT,
+  image           TEXT NOT NULL,
+  badge           TEXT DEFAULT 'Verified',
+  trending        BOOLEAN DEFAULT false,
+  cert            TEXT,
+  shares          INTEGER DEFAULT 100,
+  share_price     NUMERIC DEFAULT 100,
+  shares_sold     INTEGER DEFAULT 0,
+  status          TEXT DEFAULT 'active',
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. Asset History / Provenance table (Dynamic Chain-of-Custody)
+CREATE TABLE IF NOT EXISTS public.asset_history (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  asset_id        UUID NOT NULL REFERENCES public.assets(id) ON DELETE CASCADE,
+  year            TEXT NOT NULL,
+  event           TEXT NOT NULL,
+  party           TEXT NOT NULL,
+  hash            TEXT,
+  verified        BOOLEAN DEFAULT true,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. Grant table permissions
 GRANT ALL ON TABLE public.profiles TO postgres, anon, authenticated, service_role;
 GRANT ALL ON TABLE public.user_holdings TO postgres, anon, authenticated, service_role;
+GRANT ALL ON TABLE public.assets TO postgres, anon, authenticated, service_role;
+GRANT ALL ON TABLE public.asset_history TO postgres, anon, authenticated, service_role;
 
--- 4. Enable Row Level Security (RLS)
+-- 6. Enable Row Level Security (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_holdings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.asset_history ENABLE ROW LEVEL SECURITY;
 
--- 5. Clean up any existing policies before recreating
+-- 7. Policies for profiles
 DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Service role can insert profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 
+CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Service role can insert profiles" ON public.profiles FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+
+-- 8. Policies for user_holdings (Strict Isolation)
 DROP POLICY IF EXISTS "Users can only view their own holdings" ON public.user_holdings;
 DROP POLICY IF EXISTS "Users can only insert their own holdings" ON public.user_holdings;
-DROP POLICY IF EXISTS "Users can update their own holdings" ON public.user_holdings;
-DROP POLICY IF EXISTS "Users can delete their own holdings" ON public.user_holdings;
 DROP POLICY IF EXISTS "Service role full access on holdings" ON public.user_holdings;
 
--- 6. Policies for profiles
-CREATE POLICY "Users can view own profile"
-  ON public.profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users can only view their own holdings" ON public.user_holdings FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can only insert their own holdings" ON public.user_holdings FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Service role full access on holdings" ON public.user_holdings FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-CREATE POLICY "Service role can insert profiles"
-  ON public.profiles FOR ALL TO service_role USING (true) WITH CHECK (true);
+-- 9. Policies for assets & asset_history
+DROP POLICY IF EXISTS "Anyone can view active assets" ON public.assets;
+DROP POLICY IF EXISTS "Users can create assets" ON public.assets;
+DROP POLICY IF EXISTS "Service role full access on assets" ON public.assets;
 
-CREATE POLICY "Users can update own profile"
-  ON public.profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Anyone can view active assets" ON public.assets FOR SELECT USING (true);
+CREATE POLICY "Users can create assets" ON public.assets FOR INSERT WITH CHECK (true);
+CREATE POLICY "Service role full access on assets" ON public.assets FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- 7. Policies for user_holdings (Strict User Data Isolation)
-CREATE POLICY "Users can only view their own holdings"
-  ON public.user_holdings FOR SELECT
-  USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Anyone can view asset history" ON public.asset_history;
+DROP POLICY IF EXISTS "Users can insert asset history" ON public.asset_history;
+DROP POLICY IF EXISTS "Service role full access on asset history" ON public.asset_history;
 
-CREATE POLICY "Users can only insert their own holdings"
-  ON public.user_holdings FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Anyone can view asset history" ON public.asset_history FOR SELECT USING (true);
+CREATE POLICY "Users can insert asset history" ON public.asset_history FOR INSERT WITH CHECK (true);
+CREATE POLICY "Service role full access on asset history" ON public.asset_history FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-CREATE POLICY "Users can update their own holdings"
-  ON public.user_holdings FOR UPDATE
-  USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete their own holdings"
-  ON public.user_holdings FOR DELETE
-  USING (auth.uid() = user_id);
-
-CREATE POLICY "Service role full access on holdings"
-  ON public.user_holdings FOR ALL
-  TO service_role USING (true) WITH CHECK (true);
-
--- 8. Automatic trigger to sync auth.users with profiles
+-- 10. Automatic trigger to sync auth.users with profiles
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -102,3 +132,7 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- 11. Initial Setup Complete
+-- Database is ready for dynamic user asset creation.
+

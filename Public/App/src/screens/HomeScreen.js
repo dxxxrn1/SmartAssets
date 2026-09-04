@@ -1,31 +1,42 @@
 // ─── HomeScreen ───────────────────────────────────────────────────────────────
-// Market tab — portfolio stats card, category filter, asset card list
+// Market tab — portfolio stats card, category filter, dynamic asset card list
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  FlatList,
   Image,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
-import { ASSETS, CATEGORIES } from '../constants/data';
 import { Badge } from '../components/ui';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { getUserVault } from '../services/api';
+import { getUserVault, getMarketAssets } from '../services/api';
+
+const CATEGORIES = ['All', 'Watches', 'Art', 'Cars', 'Wine'];
+
+const CATEGORY_MAP = {
+  All: 'All',
+  Watches: 'Luxury Watch',
+  Art: 'Fine Art',
+  Cars: 'Classic Car',
+  Wine: 'Fine Wine',
+};
 
 export default function HomeScreen({ navigation, isDark }) {
   const c = useColors(isDark);
   const { user, token, logout } = useAuth();
   const [activeCategory, setActiveCategory] = useState('All');
+  const [marketAssets, setMarketAssets] = useState([]);
+  const [loadingAssets, setLoadingAssets] = useState(true);
   const [vaultSummary, setVaultSummary] = useState({
     totalValueFormatted: '£0',
     totalCount: 0,
@@ -34,7 +45,17 @@ export default function HomeScreen({ navigation, isDark }) {
     gainText: '+0.0% MoM',
   });
 
-  // Load user-isolated vault data
+  const loadMarket = useCallback((cat) => {
+    setLoadingAssets(true);
+    const apiCat = CATEGORY_MAP[cat] || 'All';
+    getMarketAssets(apiCat)
+      .then((res) => {
+        if (res?.assets) setMarketAssets(res.assets);
+      })
+      .catch((err) => console.warn('Market fetch error:', err.message))
+      .finally(() => setLoadingAssets(false));
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
@@ -47,10 +68,9 @@ export default function HomeScreen({ navigation, isDark }) {
           })
           .catch((err) => console.warn('Vault fetch error:', err.message));
       }
-      return () => {
-        isMounted = false;
-      };
-    }, [token])
+      loadMarket(activeCategory);
+      return () => { isMounted = false; };
+    }, [token, activeCategory, loadMarket])
   );
 
   const handleLogout = () => {
@@ -60,16 +80,10 @@ export default function HomeScreen({ navigation, isDark }) {
     ]);
   };
 
-  const filtered =
-    activeCategory === 'All'
-      ? ASSETS
-      : ASSETS.filter((a) => {
-          if (activeCategory === 'Watches') return a.category === 'Luxury Watch';
-          if (activeCategory === 'Art') return a.category === 'Fine Art';
-          if (activeCategory === 'Cars') return a.category === 'Classic Car';
-          if (activeCategory === 'Wine') return a.category === 'Fine Wine';
-          return true;
-        });
+  const handleCategoryPress = (cat) => {
+    setActiveCategory(cat);
+    loadMarket(cat);
+  };
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safe, { backgroundColor: c.obsidian }]}>
@@ -92,13 +106,12 @@ export default function HomeScreen({ navigation, isDark }) {
             ) : null}
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            {/* Notification bell */}
             <TouchableOpacity
               style={[styles.iconBtn, { backgroundColor: c.card, borderColor: c.border }]}
+              onPress={() => navigation.navigate(SCREENS.SEARCH)}
             >
-              <Feather name="bell" size={17} color={c.warm} />
+              <Feather name="search" size={16} color={c.warm} />
             </TouchableOpacity>
-            {/* Logout button */}
             <TouchableOpacity
               style={[styles.iconBtn, { backgroundColor: c.card, borderColor: c.border }]}
               onPress={handleLogout}
@@ -162,7 +175,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   borderColor: activeCategory === cat ? c.primary : c.border,
                 },
               ]}
-              onPress={() => setActiveCategory(cat)}
+              onPress={() => handleCategoryPress(cat)}
             >
               <Text
                 style={[
@@ -184,8 +197,18 @@ export default function HomeScreen({ navigation, isDark }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── Asset Cards ── */}
-        {filtered.map((asset) => (
+        {/* ── Asset Cards (Dynamic from Supabase) ── */}
+        {loadingAssets ? (
+          <View style={{ padding: 36, alignItems: 'center' }}>
+            <ActivityIndicator size="small" color={c.primary} />
+            <Text style={{ color: c.muted, marginTop: 8, fontSize: 12 }}>Loading verified listings…</Text>
+          </View>
+        ) : marketAssets.length === 0 ? (
+          <View style={{ padding: 36, alignItems: 'center' }}>
+            <Text style={{ color: c.muted, fontSize: 13 }}>No listings found in this category.</Text>
+          </View>
+        ) : (
+          marketAssets.map((asset) => (
           <TouchableOpacity
             key={asset.id}
             style={[styles.assetCard, { backgroundColor: c.card, borderColor: c.border }]}
@@ -197,10 +220,9 @@ export default function HomeScreen({ navigation, isDark }) {
             {/* Image */}
             <View style={styles.assetImageWrap}>
               <Image source={{ uri: asset.image }} style={styles.assetImage} resizeMode="cover" />
-              {/* Gradient overlay — TODO: expo-linear-gradient */}
               <View style={styles.assetBadgeWrap}>
                 <Badge
-                  text={asset.badge}
+                  text={asset.badge || 'Verified'}
                   variant={asset.badge === 'Verified' ? 'verified' : 'pending'}
                   isDark={isDark}
                 />
@@ -237,7 +259,8 @@ export default function HomeScreen({ navigation, isDark }) {
               </View>
             </View>
           </TouchableOpacity>
-        ))}
+        ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );

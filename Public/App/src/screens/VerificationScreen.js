@@ -21,8 +21,9 @@ const VERIFICATION_STEPS = [
   { title: 'Live on Marketplace', detail: 'Ready for buyers', status: 'pending' },
 ];
 
-export default function VerificationScreen({ navigation, isDark }) {
+export default function VerificationScreen({ navigation, route, isDark }) {
   const c = useColors(isDark);
+  const asset = route?.params?.asset ?? {};
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.obsidian }]}>
@@ -42,7 +43,7 @@ export default function VerificationScreen({ navigation, isDark }) {
         {/* ── Status card ── */}
         <View style={[styles.statusCard, { backgroundColor: c.card, borderColor: c.border }]}>
           <Text style={[styles.statusLabel, { color: c.primary }]}>VERIFICATION IN PROGRESS</Text>
-          <Text style={[styles.assetName, { color: c.warm }]}>Rolex Daytona 116500LN</Text>
+          <Text style={[styles.assetName, { color: c.warm }]}>{asset.name || 'Verified Asset'}</Text>
           <View style={[styles.progressTrack, { backgroundColor: c.border }]}>
             <View style={[styles.progressFill, { width: '60%', backgroundColor: c.primary }]} />
           </View>

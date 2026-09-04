@@ -1,6 +1,3 @@
-// ─── CheckoutScreen ───────────────────────────────────────────────────────────
-// Purchase flow — order summary + payment options
-
 import React, { useState } from 'react';
 import {
   View,
@@ -9,10 +6,14 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useColors } from '../constants/theme';
+import { useAuth } from '../context/AuthContext';
+import { addUserHolding } from '../services/api';
 
 const PAYMENT_METHODS = [
   { id: 'card', label: 'Credit / Debit Card', type: 'feather', icon: 'credit-card' },
@@ -22,12 +23,40 @@ const PAYMENT_METHODS = [
 
 export default function CheckoutScreen({ navigation, route, isDark }) {
   const c = useColors(isDark);
+  const { token } = useAuth();
   const asset = route?.params?.asset ?? {};
   const [selectedPayment, setSelectedPayment] = useState('card');
   const [confirmed, setConfirmed] = useState(false);
+  const [purchasing, setPurchasing] = useState(false);
 
-  const platformFee = Math.round((asset.priceNum ?? 0) * 0.025);
-  const total = (asset.priceNum ?? 0) + platformFee;
+  const priceNum = asset.price_num ?? asset.priceNum ?? 0;
+  const platformFee = Math.round(priceNum * 0.025);
+  const total = priceNum + platformFee;
+
+  const handleConfirmPurchase = async () => {
+    setPurchasing(true);
+    try {
+      if (token) {
+        await addUserHolding(token, {
+          name: asset.name,
+          category: asset.category,
+          price: asset.price || `£${priceNum.toLocaleString('en-GB')}`,
+          priceNum: priceNum,
+          image: asset.image,
+          assetType: 'whole',
+          gain: '+0.0%',
+          gainPct: '0%',
+          positive: true,
+        });
+      }
+      setConfirmed(true);
+    } catch (err) {
+      Alert.alert('Notice', err.message || 'Could not complete purchase.');
+      setConfirmed(true);
+    } finally {
+      setPurchasing(false);
+    }
+  };
 
   if (confirmed) {
     return (
@@ -151,10 +180,15 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
       <SafeAreaView edges={['bottom']} style={[styles.cta, { backgroundColor: c.vault, borderTopColor: c.border }]}>
         <TouchableOpacity
           style={[styles.confirmBtn, { backgroundColor: c.primary }]}
-          onPress={() => setConfirmed(true)}
+          onPress={handleConfirmPurchase}
+          disabled={purchasing}
           activeOpacity={0.85}
         >
-          <Text style={styles.confirmBtnLabel}>Confirm Purchase</Text>
+          {purchasing ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Text style={styles.confirmBtnLabel}>Confirm Purchase</Text>
+          )}
         </TouchableOpacity>
       </SafeAreaView>
     </SafeAreaView>

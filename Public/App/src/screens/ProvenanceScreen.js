@@ -1,7 +1,7 @@
 // ─── ProvenanceScreen ─────────────────────────────────────────────────────────
 // Full provenance timeline — chain of custody authenticated events
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,13 +12,28 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '../constants/theme';
-import { PROVENANCE_EVENTS } from '../constants/data';
+import { getAssetDetails } from '../services/api';
 
 const EVENT_ICONS = ['file-text', 'check', 'link', 'tag', 'shopping-bag', 'box'];
 
 export default function ProvenanceScreen({ navigation, route, isDark }) {
   const c = useColors(isDark);
   const asset = route?.params?.asset ?? {};
+  const [history, setHistory] = useState(route?.params?.history || []);
+
+  useEffect(() => {
+    if (history.length === 0 && asset.id) {
+      getAssetDetails(asset.id)
+        .then(data => {
+          if (data?.history && data.history.length > 0) {
+            setHistory(data.history);
+          }
+        })
+        .catch(err => console.warn('Failed to fetch provenance history:', err));
+    }
+  }, [asset.id]);
+
+  const displayEvents = history.length > 0 ? history : [{ year: String(asset.year || '2024'), event: 'Marketplace Listing', party: 'SmartAssets Verification' }];
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.obsidian }]}>
@@ -53,20 +68,20 @@ export default function ProvenanceScreen({ navigation, route, isDark }) {
         </View>
 
         {/* ── Timeline ── */}
-        {PROVENANCE_EVENTS.map((event, i) => (
+        {displayEvents.map((event, i) => (
           <View key={i} style={styles.timelineRow}>
             <View style={styles.dotCol}>
               <View style={[styles.dot, { backgroundColor: c.primaryBg, borderColor: c.primary }]}>
                 <Feather name={EVENT_ICONS[i % EVENT_ICONS.length]} size={12} color={c.primary} />
               </View>
-              {i < PROVENANCE_EVENTS.length - 1 && (
+              {i < displayEvents.length - 1 && (
                 <View style={[styles.line, { backgroundColor: c.border }]} />
               )}
             </View>
             <View style={styles.eventContent}>
-              <Text style={[styles.eventDate, { color: c.primary }]}>{event.date}</Text>
-              <Text style={[styles.eventTitle, { color: c.warm }]}>{event.title}</Text>
-              <Text style={[styles.eventDetail, { color: c.muted }]}>{event.detail}</Text>
+              <Text style={[styles.eventDate, { color: c.primary }]}>{event.year || event.date}</Text>
+              <Text style={[styles.eventTitle, { color: c.warm }]}>{event.event || event.title}</Text>
+              <Text style={[styles.eventDetail, { color: c.muted }]}>{event.party || event.detail}</Text>
             </View>
           </View>
         ))}

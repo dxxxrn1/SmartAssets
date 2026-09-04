@@ -1,7 +1,7 @@
 // ─── SearchScreen ─────────────────────────────────────────────────────────────
 // Discover Assets — luxury cards with rich category palettes and image on the right
 
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,11 +11,13 @@ import {
   ScrollView,
   Image,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import { useColors } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
-import { ASSETS } from "../constants/data";
+import { getMarketAssets } from "../services/api";
 import { Feather } from "@expo/vector-icons";
 
 // ── Category Palettes matching the luxury reference ───────────────────────────
@@ -41,14 +43,40 @@ const CATEGORY_THEMES = {
 export default function SearchScreen({ navigation, isDark }) {
   const c = useColors(isDark);
   const [query, setQuery] = useState("");
+  const [assets, setAssets] = useState([]);
+  const [loading, setLoading] = useState(true);
 
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      const fetchAssets = async () => {
+        try {
+          setLoading(true);
+          const res = await getMarketAssets();
+          if (!cancelled) {
+            setAssets(Array.isArray(res?.assets) ? res.assets : []);
+          }
+        } catch (err) {
+          console.error("Failed to fetch market assets:", err);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      };
+      fetchAssets();
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
+
+  const assetList = Array.isArray(assets) ? assets : [];
   const filtered = query
-    ? ASSETS.filter(
+    ? assetList.filter(
         (a) =>
-          a.name.toLowerCase().includes(query.toLowerCase()) ||
-          a.category.toLowerCase().includes(query.toLowerCase()),
+          a.name?.toLowerCase().includes(query.toLowerCase()) ||
+          a.category?.toLowerCase().includes(query.toLowerCase()),
       )
-    : ASSETS;
+    : assetList;
 
   return (
     <SafeAreaView
@@ -101,7 +129,10 @@ export default function SearchScreen({ navigation, isDark }) {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
       >
-        {filtered.map((asset) => {
+        {loading ? (
+          <ActivityIndicator size="large" color={c.warm} style={{ marginTop: 40 }} />
+        ) : (
+        filtered.map((asset) => {
           const isVerified = asset.badge === "Verified";
 
           // Green theme for Verified cards, Yellow/Amber theme for Pending cards
@@ -228,7 +259,8 @@ export default function SearchScreen({ navigation, isDark }) {
               />
             </TouchableOpacity>
           );
-        })}
+        })
+        )}
       </ScrollView>
     </SafeAreaView>
   );

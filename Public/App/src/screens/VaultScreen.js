@@ -17,7 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
 import { useAuth } from '../context/AuthContext';
-import { getUserVault, seedUserStarter } from '../services/api';
+import { getUserVault } from '../services/api';
 import { Feather, Ionicons } from '@expo/vector-icons';
 
 export default function VaultScreen({ navigation, isDark }) {
@@ -25,7 +25,6 @@ export default function VaultScreen({ navigation, isDark }) {
   const { user, token, logout } = useAuth();
 
   const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
   const [holdings, setHoldings] = useState([]);
   const [summary, setSummary] = useState({
     totalValueFormatted: '£0',
@@ -57,19 +56,6 @@ export default function VaultScreen({ navigation, isDark }) {
       loadVault();
     }, [loadVault])
   );
-
-  const handleSeedStarter = async () => {
-    setSeeding(true);
-    try {
-      await seedUserStarter(token);
-      loadVault();
-      Alert.alert('Success', 'Starter assets added to your personal vault!');
-    } catch (err) {
-      Alert.alert('Notice', err.message || 'Could not seed assets');
-    } finally {
-      setSeeding(false);
-    }
-  };
 
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -161,14 +147,9 @@ export default function VaultScreen({ navigation, isDark }) {
 
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: c.primary }]}
-              onPress={handleSeedStarter}
-              disabled={seeding}
+              onPress={() => navigation.navigate(SCREENS.LIST_ASSET)}
             >
-              {seeding ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.actionBtnText}>+ Add Demo Starter Assets</Text>
-              )}
+              <Text style={styles.actionBtnText}>+ List a New Asset</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

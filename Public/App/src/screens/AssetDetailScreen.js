@@ -1,7 +1,7 @@
 // ─── AssetDetailScreen ────────────────────────────────────────────────────────
 // Hero image + Overview / Certificate / Provenance tabs + action bar
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
 import { Badge } from '../components/ui';
 import { Feather } from '@expo/vector-icons';
+import { getAssetDetails } from '../services/api';
 
 const TABS = ['overview', 'cert', 'history'];
 
@@ -22,6 +23,19 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
   const c = useColors(isDark);
   const asset = route?.params?.asset ?? {};
   const [activeTab, setActiveTab] = useState('overview');
+  const [history, setHistory] = useState([]);
+
+  useEffect(() => {
+    if (asset.id) {
+      getAssetDetails(asset.id)
+        .then((res) => {
+          if (res?.history && res.history.length > 0) {
+            setHistory(res.history);
+          }
+        })
+        .catch((err) => console.warn('Could not fetch asset history:', err.message));
+    }
+  }, [asset.id]);
 
   return (
     <View style={[styles.container, { backgroundColor: c.obsidian }]}>
@@ -175,7 +189,7 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
           <View style={styles.tabContent}>
             <TouchableOpacity
               style={[styles.provenanceBtn, { backgroundColor: c.card, borderColor: c.border }]}
-              onPress={() => navigation.navigate(SCREENS.PROVENANCE, { asset })}
+              onPress={() => navigation.navigate(SCREENS.PROVENANCE, { asset, history })}
             >
               <Text style={[styles.provenanceBtnLabel, { color: c.warm }]}>
                 View Full Provenance Timeline
@@ -183,12 +197,12 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
               <Feather name="chevron-right" size={16} color={c.primary} />
             </TouchableOpacity>
 
-            {[
-              { yr: '2024', ev: 'Submitted to SmartAssets & Verified' },
-              { yr: '2021', ev: "Purchased at Christie's London" },
-              { yr: '2019', ev: 'Rolex Authorised Dealer Delivery' },
-              { yr: '2019', ev: 'Manufactured in Geneva, Switzerland' },
-            ].map((e, i) => (
+            {(history.length > 0
+              ? history
+              : [
+                  { year: String(asset.year || '2024'), event: 'Marketplace Listing & Authenticity Certified' },
+                ]
+            ).map((e, i, arr) => (
               <View key={i} style={styles.timelineRow}>
                 <View style={styles.timelineDotCol}>
                   <View
@@ -197,13 +211,16 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
                       { backgroundColor: i === 0 ? c.primary : c.border },
                     ]}
                   />
-                  {i < 3 && (
+                  {i < arr.length - 1 && (
                     <View style={[styles.timelineLine, { backgroundColor: c.border }]} />
                   )}
                 </View>
                 <View style={styles.timelineContent}>
-                  <Text style={[styles.timelineYear, { color: c.primary }]}>{e.yr}</Text>
-                  <Text style={[styles.timelineEvent, { color: c.warm }]}>{e.ev}</Text>
+                  <Text style={[styles.timelineYear, { color: c.primary }]}>{e.year || e.yr}</Text>
+                  <Text style={[styles.timelineEvent, { color: c.warm }]}>{e.event || e.ev}</Text>
+                  {e.party ? (
+                    <Text style={{ fontSize: 11, color: c.muted, marginTop: 2 }}>📍 {e.party}</Text>
+                  ) : null}
                 </View>
               </View>
             ))}

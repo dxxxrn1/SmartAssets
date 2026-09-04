@@ -19,12 +19,12 @@ export default function CertificateScreen({ navigation, route, isDark }) {
   const asset = route?.params?.asset ?? {};
 
   const certFields = [
-    ['CERTIFICATE ID', asset.cert],
-    ['ISSUED DATE', '14 March 2024'],
-    ['CATEGORY', asset.category],
-    ['CONDITION', asset.condition],
-    ['YEAR', String(asset.year)],
-    ['APPRAISER', 'Dr. William Chen'],
+    ['CERTIFICATE ID', asset.cert || `SA-${(asset.id || '2024').slice(0, 8).toUpperCase()}`],
+    ['ISSUED DATE', new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })],
+    ['CATEGORY', asset.category || 'Luxury Collectible'],
+    ['CONDITION', asset.condition || 'Verified Authenticated'],
+    ['YEAR', String(asset.year || new Date().getFullYear())],
+    ['APPRAISER', 'SmartAssets Verification Authority'],
   ];
 
   return (
@@ -89,7 +89,7 @@ export default function CertificateScreen({ navigation, route, isDark }) {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.hashLabel, { color: c.muted }]}>BLOCKCHAIN RECORD</Text>
                 <Text style={[styles.hashValue, { color: c.primary }]} numberOfLines={2}>
-                  0x4a3f8c2e1b9d6f0a5e7c3d2b1f8e4a9c…
+                  {asset.hash || ('0x' + (asset.id ? asset.id.replace(/-/g, '') : '7a8f3b2c1d4e5f6a7b8c9d0e1f2a3b4c'))}
                 </Text>
               </View>
             </View>

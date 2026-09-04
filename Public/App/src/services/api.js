@@ -115,3 +115,42 @@ export async function addUserHolding(token, holdingData) {
 export async function seedUserStarter(token) {
   return apiRequest('/user/seed-starter', { method: 'POST' }, token);
 }
+
+// ── Dynamic Marketplace & Provenance History API ────────────────────────────
+
+/**
+ * Fetch all marketplace assets with optional category or search query.
+ * @param {string} [category]
+ * @param {string} [searchQuery]
+ */
+export async function getMarketAssets(category = 'All', searchQuery = '') {
+  const params = new URLSearchParams();
+  if (category && category !== 'All') params.append('category', category);
+  if (searchQuery && searchQuery.trim()) params.append('q', searchQuery.trim());
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return apiRequest(`/assets${qs}`, { method: 'GET' });
+}
+
+/**
+ * Fetch single asset details along with its provenance history.
+ * @param {string} assetId
+ */
+export async function getAssetDetails(assetId) {
+  return apiRequest(`/assets/${assetId}`, { method: 'GET' });
+}
+
+/**
+ * Create a new asset listing with picture and provenance history.
+ * @param {object} assetData - { name, category, askingPrice, year, condition, description, image, history }
+ * @param {string} token - User's Supabase JWT access token
+ */
+export async function createAssetApi(assetData, token) {
+  return apiRequest(
+    '/assets',
+    {
+      method: 'POST',
+      body: JSON.stringify(assetData),
+    },
+    token
+  );
+}

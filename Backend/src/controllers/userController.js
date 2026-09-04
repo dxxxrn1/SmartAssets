@@ -124,32 +124,33 @@ async function seedStarterHoldings(req, res) {
       });
     }
 
-    const starterHoldings = [
-      {
-        user_id: userId,
-        name: 'Rolex Daytona 116500LN',
-        category: 'Luxury Watch',
-        price: '£28,500',
-        price_num: 28500,
-        gain: '+£1,420',
-        gain_pct: '+5.2%',
-        positive: true,
-        image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
-        asset_type: 'whole',
-      },
-      {
-        user_id: userId,
-        name: 'Ferrari F40 (Fractional Share)',
-        category: 'Classic Car',
-        price: '£2,500',
-        price_num: 2500,
-        gain: '+£310',
-        gain_pct: '+14.1%',
-        positive: true,
-        image: 'https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=800',
-        asset_type: 'fractional',
-      },
-    ];
+    // Pull actual assets from the database instead of hardcoding items
+    const { data: dbAssets } = await supabase
+      .from('assets')
+      .select('*')
+      .eq('status', 'active')
+      .limit(2);
+
+    if (!dbAssets || dbAssets.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No assets currently in database to seed.',
+        holdings: [],
+      });
+    }
+
+    const starterHoldings = dbAssets.map((a) => ({
+      user_id: userId,
+      name: a.name,
+      category: a.category,
+      price: a.price,
+      price_num: a.price_num,
+      gain: '+0.0%',
+      gain_pct: '0%',
+      positive: true,
+      image: a.image,
+      asset_type: 'whole',
+    }));
 
     const { data, error } = await supabase
       .from('user_holdings')

@@ -1,7 +1,7 @@
 // ─── InvestScreen (Fractional) ────────────────────────────────────────────────
 // Fractional ownership — invest tab with asset share listings
 
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,14 +9,35 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
-import { ASSETS } from '../constants/data';
+import { getMarketAssets } from '../services/api';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function InvestScreen({ navigation, isDark }) {
   const c = useColors(isDark);
+
+  const [offerings, setOfferings] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      setLoading(true);
+      getMarketAssets()
+        .then((res) => {
+          if (!cancelled) {
+            setOfferings(Array.isArray(res?.assets) ? res.assets : []);
+          }
+        })
+        .catch((err) => console.warn('InvestScreen fetch error:', err))
+        .finally(() => { if (!cancelled) setLoading(false); });
+      return () => { cancelled = true; };
+    }, [])
+  );
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safe, { backgroundColor: c.obsidian }]}>
@@ -33,10 +54,24 @@ export default function InvestScreen({ navigation, isDark }) {
         {/* ── Summary stats ── */}
         <View style={[styles.statsCard, { backgroundColor: c.card, borderColor: c.border }]}>
           {[
-            ['Total Invested', '£33,520'],
-            ['Assets', '2'],
-            ['Return', '+£1,800'],
-          ].map(([label, value]) => (
+            [
+              '£' +
+                offerings
+                  .reduce((sum, o) => sum + (Number(o.price_num) || 0), 0)
+                  .toLocaleString('en-GB'),
+              'Total Pool',
+            ],
+            [String(offerings.length), 'Offerings'],
+            [
+              String(
+                offerings.reduce(
+                  (sum, o) => sum + (Number(o.shares || 100) - Number(o.sharesSold || 0)),
+                  0
+                )
+              ),
+              'Shares Open',
+            ],
+          ].map(([value, label]) => (
             <View key={label} style={styles.statItem}>
               <Text style={[styles.statValue, { color: c.primary }]}>{value}</Text>
               <Text style={[styles.statLabel, { color: c.muted }]}>{label}</Text>
@@ -47,53 +82,63 @@ export default function InvestScreen({ navigation, isDark }) {
         {/* ── Section: Available to invest ── */}
         <Text style={[styles.sectionTitle, { color: c.warm }]}>Available Offerings</Text>
 
-        {ASSETS.map((asset) => {
-          const pct = Math.round((asset.sharesSold / asset.shares) * 100);
-          return (
-            <TouchableOpacity
-              key={asset.id}
-              style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}
-              onPress={() => navigation.navigate(SCREENS.ASSET_DETAIL, { asset })}
-              activeOpacity={0.9}
-            >
-              {/* Thumbnail + info */}
-              <View style={styles.cardTop}>
-                <Image source={{ uri: asset.image }} style={styles.thumb} resizeMode="cover" />
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={[styles.cardCategory, { color: c.primary }]}>{asset.category}</Text>
-                  <Text style={[styles.cardName, { color: c.warm }]} numberOfLines={2}>
-                    {asset.name}
-                  </Text>
-                  <Text style={[styles.sharePrice, { color: c.muted }]}>
-                    £{asset.sharePrice.toLocaleString()} / share
-                  </Text>
-                </View>
-              </View>
-
-              {/* Funding bar */}
-              <View style={styles.fundingSection}>
-                <View style={styles.fundingHeader}>
-                  <Text style={[styles.fundingLabel, { color: c.muted }]}>
-                    {asset.sharesSold}/{asset.shares} shares sold
-                  </Text>
-                  <Text style={[styles.fundingPct, { color: c.primary }]}>{pct}%</Text>
-                </View>
-                <View style={[styles.progressTrack, { backgroundColor: c.border }]}>
-                  <View
-                    style={[styles.progressFill, { width: `${pct}%`, backgroundColor: c.primary }]}
-                  />
-                </View>
-              </View>
-
+        {loading ? (
+          <ActivityIndicator size="large" color={c.primary} style={{ marginTop: 32 }} />
+        ) : offerings.length === 0 ? (
+          <Text style={{ color: c.muted, textAlign: 'center', marginTop: 32, fontSize: 14 }}>
+            No offerings available right now.
+          </Text>
+        ) : (
+          offerings.map((asset) => {
+            const sharePrice = asset.sharePrice || asset.share_price || Math.round((asset.price_num || 1000) / 100);
+            const sharesSold = asset.sharesSold || asset.shares_sold || 0;
+            const pct = Math.round((sharesSold / asset.shares) * 100);
+            return (
               <TouchableOpacity
-                style={[styles.investBtn, { backgroundColor: c.primary }]}
-                onPress={() => navigation.navigate(SCREENS.CHECKOUT, { asset })}
+                key={asset.id}
+                style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}
+                onPress={() => navigation.navigate(SCREENS.ASSET_DETAIL, { asset })}
+                activeOpacity={0.9}
               >
-                <Text style={styles.investBtnLabel}>Invest Now</Text>
+                {/* Thumbnail + info */}
+                <View style={styles.cardTop}>
+                  <Image source={{ uri: asset.image }} style={styles.thumb} resizeMode="cover" />
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <Text style={[styles.cardCategory, { color: c.primary }]}>{asset.category}</Text>
+                    <Text style={[styles.cardName, { color: c.warm }]} numberOfLines={2}>
+                      {asset.name}
+                    </Text>
+                    <Text style={[styles.sharePrice, { color: c.muted }]}>
+                      £{sharePrice.toLocaleString()} / share
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Funding bar */}
+                <View style={styles.fundingSection}>
+                  <View style={styles.fundingHeader}>
+                    <Text style={[styles.fundingLabel, { color: c.muted }]}>
+                      {sharesSold}/{asset.shares} shares sold
+                    </Text>
+                    <Text style={[styles.fundingPct, { color: c.primary }]}>{pct}%</Text>
+                  </View>
+                  <View style={[styles.progressTrack, { backgroundColor: c.border }]}>
+                    <View
+                      style={[styles.progressFill, { width: `${pct}%`, backgroundColor: c.primary }]}
+                    />
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.investBtn, { backgroundColor: c.primary }]}
+                  onPress={() => navigation.navigate(SCREENS.CHECKOUT, { asset })}
+                >
+                  <Text style={styles.investBtnLabel}>Invest Now</Text>
+                </TouchableOpacity>
               </TouchableOpacity>
-            </TouchableOpacity>
-          );
-        })}
+            );
+          })
+        )}
       </ScrollView>
     </SafeAreaView>
   );
