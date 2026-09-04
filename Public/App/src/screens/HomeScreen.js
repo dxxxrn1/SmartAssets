@@ -21,24 +21,17 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { getUserVault, getMarketAssets } from '../services/api';
 
-const CATEGORIES = ['All', 'Watches', 'Art', 'Cars', 'Wine'];
-
-const CATEGORY_MAP = {
-  All: 'All',
-  Watches: 'Luxury Watch',
-  Art: 'Fine Art',
-  Cars: 'Classic Car',
-  Wine: 'Fine Wine',
-};
+const DEFAULT_CATEGORIES = ['All', 'Luxury Watch', 'Fine Art', 'Classic Car', 'Fine Wine'];
 
 export default function HomeScreen({ navigation, isDark }) {
   const c = useColors(isDark);
   const { user, token, logout } = useAuth();
   const [activeCategory, setActiveCategory] = useState('All');
+  const [allMarketAssets, setAllMarketAssets] = useState([]);
   const [marketAssets, setMarketAssets] = useState([]);
   const [loadingAssets, setLoadingAssets] = useState(true);
   const [vaultSummary, setVaultSummary] = useState({
-    totalValueFormatted: '£0',
+    totalValueFormatted: 'R0',
     totalCount: 0,
     wholeCount: 0,
     fractionalCount: 0,
@@ -47,14 +40,28 @@ export default function HomeScreen({ navigation, isDark }) {
 
   const loadMarket = useCallback((cat) => {
     setLoadingAssets(true);
-    const apiCat = CATEGORY_MAP[cat] || 'All';
-    getMarketAssets(apiCat)
+    const targetCat = (!cat || cat === 'All') ? 'All' : cat;
+    getMarketAssets(targetCat)
       .then((res) => {
-        if (res?.assets) setMarketAssets(res.assets);
+        if (res?.assets) {
+          setMarketAssets(res.assets);
+          if (targetCat === 'All') {
+            setAllMarketAssets(res.assets);
+          }
+        }
       })
       .catch((err) => console.warn('Market fetch error:', err.message))
       .finally(() => setLoadingAssets(false));
   }, []);
+
+  const dynamicCategories = [
+    'All',
+    ...Array.from(new Set([
+      ...DEFAULT_CATEGORIES.filter((c) => c !== 'All'),
+      ...allMarketAssets.map((a) => a.category).filter(Boolean),
+      ...marketAssets.map((a) => a.category).filter(Boolean),
+    ])),
+  ];
 
   useFocusEffect(
     useCallback(() => {
@@ -165,7 +172,7 @@ export default function HomeScreen({ navigation, isDark }) {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categories}
         >
-          {CATEGORIES.map((cat) => (
+          {dynamicCategories.map((cat) => (
             <TouchableOpacity
               key={cat}
               style={[

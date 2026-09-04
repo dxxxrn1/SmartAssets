@@ -25,6 +25,7 @@ export const SCREENS = {
   HEALTH_REPORT: 'HealthReport',
   CHECKOUT: 'Checkout',
   VERIFICATION: 'Verification',
+  ESCROW_TRACKER: 'EscrowTracker',
 };
 
 // Bottom tab config — mirrors BottomNav in prototype

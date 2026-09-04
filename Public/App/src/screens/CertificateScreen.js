@@ -1,6 +1,3 @@
-// ─── CertificateScreen ────────────────────────────────────────────────────────
-// Luxury digital certificate — styled card with QR + blockchain hash
-
 import React from 'react';
 import {
   View,
@@ -8,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '../constants/theme';
@@ -20,7 +18,8 @@ export default function CertificateScreen({ navigation, route, isDark }) {
 
   const certFields = [
     ['CERTIFICATE ID', asset.cert || `SA-${(asset.id || '2024').slice(0, 8).toUpperCase()}`],
-    ['ISSUED DATE', new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })],
+    ['TOKEN ID', asset.tokenId ? `#${asset.tokenId}` : '#1'],
+    ['BLOCKCHAIN', 'Ethereum Sepolia'],
     ['CATEGORY', asset.category || 'Luxury Collectible'],
     ['CONDITION', asset.condition || 'Verified Authenticated'],
     ['YEAR', String(asset.year || new Date().getFullYear())],
@@ -114,6 +113,27 @@ export default function CertificateScreen({ navigation, route, isDark }) {
             <Text style={[styles.actionLabel, { color: c.warm }]}>Share Link</Text>
           </TouchableOpacity>
         </View>
+
+        {/* ── Etherscan Explorer Button ── */}
+        <TouchableOpacity
+          style={[
+            styles.etherscanBtn,
+            { backgroundColor: c.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+          ]}
+          onPress={() =>
+            Linking.openURL(
+              asset.etherscanUrl ||
+                (asset.txHash
+                  ? `https://sepolia.etherscan.io/tx/${asset.txHash}`
+                  : 'https://sepolia.etherscan.io')
+            )
+          }
+        >
+          <Ionicons name="open-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>
+            View on Etherscan (Sepolia) ↗
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -198,4 +218,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   actionLabel: { fontSize: 12, fontWeight: '700' },
+  etherscanBtn: {
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
 });

@@ -24,7 +24,7 @@ async function getVault(req, res) {
         success: true,
         holdings: [],
         summary: {
-          totalValueFormatted: '£0',
+          totalValueFormatted: 'R0',
           totalValueNum: 0,
           totalCount: 0,
           wholeCount: 0,
@@ -41,7 +41,7 @@ async function getVault(req, res) {
     const wholeCount = items.filter((i) => i.asset_type !== 'fractional').length;
     const fractionalCount = items.filter((i) => i.asset_type === 'fractional').length;
 
-    const formattedTotal = '£' + Number(totalValueNum).toLocaleString('en-GB');
+    const formattedTotal = 'R' + Number(totalValueNum).toLocaleString('en-ZA');
 
     return res.status(200).json({
       success: true,
@@ -78,7 +78,7 @@ async function addHolding(req, res) {
         user_id: userId,
         name: name.trim(),
         category: category.trim(),
-        price: price || `£${Number(priceNum).toLocaleString('en-GB')}`,
+        price: price || `R${Number(priceNum).toLocaleString('en-ZA')}`,
         price_num: Number(priceNum),
         gain: gain || '+0.0%',
         gain_pct: gainPct || '0%',

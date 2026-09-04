@@ -22,7 +22,7 @@ export const ONBOARDING_SLIDES = [
   },
   {
     title: 'Invest in Fractions',
-    sub: 'Co-own fine art, watches, or vintage sports cars. Start fractional ownership from £100 per share.',
+    sub: 'Co-own fine art, watches, or vintage sports cars. Start fractional ownership from R100 per share.',
     icon: '📊',
     image: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=600&h=420&fit=crop&auto=format',
   },
@@ -32,9 +32,9 @@ export const PROVENANCE_EVENTS = [
   { date: '14 Mar 2024', title: 'Submitted to SmartAssets', detail: 'Uploaded with complete documentation', icon: '◆' },
   { date: '18 Mar 2024', title: 'Appraiser Inspection — Dr. Chen', detail: 'Physical condition confirmed: Museum Grade.', icon: '✓' },
   { date: '20 Mar 2024', title: 'Blockchain Certificate Issued', detail: 'SA-CERT-2024-0047', icon: '⛓' },
-  { date: '12 Sep 2021', title: 'Purchased at Auction', detail: "Christie's London — Lot 247. Hammer price £29,800", icon: '🔨' },
-  { date: '05 Jan 2019', title: 'Original Retail Purchase', detail: 'Rolex Authorised Dealer, New Bond St, London', icon: '🏪' },
-  { date: 'Nov 2019', title: 'Manufactured in Switzerland', detail: 'Rolex SA, Geneva. Serial #7J42189', icon: '🏭' },
+  { date: '12 Sep 2021', title: 'Purchased at Auction', detail: "Auction House — Lot 247. Hammer price R250,000", icon: '🔨' },
+  { date: '05 Jan 2019', title: 'Original Retail Purchase', detail: 'Authorised Dealer, Sandton, Johannesburg', icon: '🏪' },
+  { date: 'Nov 2019', title: 'Manufactured & Certified', detail: 'Authenticity Serial #7J42189', icon: '🏭' },
 ];
 
 export const HEALTH_SCORES = [

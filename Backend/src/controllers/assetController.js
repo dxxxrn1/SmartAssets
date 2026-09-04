@@ -1,8 +1,43 @@
 // ─── Asset Controller ────────────────────────────────────────────────────────
-// CRUD operations for marketplace assets and provenance history.
+// CRUD operations for marketplace assets, Ethereum Sepolia NFT minting,
+// and provenance history chain-of-custody tracking.
 
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
+const web3Service = require('../services/web3Service');
+
+/**
+ * Helper to safely extract image list from DB row
+ */
+function extractImages(row) {
+  if (!row) return [];
+  if (Array.isArray(row.images) && row.images.length > 0) {
+    return row.images;
+  }
+  if (row.description && typeof row.description === 'string') {
+    const match = row.description.match(/<!--images:([\s\S]*?)-->/);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {}
+    }
+  }
+  if (row.image) {
+    return [row.image];
+  }
+  return [];
+}
+
+/**
+ * Helper to strip internal image comments from description
+ */
+function cleanDescription(desc) {
+  if (!desc || typeof desc !== 'string') return '';
+  return desc.replace(/<!--images:[\s\S]*?-->/g, '').trim();
+}
 
 /**
  * GET /api/assets?category=...&q=...
@@ -34,23 +69,35 @@ async function getAssets(req, res) {
     }
 
     // Map DB rows to the shape the frontend expects
-    const assets = (data || []).map((row) => ({
-      id: row.id,
-      name: row.name,
-      category: row.category,
-      price: row.price || `£${Number(row.price_num || 0).toLocaleString()}`,
-      price_num: row.price_num,
-      year: row.year,
-      condition: row.condition,
-      description: row.description,
-      image: row.image,
-      badge: row.badge || 'Certified',
-      cert: row.cert || 'SmartAssets Verified',
-      shares: row.shares || 100,
-      sharesSold: row.shares_sold || 0,
-      sharePrice: row.share_price || Math.round((row.price_num || 1000) / 100),
-      gain: row.gain || '+0.0%',
-    }));
+    const assets = (data || []).map((row) => {
+      const imgs = extractImages(row);
+      return {
+        id: row.id,
+        name: row.name,
+        category: row.category,
+        price: row.price || `R${Number(row.price_num || 0).toLocaleString('en-ZA')}`,
+        price_num: row.price_num,
+        year: row.year,
+        condition: row.condition,
+        description: cleanDescription(row.description),
+        image: row.image || imgs[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
+        images: imgs,
+        badge: row.badge || 'Verified',
+        cert: row.cert || 'SmartAssets Verified',
+        shares: row.shares || 100,
+        sharesSold: row.shares_sold || 0,
+        sharePrice: row.share_price || Math.round((row.price_num || 1000) / 100),
+        gain: row.gain || '+0.0%',
+        // On-chain blockchain fields
+        tokenId: row.token_id || null,
+        txHash: row.tx_hash || null,
+        contractAddress: row.contract_address || null,
+        etherscanUrl: row.etherscan_url || (row.tx_hash ? `https://sepolia.etherscan.io/tx/${row.tx_hash}` : null),
+        // Owner/Creator
+        userId: row.user_id || null,
+        owner: row.user_id ? `User ${String(row.user_id).slice(0, 8)}` : (row.owner || 'Verified Seller'),
+      };
+    });
 
     return res.json({ success: true, assets });
   } catch (err) {
@@ -67,47 +114,131 @@ async function getAssetById(req, res) {
   try {
     const { id } = req.params;
 
-    const { data: asset, error: assetErr } = await supabase
+    // 1. First attempt: lookup in marketplace assets table
+    let { data: asset } = await supabase
       .from('assets')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (assetErr || !asset) {
+    let historyTargetId = asset?.id;
+
+    // 2. Second attempt: if not in assets, check personal vault holdings
+    if (!asset) {
+      const { data: holding } = await supabase
+        .from('user_holdings')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (holding) {
+        // Try finding if there is a matching marketplace asset by name
+        const cleanName = (holding.name || '').replace(/\s*\(\d+\s+Shares\)/i, '').trim();
+        const { data: matchingAsset } = await supabase
+          .from('assets')
+          .select('*')
+          .ilike('name', `%${cleanName}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (matchingAsset) {
+          asset = {
+            ...matchingAsset,
+            id: holding.id,
+            user_id: holding.user_id,
+            price: holding.price || matchingAsset.price,
+            price_num: holding.price_num || matchingAsset.price_num,
+          };
+          historyTargetId = matchingAsset.id;
+        } else {
+          asset = {
+            id: holding.id,
+            name: holding.name,
+            category: holding.category,
+            price: holding.price || `R${Number(holding.price_num || 0).toLocaleString('en-ZA')}`,
+            price_num: holding.price_num,
+            year: 2024,
+            condition: 'Mint / Vault Custody',
+            description: 'Stored in SmartAssets High-Security Vault Facility.',
+            image: holding.image,
+            badge: 'Vault Secured',
+            cert: 'SA-VLT-' + holding.id.substring(0, 8).toUpperCase(),
+            shares: holding.asset_type === 'fractional' ? 100 : 1,
+            shares_sold: holding.asset_type === 'fractional' ? 45 : 1,
+            share_price: holding.price_num,
+            user_id: holding.user_id,
+          };
+          historyTargetId = null;
+        }
+      }
+    }
+
+    if (!asset) {
       return sendError(res, 404, 'Asset not found.');
     }
 
-    const { data: history, error: histErr } = await supabase
-      .from('asset_history')
-      .select('*')
-      .eq('asset_id', id)
-      .order('year', { ascending: false });
-
-    if (histErr) {
-      console.error('History fetch error:', histErr);
+    // 3. Fetch provenance history events
+    let history = [];
+    if (historyTargetId) {
+      const { data: histData } = await supabase
+        .from('asset_history')
+        .select('*')
+        .eq('asset_id', historyTargetId)
+        .order('year', { ascending: false });
+      history = histData || [];
     }
 
+    // If no history found, provide standard provenance chain
+    if (history.length === 0) {
+      history = [
+        {
+          id: 'hist-' + (asset.id || 'initial'),
+          year: String(asset.year || new Date().getFullYear()),
+          event: asset.user_id ? 'Authenticated & Deposited in SmartAssets Secure Vault' : 'Marketplace Listing & Authenticity Certified',
+          party: 'SmartAssets Custody & Verification',
+          hash: '0x' + (asset.id ? String(asset.id).replace(/-/g, '').slice(0, 24) : '7a8b9c0d1e2f3a4b'),
+          tx_hash: asset.tx_hash || null,
+          etherscanUrl: asset.tx_hash ? `https://sepolia.etherscan.io/tx/${asset.tx_hash}` : null,
+          verified: true,
+        },
+      ];
+    }
+
+    const imgs = extractImages(asset);
     return res.json({
       success: true,
       asset: {
         id: asset.id,
         name: asset.name,
         category: asset.category,
-        price: asset.price || `£${Number(asset.price_num || 0).toLocaleString()}`,
+        price: asset.price || `R${Number(asset.price_num || 0).toLocaleString('en-ZA')}`,
         price_num: asset.price_num,
         year: asset.year,
         condition: asset.condition,
-        description: asset.description,
-        image: asset.image,
-        badge: asset.badge || 'Certified',
+        description: cleanDescription(asset.description),
+        image: asset.image || imgs[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
+        images: imgs,
+        badge: asset.badge || 'Verified',
         cert: asset.cert || 'SmartAssets Verified',
+        shares: asset.shares || 100,
+        sharesSold: asset.shares_sold || 0,
+        sharePrice: asset.share_price || Math.round((asset.price_num || 1000) / 100),
+        // On-chain blockchain fields
+        tokenId: asset.token_id || null,
+        txHash: asset.tx_hash || null,
+        contractAddress: asset.contract_address || null,
+        etherscanUrl: asset.etherscan_url || (asset.tx_hash ? `https://sepolia.etherscan.io/tx/${asset.tx_hash}` : null),
+        userId: asset.user_id || null,
+        owner: asset.user_id ? `User ${String(asset.user_id).slice(0, 8)}` : (asset.owner || 'Verified Seller'),
       },
-      history: (history || []).map((h) => ({
+      history: history.map((h) => ({
         id: h.id,
         year: String(h.year),
         event: h.event,
         party: h.party,
         hash: h.hash,
+        txHash: h.tx_hash || null,
+        etherscanUrl: h.tx_hash ? `https://sepolia.etherscan.io/tx/${h.tx_hash}` : null,
         verified: h.verified,
       })),
     });
@@ -119,12 +250,13 @@ async function getAssetById(req, res) {
 
 /**
  * POST /api/assets  (protected — requireAuth)
- * Create a new asset listing with optional image and provenance history events.
+ * Create a new asset listing, mint an ERC-721 Certificate of Authenticity NFT on Sepolia,
+ * and record provenance history events.
  */
 async function createAsset(req, res) {
   try {
     const userId = req.user.id;
-    const { name, category, askingPrice, year, condition, description, image, history } = req.body;
+    const { name, category, askingPrice, year, condition, description, image, images, history } = req.body;
 
     if (!name || !askingPrice) {
       return sendError(res, 400, 'Name and asking price are required.');
@@ -132,43 +264,112 @@ async function createAsset(req, res) {
 
     const priceNum = parseFloat(String(askingPrice).replace(/[^0-9.]/g, '')) || 0;
 
-    // Insert the asset
-    const { data: newAsset, error: insertErr } = await supabase
+    // Handle multiple images
+    const imageList = Array.isArray(images) && images.length > 0 
+      ? images 
+      : (image ? [image] : []);
+    const primaryImage = imageList[0] || image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
+
+    // Embed image list in description for reliable multi-image storage without requiring schema migrations
+    const fullDescription = imageList.length > 1
+      ? `${description || ''}\n\n<!--images:${JSON.stringify(imageList)}-->`
+      : (description || '');
+
+    // Check if user has a connected MetaMask wallet address
+    let recipientAddress = null;
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('wallet_address')
+        .eq('id', userId)
+        .single();
+      recipientAddress = profile?.wallet_address || null;
+    } catch {
+      // Ignore if profile lookup fails
+    }
+
+    // Generate unique Certificate identifier
+    const catCode = (category || 'COL').replace(/\s+/g, '').substring(0, 3).toUpperCase();
+    const certNumber = `SA-${catCode}-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    // Mint ERC-721 Certificate of Authenticity on Ethereum Sepolia
+    console.log(`⛓️ [Blockchain] Minting Certificate for ${name} on Ethereum Sepolia...`);
+    const mintRes = await web3Service.mintAssetNFT({
+      recipientAddress,
+      assetId: name,
+      name,
+      category: category || 'Luxury Collectible',
+      priceNum,
+      certNumber,
+      year: parseInt(year, 10) || new Date().getFullYear(),
+      condition: condition || 'Mint / Verified',
+      image: primaryImage,
+    });
+
+    console.log(`✅ [Blockchain] NFT Minted! Token ID: #${mintRes.tokenId}, Tx: ${mintRes.txHash}`);
+
+    // Base asset row compatible with current database schema
+    const baseRow = {
+      name,
+      category: category || 'Uncategorised',
+      price: `R${priceNum.toLocaleString('en-ZA')}`,
+      price_num: priceNum,
+      year: parseInt(year, 10) || new Date().getFullYear(),
+      condition: condition || 'Not specified',
+      description: fullDescription,
+      image: primaryImage,
+      badge: 'Verified On-Chain',
+      cert: certNumber,
+      status: 'active',
+      user_id: userId,
+    };
+
+    // Try inserting with on-chain columns
+    let { data: newAsset, error: insertErr } = await supabase
       .from('assets')
       .insert({
-        name,
-        category: category || 'Uncategorised',
-        price: `£${priceNum.toLocaleString()}`,
-        price_num: priceNum,
-        year: parseInt(year, 10) || new Date().getFullYear(),
-        condition: condition || 'Not specified',
-        description: description || '',
-        image: image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
-        badge: 'New Listing',
-        cert: 'Pending Verification',
-        status: 'active',
-        user_id: userId,
+        ...baseRow,
+        token_id: String(mintRes.tokenId),
+        tx_hash: mintRes.txHash,
+        contract_address: mintRes.contractAddress,
+        etherscan_url: mintRes.etherscanUrl,
       })
       .select()
       .single();
 
-    if (insertErr) {
+    // If new columns are not yet in Supabase schema cache, retry with baseRow
+    if (insertErr && (insertErr.code === 'PGRST204' || insertErr.message?.includes('column'))) {
+      const retry = await supabase.from('assets').insert(baseRow).select().single();
+      newAsset = retry.data;
+      insertErr = retry.error;
+    }
+
+    if (insertErr || !newAsset) {
       console.error('Asset insert error:', insertErr);
       return sendError(res, 500, 'Failed to create asset listing.');
     }
 
     // Insert provenance history events
     if (Array.isArray(history) && history.length > 0) {
-      const historyRows = history.map((h) => ({
-        asset_id: newAsset.id,
-        year: parseInt(h.year, 10) || new Date().getFullYear(),
-        event: h.event || 'Provenance event',
-        party: h.party || 'Unknown',
-        hash: '0x' + Math.random().toString(16).slice(2, 10) + '...' + Math.random().toString(16).slice(2, 6),
-        verified: true,
-      }));
+      const historyRows = history.map((h) => {
+        const hHash = '0x' + Math.random().toString(16).slice(2, 10) + '...' + Math.random().toString(16).slice(2, 6);
+        return {
+          asset_id: newAsset.id,
+          year: parseInt(h.year, 10) || new Date().getFullYear(),
+          event: h.event || 'Provenance milestone',
+          party: h.party || 'Verified Custodian',
+          hash: hHash,
+          tx_hash: mintRes.txHash,
+          verified: true,
+        };
+      });
 
-      const { error: histErr } = await supabase.from('asset_history').insert(historyRows);
+      let { error: histErr } = await supabase.from('asset_history').insert(historyRows);
+      if (histErr && (histErr.code === 'PGRST204' || histErr.message?.includes('column'))) {
+        const fallbackRows = historyRows.map(({ tx_hash, ...rest }) => rest);
+        const retry = await supabase.from('asset_history').insert(fallbackRows);
+        histErr = retry.error;
+      }
       if (histErr) {
         console.error('History insert error:', histErr);
       }
@@ -179,7 +380,7 @@ async function createAsset(req, res) {
       user_id: userId,
       name,
       category: category || 'Uncategorised',
-      price: `£${priceNum.toLocaleString('en-GB')}`,
+      price: `R${priceNum.toLocaleString('en-ZA')}`,
       price_num: priceNum,
       image: newAsset.image,
       asset_type: 'whole',
@@ -190,8 +391,16 @@ async function createAsset(req, res) {
 
     return res.status(201).json({
       success: true,
-      message: 'Asset listed successfully!',
-      asset: newAsset,
+      message: 'Asset listed and NFT Certificate minted on Ethereum Sepolia!',
+      asset: {
+        ...newAsset,
+        description: cleanDescription(newAsset.description),
+        images: imageList.length > 0 ? imageList : [newAsset.image],
+        tokenId: mintRes.tokenId,
+        txHash: mintRes.txHash,
+        etherscanUrl: mintRes.etherscanUrl,
+        contractAddress: mintRes.contractAddress,
+      },
     });
   } catch (err) {
     console.error('createAsset error:', err);
@@ -200,4 +409,3 @@ async function createAsset(req, res) {
 }
 
 module.exports = { getAssets, getAssetById, createAsset };
-

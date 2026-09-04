@@ -154,3 +154,65 @@ export async function createAssetApi(assetData, token) {
     token
   );
 }
+
+// ── Multi-Rail Payment Gateway API ──────────────────────────────────────────
+
+/**
+ * Fetch live exchange rates (GBP to Sepolia ETH) and escrow address.
+ */
+export async function getPaymentRatesApi() {
+  return apiRequest('/payments/rates', { method: 'GET' });
+}
+
+/**
+ * Process asset purchase via MetaMask, Card, or Bank Wire.
+ * @param {object} paymentData - { assetId, paymentMethod, paymentDetails, amountGbp }
+ * @param {string} token - User's Supabase JWT access token
+ */
+export async function processPaymentApi(paymentData, token) {
+  return apiRequest(
+    '/payments/process',
+    {
+      method: 'POST',
+      body: JSON.stringify(paymentData),
+    },
+    token
+  );
+}
+
+// ── Smart Contract Escrow API ────────────────────────────────────────────────
+
+/**
+ * Initialize escrow order and lock payment on-chain.
+ */
+export async function createEscrowApi(escrowPayload, token) {
+  return apiRequest(
+    '/escrow/create',
+    {
+      method: 'POST',
+      body: JSON.stringify(escrowPayload),
+    },
+    token
+  );
+}
+
+/**
+ * Get live status and timeline of an escrow order.
+ */
+export async function getEscrowOrderApi(orderId) {
+  return apiRequest(`/escrow/order/${orderId}`, { method: 'GET' });
+}
+
+/**
+ * Release escrow funds to seller upon delivery/inspection confirmation.
+ */
+export async function releaseEscrowApi(orderId, token) {
+  return apiRequest(
+    '/escrow/release',
+    {
+      method: 'POST',
+      body: JSON.stringify({ orderId }),
+    },
+    token
+  );
+}

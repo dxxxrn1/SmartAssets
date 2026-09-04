@@ -47,8 +47,18 @@ CREATE TABLE IF NOT EXISTS public.assets (
   share_price     NUMERIC DEFAULT 100,
   shares_sold     INTEGER DEFAULT 0,
   status          TEXT DEFAULT 'active',
+  token_id        TEXT,
+  tx_hash         TEXT,
+  contract_address TEXT,
+  etherscan_url   TEXT,
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migration for existing tables:
+ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS token_id TEXT;
+ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS tx_hash TEXT;
+ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS contract_address TEXT;
+ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS etherscan_url TEXT;
 
 -- 4. Asset History / Provenance table (Dynamic Chain-of-Custody)
 CREATE TABLE IF NOT EXISTS public.asset_history (
@@ -58,9 +68,12 @@ CREATE TABLE IF NOT EXISTS public.asset_history (
   event           TEXT NOT NULL,
   party           TEXT NOT NULL,
   hash            TEXT,
+  tx_hash         TEXT,
   verified        BOOLEAN DEFAULT true,
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.asset_history ADD COLUMN IF NOT EXISTS tx_hash TEXT;
 
 -- 5. Grant table permissions
 GRANT ALL ON TABLE public.profiles TO postgres, anon, authenticated, service_role;

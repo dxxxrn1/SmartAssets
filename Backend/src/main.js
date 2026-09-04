@@ -9,6 +9,8 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const assetRoutes = require('./routes/assetRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const escrowRoutes = require('./routes/escrowRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,6 +23,8 @@ app.use(express.json({ limit: '15mb' })); // Parse JSON request bodies (allows b
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/assets', assetRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/escrow', escrowRoutes);
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

@@ -32,6 +32,7 @@ import ProvenanceScreen  from '../screens/ProvenanceScreen';
 import HealthReportScreen from '../screens/HealthReportScreen';
 import CheckoutScreen    from '../screens/CheckoutScreen';
 import VerificationScreen from '../screens/VerificationScreen';
+import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
 
 import { Ionicons } from '@expo/vector-icons';
 
@@ -185,6 +186,9 @@ export default function Navigation() {
             </Stack.Screen>
             <Stack.Screen name={SCREENS.VERIFICATION}>
               {(props) => <VerificationScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.ESCROW_TRACKER}>
+              {(props) => <EscrowTrackerScreen {...props} isDark={isDark} />}
             </Stack.Screen>
           </>
         )}

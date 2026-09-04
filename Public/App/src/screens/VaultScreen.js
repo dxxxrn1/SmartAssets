@@ -27,7 +27,7 @@ export default function VaultScreen({ navigation, isDark }) {
   const [loading, setLoading] = useState(true);
   const [holdings, setHoldings] = useState([]);
   const [summary, setSummary] = useState({
-    totalValueFormatted: '£0',
+    totalValueFormatted: 'R0',
     totalValueNum: 0,
     totalCount: 0,
     wholeCount: 0,

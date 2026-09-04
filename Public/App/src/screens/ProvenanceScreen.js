@@ -8,6 +8,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -82,6 +83,22 @@ export default function ProvenanceScreen({ navigation, route, isDark }) {
               <Text style={[styles.eventDate, { color: c.primary }]}>{event.year || event.date}</Text>
               <Text style={[styles.eventTitle, { color: c.warm }]}>{event.event || event.title}</Text>
               <Text style={[styles.eventDetail, { color: c.muted }]}>{event.party || event.detail}</Text>
+              {event.hash || event.txHash ? (
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}
+                  onPress={() =>
+                    Linking.openURL(
+                      event.etherscanUrl ||
+                        `https://sepolia.etherscan.io/tx/${event.txHash || event.hash}`
+                    )
+                  }
+                >
+                  <Text style={{ fontSize: 10, fontFamily: 'Courier', color: c.primary }}>
+                    ⛓️ {((event.txHash || event.hash) || '').substring(0, 16)}…
+                  </Text>
+                  <Feather name="external-link" size={10} color={c.primary} />
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
         ))}

@@ -24,6 +24,7 @@ import { createAssetApi } from '../services/api';
 import { Feather, Ionicons } from '@expo/vector-icons';
 
 const STEPS = ['Details', 'Photos', 'History', 'Pricing'];
+const DEFAULT_CATEGORIES = ['Luxury Watch', 'Fine Art', 'Classic Car', 'Fine Wine', 'Jewellery', 'Real Estate'];
 
 export default function ListAssetScreen({ navigation, isDark }) {
   const c = useColors(isDark);
@@ -31,6 +32,11 @@ export default function ListAssetScreen({ navigation, isDark }) {
 
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+
+  // Category State — Unlimited custom categories support
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
+  const [showCustomCatInput, setShowCustomCatInput] = useState(false);
 
   // Asset Form State — clean dynamic inputs
   const [form, setForm] = useState({
@@ -43,13 +49,31 @@ export default function ListAssetScreen({ navigation, isDark }) {
     image: '',
   });
 
+  // Multiple Photos State
+  const [images, setImages] = useState([]);
+
   // Provenance History Events State — user creates real events
   const [historyList, setHistoryList] = useState([]);
   const [newYear, setNewYear] = useState('');
   const [newEvent, setNewEvent] = useState('');
   const [newParty, setNewParty] = useState('');
 
-  // ── Image Picker Handlers ──────────────────────────────────────────────────
+  // ── Custom Category Handler ────────────────────────────────────────────────
+  const handleAddCustomCategory = () => {
+    const trimmed = customCategoryInput.trim();
+    if (!trimmed) {
+      Alert.alert('Empty Category', 'Please enter a category name.');
+      return;
+    }
+    if (!categories.includes(trimmed)) {
+      setCategories((prev) => [...prev, trimmed]);
+    }
+    setForm((prev) => ({ ...prev, category: trimmed }));
+    setCustomCategoryInput('');
+    setShowCustomCatInput(false);
+  };
+
+  // ── Multi-Image Picker Handlers ────────────────────────────────────────────
   const pickImageFromLibrary = async () => {
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -60,19 +84,16 @@ export default function ListAssetScreen({ navigation, isDark }) {
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsMultipleSelection: true,
         quality: 0.7,
         base64: true,
       });
 
-      if (!result.canceled && result.assets && result.assets[0]) {
-        const selectedAsset = result.assets[0];
-        // Use base64 data URI if available for reliable transfer, otherwise uri
-        const imageUri = selectedAsset.base64
-          ? `data:image/jpeg;base64,${selectedAsset.base64}`
-          : selectedAsset.uri;
-        setForm({ ...form, image: imageUri });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const newUris = result.assets.map((asset) =>
+          asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri
+        );
+        setImages((prev) => [...prev, ...newUris]);
       }
     } catch (err) {
       Alert.alert('Error', 'Could not open photo library: ' + err.message);
@@ -99,11 +120,15 @@ export default function ListAssetScreen({ navigation, isDark }) {
         const imageUri = selectedAsset.base64
           ? `data:image/jpeg;base64,${selectedAsset.base64}`
           : selectedAsset.uri;
-        setForm({ ...form, image: imageUri });
+        setImages((prev) => [...prev, imageUri]);
       }
     } catch (err) {
       Alert.alert('Error', 'Could not open camera: ' + err.message);
     }
+  };
+
+  const removeImage = (indexToRemove) => {
+    setImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   // ── History Handlers ───────────────────────────────────────────────────────
@@ -144,8 +169,9 @@ export default function ListAssetScreen({ navigation, isDark }) {
       setStep(3);
       return;
     }
-    if (!form.image) {
-      Alert.alert('Photo Required', 'Please select or capture a photo for your asset in Step 2.');
+    const finalImages = images.length > 0 ? images : (form.image ? [form.image] : []);
+    if (finalImages.length === 0) {
+      Alert.alert('Photo Required', 'Please select or capture at least one photo for your asset in Step 2.');
       setStep(1);
       return;
     }
@@ -159,7 +185,8 @@ export default function ListAssetScreen({ navigation, isDark }) {
         condition: form.condition.trim() || 'Verified',
         description: form.description.trim(),
         askingPrice: form.askingPrice.trim(),
-        image: form.image,
+        image: finalImages[0],
+        images: finalImages,
         history: historyList.map(({ year, event, party }) => ({ year, event, party })),
       };
 
@@ -167,7 +194,7 @@ export default function ListAssetScreen({ navigation, isDark }) {
 
       Alert.alert(
         'Asset Listed! 🎉',
-        'Your luxury asset and provenance history have been saved to the database.',
+        `Your luxury asset with ${finalImages.length} photo(s) and provenance history have been saved.`,
         [
           {
             text: 'View in Market',
@@ -182,6 +209,7 @@ export default function ListAssetScreen({ navigation, isDark }) {
                 askingPrice: '',
                 image: '',
               });
+              setImages([]);
               setHistoryList([]);
               navigation.navigate(SCREENS.HOME);
             },
@@ -284,7 +312,7 @@ export default function ListAssetScreen({ navigation, isDark }) {
               <View style={styles.fieldWrap}>
                 <Text style={[styles.fieldLabel, { color: c.muted }]}>CATEGORY</Text>
                 <View style={styles.categoryChips}>
-                  {['Luxury Watch', 'Fine Art', 'Classic Car', 'Fine Wine'].map((cat) => (
+                  {categories.map((cat) => (
                     <TouchableOpacity
                       key={cat}
                       style={[
@@ -301,7 +329,43 @@ export default function ListAssetScreen({ navigation, isDark }) {
                       </Text>
                     </TouchableOpacity>
                   ))}
+                  <TouchableOpacity
+                    style={[
+                      styles.catChip,
+                      {
+                        backgroundColor: showCustomCatInput ? c.primaryBg : c.card,
+                        borderColor: showCustomCatInput ? c.primary : c.border,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 4,
+                      },
+                    ]}
+                    onPress={() => setShowCustomCatInput(!showCustomCatInput)}
+                  >
+                    <Feather name={showCustomCatInput ? 'minus' : 'plus'} size={13} color={c.primary} />
+                    <Text style={{ color: c.primary, fontSize: 12, fontWeight: '700' }}>Custom</Text>
+                  </TouchableOpacity>
                 </View>
+
+                {showCustomCatInput && (
+                  <View style={[styles.customCatRow, { backgroundColor: c.card, borderColor: c.border }]}>
+                    <TextInput
+                      value={customCategoryInput}
+                      onChangeText={setCustomCategoryInput}
+                      placeholder="Type custom category name..."
+                      placeholderTextColor={c.muted}
+                      style={[styles.customCatInput, { color: c.warm }]}
+                      returnKeyType="done"
+                      onSubmitEditing={handleAddCustomCategory}
+                    />
+                    <TouchableOpacity
+                      style={[styles.applyCatBtn, { backgroundColor: c.primary }]}
+                      onPress={handleAddCustomCategory}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>Apply</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
 
               <View style={styles.rowFields}>
@@ -346,26 +410,59 @@ export default function ListAssetScreen({ navigation, isDark }) {
           {/* ── Step 1: Upload Photos ── */}
           {step === 1 && (
             <View style={styles.formSection}>
-              <Text style={[styles.sectionTitle, { color: c.warm }]}>Upload Asset Photo</Text>
+              <Text style={[styles.sectionTitle, { color: c.warm }]}>Upload Asset Photos</Text>
               <Text style={[styles.stepDesc, { color: c.muted }]}>
-                Add a high-resolution photo from your phone camera, gallery, or choose a preset.
+                Add multiple high-resolution photos so buyers and investors can inspect all angles and details.
               </Text>
 
-              {/* Photo Preview */}
-              {form.image ? (
-                <View style={[styles.previewWrap, { borderColor: c.primary }]}>
-                  <Image source={{ uri: form.image }} style={styles.previewImage} resizeMode="cover" />
-                  <TouchableOpacity
-                    style={styles.removeImageBtn}
-                    onPress={() => setForm({ ...form, image: '' })}
+              {/* Multi-Photo Thumbnails */}
+              {images.length > 0 ? (
+                <View style={{ gap: 10 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ color: c.primary, fontSize: 13, fontWeight: '700' }}>
+                      📸 {images.length} photo{images.length > 1 ? 's' : ''} added
+                    </Text>
+                    <Text style={{ color: c.muted, fontSize: 11 }}>#1 will be the primary cover photo</Text>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 12, paddingVertical: 6 }}
                   >
-                    <Feather name="trash-2" size={16} color="#FFFFFF" />
-                  </TouchableOpacity>
+                    {images.map((imgUri, index) => (
+                      <View
+                        key={index}
+                        style={[
+                          styles.multiPhotoWrap,
+                          { borderColor: index === 0 ? c.primary : c.border }
+                        ]}
+                      >
+                        <Image source={{ uri: imgUri }} style={styles.multiPhotoImage} resizeMode="cover" />
+                        {index === 0 && (
+                          <View style={[styles.coverBadge, { backgroundColor: c.primary }]}>
+                            <Text style={styles.coverBadgeText}>COVER</Text>
+                          </View>
+                        )}
+                        <TouchableOpacity
+                          style={styles.removeMultiPhotoBtn}
+                          onPress={() => removeImage(index)}
+                        >
+                          <Feather name="trash-2" size={13} color="#FFFFFF" />
+                        </TouchableOpacity>
+                        <View style={styles.indexBadge}>
+                          <Text style={styles.indexBadgeText}>#{index + 1}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
                 </View>
               ) : (
                 <View style={[styles.photoPlaceholder, { backgroundColor: c.card, borderColor: c.border }]}>
                   <Feather name="image" size={40} color={c.primary} />
-                  <Text style={[styles.photoPlaceholderText, { color: c.muted }]}>No photo selected yet</Text>
+                  <Text style={[styles.photoPlaceholderText, { color: c.warm }]}>No photos added yet</Text>
+                  <Text style={{ color: c.muted, fontSize: 12, textAlign: 'center', paddingHorizontal: 20 }}>
+                    Select multiple photos from your gallery or snap shots with your camera.
+                  </Text>
                 </View>
               )}
 
@@ -376,7 +473,9 @@ export default function ListAssetScreen({ navigation, isDark }) {
                   onPress={pickImageFromLibrary}
                 >
                   <Feather name="image" size={18} color={c.primary} />
-                  <Text style={[styles.pickerBtnText, { color: c.warm }]}>Choose from Library</Text>
+                  <Text style={[styles.pickerBtnText, { color: c.warm }]}>
+                    {images.length > 0 ? '+ Add More Photos' : 'Choose from Library'}
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -471,15 +570,15 @@ export default function ListAssetScreen({ navigation, isDark }) {
             <View style={styles.formSection}>
               <Text style={[styles.sectionTitle, { color: c.warm }]}>Set Asking Price</Text>
               <Text style={[styles.stepDesc, { color: c.muted }]}>
-                Set your valuation in GBP (£). SmartAssets will generate an authenticity certificate.
+                Set your valuation in South African Rand (R). SmartAssets will generate an authenticity certificate.
               </Text>
 
               <View style={styles.fieldWrap}>
-                <Text style={[styles.fieldLabel, { color: c.muted }]}>ASKING PRICE (£) *</Text>
+                <Text style={[styles.fieldLabel, { color: c.muted }]}>ASKING PRICE (R) *</Text>
                 <TextInput
                   value={form.askingPrice}
                   onChangeText={(val) => setForm({ ...form, askingPrice: val })}
-                  placeholder="e.g. 45000"
+                  placeholder="e.g. 250000"
                   keyboardType="decimal-pad"
                   placeholderTextColor={c.muted}
                   style={[
@@ -494,7 +593,7 @@ export default function ListAssetScreen({ navigation, isDark }) {
                 <Text style={[styles.fieldLabel, { color: c.primary }]}>LISTING SUMMARY</Text>
                 <Text style={[styles.reviewTitle, { color: c.warm }]}>{form.name || 'Untitled Asset'}</Text>
                 <Text style={[styles.reviewSub, { color: c.muted }]}>
-                  {form.category} • {form.year} • {historyList.length} History Events
+                  {form.category} • {form.year} • {images.length || 1} Photo(s) • {historyList.length} History Events
                 </Text>
               </View>
 
@@ -577,6 +676,26 @@ const styles = StyleSheet.create({
   rowFields: { flexDirection: 'row', gap: 10 },
   categoryChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   catChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, borderWidth: 1 },
+  customCatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginTop: 8,
+    gap: 8,
+  },
+  customCatInput: {
+    flex: 1,
+    fontSize: 13,
+    paddingVertical: 8,
+  },
+  applyCatBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
 
   // Photo Styles
   previewWrap: {
@@ -589,6 +708,57 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 16,
     backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center', justifyContent: 'center',
+  },
+  multiPhotoWrap: {
+    width: 120,
+    height: 120,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 2,
+    position: 'relative',
+  },
+  multiPhotoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  coverBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  coverBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  removeMultiPhotoBtn: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  indexBadge: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  indexBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
   },
   photoPlaceholder: {
     height: 140, borderRadius: 18, borderWidth: 1, borderStyle: 'dashed',

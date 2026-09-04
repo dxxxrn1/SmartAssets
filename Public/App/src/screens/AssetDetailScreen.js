@@ -9,6 +9,8 @@ import {
   TouchableOpacity,
   Image,
   ScrollView,
+  Linking,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '../constants/theme';
@@ -16,32 +18,50 @@ import { SCREENS } from '../constants/navigation';
 import { Badge } from '../components/ui';
 import { Feather } from '@expo/vector-icons';
 import { getAssetDetails } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const TABS = ['overview', 'cert', 'history'];
 
 export default function AssetDetailScreen({ navigation, route, isDark }) {
   const c = useColors(isDark);
-  const asset = route?.params?.asset ?? {};
+  const { user } = useAuth();
+  const initialAsset = route?.params?.asset ?? {};
+  const [asset, setAsset] = useState(initialAsset);
   const [activeTab, setActiveTab] = useState('overview');
   const [history, setHistory] = useState([]);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   useEffect(() => {
-    if (asset.id) {
-      getAssetDetails(asset.id)
+    if (initialAsset.id) {
+      getAssetDetails(initialAsset.id)
         .then((res) => {
+          if (res?.asset) {
+            setAsset((prev) => ({ ...prev, ...res.asset }));
+          }
           if (res?.history && res.history.length > 0) {
             setHistory(res.history);
           }
         })
-        .catch((err) => console.warn('Could not fetch asset history:', err.message));
+        .catch(() => {
+          // Gracefully retain initialAsset passed via route params
+        });
     }
-  }, [asset.id]);
+  }, [initialAsset.id]);
+
+  const isOwner = Boolean(
+    user?.id && (user.id === asset.userId || user.id === asset.user_id)
+  );
+
+  const imageList = (Array.isArray(asset.images) && asset.images.length > 0)
+    ? asset.images
+    : (asset.image ? [asset.image] : []);
+  const currentImage = imageList[selectedImageIndex] || asset.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
 
   return (
     <View style={[styles.container, { backgroundColor: c.obsidian }]}>
       {/* ── Hero Image ── */}
       <View style={styles.heroWrap}>
-        <Image source={{ uri: asset.image }} style={styles.heroImage} resizeMode="cover" />
+        <Image source={{ uri: currentImage }} style={styles.heroImage} resizeMode="cover" />
         {/* TODO: expo-linear-gradient overlay */}
 
         {/* Back button */}
@@ -60,7 +80,45 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
             isDark={isDark}
           />
         </View>
+
+        {/* Multi-image photo counter */}
+        {imageList.length > 1 && (
+          <View style={[styles.photoCountBadge, { backgroundColor: 'rgba(0,0,0,0.65)' }]}>
+            <Feather name="camera" size={12} color="#FFFFFF" />
+            <Text style={styles.photoCountText}>
+              {selectedImageIndex + 1} of {imageList.length}
+            </Text>
+          </View>
+        )}
       </View>
+
+      {/* Multi-image Thumbnail Strip */}
+      {imageList.length > 1 && (
+        <View style={[styles.thumbnailStrip, { backgroundColor: c.cardLight, borderBottomColor: c.border }]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.thumbnailScroll}
+          >
+            {imageList.map((imgUri, idx) => (
+              <TouchableOpacity
+                key={idx}
+                onPress={() => setSelectedImageIndex(idx)}
+                style={[
+                  styles.thumbnailWrap,
+                  {
+                    borderColor: selectedImageIndex === idx ? c.primary : 'transparent',
+                    borderWidth: selectedImageIndex === idx ? 2 : 1,
+                  },
+                ]}
+                activeOpacity={0.8}
+              >
+                <Image source={{ uri: imgUri }} style={styles.thumbnailImg} resizeMode="cover" />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {/* ── Scrollable Body ── */}
       <ScrollView
@@ -76,9 +134,18 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
         <View style={styles.priceRow}>
           <Text style={[styles.price, { color: c.primary }]}>{asset.price}</Text>
           <Text style={[styles.listedBy, { color: c.muted }]}>
-            Listed by {asset.owner}
+            Listed by {isOwner ? 'You (Owner)' : asset.owner}
           </Text>
         </View>
+
+        {isOwner && (
+          <View style={[styles.ownerBanner, { backgroundColor: c.primaryBg, borderColor: c.primary }]}>
+            <Feather name="shield" size={14} color={c.primary} />
+            <Text style={[styles.ownerBannerText, { color: c.primary }]}>
+              You listed this collectible. Self-purchase & self-investment are prohibited.
+            </Text>
+          </View>
+        )}
 
         {/* ── Tab bar ── */}
         <View
@@ -145,10 +212,38 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
                 <View style={[styles.progressFill, { width: '78%', backgroundColor: c.primary }]} />
               </View>
               <View style={styles.rangeRow}>
-                <Text style={[styles.rangeText, { color: c.muted }]}>Low: £31,000</Text>
-                <Text style={[styles.rangeText, { color: c.muted }]}>High: £37,500</Text>
+                <Text style={[styles.rangeText, { color: c.muted }]}>
+                  Low: R{Math.round((asset.price_num || 25000) * 0.9).toLocaleString('en-ZA')}
+                </Text>
+                <Text style={[styles.rangeText, { color: c.muted }]}>
+                  High: R{Math.round((asset.price_num || 25000) * 1.15).toLocaleString('en-ZA')}
+                </Text>
               </View>
             </View>
+
+            {/* On-chain Ethereum Sepolia Badge */}
+            <TouchableOpacity
+              style={[
+                styles.blockchainBadge,
+                { backgroundColor: c.primaryBg, borderColor: c.primary },
+              ]}
+              onPress={() =>
+                Linking.openURL(
+                  asset.etherscanUrl ||
+                    (asset.txHash
+                      ? `https://sepolia.etherscan.io/tx/${asset.txHash}`
+                      : 'https://sepolia.etherscan.io')
+                )
+              }
+              activeOpacity={0.8}
+            >
+              <Feather name="link" size={14} color={c.primary} />
+              <Text style={[styles.blockchainBadgeText, { color: c.primary }]}>
+                {asset.tokenId
+                  ? `Token #${asset.tokenId} · Verified on Sepolia Etherscan ↗`
+                  : 'ERC-721 Verified on Sepolia Etherscan ↗'}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -240,10 +335,29 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
           <Text style={[styles.actionLabel, { color: c.warm }]}>Health Report</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.primaryAction, { backgroundColor: c.primary }]}
-          onPress={() => navigation.navigate(SCREENS.CHECKOUT, { asset })}
+          style={[
+            styles.primaryAction,
+            {
+              backgroundColor: isOwner ? c.cardLight : c.primary,
+              borderColor: isOwner ? c.border : c.primary,
+              borderWidth: isOwner ? 1 : 0,
+            },
+          ]}
+          onPress={() => {
+            if (isOwner) {
+              Alert.alert(
+                'Self-Purchase Restricted',
+                'You listed this collectible. Platform rules prohibit buying or investing in items you listed yourself.'
+              );
+            } else {
+              navigation.navigate(SCREENS.CHECKOUT, { asset });
+            }
+          }}
+          activeOpacity={isOwner ? 0.9 : 0.8}
         >
-          <Text style={[styles.actionLabel, { color: '#FFFFFF' }]}>Buy Now</Text>
+          <Text style={[styles.actionLabel, { color: isOwner ? c.muted : '#FFFFFF' }]}>
+            {isOwner ? 'Your Listing' : 'Buy Now'}
+          </Text>
         </TouchableOpacity>
       </SafeAreaView>
     </View>
@@ -348,4 +462,66 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   actionLabel: { fontWeight: '700', fontSize: 13 },
+  blockchainBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  blockchainBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  ownerBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  ownerBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  photoCountBadge: {
+    position: 'absolute',
+    bottom: 14,
+    right: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  photoCountText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  thumbnailStrip: {
+    borderBottomWidth: 1,
+    paddingVertical: 10,
+  },
+  thumbnailScroll: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  thumbnailWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  thumbnailImg: {
+    width: '100%',
+    height: '100%',
+  },
 });
