@@ -7,39 +7,6 @@ const { sendError } = require('../utils/errorHandler');
 const web3Service = require('../services/web3Service');
 
 /**
- * Helper to safely extract image list from DB row
- */
-function extractImages(row) {
-  if (!row) return [];
-  if (Array.isArray(row.images) && row.images.length > 0) {
-    return row.images;
-  }
-  if (row.description && typeof row.description === 'string') {
-    const match = row.description.match(/<!--images:([\s\S]*?)-->/);
-    if (match) {
-      try {
-        const parsed = JSON.parse(match[1]);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      } catch (e) {}
-    }
-  }
-  if (row.image) {
-    return [row.image];
-  }
-  return [];
-}
-
-/**
- * Helper to strip internal image comments from description
- */
-function cleanDescription(desc) {
-  if (!desc || typeof desc !== 'string') return '';
-  return desc.replace(/<!--images:[\s\S]*?-->/g, '').trim();
-}
-
-/**
  * GET /api/assets?category=...&q=...
  * Fetch all active marketplace assets with optional category and search filters.
  */
@@ -69,35 +36,31 @@ async function getAssets(req, res) {
     }
 
     // Map DB rows to the shape the frontend expects
-    const assets = (data || []).map((row) => {
-      const imgs = extractImages(row);
-      return {
-        id: row.id,
-        name: row.name,
-        category: row.category,
-        price: row.price || `R${Number(row.price_num || 0).toLocaleString('en-ZA')}`,
-        price_num: row.price_num,
-        year: row.year,
-        condition: row.condition,
-        description: cleanDescription(row.description),
-        image: row.image || imgs[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
-        images: imgs,
-        badge: row.badge || 'Verified',
-        cert: row.cert || 'SmartAssets Verified',
-        shares: row.shares || 100,
-        sharesSold: row.shares_sold || 0,
-        sharePrice: row.share_price || Math.round((row.price_num || 1000) / 100),
-        gain: row.gain || '+0.0%',
-        // On-chain blockchain fields
-        tokenId: row.token_id || null,
-        txHash: row.tx_hash || null,
-        contractAddress: row.contract_address || null,
-        etherscanUrl: row.etherscan_url || (row.tx_hash ? `https://sepolia.etherscan.io/tx/${row.tx_hash}` : null),
-        // Owner/Creator
-        userId: row.user_id || null,
-        owner: row.user_id ? `User ${String(row.user_id).slice(0, 8)}` : (row.owner || 'Verified Seller'),
-      };
-    });
+    const assets = (data || []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      category: row.category,
+      price: row.price || `R${Number(row.price_num || 0).toLocaleString('en-ZA')}`,
+      price_num: row.price_num,
+      year: row.year,
+      condition: row.condition,
+      description: row.description,
+      image: row.image,
+      badge: row.badge || 'Verified',
+      cert: row.cert || 'SmartAssets Verified',
+      shares: row.shares || 100,
+      sharesSold: row.shares_sold || 0,
+      sharePrice: row.share_price || Math.round((row.price_num || 1000) / 100),
+      gain: row.gain || '+0.0%',
+      // On-chain blockchain fields
+      tokenId: row.token_id || null,
+      txHash: row.tx_hash || null,
+      contractAddress: row.contract_address || null,
+      etherscanUrl: row.etherscan_url || (row.tx_hash ? `https://sepolia.etherscan.io/tx/${row.tx_hash}` : null),
+      // Owner/Creator
+      userId: row.user_id || null,
+      owner: row.user_id ? `User ${String(row.user_id).slice(0, 8)}` : (row.owner || 'Verified Seller'),
+    }));
 
     return res.json({ success: true, assets });
   } catch (err) {
@@ -204,7 +167,6 @@ async function getAssetById(req, res) {
       ];
     }
 
-    const imgs = extractImages(asset);
     return res.json({
       success: true,
       asset: {
@@ -215,9 +177,8 @@ async function getAssetById(req, res) {
         price_num: asset.price_num,
         year: asset.year,
         condition: asset.condition,
-        description: cleanDescription(asset.description),
-        image: asset.image || imgs[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
-        images: imgs,
+        description: asset.description,
+        image: asset.image,
         badge: asset.badge || 'Verified',
         cert: asset.cert || 'SmartAssets Verified',
         shares: asset.shares || 100,
@@ -256,24 +217,13 @@ async function getAssetById(req, res) {
 async function createAsset(req, res) {
   try {
     const userId = req.user.id;
-    const { name, category, askingPrice, year, condition, description, image, images, history } = req.body;
+    const { name, category, askingPrice, year, condition, description, image, history } = req.body;
 
     if (!name || !askingPrice) {
       return sendError(res, 400, 'Name and asking price are required.');
     }
 
     const priceNum = parseFloat(String(askingPrice).replace(/[^0-9.]/g, '')) || 0;
-
-    // Handle multiple images
-    const imageList = Array.isArray(images) && images.length > 0 
-      ? images 
-      : (image ? [image] : []);
-    const primaryImage = imageList[0] || image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
-
-    // Embed image list in description for reliable multi-image storage without requiring schema migrations
-    const fullDescription = imageList.length > 1
-      ? `${description || ''}\n\n<!--images:${JSON.stringify(imageList)}-->`
-      : (description || '');
 
     // Check if user has a connected MetaMask wallet address
     let recipientAddress = null;
@@ -303,7 +253,7 @@ async function createAsset(req, res) {
       certNumber,
       year: parseInt(year, 10) || new Date().getFullYear(),
       condition: condition || 'Mint / Verified',
-      image: primaryImage,
+      image,
     });
 
     console.log(`✅ [Blockchain] NFT Minted! Token ID: #${mintRes.tokenId}, Tx: ${mintRes.txHash}`);
@@ -316,8 +266,8 @@ async function createAsset(req, res) {
       price_num: priceNum,
       year: parseInt(year, 10) || new Date().getFullYear(),
       condition: condition || 'Not specified',
-      description: fullDescription,
-      image: primaryImage,
+      description: description || '',
+      image: image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
       badge: 'Verified On-Chain',
       cert: certNumber,
       status: 'active',
@@ -394,8 +344,6 @@ async function createAsset(req, res) {
       message: 'Asset listed and NFT Certificate minted on Ethereum Sepolia!',
       asset: {
         ...newAsset,
-        description: cleanDescription(newAsset.description),
-        images: imageList.length > 0 ? imageList : [newAsset.image],
         tokenId: mintRes.tokenId,
         txHash: mintRes.txHash,
         etherscanUrl: mintRes.etherscanUrl,

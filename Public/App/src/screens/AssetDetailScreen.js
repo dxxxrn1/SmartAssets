@@ -29,7 +29,6 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
   const [asset, setAsset] = useState(initialAsset);
   const [activeTab, setActiveTab] = useState('overview');
   const [history, setHistory] = useState([]);
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   useEffect(() => {
     if (initialAsset.id) {
@@ -52,16 +51,11 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
     user?.id && (user.id === asset.userId || user.id === asset.user_id)
   );
 
-  const imageList = (Array.isArray(asset.images) && asset.images.length > 0)
-    ? asset.images
-    : (asset.image ? [asset.image] : []);
-  const currentImage = imageList[selectedImageIndex] || asset.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
-
   return (
     <View style={[styles.container, { backgroundColor: c.obsidian }]}>
       {/* ── Hero Image ── */}
       <View style={styles.heroWrap}>
-        <Image source={{ uri: currentImage }} style={styles.heroImage} resizeMode="cover" />
+        <Image source={{ uri: asset.image }} style={styles.heroImage} resizeMode="cover" />
         {/* TODO: expo-linear-gradient overlay */}
 
         {/* Back button */}
@@ -80,45 +74,7 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
             isDark={isDark}
           />
         </View>
-
-        {/* Multi-image photo counter */}
-        {imageList.length > 1 && (
-          <View style={[styles.photoCountBadge, { backgroundColor: 'rgba(0,0,0,0.65)' }]}>
-            <Feather name="camera" size={12} color="#FFFFFF" />
-            <Text style={styles.photoCountText}>
-              {selectedImageIndex + 1} of {imageList.length}
-            </Text>
-          </View>
-        )}
       </View>
-
-      {/* Multi-image Thumbnail Strip */}
-      {imageList.length > 1 && (
-        <View style={[styles.thumbnailStrip, { backgroundColor: c.cardLight, borderBottomColor: c.border }]}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.thumbnailScroll}
-          >
-            {imageList.map((imgUri, idx) => (
-              <TouchableOpacity
-                key={idx}
-                onPress={() => setSelectedImageIndex(idx)}
-                style={[
-                  styles.thumbnailWrap,
-                  {
-                    borderColor: selectedImageIndex === idx ? c.primary : 'transparent',
-                    borderWidth: selectedImageIndex === idx ? 2 : 1,
-                  },
-                ]}
-                activeOpacity={0.8}
-              >
-                <Image source={{ uri: imgUri }} style={styles.thumbnailImg} resizeMode="cover" />
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      )}
 
       {/* ── Scrollable Body ── */}
       <ScrollView
@@ -489,39 +445,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     lineHeight: 16,
-  },
-  photoCountBadge: {
-    position: 'absolute',
-    bottom: 14,
-    right: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  photoCountText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  thumbnailStrip: {
-    borderBottomWidth: 1,
-    paddingVertical: 10,
-  },
-  thumbnailScroll: {
-    paddingHorizontal: 16,
-    gap: 10,
-  },
-  thumbnailWrap: {
-    width: 60,
-    height: 60,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  thumbnailImg: {
-    width: '100%',
-    height: '100%',
   },
 });
