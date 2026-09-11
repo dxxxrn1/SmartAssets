@@ -189,7 +189,21 @@ export default function ListAssetScreen({ navigation, isDark }) {
         ]
       );
     } catch (err) {
-      Alert.alert('Error', err.message || 'Failed to list asset.');
+      const errMsg = err.message || '';
+      if (errMsg.toLowerCase().includes('ai fraud') || errMsg.toLowerCase().includes('ai-generated') || errMsg.toLowerCase().includes('synthetic')) {
+        Alert.alert(
+          '🚫 AI Fraud Guard Alert',
+          `${errMsg}\n\nPlease take or upload an authentic, unedited photograph of your physical collectible to proceed.`,
+          [
+            {
+              text: 'Change Photo',
+              onPress: () => setStep(1),
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Listing Error', errMsg || 'Failed to list asset.');
+      }
     } finally {
       setSubmitting(false);
     }

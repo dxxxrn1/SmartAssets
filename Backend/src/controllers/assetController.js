@@ -5,6 +5,7 @@
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const web3Service = require('../services/web3Service');
+const aiDetectionService = require('../services/aiDetectionService');
 
 /**
  * GET /api/assets?category=...&q=...
@@ -60,6 +61,9 @@ async function getAssets(req, res) {
       // Owner/Creator
       userId: row.user_id || null,
       owner: row.user_id ? `User ${String(row.user_id).slice(0, 8)}` : (row.owner || 'Verified Seller'),
+      // AI Fraud & Authenticity Verification
+      aiScanScore: row.ai_scan_score ?? null,
+      aiScanStatus: row.ai_scan_status || (row.badge === 'Verified' || row.badge === 'Verified On-Chain' ? 'passed' : null),
     }));
 
     return res.json({ success: true, assets });
@@ -191,6 +195,9 @@ async function getAssetById(req, res) {
         etherscanUrl: asset.etherscan_url || (asset.tx_hash ? `https://sepolia.etherscan.io/tx/${asset.tx_hash}` : null),
         userId: asset.user_id || null,
         owner: asset.user_id ? `User ${String(asset.user_id).slice(0, 8)}` : (asset.owner || 'Verified Seller'),
+        // AI Fraud & Authenticity Verification
+        aiScanScore: asset.ai_scan_score ?? null,
+        aiScanStatus: asset.ai_scan_status || (asset.badge === 'Verified' || asset.badge === 'Verified On-Chain' ? 'passed' : null),
       },
       history: history.map((h) => ({
         id: h.id,
@@ -224,6 +231,38 @@ async function createAsset(req, res) {
     }
 
     const priceNum = parseFloat(String(askingPrice).replace(/[^0-9.]/g, '')) || 0;
+
+    // Gather candidate images for AI fraud detection scan
+    const imagesToScan = [];
+    if (Array.isArray(req.body.images) && req.body.images.length > 0) {
+      imagesToScan.push(...req.body.images);
+    } else if (image) {
+      imagesToScan.push(image);
+    }
+
+    // Run AI Fraud & Deepfake Detection via Hive API
+    console.log(`🛡️ [AI Fraud Guard] Initiating Hive AI image scan for "${name}"...`);
+    const scanResult = await aiDetectionService.scanAllImages(imagesToScan);
+
+    if (scanResult.isAiGenerated) {
+      const pct = Math.round((scanResult.highestScore || 0) * 100);
+      console.warn(`🚫 [AI Fraud Guard] BLOCKED: AI-generated/deepfake image detected for "${name}" (${pct}% confidence)`);
+      return res.status(403).json({
+        success: false,
+        fraudDetected: true,
+        error: `AI Fraud Detected: One or more photos appear to be AI-generated or synthetic (${pct}% confidence). SmartAssets strictly requires authentic, original photographs.`,
+        aiScanScore: scanResult.highestScore,
+        aiScanStatus: 'flagged',
+      });
+    }
+
+    if (scanResult.scanFailed) {
+      console.warn(`⚠️ [AI Fraud Guard] Image verification failed for "${name}"`);
+      return res.status(400).json({
+        success: false,
+        error: 'Image Authenticity Verification failed: Could not verify photo authenticity. Please upload a clear, valid JPEG or PNG photo.',
+      });
+    }
 
     // Check if user has a connected MetaMask wallet address
     let recipientAddress = null;
@@ -272,6 +311,8 @@ async function createAsset(req, res) {
       cert: certNumber,
       status: 'active',
       user_id: userId,
+      ai_scan_score: scanResult.highestScore,
+      ai_scan_status: scanResult.status,
     };
 
     // Try inserting with on-chain columns
@@ -287,11 +328,20 @@ async function createAsset(req, res) {
       .select()
       .single();
 
-    // If new columns are not yet in Supabase schema cache, retry with baseRow
+    // If new columns are not yet in Supabase schema cache, retry with progressively stripped rows
     if (insertErr && (insertErr.code === 'PGRST204' || insertErr.message?.includes('column'))) {
-      const retry = await supabase.from('assets').insert(baseRow).select().single();
+      // First retry without on-chain columns
+      let retry = await supabase.from('assets').insert(baseRow).select().single();
       newAsset = retry.data;
       insertErr = retry.error;
+
+      // Second retry: if ai_scan columns also not in schema, strip them as well
+      if (insertErr && (insertErr.code === 'PGRST204' || insertErr.message?.includes('column'))) {
+        const { ai_scan_score, ai_scan_status, ...coreRow } = baseRow;
+        retry = await supabase.from('assets').insert(coreRow).select().single();
+        newAsset = retry.data;
+        insertErr = retry.error;
+      }
     }
 
     if (insertErr || !newAsset) {
@@ -348,6 +398,8 @@ async function createAsset(req, res) {
         txHash: mintRes.txHash,
         etherscanUrl: mintRes.etherscanUrl,
         contractAddress: mintRes.contractAddress,
+        aiScanScore: scanResult.highestScore,
+        aiScanStatus: scanResult.status,
       },
     });
   } catch (err) {

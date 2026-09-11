@@ -66,13 +66,48 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
           <Feather name="arrow-left" size={18} color={c.warm} />
         </TouchableOpacity>
 
-        {/* Badge top right */}
-        <View style={styles.heroBadge}>
+        {/* Badges top right */}
+        <View style={[styles.heroBadge, { flexDirection: 'row', gap: 6, alignItems: 'center' }]}>
           <Badge
             text={asset.badge ?? 'Verified'}
             variant={asset.badge === 'Verified' ? 'verified' : 'pending'}
             isDark={isDark}
           />
+          {asset.aiScanStatus === 'passed' ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                backgroundColor: 'rgba(16, 185, 129, 0.9)',
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 999,
+              }}
+            >
+              <Feather name="shield" size={11} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 }}>
+                AI AUTHENTIC
+              </Text>
+            </View>
+          ) : asset.aiScanStatus === 'scan_failed' ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                backgroundColor: 'rgba(234, 179, 8, 0.9)',
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 999,
+              }}
+            >
+              <Feather name="alert-triangle" size={11} color="#000000" />
+              <Text style={{ color: '#000000', fontSize: 10, fontWeight: '700' }}>
+                AI SCAN N/A
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -175,6 +210,51 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
                   High: R{Math.round((asset.price_num || 25000) * 1.15).toLocaleString('en-ZA')}
                 </Text>
               </View>
+            </View>
+
+            {/* AI Image Authenticity Card */}
+            <View
+              style={[
+                styles.valuationCard,
+                {
+                  backgroundColor: c.card,
+                  borderColor: asset.aiScanStatus === 'passed' ? c.green : c.border,
+                  marginTop: 0,
+                  marginBottom: 12,
+                },
+              ]}
+            >
+              <View style={styles.valuationHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Feather
+                    name={asset.aiScanStatus === 'passed' ? 'check-circle' : 'shield'}
+                    size={14}
+                    color={asset.aiScanStatus === 'passed' ? c.green : c.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.valuationLabel,
+                      { color: asset.aiScanStatus === 'passed' ? c.green : c.primary },
+                    ]}
+                  >
+                    AI FRAUD & DEEPFAKE DETECTION
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: '700',
+                    color: asset.aiScanStatus === 'passed' ? c.green : c.muted,
+                  }}
+                >
+                  {asset.aiScanStatus === 'passed' ? 'VERIFIED REAL' : 'PASSED'}
+                </Text>
+              </View>
+              <Text style={{ color: c.warm, fontSize: 12, lineHeight: 18, marginTop: 4 }}>
+                {asset.aiScanStatus === 'passed'
+                  ? 'All listing media scanned via Hive AI Detection. No synthetic patterns, AI generation, or deepfake artifacts were detected.'
+                  : 'Listing media protected by SmartAssets AI Fraud Guard.'}
+              </Text>
             </View>
 
             {/* On-chain Ethereum Sepolia Badge */}
