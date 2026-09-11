@@ -51,13 +51,13 @@ const dark = {
   accentGlow: 'rgba(56,189,248,0.35)',
 
   // Surfaces
-  canvas: '#070B14',
-  obsidian: '#0A1120',
-  vault: '#0F1A2E',
-  card: '#13223A',
-  cardLight: '#1A2E4E',
-  border: '#223759',
-  borderSubtle: '#192A45',
+  canvas: '#051121',
+  obsidian: '#0A1628',
+  vault: '#0F1E38',
+  card: '#162847',
+  cardLight: '#1C3154',
+  border: '#243A60',
+  borderSubtle: '#1C2F4F',
 
   // Typography
   warm: '#F8FAFC',

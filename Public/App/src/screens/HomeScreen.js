@@ -20,6 +20,7 @@ import { Badge } from '../components/ui';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { getUserVault, getMarketAssets } from '../services/api';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const CATEGORIES = ['All', 'Watches', 'Art', 'Cars', 'Wine'];
 
@@ -92,14 +93,14 @@ export default function HomeScreen({ navigation, isDark }) {
         {/* ── Header ── */}
         <View style={styles.header}>
           <View>
-            <Text style={[styles.greeting, { color: c.muted }]}>Welcome back,</Text>
-            <Text style={[styles.username, { color: c.warm }]}>
+            <Text style={[styles.greeting, { color: '#475569' }]}>Welcome back,</Text>
+            <Text style={[styles.username, { color: '#0F172A' }]}>
               {user?.fullName || user?.email?.split('@')[0] || 'Member'}
             </Text>
             {user?.walletAddress ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
-                <Ionicons name="wallet-outline" size={12} color={c.primary} />
-                <Text style={{ color: c.primary, fontSize: 11, fontWeight: '600' }}>
+                <Ionicons name="wallet-outline" size={12} color="#0F172A" />
+                <Text style={{ fontSize: 11, fontWeight: '600', color: '#334155' }}>
                   {user.walletAddress.slice(0, 6)}...{user.walletAddress.slice(-4)} (Web3)
                 </Text>
               </View>
@@ -107,57 +108,77 @@ export default function HomeScreen({ navigation, isDark }) {
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity
-              style={[styles.iconBtn, { backgroundColor: c.card, borderColor: c.border }]}
+              style={[styles.iconBtn, { backgroundColor: 'rgba(0,0,0,0.05)', borderColor: 'rgba(0,0,0,0.1)' }]}
               onPress={() => navigation.navigate(SCREENS.SEARCH)}
             >
-              <Feather name="search" size={16} color={c.warm} />
+              <Feather name="search" size={16} color="#0F172A" />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.iconBtn, { backgroundColor: c.card, borderColor: c.border }]}
+              style={[styles.iconBtn, { backgroundColor: 'rgba(0,0,0,0.05)', borderColor: 'rgba(0,0,0,0.1)' }]}
               onPress={handleLogout}
             >
-              <Feather name="log-out" size={16} color={c.red} />
+              <Feather name="log-out" size={16} color="#0F172A" />
             </TouchableOpacity>
           </View>
         </View>
 
         {/* ── Portfolio Stats Card (User-Specific) ── */}
-        <View
-          style={[
-            styles.portfolioCard,
-            {
-              backgroundColor: isDark ? '#13223A' : '#E0F2FE',
-              borderColor: c.border,
-            },
-          ]}
+        <LinearGradient
+          colors={isDark ? ['#047857', '#064E3B', '#022C22'] : ['#D1FAE5', '#A7F3D0']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.portfolioCard, { borderColor: isDark ? '#10B981' : '#34D399', shadowColor: '#10B981', shadowOpacity: 0.15, shadowRadius: 10, elevation: 5 }]}
         >
-          <View style={styles.portfolioHeader}>
-            <Text style={[styles.portfolioLabel, { color: c.primary }]}>YOUR PORTFOLIO VALUE</Text>
-            <View style={[styles.gainBadge, { backgroundColor: c.greenBg, flexDirection: 'row', alignItems: 'center', gap: 3 }]}>
-              <Feather name="trending-up" size={12} color={c.green} />
-              <Text style={[styles.gainText, { color: c.green }]}>{vaultSummary.gainText}</Text>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate(SCREENS.VAULT)}
+            style={styles.portfolioHeader}
+          >
+            <Text style={[styles.portfolioLabel, { color: isDark ? '#A7F3D0' : '#065F46' }]}>YOUR PORTFOLIO VALUE</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={[styles.gainBadge, { backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)', flexDirection: 'row', alignItems: 'center', gap: 3 }]}>
+                <Feather name="trending-up" size={12} color={isDark ? '#D1FAE5' : '#064E3B'} />
+                <Text style={[styles.gainText, { color: isDark ? '#D1FAE5' : '#064E3B' }]}>{vaultSummary.gainText}</Text>
+              </View>
+              <Feather name="chevron-right" size={13} color={isDark ? '#A7F3D0' : '#065F46'} />
             </View>
-          </View>
-          <Text style={[styles.portfolioValue, { color: c.warm }]}>
-            {vaultSummary.totalValueFormatted}
-          </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity activeOpacity={0.85} onPress={() => navigation.navigate(SCREENS.VAULT)}>
+            <Text style={[styles.portfolioValue, { color: isDark ? '#FFFFFF' : '#065F46' }]}>
+              {vaultSummary.totalValueFormatted}
+            </Text>
+          </TouchableOpacity>
 
           <View style={styles.statsRow}>
             {[
               [String(vaultSummary.totalCount), 'Holdings'],
               [String(vaultSummary.wholeCount), 'Whole'],
               [String(vaultSummary.fractionalCount), 'Fractional'],
-            ].map(([v, l]) => (
-              <View
-                key={l}
-                style={[styles.statCell, { backgroundColor: c.card, borderColor: c.border }]}
-              >
-                <Text style={[styles.statValue, { color: c.primary }]}>{v}</Text>
-                <Text style={[styles.statLabel, { color: c.muted }]}>{l}</Text>
-              </View>
-            ))}
+            ].map(([v, l]) => {
+              const isHoldings = l === 'Holdings';
+              return (
+                <TouchableOpacity
+                  key={l}
+                  activeOpacity={0.8}
+                  onPress={() => isHoldings && navigation.navigate(SCREENS.VAULT)}
+                  style={[styles.statCell, {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#ECFDF5',
+                    borderColor: isHoldings
+                      ? (isDark ? '#A7F3D0' : '#10B981')
+                      : (isDark ? 'rgba(255,255,255,0.2)' : '#A7F3D0'),
+                  }]}
+                >
+                  <Text style={[styles.statValue, { color: isDark ? '#FFFFFF' : '#065F46' }]}>{v}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                    <Text style={[styles.statLabel, { color: isDark ? '#A7F3D0' : '#065F46' }]}>{l}</Text>
+                    {isHoldings && <Feather name="chevron-right" size={9} color={isDark ? '#A7F3D0' : '#065F46'} />}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        </View>
+        </LinearGradient>
 
         {/* ── Category Filter ── */}
         <ScrollView
@@ -211,52 +232,59 @@ export default function HomeScreen({ navigation, isDark }) {
           marketAssets.map((asset) => (
           <TouchableOpacity
             key={asset.id}
-            style={[styles.assetCard, { backgroundColor: c.card, borderColor: c.border }]}
+            style={[
+              styles.assetCard,
+              { 
+                backgroundColor: isDark ? '#0A1628' : c.card, 
+                borderColor: isDark ? '#3B82F6' : c.border,
+                shadowColor: isDark ? '#60A5FA' : '#000000',
+                shadowOffset: { width: 0, height: 0 },
+                shadowOpacity: isDark ? 0.5 : 0.05,
+                shadowRadius: isDark ? 16 : 8,
+                elevation: isDark ? 12 : 2,
+              }
+            ]}
             onPress={() =>
               navigation.navigate(SCREENS.ASSET_DETAIL, { asset })
             }
             activeOpacity={0.9}
           >
-            {/* Image */}
-            <View style={styles.assetImageWrap}>
-              <Image source={{ uri: asset.image }} style={styles.assetImage} resizeMode="cover" />
-              <View style={styles.assetBadgeWrap}>
-                <Badge
+            {/* Top row: Verified badge and Trending */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+               <Badge
                   text={asset.badge || 'Verified'}
                   variant={asset.badge === 'Verified' ? 'verified' : 'pending'}
                   isDark={isDark}
                 />
-              </View>
-              {asset.trending && (
+               {asset.trending && (
                 <View
-                  style={[styles.trendingBadge, { backgroundColor: c.primaryBg, borderColor: c.primaryLight, flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+                  style={[styles.trendingBadge, { position: 'relative', top: 0, right: 0, backgroundColor: c.primaryBg, borderColor: c.primaryLight, flexDirection: 'row', alignItems: 'center', gap: 4 }]}
                 >
                   <Ionicons name="flame" size={12} color={c.primary} />
                   <Text style={[styles.trendingText, { color: c.primary }]}>Trending</Text>
                 </View>
               )}
-              <View style={styles.assetMeta}>
-                <Text style={[styles.assetCategory, { color: c.primary }]}>
+            </View>
+            
+            {/* Info */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={[styles.assetCategory, { color: c.primary, fontSize: 10, marginBottom: 2 }]}>
                   {asset.category.toUpperCase()}
                 </Text>
-                <Text style={[styles.assetName, { color: c.warm }]}>{asset.name}</Text>
+                <Text style={[styles.assetName, { color: c.warm, fontSize: 16 }]} numberOfLines={1}>
+                  {asset.name}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={[styles.valueLabel, { color: c.muted }]}>EST VALUE</Text>
+                <Text style={[styles.assetPrice, { color: c.primary }]}>{asset.price}</Text>
               </View>
             </View>
 
-            {/* Footer */}
-            <View
-              style={[styles.assetFooter, { backgroundColor: c.cardLight, borderColor: c.border }]}
-            >
-              <View>
-                <Text style={[styles.valueLabel, { color: c.muted }]}>ESTIMATED VALUE</Text>
-                <Text style={[styles.assetPrice, { color: c.primary }]}>{asset.price}</Text>
-              </View>
-              <View style={styles.assetFooterRight}>
-                <Text style={[styles.assetYear, { color: c.muted }]}>Est. {asset.year}</Text>
-                <View style={[styles.arrowCircle, { backgroundColor: c.card, borderColor: c.border }]}>
-                  <Feather name="chevron-right" size={15} color={c.primary} />
-                </View>
-              </View>
+            {/* Inner Image Card */}
+            <View style={[styles.assetImageWrap, { height: 180, borderRadius: 16, overflow: 'hidden' }]}>
+              <Image source={{ uri: asset.image }} style={styles.assetImage} resizeMode="cover" />
             </View>
           </TouchableOpacity>
         ))
@@ -274,11 +302,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingTop: 12,
+    paddingBottom: 16,
+    backgroundColor: '#E6FFFD',
+    borderBottomWidth: 0,
+    marginBottom: 16,
   },
-  greeting: { fontSize: 12, fontWeight: '500' },
-  username: { fontSize: 20, fontWeight: '700', letterSpacing: -0.3 },
+  greeting: { fontSize: 12, fontWeight: '500', color: 'rgba(255,255,255,0.8)' },
+  username: { fontSize: 20, fontWeight: '700', letterSpacing: -0.3, color: '#FFFFFF' },
   iconBtn: {
     width: 36,
     height: 36,
@@ -338,10 +369,10 @@ const styles = StyleSheet.create({
   seeAll: { fontSize: 12, fontWeight: '600' },
   assetCard: {
     marginHorizontal: 20,
-    marginBottom: 12,
+    marginBottom: 16,
     borderRadius: 24,
     borderWidth: 1,
-    overflow: 'hidden',
+    padding: 16,
   },
   assetImageWrap: {
     height: 176,

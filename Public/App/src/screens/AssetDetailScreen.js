@@ -178,7 +178,13 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
               ].map(([label, value]) => (
                 <View
                   key={String(label)}
-                  style={[styles.infoCell, { backgroundColor: c.card, borderColor: c.border }]}
+                  style={[
+                    styles.infoCell,
+                    {
+                      backgroundColor: isDark ? '#0A1A35' : c.card,
+                      borderColor: isDark ? '#2563EB' : c.border,
+                    },
+                  ]}
                 >
                   <Text style={[styles.infoCellLabel, { color: c.muted }]}>
                     {String(label).toUpperCase()}
@@ -189,7 +195,20 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
             </View>
 
             {/* AI Valuation card */}
-            <View style={[styles.valuationCard, { backgroundColor: c.card, borderColor: c.border }]}>
+            <View
+              style={[
+                styles.valuationCard,
+                {
+                  backgroundColor: isDark ? '#0A1A35' : c.card,
+                  borderColor: isDark ? '#2563EB' : c.border,
+                  shadowColor: isDark ? '#3B82F6' : '#000000',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: isDark ? 0.3 : 0.05,
+                  shadowRadius: 8,
+                  elevation: 5,
+                },
+              ]}
+            >
               <View style={styles.valuationHeader}>
                 <Text style={[styles.valuationLabel, { color: c.primary }]}>AI VALUATION ESTIMATE</Text>
                 <Text style={[styles.yoyGain, { color: c.green }]}>+12.4% YoY</Text>
@@ -217,8 +236,13 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
               style={[
                 styles.valuationCard,
                 {
-                  backgroundColor: c.card,
-                  borderColor: asset.aiScanStatus === 'passed' ? c.green : c.border,
+                  backgroundColor: isDark ? '#0A1A35' : c.card,
+                  borderColor: asset.aiScanStatus === 'passed' ? c.green : (isDark ? '#2563EB' : c.border),
+                  shadowColor: asset.aiScanStatus === 'passed' ? c.green : (isDark ? '#3B82F6' : '#000000'),
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: isDark ? 0.3 : 0.05,
+                  shadowRadius: 8,
+                  elevation: 5,
                   marginTop: 0,
                   marginBottom: 12,
                 },
@@ -306,7 +330,7 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
               </TouchableOpacity>
             </View>
 
-            <View style={[styles.hashCard, { backgroundColor: c.card, borderColor: c.border }]}>
+            <View style={[styles.hashCard, { backgroundColor: isDark ? '#0A1A35' : c.card, borderColor: isDark ? '#2563EB' : c.border }]}>
               <Text style={[styles.hashLabel, { color: c.muted }]}>BLOCKCHAIN HASH</Text>
               <Text style={[styles.hashValue, { color: c.primary }]} numberOfLines={2}>
                 0x4a3f8c2e1b9d6f0a5e7c3d2b1f8e4a9c2d5b7e0f3a6c9d2e5b8f1a4c7e0d3b6f
@@ -319,7 +343,7 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
         {activeTab === 'history' && (
           <View style={styles.tabContent}>
             <TouchableOpacity
-              style={[styles.provenanceBtn, { backgroundColor: c.card, borderColor: c.border }]}
+              style={[styles.provenanceBtn, { backgroundColor: isDark ? '#0A1A35' : c.card, borderColor: isDark ? '#2563EB' : c.border }]}
               onPress={() => navigation.navigate(SCREENS.PROVENANCE, { asset, history })}
             >
               <Text style={[styles.provenanceBtnLabel, { color: c.warm }]}>

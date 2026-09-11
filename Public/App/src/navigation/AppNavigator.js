@@ -61,8 +61,8 @@ function MainTabs({ isDark }) {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: c.vault,
-          borderTopColor: c.border,
+          backgroundColor: isDark ? '#070B14' : '#13223A',
+          borderTopColor: isDark ? '#192A45' : '#1E3A5F',
           borderTopWidth: 1,
           height: barHeight,
           paddingBottom: bottomInset,

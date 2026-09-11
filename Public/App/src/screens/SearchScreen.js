@@ -18,7 +18,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useColors } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
 import { getMarketAssets } from "../services/api";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 
 // ── Category Palettes matching the luxury reference ───────────────────────────
 const CATEGORY_THEMES = {
@@ -40,9 +40,18 @@ const CATEGORY_THEMES = {
   },
 };
 
+const FILTER_TABS = [
+  { id: 'All', label: 'All', icon: 'grid-outline', color: '#64748B' },
+  { id: 'Luxury Watch', label: 'Watches', icon: 'watch-outline', color: '#1D4ED8' },
+  { id: 'Fine Art', label: 'Art', icon: 'color-palette-outline', color: '#6D28D9' },
+  { id: 'Classic Car', label: 'Cars', icon: 'car-sport-outline', color: '#C2410C' },
+  { id: 'Fine Wine', label: 'Wine', icon: 'wine-outline', color: '#881337' },
+];
+
 export default function SearchScreen({ navigation, isDark }) {
   const c = useColors(isDark);
   const [query, setQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("All");
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -70,13 +79,19 @@ export default function SearchScreen({ navigation, isDark }) {
   );
 
   const assetList = Array.isArray(assets) ? assets : [];
-  const filtered = query
-    ? assetList.filter(
-        (a) =>
-          a.name?.toLowerCase().includes(query.toLowerCase()) ||
-          a.category?.toLowerCase().includes(query.toLowerCase()),
-      )
-    : assetList;
+  let filtered = assetList;
+
+  if (activeCategory !== "All") {
+    filtered = filtered.filter(a => a.category === activeCategory);
+  }
+
+  if (query) {
+    filtered = filtered.filter(
+      (a) =>
+        a.name?.toLowerCase().includes(query.toLowerCase()) ||
+        a.category?.toLowerCase().includes(query.toLowerCase()),
+    );
+  }
 
   return (
     <SafeAreaView
@@ -115,6 +130,45 @@ export default function SearchScreen({ navigation, isDark }) {
         </View>
       </View>
 
+      {/* ── Category Filters (Uber Eats style) ── */}
+      <View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 10, gap: 10 }}
+        >
+          {FILTER_TABS.map((tab) => {
+            const isActive = activeCategory === tab.id;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                onPress={() => setActiveCategory(tab.id)}
+                style={[
+                  styles.filterPill,
+                  {
+                    backgroundColor: isActive ? tab.color : c.card,
+                    borderColor: isActive ? tab.color : c.border,
+                  }
+                ]}
+              >
+                <Ionicons
+                  name={tab.icon}
+                  size={14}
+                  color={isActive ? '#FFFFFF' : (isDark ? '#E0F2FE' : tab.color)}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[
+                  styles.filterPillText,
+                  { color: isActive ? '#FFFFFF' : c.warm }
+                ]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
       {/* ── Section Title ── */}
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: c.muted }]}>
@@ -135,46 +189,46 @@ export default function SearchScreen({ navigation, isDark }) {
         filtered.map((asset) => {
           const isVerified = asset.badge === "Verified";
 
-          // Green theme for Verified cards, Yellow/Amber theme for Pending cards
+          // Green theme for Verified cards, Blue theme for Pending cards
           const accentColor = isVerified
             ? isDark
               ? "#10B981"
               : "#059669"
             : isDark
-            ? "#F59E0B"
-            : "#D97706";
+            ? "#3B82F6"
+            : "#2563EB";
 
           const nameColor = isVerified
             ? isDark
               ? "#A7F3D0"
               : "#064E3B"
             : isDark
-            ? "#FEF3C7"
-            : "#78350F";
+            ? "#E0F2FE"
+            : "#0F172A";
 
           const priceColor = isVerified
             ? isDark
               ? "#34D399"
               : "#059669"
             : isDark
-            ? "#FBBF24"
-            : "#D97706";
+            ? "#60A5FA"
+            : "#2563EB";
 
           const marketValueColor = isVerified
             ? isDark
               ? "#6EE7B7"
               : "#047857"
             : isDark
-            ? "#FCD34D"
-            : "#B45309";
+            ? "#93C5FD"
+            : "#1D4ED8";
 
           const circleBtnBg = isVerified
             ? isDark
               ? "#064E3B"
               : "#0F172A"
             : isDark
-            ? "#78350F"
-            : "#B45309";
+            ? "#1E3A8A"
+            : "#DBEAFE";
 
           return (
             <TouchableOpacity
@@ -182,8 +236,8 @@ export default function SearchScreen({ navigation, isDark }) {
               style={[
                 styles.card,
                 {
-                  backgroundColor: c.card,
-                  borderColor: c.border,
+                  backgroundColor: isDark ? '#0A1628' : c.card,
+                  borderColor: isDark ? '#162C4E' : c.border,
                 },
               ]}
               onPress={() =>
@@ -289,6 +343,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   searchInput: { flex: 1, fontSize: 14 },
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  filterPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   sectionHeader: {
     paddingHorizontal: 20,
     paddingTop: 10,
