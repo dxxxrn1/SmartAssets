@@ -1,23 +1,26 @@
 // ─── Payment Controller ──────────────────────────────────────────────────────
 // Multi-rail payment gateway supporting:
 // 1. MetaMask Web3 Wallet (Ethereum Sepolia ETH with on-chain tx verification)
-// 2. Credit / Debit Cards (Instant authorization)
-// 3. Direct Bank Transfer (Faster Payments / Wire)
+// 2. Stripe Credit / Debit Cards (Instant authorization & settlement)
+// 3. Stripe Direct Bank Transfer (Faster Payments / Settlement Wire)
 
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const web3Service = require('../services/web3Service');
+const stripeService = require('../services/stripeService');
+const escrowService = require('../services/escrowService');
 
 // Current ZAR to ETH rate for checkout conversion (1 ETH ≈ R48,000)
 const ZAR_PER_ETH = 48000;
 
 /**
  * GET /api/payments/rates
- * Returns exchange rates and SmartAssets Escrow wallet information.
+ * Returns exchange rates, Escrow wallet info, and Stripe configuration.
  */
 async function getRates(req, res) {
   try {
     const relayerStatus = await web3Service.getRelayerStatus();
+    const stripeConfig = stripeService.getStripeConfig();
 
     return res.json({
       success: true,
@@ -28,7 +31,15 @@ async function getRates(req, res) {
       network: 'Ethereum Sepolia',
       chainId: 11155111,
       escrowAddress: relayerStatus.relayerAddress,
+      escrowAddress: relayerStatus.escrowContractAddress || relayerStatus.relayerAddress,
+      relayerAddress: relayerStatus.relayerAddress,
+      escrowContractAddress: relayerStatus.escrowContractAddress,
       contractAddress: relayerStatus.contractAddress,
+      stripe: {
+        publishableKey: stripeConfig.publishableKey,
+        mode: stripeConfig.mode,
+        isConfigured: stripeConfig.isConfigured,
+      },
     });
   } catch (err) {
     console.error('getRates error:', err);
@@ -37,12 +48,48 @@ async function getRates(req, res) {
 }
 
 /**
+ * POST /api/payments/create-intent (protected — requireAuth)
+ * Creates a Stripe PaymentIntent for a given amount.
+ * Returns clientSecret for the frontend to confirm payment.
+ */
+async function createIntent(req, res) {
+  try {
+    const userId = req.user.id;
+    const { amount, currency, assetId, assetName } = req.body;
+
+    if (!amount || amount <= 0) {
+      return sendError(res, 400, 'A valid payment amount is required.');
+    }
+
+    const result = await stripeService.createPaymentIntent({
+      amount: Number(amount),
+      currency: currency || 'zar',
+      metadata: {
+        userId,
+        assetId: assetId || 'direct',
+        assetName: assetName || 'SmartAssets Purchase',
+      },
+    });
+
+    return res.json({
+      success: true,
+      ...result,
+    });
+  } catch (err) {
+    console.error('createIntent error:', err);
+    return sendError(res, 500, err.message || 'Failed to create payment intent.');
+  }
+}
+
+/**
  * POST /api/payments/process (protected — requireAuth)
- * Processes asset checkout via MetaMask, Card, or Bank Wire.
+ * Processes asset checkout via MetaMask, Stripe Card, or Stripe Bank Wire.
  */
 async function processPayment(req, res) {
   try {
     const userId = req.user.id;
+    const userEmail = req.user.email || '';
+    const userName = req.user.fullName || req.user.email?.split('@')[0] || 'Collector';
     const { assetId, paymentMethod, paymentDetails, amountGbp } = req.body;
 
     if (!paymentMethod) {
@@ -140,6 +187,7 @@ async function processPayment(req, res) {
     let verificationResult = { verified: true };
     let onChainTxHash = null;
     let etherscanUrl = null;
+    let stripeReceipt = null;
 
     // 2. Handle payment method rails
     if (paymentMethod === 'wallet') {
@@ -166,14 +214,52 @@ async function processPayment(req, res) {
         etherscanUrl = `https://sepolia.etherscan.io/tx/${autoHash}`;
       }
     } else if (paymentMethod === 'card') {
-      // ─── Credit / Debit Card Payment ───
+      // ─── Stripe Credit / Debit Card Payment ───
       const cardNumber = (paymentDetails?.cardNumber || '').replace(/\s+/g, '');
       if (cardNumber.length < 15) {
         return sendError(res, 400, 'Invalid card number. Please enter a 16-digit card number.');
       }
+
+      try {
+        stripeReceipt = await stripeService.processCardPayment({
+          amount: actualPriceGbp,
+          currency: 'zar',
+          card: paymentDetails,
+          userEmail,
+          userName,
+          metadata: {
+            assetId: asset?.id || assetId,
+            assetName,
+            userId,
+            purchaseType: isFractional ? 'fractional' : 'whole',
+            sharesCount: isFractional ? String(sharesToBuy) : undefined,
+          },
+        });
+      } catch (cardErr) {
+        console.error('💳 [Stripe Card Error]:', cardErr.message);
+        return sendError(res, 400, cardErr.message || 'Stripe card payment authorization failed.');
+      }
     } else if (paymentMethod === 'bank') {
-      // ─── Bank Transfer Wire ───
-      // Bank wire reference verified
+      // ─── Stripe Direct Bank Transfer / Wire ───
+      const bankRef = paymentDetails?.reference || `SA-${Math.floor(100000 + Math.random() * 900000)}`;
+      try {
+        stripeReceipt = await stripeService.processBankTransfer({
+          amount: actualPriceGbp,
+          currency: 'zar',
+          bankRef,
+          userEmail,
+          userName,
+          metadata: {
+            assetId: asset?.id || assetId,
+            assetName,
+            userId,
+            purchaseType: isFractional ? 'fractional' : 'whole',
+          },
+        });
+      } catch (bankErr) {
+        console.error('🏦 [Stripe Bank Wire Error]:', bankErr.message);
+        return sendError(res, 400, bankErr.message || 'Stripe bank wire settlement failed.');
+      }
     }
 
     // 3. Add holding to buyer's personal vault (user_holdings)
@@ -207,23 +293,31 @@ async function processPayment(req, res) {
     }
 
     // 4. Record provenance milestone if asset exists
+    const transactionId =
+      onChainTxHash ||
+      stripeReceipt?.paymentIntentId ||
+      stripeReceipt?.transferId ||
+      ('0x' + Math.random().toString(16).slice(2, 10));
+
     if (asset?.id) {
       const buyerParty =
         paymentMethod === 'wallet'
           ? `MetaMask Investor (${paymentDetails?.walletAddress ? paymentDetails.walletAddress.substring(0, 6) + '...' + paymentDetails.walletAddress.slice(-4) : 'Web3'})`
-          : 'Verified Investor';
+          : paymentMethod === 'card'
+          ? `Stripe Card Verified (${stripeReceipt?.cardBrand || 'Card'} •••• ${stripeReceipt?.cardLast4 || '4242'})`
+          : `Stripe Bank Wire Verified (Ref: ${stripeReceipt?.bankRef || 'Direct Transfer'})`;
 
       const milestoneEvent = isFractional
         ? `Fractional Investment: Acquired ${sharesToBuy} Shares (${((sharesToBuy / (asset.shares || 100)) * 100).toFixed(1)}% Co-Ownership)`
-        : `Ownership Transferred via ${paymentMethod === 'wallet' ? 'MetaMask Smart Contract' : paymentMethod === 'card' ? 'Card Payment' : 'Bank Wire'}`;
+        : `Ownership Transferred via ${paymentMethod === 'wallet' ? 'MetaMask Smart Contract' : paymentMethod === 'card' ? 'Stripe Card Gateway' : 'Stripe Bank Settlement'}`;
 
       await supabase.from('asset_history').insert({
         asset_id: asset.id,
         year: String(new Date().getFullYear()),
         event: milestoneEvent,
         party: buyerParty,
-        hash: onChainTxHash || ('0x' + Math.random().toString(16).slice(2, 10) + '...' + Math.random().toString(16).slice(2, 6)),
-        tx_hash: onChainTxHash,
+        hash: transactionId,
+        tx_hash: onChainTxHash || transactionId,
         verified: true,
       });
 
@@ -233,27 +327,63 @@ async function processPayment(req, res) {
           year: new Date().getFullYear(),
           event: milestoneEvent,
           party: buyerParty,
-          hash: onChainTxHash,
+          hash: transactionId,
         });
       }
     }
 
     const orderId = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
+    const ethVal = (actualPriceGbp / ZAR_PER_ETH).toFixed(4);
+
+    // Initialize and lock payment in Escrow
+    const escrowOrder = await escrowService.createEscrowOrder({
+      orderId,
+      buyerId: userId,
+      buyerAddress: paymentDetails?.walletAddress || req.user.walletAddress,
+      assetId: asset?.id || null,
+      assetName,
+      assetCategory,
+      assetImage,
+      amountZar: actualPriceGbp,
+      amountGbp: actualPriceGbp,
+      amountEth: ethVal,
+      paymentMethod,
+      paymentRail: stripeReceipt?.paymentRail || (paymentMethod === 'wallet' ? 'Ethereum Sepolia Web3' : paymentMethod === 'card' ? 'Stripe Card' : 'Stripe Wire'),
+      sellerAddress: asset?.seller_address || asset?.user_wallet || '0x71C3A5b67B7840131498B1aB55938B237F026a76',
+      customTxHash: onChainTxHash,
+    });
 
     return res.status(200).json({
       success: true,
       message: isFractional ? 'Investment confirmed and shares added to your vault!' : 'Payment completed and asset added to your vault!',
+      message: isFractional ? 'Investment confirmed and shares added to your vault!' : 'Payment completed and secured in escrow!',
       receipt: {
         orderId,
         paymentMethod,
+        paymentRail: stripeReceipt?.paymentRail || (paymentMethod === 'wallet' ? 'Ethereum Sepolia Web3' : paymentMethod),
+        paymentRail: escrowOrder.paymentRail,
+        stripePaymentIntentId: stripeReceipt?.paymentIntentId,
+        stripeChargeId: stripeReceipt?.chargeId,
+        stripeStatus: stripeReceipt?.status,
+        cardBrand: stripeReceipt?.cardBrand,
+        cardLast4: stripeReceipt?.cardLast4,
+        stripeNotice: stripeReceipt?.notice,
         amountGbp: actualPriceGbp,
+        amountZar: actualPriceGbp,
+        amountEth: ethVal,
         assetName: holdingName,
         purchaseType: holdingType,
         sharesCount: isFractional ? sharesToBuy : undefined,
-        txHash: onChainTxHash,
+        txHash: onChainTxHash || transactionId,
         etherscanUrl,
+        txHash: escrowOrder.depositTxHash || onChainTxHash || transactionId,
+        etherscanUrl: escrowOrder.etherscanUrl || etherscanUrl,
+        escrowContractAddress: escrowOrder.escrowContractAddress,
+        escrowStatus: escrowOrder.status,
+        currentStep: escrowOrder.currentStep,
         timestamp: new Date().toISOString(),
       },
+      escrowOrder,
     });
   } catch (err) {
     console.error('processPayment error:', err);
@@ -263,6 +393,6 @@ async function processPayment(req, res) {
 
 module.exports = {
   getRates,
+  createIntent,
   processPayment,
 };
-

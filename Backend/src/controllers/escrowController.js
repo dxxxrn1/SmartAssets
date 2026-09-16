@@ -3,29 +3,33 @@
 // 1. Payment Secured in Smart Contract (Locked on Sepolia)
 // 2. Physical Asset in Transit to Vault
 // 3. Appraiser Inspection & Authentication
-// 4. Funds Released to Seller & NFT Delivered to Buyer Vault
+// 4. Funds Released to Seller & NFT Delivered to Buyer Vault / Full Refund
 
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
-const web3Service = require('../services/web3Service');
-
-// Persistent in-memory escrow store (with fallback sync)
-const escrowStore = new Map();
+const escrowService = require('../services/escrowService');
 
 /**
  * POST /api/escrow/create (protected — requireAuth)
- * Initializes an escrow order and locks the deposit.
+ * Initializes an escrow order and locks the deposit on-chain.
  */
 async function createEscrow(req, res) {
   try {
     const userId = req.user.id;
-    const { assetId, assetName, assetCategory, amountZar, amountGbp, amountEth, paymentMethod, paymentDetails, sellerAddress } = req.body;
+    const {
+      assetId,
+      assetName,
+      assetCategory,
+      assetImage,
+      amountZar,
+      amountGbp,
+      amountEth,
+      paymentMethod,
+      paymentDetails,
+      sellerAddress,
+    } = req.body;
 
-    const orderId = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
-    const zarVal = Number(amountZar || amountGbp || 25000);
-    const ethVal = amountEth || (zarVal / 48000).toFixed(4);
-
-    // ── Self-Dealing / Self-Purchase Prohibition ──
+    // ── Self-Dealing Prohibition ──
     if (assetId) {
       const { data: asset } = await supabase
         .from('assets')
@@ -37,72 +41,28 @@ async function createEscrow(req, res) {
       }
     }
 
-    // Call on-chain escrow smart contract to lock deposit
-    const onChainLock = await web3Service.lockEscrowDeposit({
-      orderId,
-      sellerAddress,
-      ethAmount: ethVal,
-      buyerAddress: paymentDetails?.walletAddress || req.user.walletAddress,
-    });
-
-    const escrowOrder = {
-      orderId,
+    const order = await escrowService.createEscrowOrder({
       buyerId: userId,
-      assetId: assetId || null,
-      assetName: assetName || 'Luxury Collectible',
-      assetCategory: assetCategory || 'Luxury Asset',
-      amountZar: zarVal,
-      amountGbp: zarVal, // Alias for compatibility
-      amountEth: ethVal,
-      paymentMethod: paymentMethod || 'wallet',
-      status: 'payment_secured', // Step 1
-      currentStep: 1,
-      totalSteps: 4,
-      depositTxHash: onChainLock.txHash,
-      etherscanUrl: onChainLock.etherscanUrl,
-      escrowContractAddress: onChainLock.contractAddress,
-      sellerAddress: sellerAddress || '0x71C3A5b67B7840131498B1aB55938B237F026a76',
-      createdAt: new Date().toISOString(),
-      timeline: [
-        {
-          step: 1,
-          title: 'Payment Secured in Smart Contract',
-          description: `${ethVal} Sepolia ETH locked in Escrow Contract. Seller cannot withdraw until inspection passes.`,
-          timestamp: new Date().toISOString(),
-          txHash: onChainLock.txHash,
-          completed: true,
-        },
-        {
-          step: 2,
-          title: 'Physical Asset in Transit to Vault',
-          description: 'Seller dispatched collectible with insured courier tracking.',
-          completed: false,
-        },
-        {
-          step: 3,
-          title: 'Authentication & Physical Inspection',
-          description: 'Dr. William Chen & Horological Institute evaluating serial numbers and physical condition.',
-          completed: false,
-        },
-        {
-          step: 4,
-          title: 'Funds Released to Seller & NFT Delivered',
-          description: 'Payment automatically transferred to seller; ERC-721 token delivered to buyer vault.',
-          completed: false,
-        },
-      ],
-    };
-
-    escrowStore.set(orderId, escrowOrder);
+      assetId,
+      assetName,
+      assetCategory,
+      assetImage,
+      amountZar,
+      amountGbp,
+      amountEth,
+      paymentMethod,
+      buyerAddress: paymentDetails?.walletAddress || req.user.walletAddress,
+      sellerAddress,
+    });
 
     return res.status(201).json({
       success: true,
       message: 'Escrow order created and payment locked on Ethereum Sepolia!',
-      order: escrowOrder,
+      order,
     });
   } catch (err) {
     console.error('createEscrow error:', err);
-    return sendError(res, 500, 'Failed to initialize escrow.');
+    return sendError(res, 500, err.message || 'Failed to initialize escrow.');
   }
 }
 
@@ -113,55 +73,11 @@ async function createEscrow(req, res) {
 async function getEscrowOrder(req, res) {
   try {
     const { orderId } = req.params;
-    let order = escrowStore.get(orderId);
-
-    if (!order) {
-      // Create a default verified demo order if requested
-      order = {
-        orderId,
-        assetName: 'Verified Collectible',
-        amountGbp: 28500,
-        amountEth: '11.4000',
-        paymentMethod: 'wallet',
-        status: 'payment_secured',
-        currentStep: 1,
-        totalSteps: 4,
-        depositTxHash: '0x3a8b4f2c1d9e7a5b6c8d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b',
-        etherscanUrl: 'https://sepolia.etherscan.io',
-        escrowContractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
-        createdAt: new Date().toISOString(),
-        timeline: [
-          {
-            step: 1,
-            title: 'Payment Secured in Smart Contract',
-            description: 'Funds locked in Escrow Contract on Ethereum Sepolia.',
-            timestamp: new Date().toISOString(),
-            txHash: '0x3a8b4f2c...',
-            completed: true,
-          },
-          {
-            step: 2,
-            title: 'Physical Asset in Transit to Vault',
-            description: 'Insured transit to SmartAssets Custody Center.',
-            completed: false,
-          },
-          {
-            step: 3,
-            title: 'Authentication & Physical Inspection',
-            description: 'Condition grading and authenticity appraisal.',
-            completed: false,
-          },
-          {
-            step: 4,
-            title: 'Funds Released to Seller & NFT Delivered',
-            description: 'Automatic settlement on-chain.',
-            completed: false,
-          },
-        ],
-      };
-      escrowStore.set(orderId, order);
+    if (!orderId) {
+      return sendError(res, 400, 'Order ID is required.');
     }
 
+    const order = escrowService.getEscrowOrder(orderId);
     return res.json({ success: true, order });
   } catch (err) {
     console.error('getEscrowOrder error:', err);
@@ -170,29 +86,55 @@ async function getEscrowOrder(req, res) {
 }
 
 /**
- * POST /api/escrow/release (protected)
+ * GET /api/escrow/my-orders (protected — requireAuth)
+ * Returns all active and historical escrow orders for the logged-in buyer.
+ */
+async function getMyEscrows(req, res) {
+  try {
+    const userId = req.user.id;
+    const orders = escrowService.getUserEscrowOrders(userId);
+    return res.json({ success: true, orders });
+  } catch (err) {
+    console.error('getMyEscrows error:', err);
+    return sendError(res, 500, 'Failed to fetch your escrow orders.');
+  }
+}
+
+/**
+ * POST /api/escrow/progress (protected — requireAuth)
+ * Advances the escrow stage (e.g. In Transit, In Inspection).
+ */
+async function progressEscrow(req, res) {
+  try {
+    const { orderId, step, note } = req.body;
+    if (!orderId || !step) {
+      return sendError(res, 400, 'orderId and target step (2 or 3) are required.');
+    }
+
+    const order = await escrowService.progressEscrowStep(orderId, step, note);
+    return res.json({
+      success: true,
+      message: `Escrow order advanced to Step ${step}!`,
+      order,
+    });
+  } catch (err) {
+    console.error('progressEscrow error:', err);
+    return sendError(res, 400, err.message || 'Failed to update escrow stage.');
+  }
+}
+
+/**
+ * POST /api/escrow/release (protected — requireAuth)
  * Releases funds to the seller once buyer confirms delivery or inspection passes.
  */
 async function releaseEscrow(req, res) {
   try {
     const { orderId } = req.body;
-    let order = escrowStore.get(orderId);
-
-    if (!order) {
-      return sendError(res, 404, 'Escrow order not found.');
+    if (!orderId) {
+      return sendError(res, 400, 'orderId is required.');
     }
 
-    // Call on-chain release
-    const releaseTx = await web3Service.releaseEscrowOnChain({ orderId });
-
-    order.status = 'released';
-    order.currentStep = 4;
-    order.timeline.forEach((t) => (t.completed = true));
-    order.releaseTxHash = releaseTx.txHash;
-    order.releaseEtherscanUrl = releaseTx.etherscanUrl;
-
-    escrowStore.set(orderId, order);
-
+    const order = await escrowService.releaseEscrow(orderId);
     return res.json({
       success: true,
       message: 'Escrow funds released to seller and NFT certificate finalized!',
@@ -200,31 +142,22 @@ async function releaseEscrow(req, res) {
     });
   } catch (err) {
     console.error('releaseEscrow error:', err);
-    return sendError(res, 500, 'Failed to release escrow funds.');
+    return sendError(res, 500, err.message || 'Failed to release escrow funds.');
   }
 }
 
 /**
- * POST /api/escrow/refund (protected)
- * Refunds locked funds to buyer if asset fails inspection or courier fails.
+ * POST /api/escrow/refund (protected — requireAuth)
+ * Refunds locked funds to buyer if asset fails inspection or buyer disputes.
  */
 async function refundEscrow(req, res) {
   try {
-    const { orderId } = req.body;
-    let order = escrowStore.get(orderId);
-
-    if (!order) {
-      return sendError(res, 404, 'Escrow order not found.');
+    const { orderId, reason } = req.body;
+    if (!orderId) {
+      return sendError(res, 400, 'orderId is required.');
     }
 
-    const refundTx = await web3Service.refundEscrowOnChain({ orderId });
-
-    order.status = 'refunded';
-    order.refundTxHash = refundTx.txHash;
-    order.refundEtherscanUrl = refundTx.etherscanUrl;
-
-    escrowStore.set(orderId, order);
-
+    const order = await escrowService.refundEscrow(orderId, reason);
     return res.json({
       success: true,
       message: '100% of escrow funds refunded to buyer on-chain!',
@@ -232,14 +165,15 @@ async function refundEscrow(req, res) {
     });
   } catch (err) {
     console.error('refundEscrow error:', err);
-    return sendError(res, 500, 'Failed to process escrow refund.');
+    return sendError(res, 500, err.message || 'Failed to process escrow refund.');
   }
 }
 
 module.exports = {
   createEscrow,
   getEscrowOrder,
+  getMyEscrows,
+  progressEscrow,
   releaseEscrow,
   refundEscrow,
 };
-

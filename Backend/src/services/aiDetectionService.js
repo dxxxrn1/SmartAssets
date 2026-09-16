@@ -8,8 +8,8 @@ const axios = require('axios');
 // Environment token
 const ACCESS_TOKEN = process.env.HIVE_ACCESS_TOKEN || '';
 
-// Score threshold (0.0 - 1.0) above which an image is flagged as AI-generated/fraudulent
-// 0.50 ensures strict blocking of all generative models (Midjourney, DALL-E, SDXL, etc.)
+// Score threshold (0.0 - 1.0) above which an image is flagged as AI-generated/fraudulent.
+// 0.50 ensures strict blocking of generative models (Midjourney, DALL-E, SDXL, etc.)
 const AI_THRESHOLD = 0.50;
 
 // Hugging Face AI image detection ensemble models

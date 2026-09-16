@@ -123,6 +123,28 @@ export default function VaultScreen({ navigation, isDark }) {
           </View>
         </View>
 
+        {/* ── Escrow Tracker Quick Access ── */}
+        <TouchableOpacity
+          style={[styles.escrowQuickCard, { backgroundColor: c.card, borderColor: c.primary + '40' }]}
+          onPress={() => navigation.navigate(SCREENS.ESCROW_TRACKER)}
+          activeOpacity={0.85}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+            <View style={[styles.escrowQuickIcon, { backgroundColor: c.primaryBg }]}>
+              <Ionicons name="shield-checkmark" size={20} color={c.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.escrowQuickTitle, { color: c.warm }]}>
+                Smart Contract Escrow Tracker
+              </Text>
+              <Text style={[styles.escrowQuickSub, { color: c.muted }]}>
+                Track live on-chain deposit, courier transit & authentication
+              </Text>
+            </View>
+          </View>
+          <Feather name="chevron-right" size={18} color={c.primary} />
+        </TouchableOpacity>
+
         <View>
             {/* ── Holdings Section ── */}
             <View style={styles.sectionHeaderRow}>
@@ -405,4 +427,23 @@ const styles = StyleSheet.create({
   holdingRight: { alignItems: "flex-end", gap: 3 },
   holdingValue: { fontSize: 13, fontWeight: "700" },
   holdingGain: { fontSize: 11, fontWeight: "600" },
+  escrowQuickCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  escrowQuickIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  escrowQuickTitle: { fontSize: 13, fontWeight: '700' },
+  escrowQuickSub: { fontSize: 11, marginTop: 2 },
 });
