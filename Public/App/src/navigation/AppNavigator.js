@@ -33,19 +33,24 @@ import HealthReportScreen from '../screens/HealthReportScreen';
 import CheckoutScreen    from '../screens/CheckoutScreen';
 import VerificationScreen from '../screens/VerificationScreen';
 import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
+import ProfileScreen     from '../screens/ProfileScreen';
 
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
 
-// ── Per-tab accent colours & icons ───────────────────────────────────────────
+// ── All tabs use unified blue palette ──────────────────────────────────────────
+const ACTIVE_BLUE = '#38BDF8';
+const INACTIVE_BLUE = '#1E3A5F';
+
 const TAB_CONFIG = {
-  [SCREENS.HOME]:       { active: 'grid',             inactive: 'grid-outline',           color: '#38BDF8', label: 'Market'  },
-  [SCREENS.SEARCH]:     { active: 'search',            inactive: 'search-outline',         color: '#A78BFA', label: 'Search'  },
-  [SCREENS.LIST_ASSET]: { active: 'add',               inactive: 'add',                    color: '#FFFFFF', label: ''        },
-  [SCREENS.INVEST]:     { active: 'trending-up',       inactive: 'trending-up-outline',    color: '#FBBF24', label: 'Invest'  },
-  [SCREENS.VAULT]:      { active: 'shield-checkmark',  inactive: 'shield-outline',         color: '#34D399', label: 'Vault'   },
+  [SCREENS.HOME]:       { active: 'grid',             inactive: 'grid-outline',           label: 'Market'  },
+  [SCREENS.SEARCH]:     { active: 'search',            inactive: 'search-outline',         label: 'Search'  },
+  [SCREENS.LIST_ASSET]: { active: 'add',               inactive: 'add',                    label: ''        },
+  [SCREENS.INVEST]:     { active: 'trending-up',       inactive: 'trending-up-outline',    label: 'Invest'  },
+  [SCREENS.VAULT]:      { active: 'shield-checkmark',  inactive: 'shield-outline',         label: 'Vault'   },
 };
 
 const TAB_ORDER = [SCREENS.HOME, SCREENS.SEARCH, SCREENS.LIST_ASSET, SCREENS.INVEST, SCREENS.VAULT];
@@ -85,22 +90,26 @@ function CustomTabBar({ state, navigation }) {
               style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
               activeOpacity={0.85}
             >
-              <View style={{
-                width: 46,
-                height: 46,
-                borderRadius: 23,
-                backgroundColor: '#38BDF8',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: 4,
-                shadowColor: '#38BDF8',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.45,
-                shadowRadius: 8,
-                elevation: 6,
-              }}>
-                <Ionicons name="add" size={26} color="#070B14" />
-              </View>
+              <LinearGradient
+                colors={['#d46bfdff', '#00b2fec1']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 24,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 4,
+                  shadowColor: '#38BDF8',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.5,
+                  shadowRadius: 8,
+                  elevation: 6,
+                }}
+              >
+                <Ionicons name="add" size={26} color="#FFFFFF" />
+              </LinearGradient>
             </TouchableOpacity>
           );
         }
@@ -112,7 +121,7 @@ function CustomTabBar({ state, navigation }) {
             style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 }}
             activeOpacity={0.8}
           >
-            {/* Coloured pill indicator when active */}
+            {/* Blue pill indicator when active */}
             {focused && (
               <View style={{
                 position: 'absolute',
@@ -120,18 +129,18 @@ function CustomTabBar({ state, navigation }) {
                 width: 28,
                 height: 3,
                 borderRadius: 2,
-                backgroundColor: accentColor,
+                backgroundColor: ACTIVE_BLUE,
               }} />
             )}
             <Ionicons
               name={iconName}
               size={22}
-              color={focused ? accentColor : '#2E4A6B'}
+              color={focused ? ACTIVE_BLUE : INACTIVE_BLUE}
             />
             <Text style={{
               fontSize: 10,
               fontWeight: '700',
-              color: focused ? accentColor : '#2E4A6B',
+              color: focused ? ACTIVE_BLUE : '#FFFFFF',
               letterSpacing: 0.2,
             }}>
               {cfg.label}
@@ -219,6 +228,9 @@ export default function Navigation() {
             </Stack.Screen>
             <Stack.Screen name={SCREENS.ESCROW_TRACKER}>
               {(props) => <EscrowTrackerScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.PROFILE}>
+              {(props) => <ProfileScreen {...props} isDark={isDark} />}
             </Stack.Screen>
           </>
         )}

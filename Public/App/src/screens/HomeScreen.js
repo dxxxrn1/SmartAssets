@@ -82,6 +82,7 @@ export default function HomeScreen({ navigation, isDark }) {
   const TILE_WIDTH = (screenWidth - 20 * 2 - 12) / 2;
   const c = useColors(isDark);
   const { user, token, logout } = useAuth();
+  const [activeHomeTab, setActiveHomeTab] = useState("Portfolio");
   // ── vault data: holdings from res.holdings, summary from res.summary ──
   const [vaultHoldings, setVaultHoldings] = useState([]);
   const [loadingVault, setLoadingVault] = useState(true);
@@ -144,49 +145,50 @@ export default function HomeScreen({ navigation, isDark }) {
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: "#141820" }]}
+      style={[styles.safe, { backgroundColor: "#111827" }]}
     >
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── TOP SECTION: bright blue → dark navy ── */}
+        {/* ── TOP WHITE-TO-BLUE ISLAND ── */}
         <LinearGradient
-          colors={["#a6c2ffff", "#4d73d2ff", "#1B3080", "#141820"]}
+          colors={["#FFFFFF", "#F0F8FF", "#a6c2ffff"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
-          style={styles.topSection}
+          style={styles.topWhiteIsland}
         >
-          {/* ── Header ── */}
+          {/* Header */}
           <View style={styles.header}>
-            <View>
-              <Text style={styles.greeting}>Welcome back,</Text>
-              <Text style={styles.username}>
-                {user?.fullName || user?.email?.split("@")[0] || "Member"}
-              </Text>
+            <View style={styles.headerLeft}>
+              <View style={styles.avatarMini}>
+                {user?.avatar_url ? (
+                  <Image source={{ uri: user.avatar_url }} style={styles.avatarImg} />
+                ) : (
+                  <Feather name="user" size={16} color="#0F172A" />
+                )}
+              </View>
+              <View>
+                <Text style={styles.greeting}>Welcome back,</Text>
+                <Text style={styles.username}>
+                  {user?.fullName || user?.email?.split("@")[0] || "Member"}
+                </Text>
+              </View>
             </View>
-            <View style={{ flexDirection: "row", gap: 6 }}>
+            <View style={{ flexDirection: "row", gap: 8 }}>
               <TouchableOpacity
                 style={styles.iconBtn}
                 onPress={() => navigation.navigate(SCREENS.SEARCH)}
               >
-                <Feather
-                  name="search"
-                  size={14}
-                  color="rgba(255,255,255,0.9)"
-                />
+                <Feather name="search" size={14} color="#0F172A" />
               </TouchableOpacity>
               <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
-                <Feather
-                  name="log-out"
-                  size={14}
-                  color="rgba(255,255,255,0.9)"
-                />
+                <Feather name="log-out" size={14} color="#0F172A" />
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* ── Portfolio Card — balance display only ── */}
+          {/* Portfolio Balance Card (gradient stays inside white island) */}
           <View style={styles.portfolioCardContainer}>
             <LinearGradient
               colors={["#60A5FA", "#3B82F6", "#60fa8eff"]}
@@ -194,7 +196,6 @@ export default function HomeScreen({ navigation, isDark }) {
               end={{ x: 1, y: 1 }}
               style={styles.portfolioCard}
             >
-              {/* Top row: gain badge + brand label */}
               <View style={styles.portfolioHeader}>
                 <View style={styles.gainBadge}>
                   <Feather name="trending-up" size={11} color="#A7F3D0" />
@@ -202,14 +203,10 @@ export default function HomeScreen({ navigation, isDark }) {
                 </View>
                 <Text style={styles.cardBrandLabel}>SmartAssets</Text>
               </View>
-
-              {/* Balance — full width, room to breathe */}
               <Text style={styles.portfolioLabel}>Portfolio Balance</Text>
               <Text style={styles.portfolioValue}>
                 {vaultSummary.totalValueFormatted}
               </Text>
-
-              {/* Bottom: 24h change metric + gold shield */}
               <View style={styles.cardBottomRow}>
                 <View>
                   <Text style={styles.cardChangeLabel}>24h Change</Text>
@@ -222,58 +219,121 @@ export default function HomeScreen({ navigation, isDark }) {
             </LinearGradient>
           </View>
 
-          {/* ── Action Row — 4 icon buttons below the card ── */}
-          <View style={styles.actionRow}>
-            {[
-              {
-                label: "Transfer In",
-                icon: "arrow-down-circle",
-                screen: SCREENS.VAULT,
-                onPress: null,
-              },
-              {
-                label: "Transfer Out",
-                icon: "send",
-                screen: SCREENS.ESCROW_TRACKER,
-                onPress: null,
-              },
-              {
-                label: "Swap",
-                icon: "refresh-cw",
-                screen: SCREENS.SEARCH,
-                onPress: null,
-              },
-              {
-                label: "Profile",
-                icon: "user",
-                screen: null,
-                onPress: handleLogout,
-              },
-            ].map((item) => (
+          {/* Quick Actions inside white island */}
+          <View style={styles.quickActionsContainer}>
+            <View style={styles.quickActionsHeader}>
+              <Text style={styles.quickActionsTitle}>Quick Actions</Text>
+            </View>
+            <View style={styles.quickActionsRow}>
+              <LinearGradient colors={["#F3E8FF", "#FCE7F3"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.quickActionBox}>
+                <TouchableOpacity style={styles.quickActionBtn} activeOpacity={0.8} onPress={() => navigation.navigate(SCREENS.VAULT)}>
+                  <View style={styles.quickActionIconCircle}>
+                    <Feather name="repeat" size={16} color="#4C1D95" />
+                  </View>
+                  <Text style={styles.quickActionLabel}>Transfer</Text>
+                </TouchableOpacity>
+              </LinearGradient>
+              
+              <LinearGradient colors={["#FFE4E6", "#FFEDD5"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.quickActionBox}>
+                <TouchableOpacity style={styles.quickActionBtn} activeOpacity={0.8} onPress={() => navigation.navigate(SCREENS.VAULT)}>
+                  <View style={styles.quickActionIconCircle}>
+                    <Ionicons name="card-outline" size={16} color="#B45309" />
+                  </View>
+                  <Text style={styles.quickActionLabel}>Top Up</Text>
+                </TouchableOpacity>
+              </LinearGradient>
+              
+              <LinearGradient colors={["#ECFCCB", "#D1FAE5"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.quickActionBox}>
+                <TouchableOpacity style={styles.quickActionBtn} activeOpacity={0.8} onPress={() => navigation.navigate(SCREENS.VAULT)}>
+                  <View style={styles.quickActionIconCircle}>
+                    <Feather name="arrow-up-circle" size={16} color="#047857" />
+                  </View>
+                  <Text style={styles.quickActionLabel}>Payment</Text>
+                </TouchableOpacity>
+              </LinearGradient>
+              
+              <LinearGradient colors={["#E0F2FE", "#BAE6FD"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.quickActionBox}>
+                <TouchableOpacity style={styles.quickActionBtn} activeOpacity={0.8} onPress={() => navigation.navigate(SCREENS.PROFILE)}>
+                  <View style={styles.quickActionIconCircle}>
+                    <Feather name="user" size={16} color="#0369A1" />
+                  </View>
+                  <Text style={styles.quickActionLabel}>Profile</Text>
+                </TouchableOpacity>
+              </LinearGradient>
+            </View>
+          </View>
+        </LinearGradient>
+        {/* ── END TOP WHITE-TO-BLUE ISLAND ── */}
+
+        {/* ── DARK BLUE GRADIENT BOTTOM HALF ── */}
+        <LinearGradient
+          colors={["#a6c2ffff", "#4d73d2ff", "#0F1A2E", "#111827"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.darkBottomHalf}
+        >
+          {/* ════════════════════════════════════════════
+              BROWSE CATEGORIES
+          ════════════════════════════════════════════ */}
+          <View style={styles.sectionRow}>
+            <View>
+              <Text style={styles.sectionTitleDark}>Browse Categories</Text>
+              <Text style={styles.sectionSubtitle}>
+                Explore what SmartAssets offers
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => navigation.navigate(SCREENS.SEARCH)}
+              style={styles.viewAllBtn}
+            >
+              <Text style={styles.viewAllText}>View All</Text>
+              <Feather name="chevron-right" size={13} color="#38BDF8" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Grid rows — 2 columns */}
+          <View style={styles.categoryGrid}>
+            {CATEGORIES.map((cat) => (
               <TouchableOpacity
-                key={item.label}
-                style={styles.actionIconBtn}
-                activeOpacity={0.78}
-                onPress={
-                  item.onPress ?? (() => navigation.navigate(item.screen))
+                key={cat.id}
+                style={[
+                  styles.categoryTile,
+                  { backgroundColor: cat.color, width: TILE_WIDTH },
+                ]}
+                onPress={() =>
+                  navigation.navigate(SCREENS.SEARCH, {
+                    initialCategory: cat.id,
+                  })
                 }
+                activeOpacity={0.88}
               >
-                <View style={styles.actionIconCircle}>
-                  <Feather name={item.icon} size={16} color="#09ff00ff" />
-                </View>
-                <Text style={styles.actionIconLabel}>{item.label}</Text>
+                <Image
+                  source={{ uri: cat.image }}
+                  style={styles.categoryTileImage}
+                  resizeMode="cover"
+                />
+                <LinearGradient
+                  colors={["transparent", "rgba(0,0,0,0.75)"]}
+                  start={{ x: 0, y: 0.25 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.categoryTileOverlay}
+                >
+                  <Text style={styles.categoryTileLabel}>{cat.label}</Text>
+                  <View
+                    style={[
+                      styles.categoryAccentDot,
+                      { backgroundColor: cat.accent },
+                    ]}
+                  />
+                </LinearGradient>
               </TouchableOpacity>
             ))}
           </View>
-        </LinearGradient>
-        {/* ── END TOP SECTION ── */}
 
-        {/* ── DARK BOTTOM PANEL ── */}
-        <View style={styles.darkPanel}>
           {/* ════════════════════════════════════════════
-              YOUR ASSETS — compact list, top 5
+              YOUR ASSETS
           ════════════════════════════════════════════ */}
-          <View style={styles.sectionRow}>
+          <View style={[styles.sectionRow, { marginTop: 28 }]}>
             <View>
               <Text style={styles.sectionTitleDark}>Your Assets</Text>
               <Text style={styles.sectionSubtitle}>
@@ -298,7 +358,6 @@ export default function HomeScreen({ navigation, isDark }) {
               <Text style={styles.loadingText}>Loading your holdings…</Text>
             </View>
           ) : vaultHoldings.length === 0 ? (
-            /* Only show empty state when we genuinely have 0 holdings */
             <TouchableOpacity
               style={styles.emptyAssetsCard}
               onPress={() => navigation.navigate(SCREENS.SEARCH)}
@@ -335,7 +394,6 @@ export default function HomeScreen({ navigation, isDark }) {
                 }
                 activeOpacity={0.85}
               >
-                {/* Thumbnail */}
                 <View style={styles.assetThumb}>
                   {holding.image ? (
                     <Image
@@ -349,8 +407,6 @@ export default function HomeScreen({ navigation, isDark }) {
                     </View>
                   )}
                 </View>
-
-                {/* Name + category */}
                 <View style={styles.assetRowMid}>
                   <Text style={styles.assetRowName} numberOfLines={1}>
                     {holding.name}
@@ -359,8 +415,6 @@ export default function HomeScreen({ navigation, isDark }) {
                     {formatCategoryLabel(holding.category)}
                   </Text>
                 </View>
-
-                {/* Price + gain */}
                 <View style={styles.assetRowRight}>
                   <Text style={styles.assetRowPrice}>
                     {holding.price || "—"}
@@ -376,67 +430,22 @@ export default function HomeScreen({ navigation, isDark }) {
             ))
           )}
 
-          {/* ════════════════════════════════════════════
-              BROWSE CATEGORIES — 2×3 grid with images
-          ════════════════════════════════════════════ */}
-          <View style={[styles.sectionRow, { marginTop: 28 }]}>
-            <View>
-              <Text style={styles.sectionTitleDark}>Browse Categories</Text>
-              <Text style={styles.sectionSubtitle}>
-                Explore what SmartAssets offers
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => navigation.navigate(SCREENS.SEARCH)}
-              style={styles.viewAllBtn}
-            >
-              <Text style={styles.viewAllText}>View All</Text>
-              <Feather name="chevron-right" size={13} color="#38BDF8" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Grid rows — 2 columns */}
-          <View style={styles.categoryGrid}>
-            {CATEGORIES.map((cat) => (
+          {/* Mid tabs moved to bottom */}
+          <View style={[styles.midTabContainer, { marginTop: 24 }]}>
+            {["Portfolio", "Watchlist", "Categories"].map((tab) => (
               <TouchableOpacity
-                key={cat.id}
-                style={[
-                  styles.categoryTile,
-                  { backgroundColor: cat.color, width: TILE_WIDTH },
-                ]}
-                onPress={() =>
-                  navigation.navigate(SCREENS.SEARCH, {
-                    initialCategory: cat.id,
-                  })
-                }
-                activeOpacity={0.88}
+                key={tab}
+                style={[styles.midTabBtn, activeHomeTab === tab && styles.midTabBtnActive]}
+                onPress={() => setActiveHomeTab(tab)}
               >
-                {/* Category image fills the tile */}
-                <Image
-                  source={{ uri: cat.image }}
-                  style={styles.categoryTileImage}
-                  resizeMode="cover"
-                />
-                {/* Gradient overlay for text legibility */}
-                <LinearGradient
-                  colors={["transparent", "rgba(0,0,0,0.75)"]}
-                  start={{ x: 0, y: 0.25 }}
-                  end={{ x: 0, y: 1 }}
-                  style={styles.categoryTileOverlay}
-                >
-                  <Text style={styles.categoryTileLabel}>{cat.label}</Text>
-                  <View
-                    style={[
-                      styles.categoryAccentDot,
-                      { backgroundColor: cat.accent },
-                    ]}
-                  />
-                </LinearGradient>
+                <Text style={[styles.midTabText, activeHomeTab === tab && styles.midTabTextActive]}>
+                  {tab}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
-        </View>
-        {/* ── END DARK BOTTOM PANEL ── */}
+        </LinearGradient>
+        {/* ── END DARK BLUE GRADIENT BOTTOM HALF ── */}
       </ScrollView>
     </SafeAreaView>
   );
@@ -446,10 +455,14 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   scroll: { paddingBottom: 32 },
 
-  // ── Top section ──
-  topSection: {
-    paddingBottom: 24,
+  // ── Top White Island ──
+  topWhiteIsland: {
+    backgroundColor: "#FFFFFF",
+    paddingBottom: 16,
+    zIndex: 10,
   },
+
+  topSection: { paddingBottom: 24 }, // kept for compat, unused
 
   // ── Header — tighter, utility weight ──
   header: {
@@ -460,16 +473,33 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 14,
   },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  avatarMini: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  avatarImg: { width: "100%", height: "100%" },
   greeting: {
     fontSize: 11,
     fontWeight: "500",
-    color: "rgba(255,255,255,0.75)",
+    color: "#64748B",
   },
   username: {
     fontSize: 18,
     fontWeight: "700",
     letterSpacing: -0.3,
-    color: "#FFFFFF",
+    color: "#0F172A",
   },
   // ── Profile avatar circle ──
   avatarCircle: {
@@ -491,12 +521,12 @@ const styles = StyleSheet.create({
 
   // ── Smaller icon buttons ──
   iconBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
-    backgroundColor: "rgba(255,255,255,0.1)",
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -581,44 +611,145 @@ const styles = StyleSheet.create({
     color: "#A7F3D0",
   },
 
-  // ── Action Row — 4 icon buttons below card ──
-  actionRow: {
+  // ── Quick Actions ──
+  quickActionsContainer: {
+    paddingHorizontal: 8,
+    paddingTop: 28,
+    paddingBottom: 10,
+  },
+  quickActionsHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingHorizontal: 28,
-    paddingBottom: 18,
-    paddingTop: 6,
-  },
-  actionIconBtn: {
     alignItems: "center",
-    gap: 6,
+    marginBottom: 16,
+    paddingHorizontal: 8,
   },
-  actionIconCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+  // ── Quick Actions title on white bg ──
+  quickActionsTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  quickActionsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 0,
+  },
+  quickActionBox: {
+    width: "24%",
+    aspectRatio: 1,
+    borderRadius: 22,
+  },
+  quickActionBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  quickActionIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
   },
-  actionIconLabel: {
-    fontSize: 10,
+  quickActionLabel: {
+    fontSize: 12,
     fontWeight: "600",
-    color: "rgba(255,255,255,0.7)",
-    letterSpacing: 0.1,
+    color: "#0F172A",
   },
 
-  // ── Dark bottom panel ──
-  darkPanel: {
-    backgroundColor: "#141820",
-    paddingTop: 22,
+  // ── Dark middle canvas ──
+  darkMiddleCanvas: {
+    backgroundColor: "#0F1A2E",
+    paddingTop: 20,
+    paddingBottom: 12,
+  },
+  midTabContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingHorizontal: 20,
     paddingBottom: 8,
+  },
+  midTabBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  midTabBtnActive: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  midTabText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  midTabTextActive: {
+    color: "#FFFFFF",
+  },
+
+  // ── Bottom white sheet ──
+  bottomWhiteSheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingTop: 28,
+    paddingBottom: 40,
     minHeight: 400,
+  },
+
+  // ── Dark blue gradient bottom half ──
+  darkBottomHalf: {
+    paddingTop: 20,
+    paddingBottom: 40,
+    minHeight: 400,
+  },
+
+  // ── Profile card (light blue gradient) ──
+  profileCard: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    borderRadius: 20,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  profileCardLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    flex: 1,
+  },
+  profileCardAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "rgba(56,189,248,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(56,189,248,0.3)",
+  },
+  profileCardName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginBottom: 3,
+  },
+  profileCardSub: {
+    fontSize: 12,
+    color: "rgba(148,163,184,0.9)",
+    fontWeight: "400",
+  },
+  profileCardRight: {
+    paddingLeft: 8,
   },
 
   // ── Section header row ──
@@ -683,7 +814,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.04)",
+    borderBottomColor: "rgba(255,255,255,0.05)",
   },
   assetThumb: {
     width: 44,

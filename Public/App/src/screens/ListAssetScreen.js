@@ -238,6 +238,7 @@ export default function ListAssetScreen({ navigation, isDark }) {
   };
 
   return (
+    
     <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safe, { backgroundColor: c.obsidian }]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}

@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { useColors } from "../constants/theme";
@@ -25,6 +26,7 @@ export default function VaultScreen({ navigation, isDark }) {
   const { user, token, logout } = useAuth();
 
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("Portfolio");
   const [holdings, setHoldings] = useState([]);
   const [summary, setSummary] = useState({
     totalValueFormatted: "R0",
@@ -67,220 +69,171 @@ export default function VaultScreen({ navigation, isDark }) {
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: c.obsidian }]}
+      style={[styles.safe, { backgroundColor: "#FFFFFF" }]}
     >
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        bounces={false}
       >
-        {/* ── Header with User Identity & Logout ── */}
-        <View style={[styles.header, { backgroundColor: '#E6FFFD', borderBottomWidth: 0 }]}>
-          <View>
-            <Text style={[styles.title, { color: '#0F172A' }]}>
-              My Personal Vault
-            </Text>
-            <Text style={[styles.sub, { color: '#334155' }]}>
-              {user?.walletAddress
-                ? `🦊 ${user.walletAddress.slice(0, 6)}...${user.walletAddress.slice(-4)}`
-                : user?.fullName
-                  ? `${user.fullName} (${user.email})`
-                  : user?.email}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[
-              styles.logoutBtn,
-              { backgroundColor: 'rgba(0,0,0,0.05)', borderColor: 'rgba(0,0,0,0.1)' },
-            ]}
-            onPress={handleLogout}
-          >
-            <Feather name="log-out" size={16} color="#0F172A" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Portfolio Stats Card ── */}
-        <View style={[styles.portfolioCard, { backgroundColor: isDark ? '#051121' : '#E0F2FE', borderColor: isDark ? '#162C4E' : c.border }]}>
-          <View style={{ alignItems: 'center' }}>
-            <Text style={[styles.portfolioLabel, { color: isDark ? '#7DD3FC' : c.primaryDim }]}>YOUR PORTFOLIO VALUE</Text>
-            <Text style={[styles.portfolioValue, { color: isDark ? '#FFFFFF' : c.primaryDim }]}>
-              {summary.totalValueFormatted}
-            </Text>
-          </View>
-          
-          <View style={styles.statsRow}>
-            <View style={[styles.statCircle, { backgroundColor: c.blueBg, borderColor: c.primary, borderWidth: 1 }]}>
-               <Text style={[styles.statVal, { color: c.primary }]}>{summary.totalCount}</Text>
-               <Text style={[styles.statLbl, { color: c.primary }]}>Holdings</Text>
-            </View>
-            <View style={[styles.statCircle, { backgroundColor: c.amberBg, borderColor: c.amber, borderWidth: 1 }]}>
-               <Text style={[styles.statVal, { color: c.amber }]}>{summary.wholeCount}</Text>
-               <Text style={[styles.statLbl, { color: c.amber }]}>Whole</Text>
-            </View>
-            <View style={[styles.statCircle, { backgroundColor: c.greenBg, borderColor: c.green, borderWidth: 1 }]}>
-               <Text style={[styles.statVal, { color: c.green }]}>{summary.fractionalCount}</Text>
-               <Text style={[styles.statLbl, { color: c.green }]}>Fraction</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ── Escrow Tracker Quick Access ── */}
-        <TouchableOpacity
-          style={[styles.escrowQuickCard, { backgroundColor: c.card, borderColor: c.primary + '40' }]}
-          onPress={() => navigation.navigate(SCREENS.ESCROW_TRACKER)}
-          activeOpacity={0.85}
+        {/* ── TOP SECTION (WHITE-TO-BLUE) ── */}
+        <LinearGradient
+          colors={["#FFFFFF", "#F0F8FF", "#a6c2ffff"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.topWhiteSection}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-            <View style={[styles.escrowQuickIcon, { backgroundColor: c.primaryBg }]}>
-              <Ionicons name="shield-checkmark" size={20} color={c.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.escrowQuickTitle, { color: c.warm }]}>
-                Smart Contract Escrow Tracker
-              </Text>
-              <Text style={[styles.escrowQuickSub, { color: c.muted }]}>
-                Track live on-chain deposit, courier transit & authentication
-              </Text>
-            </View>
+          <View style={styles.header}>
+            <Text style={styles.greetingName}>My Vault</Text>
+            <TouchableOpacity style={styles.bellBtn}>
+              <Feather name="bell" size={18} color="#0F172A" />
+            </TouchableOpacity>
           </View>
-          <Feather name="chevron-right" size={18} color={c.primary} />
-        </TouchableOpacity>
 
-        <View>
-            {/* ── Holdings Section ── */}
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionTitle, { color: c.warm }]}>
-                Your Verified Holdings
-              </Text>
-              <Text
-                style={[
-                  styles.privateBadge,
-                  { color: c.primary, backgroundColor: c.primaryBg },
-                ]}
-              >
-                🔒 Private to you
-              </Text>
-            </View>
+          <View style={styles.balanceContainer}>
+            <Text style={styles.balanceLabel}>Available Balance</Text>
+            <Text style={styles.balanceValue}>{summary.totalValueFormatted}</Text>
+            <Text style={styles.balanceGain}>
+              $10,240.00 <Text style={styles.balanceGainPct}>+12%</Text>
+            </Text>
+          </View>
 
-            {loading ? (
-              <View style={styles.loaderWrap}>
-                <ActivityIndicator size="large" color={c.primary} />
-                <Text style={[styles.loaderText, { color: c.muted }]}>
-                  Loading your vault…
-                </Text>
-              </View>
-            ) : holdings.length === 0 ? (
-              <View
-                style={[
-                  styles.emptyCard,
-                  { backgroundColor: c.card, borderColor: c.border },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.emptyIconCircle,
-                    { backgroundColor: c.primaryBg },
-                  ]}
-                >
-                  <Ionicons name="shield-outline" size={32} color={c.primary} />
-                </View>
-                <Text style={[styles.emptyTitle, { color: c.warm }]}>
-                  Your Vault is Empty
-                </Text>
-                <Text style={[styles.emptySub, { color: c.muted }]}>
-                  No assets in your account yet. Assets you purchase or list
-                  will be securely stored here.
-                </Text>
+          <View style={styles.actionRow}>
+            <TouchableOpacity style={styles.withdrawBtn}>
+              <Feather name="arrow-down-left" size={16} color="#064E3B" />
+              <Text style={styles.withdrawBtnText}>Withdraw</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.depositBtn}>
+              <Feather name="arrow-up-right" size={16} color="#0F172A" />
+              <Text style={styles.depositBtnText}>Deposit</Text>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
 
+        {/* ── MIDDLE SECTION (DARK) ── */}
+        <View style={styles.darkSection}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitleWhite}>Portfolio</Text>
+            <TouchableOpacity>
+              <Text style={styles.viewAllText}>View All</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Custom Pill Tab Navigator */}
+          <View style={styles.tabContainer}>
+            {["Portfolio", "Shares", "Transactions"].map((tab) => {
+              const isActive = activeTab === tab;
+              return (
                 <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: c.primary }]}
-                  onPress={() => navigation.navigate(SCREENS.LIST_ASSET)}
+                  key={tab}
+                  style={[styles.tabBtn, isActive && styles.tabBtnActive]}
+                  onPress={() => setActiveTab(tab)}
+                  activeOpacity={0.8}
                 >
-                  <Text style={styles.actionBtnText}>+ List a New Asset</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.ghostActionBtn, { borderColor: c.border }]}
-                  onPress={() => navigation.navigate(SCREENS.HOME)}
-                >
-                  <Text style={[styles.ghostActionBtnText, { color: c.warm }]}>
-                    Explore Marketplace
+                  <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                    {tab}
                   </Text>
                 </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Cards Grid */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cardsScroll}>
+            {loading ? (
+              <ActivityIndicator size="large" color="#BBF7D0" style={{ margin: 40 }} />
+            ) : holdings.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={{ color: "#94A3B8" }}>No assets found.</Text>
               </View>
             ) : (
-              holdings.map((item) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[
-                    styles.holdingCard,
-                    { 
-                      backgroundColor: isDark ? '#17365D' : c.card, 
-                      borderColor: isDark ? '#3B82F6' : c.border,
-                      shadowColor: isDark ? '#60A5FA' : '#000000',
-                      shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: isDark ? 0.5 : 0.05,
-                      shadowRadius: isDark ? 16 : 8,
-                      elevation: isDark ? 12 : 2,
-                    },
-                  ]}
-                  onPress={() =>
-                    navigation.navigate(SCREENS.ASSET_DETAIL, {
-                      asset: {
-                        ...item,
-                        priceNum: item.price_num || 0,
-                        owner: user?.fullName || "You",
-                        year: 2024,
-                        condition: "Mint",
-                        cert: "SA-" + item.id.substring(0, 8).toUpperCase(),
-                        trending: false,
-                        shares: item.asset_type === "fractional" ? 100 : 1,
-                        sharePrice: item.price_num,
-                        sharesSold: item.asset_type === "fractional" ? 45 : 1,
-                      },
-                    })
-                  }
-                  activeOpacity={0.9}
-                >
-                  <Image
-                    source={{ uri: item.image }}
-                    style={styles.thumb}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.holdingMeta}>
-                    <Text
-                      style={[styles.holdingCategory, { color: c.primary }]}
-                    >
-                      {item.category?.toUpperCase()}
-                    </Text>
-                    <Text
-                      style={[styles.holdingName, { color: c.warm }]}
-                      numberOfLines={1}
-                    >
-                      {item.name}
-                    </Text>
-                    <Text style={[styles.holdingType, { color: c.muted }]}>
-                      {item.asset_type === "fractional"
-                        ? "Fractional Share"
-                        : "Whole Asset"}
-                    </Text>
-                  </View>
-                  <View style={styles.holdingRight}>
-                    <Text style={[styles.holdingValue, { color: c.warm }]}>
-                      {item.price}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.holdingGain,
-                        { color: item.positive ? c.green : c.red },
-                      ]}
-                    >
-                      {item.gain || "+0%"} ({item.gain_pct || "0%"})
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))
+              holdings.map((item, idx) => {
+                const bgColor = "#7B61FF"; // Solid vibrant purple from screenshot
+                const textColor = "#FFFFFF";
+
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.portfolioAssetCard}
+                    activeOpacity={0.9}
+                    onPress={() =>
+                      navigation.navigate(SCREENS.ASSET_DETAIL, {
+                        asset: { ...item, priceNum: item.price_num || 0 },
+                      })
+                    }
+                  >
+                    <View style={styles.cardTopRow}>
+                      <View style={styles.cardThumbWrap}>
+                        <Image source={{ uri: item.image }} style={styles.cardLogo} />
+                      </View>
+                      <View>
+                        <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
+                        <View style={styles.cardCategoryChip}>
+                          <Text style={styles.cardCategoryText}>{item.category}</Text>
+                        </View>
+                      </View>
+                    </View>
+                    <View style={styles.cardBottomRow}>
+                      <Text style={styles.cardPrice}>{item.price}</Text>
+                      <View style={styles.cardGainPill}>
+                        <Feather name={item.positive ? "trending-up" : "trending-down"} size={10} color="#059669" />
+                        <Text style={styles.cardGainText}>
+                          {item.gain_pct || "+0%"}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
             )}
+          </ScrollView>
+        </View>
+
+        {/* ── BOTTOM SECTION (WHITE) ── */}
+        <View style={styles.bottomWhiteSection}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitleDark}>My Watchlist</Text>
+            <TouchableOpacity>
+              <Text style={styles.viewAllTextDark}>View All</Text>
+            </TouchableOpacity>
           </View>
+          
+          <View style={styles.watchlistContainer}>
+             {/* Mock Watchlist Item 1 */}
+             <View style={styles.watchlistItem}>
+                <View style={styles.watchLeft}>
+                   <View style={styles.watchIconWrap}>
+                      <Feather name="coffee" size={18} color="#059669" />
+                   </View>
+                   <View>
+                      <Text style={styles.watchTitle}>Sbux</Text>
+                      <Text style={styles.watchSub}>Starbucks</Text>
+                   </View>
+                </View>
+                <View style={styles.watchRight}>
+                   <Text style={styles.watchPrice}>$80.30</Text>
+                   <Text style={[styles.watchGain, { color: '#059669' }]}>+1.32%</Text>
+                </View>
+             </View>
+             
+             {/* Mock Watchlist Item 2 */}
+             <View style={styles.watchlistItem}>
+                <View style={styles.watchLeft}>
+                   <View style={styles.watchIconWrap}>
+                      <Feather name="activity" size={18} color="#4F46E5" />
+                   </View>
+                   <View>
+                      <Text style={styles.watchTitle}>Nike</Text>
+                      <Text style={styles.watchSub}>Nike, Inc</Text>
+                   </View>
+                </View>
+                <View style={styles.watchRight}>
+                   <Text style={styles.watchPrice}>$111.05</Text>
+                   <Text style={[styles.watchGain, { color: '#DC2626' }]}>-0.32%</Text>
+                </View>
+             </View>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -288,162 +241,209 @@ export default function VaultScreen({ navigation, isDark }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { paddingBottom: 24 },
+  scroll: { flexGrow: 1, backgroundColor: "#0F1A2E" }, 
+  
+  // -- Top White Island --
+  topWhiteSection: {
+    backgroundColor: "#FFFFFF",
+    paddingTop: 10,
+    paddingBottom: 32,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    zIndex: 10,
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 16,
-    marginBottom: 16,
+    paddingHorizontal: 24,
+    marginBottom: 28,
   },
-  portfolioCard: {
-    marginHorizontal: 20,
-    padding: 20,
-    borderRadius: 24,
-    borderWidth: 1,
-    marginBottom: 20,
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
-  portfolioLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  portfolioValue: {
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: -1,
-    marginBottom: 20,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
-  },
-  statCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statVal: {
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  statLbl: {
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  title: { fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
-  sub: { fontSize: 12, marginTop: 2 },
-  logoutBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
+  avatarMini: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#1E293B",
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+  },
+  avatarImg: { width: "100%", height: "100%" },
+  greetingText: { fontSize: 12, color: "#64748B", marginBottom: 2 },
+  greetingName: { fontSize: 24, fontWeight: "700", color: "#0F172A", letterSpacing: -0.4 },
+  bellBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  balanceContainer: {
+    alignItems: "center",
+    marginBottom: 28,
+  },
+  balanceLabel: { fontSize: 13, color: "#64748B", fontWeight: "500", marginBottom: 8 },
+  balanceValue: { fontSize: 40, fontWeight: "800", color: "#0F172A", letterSpacing: -1, marginBottom: 8 },
+  balanceGain: { fontSize: 11, color: "#64748B", fontWeight: "600" },
+  balanceGainPct: { color: "#10B981" },
+  
+  actionRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 16,
+    paddingHorizontal: 24,
+  },
+  withdrawBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#10B981",
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 999,
+  },
+  withdrawBtnText: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
+  depositBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  depositBtnText: { fontSize: 15, fontWeight: "700", color: "#0F172A" },
+
+  // -- Middle Dark --
+  darkSection: {
+    backgroundColor: "#0F1A2E",
+    paddingTop: 32,
+    paddingBottom: 40,
   },
   sectionHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    paddingHorizontal: 24,
+    marginBottom: 20,
   },
-  sectionTitle: { fontSize: 15, fontWeight: "700" },
-  privateBadge: {
-    fontSize: 10,
-    fontWeight: "700",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    overflow: "hidden",
+  sectionTitleWhite: { fontSize: 15, fontWeight: "700", color: "#F1F5F9" },
+  viewAllText: { fontSize: 12, fontWeight: "600", color: "#38BDF8" },
+  
+  tabContainer: {
+    flexDirection: "row",
+    backgroundColor: "#1E293B",
+    marginHorizontal: 24,
+    borderRadius: 999,
+    padding: 4,
+    marginBottom: 24,
   },
-
-  loaderWrap: { padding: 40, alignItems: "center", gap: 12 },
-  loaderText: { fontSize: 13, fontWeight: "500" },
-  emptyCard: {
-    marginHorizontal: 20,
-    padding: 24,
-    borderRadius: 24,
-    borderWidth: 1,
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 10,
     alignItems: "center",
-    gap: 12,
+    borderRadius: 999,
   },
-  emptyIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  tabBtnActive: { backgroundColor: "#FFFFFF" },
+  tabText: { fontSize: 13, fontWeight: "600", color: "#94A3B8" },
+  tabTextActive: { color: "#0F172A" },
+
+  // -- Horizontal asset cards on dark canvas (dark glass mode) --
+  cardsScroll: {
+    paddingHorizontal: 24,
+    gap: 16,
+  },
+  portfolioAssetCard: {
+    width: 160,
+    height: 190,
+    borderRadius: 24,
+    padding: 16,
+    justifyContent: "space-between",
+    backgroundColor: "#121B2B",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  cardTopRow: { gap: 10 },
+  cardThumbWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.06)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
-  },
-  emptyTitle: { fontSize: 18, fontWeight: "700" },
-  emptySub: {
-    fontSize: 13,
-    textAlign: "center",
-    lineHeight: 19,
-    paddingHorizontal: 12,
-  },
-  actionBtn: {
-    marginTop: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 14,
-    width: "100%",
-    alignItems: "center",
-  },
-  actionBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
-  ghostActionBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 14,
+    overflow: "hidden",
     borderWidth: 1,
-    width: "100%",
-    alignItems: "center",
+    borderColor: "rgba(255,255,255,0.1)",
   },
-  ghostActionBtnText: { fontSize: 13, fontWeight: "600" },
-  holdingCard: {
+  cardLogo: { width: 36, height: 36, borderRadius: 8 },
+  cardTitle: { fontSize: 13, fontWeight: "600", marginBottom: 3, color: "#E2E8F0" },
+  cardSub: { fontSize: 11, fontWeight: "500" },
+  cardCategoryChip: {
+    flexDirection: "row",
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(56,189,248,0.15)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  cardCategoryText: { fontSize: 9.5, fontWeight: "700", color: "#38BDF8", textTransform: "uppercase", letterSpacing: 0.8 },
+  cardBottomRow: { gap: 6 },
+  cardPrice: { fontSize: 13, fontWeight: "700", color: "#F1F5F9" },
+  cardGainPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginHorizontal: 20,
-    marginBottom: 10,
-    padding: 12,
-    borderRadius: 20,
-    borderWidth: 1,
+    gap: 4,
+    backgroundColor: "rgba(52,211,153,0.12)",
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  thumb: { width: 56, height: 56, borderRadius: 12 },
-  holdingMeta: { flex: 1, gap: 2 },
-  holdingCategory: { fontSize: 9, fontWeight: "700", letterSpacing: 0.8 },
-  holdingName: { fontSize: 13, fontWeight: "700" },
-  holdingType: { fontSize: 11 },
-  holdingRight: { alignItems: "flex-end", gap: 3 },
-  holdingValue: { fontSize: 13, fontWeight: "700" },
-  holdingGain: { fontSize: 11, fontWeight: "600" },
-  escrowQuickCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    padding: 14,
-    borderRadius: 18,
-    borderWidth: 1,
+  cardGainText: { fontSize: 9, fontWeight: "700", color: "#34D399" },
+  emptyCard: { width: 300, height: 180, alignItems: "center", justifyContent: "center", backgroundColor: "#1E293B", borderRadius: 24 },
+
+  // -- Bottom White Sheet --
+  bottomWhiteSection: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingTop: 32,
+    paddingBottom: 40,
+    minHeight: 300,
   },
-  escrowQuickIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
+  sectionTitleDark: { fontSize: 15, fontWeight: "700", color: "#0F172A", marginBottom: 2 },
+  viewAllTextDark: { fontSize: 12, fontWeight: "600", color: "#38BDF8" },
+  watchlistContainer: {
+    paddingHorizontal: 24,
+    gap: 20,
   },
-  escrowQuickTitle: { fontSize: 13, fontWeight: '700' },
-  escrowQuickSub: { fontSize: 11, marginTop: 2 },
+  watchlistItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  watchLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  watchIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  watchTitle: { fontSize: 13, fontWeight: "600", color: "#0F172A", marginBottom: 2 },
+  watchSub: { fontSize: 11, fontWeight: "500", color: "#64748B" },
+  watchRight: { alignItems: "flex-end", gap: 4 },
+  watchPrice: { fontSize: 13, fontWeight: "700", color: "#0F172A", marginBottom: 0 },
+  watchGain: { fontSize: 9, fontWeight: "700" },
 });
