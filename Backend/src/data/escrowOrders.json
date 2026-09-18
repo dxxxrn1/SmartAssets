@@ -376,5 +376,53 @@
         "completed": false
       }
     ]
+  },
+  {
+    "orderId": "ORD-892104",
+    "assetName": "Verified Collectible",
+    "assetCategory": "Luxury Watch",
+    "assetImage": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800",
+    "amountZar": 28500,
+    "amountGbp": 28500,
+    "amountEth": "11.4000",
+    "paymentMethod": "wallet",
+    "paymentRail": "Ethereum Sepolia Web3",
+    "status": "payment_secured",
+    "currentStep": 1,
+    "totalSteps": 4,
+    "depositTxHash": "0x3a8b4f2c1d9e7a5b6c8d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
+    "etherscanUrl": "https://sepolia.etherscan.io/tx/0x3a8b4f2c1d9e7a5b6c8d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
+    "escrowContractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "sellerAddress": "0x71C3A5b67B7840131498B1aB55938B237F026a76",
+    "createdAt": "2026-09-18T08:08:51.037Z",
+    "updatedAt": "2026-09-18T08:08:51.037Z",
+    "timeline": [
+      {
+        "step": 1,
+        "title": "Payment Secured in Smart Contract",
+        "description": "11.4000 Sepolia ETH locked in Escrow Contract. Protected from withdrawal until inspection passes.",
+        "timestamp": "2026-09-18T08:08:51.037Z",
+        "txHash": "0x3a8b4f2c1d9e7a5b6c8d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
+        "completed": true
+      },
+      {
+        "step": 2,
+        "title": "Physical Asset in Transit to Vault",
+        "description": "Insured courier dispatch in progress to London Custody Center.",
+        "completed": false
+      },
+      {
+        "step": 3,
+        "title": "Authentication & Physical Inspection",
+        "description": "Condition grading and authenticity appraisal.",
+        "completed": false
+      },
+      {
+        "step": 4,
+        "title": "Funds Released to Seller & NFT Delivered",
+        "description": "Automatic settlement on-chain.",
+        "completed": false
+      }
+    ]
   }
 ]

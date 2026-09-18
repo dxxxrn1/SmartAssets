@@ -40,7 +40,7 @@ export default function ListAssetScreen({ navigation, isDark }) {
     condition: '',
     description: '',
     askingPrice: '',
-    image: '',
+    images: [],          // up to 3 photos
   });
 
   // Provenance History Events State — user creates real events
@@ -51,6 +51,10 @@ export default function ListAssetScreen({ navigation, isDark }) {
 
   // ── Image Picker Handlers ──────────────────────────────────────────────────
   const pickImageFromLibrary = async () => {
+    if (form.images.length >= 3) {
+      Alert.alert('Limit Reached', 'You can add up to 3 photos. Remove one to add another.');
+      return;
+    }
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult.granted) {
@@ -58,21 +62,25 @@ export default function ListAssetScreen({ navigation, isDark }) {
         return;
       }
 
+      const remaining = 3 - form.images.length;
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
+        mediaTypes: 'images',
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+        allowsEditing: remaining === 1, // editing only works for single selection
         aspect: [4, 3],
         quality: 0.7,
         base64: true,
       });
 
-      if (!result.canceled && result.assets && result.assets[0]) {
-        const selectedAsset = result.assets[0];
-        // Use base64 data URI if available for reliable transfer, otherwise uri
-        const imageUri = selectedAsset.base64
-          ? `data:image/jpeg;base64,${selectedAsset.base64}`
-          : selectedAsset.uri;
-        setForm({ ...form, image: imageUri });
+      if (!result.canceled && result.assets?.length) {
+        const newImages = result.assets.map((a) =>
+          a.base64 ? `data:image/jpeg;base64,${a.base64}` : a.uri
+        );
+        setForm((prev) => ({
+          ...prev,
+          images: [...prev.images, ...newImages].slice(0, 3),
+        }));
       }
     } catch (err) {
       Alert.alert('Error', 'Could not open photo library: ' + err.message);
@@ -80,6 +88,10 @@ export default function ListAssetScreen({ navigation, isDark }) {
   };
 
   const takePhotoWithCamera = async () => {
+    if (form.images.length >= 3) {
+      Alert.alert('Limit Reached', 'You can add up to 3 photos. Remove one to add another.');
+      return;
+    }
     try {
       const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
       if (!cameraPermission.granted) {
@@ -94,16 +106,24 @@ export default function ListAssetScreen({ navigation, isDark }) {
         base64: true,
       });
 
-      if (!result.canceled && result.assets && result.assets[0]) {
-        const selectedAsset = result.assets[0];
-        const imageUri = selectedAsset.base64
-          ? `data:image/jpeg;base64,${selectedAsset.base64}`
-          : selectedAsset.uri;
-        setForm({ ...form, image: imageUri });
+      if (!result.canceled && result.assets?.[0]) {
+        const a = result.assets[0];
+        const imageUri = a.base64 ? `data:image/jpeg;base64,${a.base64}` : a.uri;
+        setForm((prev) => ({
+          ...prev,
+          images: [...prev.images, imageUri].slice(0, 3),
+        }));
       }
     } catch (err) {
       Alert.alert('Error', 'Could not open camera: ' + err.message);
     }
+  };
+
+  const removeImage = (index) => {
+    setForm((prev) => ({
+      ...prev,
+      images: prev.images.filter((_, i) => i !== index),
+    }));
   };
 
   // ── History Handlers ───────────────────────────────────────────────────────
@@ -144,8 +164,8 @@ export default function ListAssetScreen({ navigation, isDark }) {
       setStep(3);
       return;
     }
-    if (!form.image) {
-      Alert.alert('Photo Required', 'Please select or capture a photo for your asset in Step 2.');
+    if (!form.images.length) {
+      Alert.alert('Photo Required', 'Please select or capture at least one photo for your asset in Step 2.');
       setStep(1);
       return;
     }
@@ -159,7 +179,7 @@ export default function ListAssetScreen({ navigation, isDark }) {
         condition: form.condition.trim() || 'Verified',
         description: form.description.trim(),
         askingPrice: form.askingPrice.trim(),
-        image: form.image,
+        image: form.images[0],           // primary image for listing
         history: historyList.map(({ year, event, party }) => ({ year, event, party })),
       };
 
@@ -180,7 +200,7 @@ export default function ListAssetScreen({ navigation, isDark }) {
                 condition: '',
                 description: '',
                 askingPrice: '',
-                image: '',
+                images: [],
               });
               setHistoryList([]);
               navigation.navigate(SCREENS.HOME);
@@ -360,47 +380,73 @@ export default function ListAssetScreen({ navigation, isDark }) {
           {/* ── Step 1: Upload Photos ── */}
           {step === 1 && (
             <View style={styles.formSection}>
-              <Text style={[styles.sectionTitle, { color: c.warm }]}>Upload Asset Photo</Text>
+              <Text style={[styles.sectionTitle, { color: c.warm }]}>Upload Asset Photos</Text>
               <Text style={[styles.stepDesc, { color: c.muted }]}>
-                Add a high-resolution photo from your phone camera, gallery, or choose a preset.
+                Add up to 3 high-resolution photos. The first photo will be the primary listing image.
               </Text>
 
-              {/* Photo Preview */}
-              {form.image ? (
-                <View style={[styles.previewWrap, { borderColor: c.primary }]}>
-                  <Image source={{ uri: form.image }} style={styles.previewImage} resizeMode="cover" />
-                  <TouchableOpacity
-                    style={styles.removeImageBtn}
-                    onPress={() => setForm({ ...form, image: '' })}
-                  >
-                    <Feather name="trash-2" size={16} color="#FFFFFF" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={[styles.photoPlaceholder, { backgroundColor: c.card, borderColor: c.border }]}>
-                  <Feather name="image" size={40} color={c.primary} />
-                  <Text style={[styles.photoPlaceholderText, { color: c.muted }]}>No photo selected yet</Text>
-                </View>
-              )}
+              {/* Photo Grid */}
+              <View style={styles.photoGrid}>
+                {form.images.map((uri, index) => (
+                  <View key={index} style={styles.photoThumb}>
+                    <Image source={{ uri }} style={styles.thumbImage} resizeMode="cover" />
+                    <TouchableOpacity
+                      style={styles.removeThumbBtn}
+                      onPress={() => removeImage(index)}
+                    >
+                      <Feather name="x" size={12} color="#FFFFFF" />
+                    </TouchableOpacity>
+                    {index === 0 && (
+                      <View style={[styles.primaryBadge, { backgroundColor: c.primary }]}>
+                        <Text style={styles.primaryBadgeText}>Primary</Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+
+                {/* Empty slots */}
+                {form.images.length < 3 && (
+                  <View style={[styles.photoThumb, styles.addPhotoSlot, { borderColor: c.border, backgroundColor: c.card }]}>
+                    <Feather name="plus" size={24} color={c.muted} />
+                    <Text style={[styles.addPhotoSlotText, { color: c.muted }]}>
+                      {form.images.length === 0 ? 'Add Photo' : `${3 - form.images.length} more`}
+                    </Text>
+                  </View>
+                )}
+              </View>
 
               {/* Upload Buttons */}
               <View style={styles.uploadBtnRow}>
                 <TouchableOpacity
-                  style={[styles.pickerBtn, { backgroundColor: c.card, borderColor: c.border }]}
+                  style={[
+                    styles.pickerBtn,
+                    { backgroundColor: c.card, borderColor: c.border },
+                    form.images.length >= 3 && { opacity: 0.45 },
+                  ]}
                   onPress={pickImageFromLibrary}
+                  disabled={form.images.length >= 3}
                 >
                   <Feather name="image" size={18} color={c.primary} />
                   <Text style={[styles.pickerBtnText, { color: c.warm }]}>Choose from Library</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.pickerBtn, { backgroundColor: c.card, borderColor: c.border }]}
+                  style={[
+                    styles.pickerBtn,
+                    { backgroundColor: c.card, borderColor: c.border },
+                    form.images.length >= 3 && { opacity: 0.45 },
+                  ]}
                   onPress={takePhotoWithCamera}
+                  disabled={form.images.length >= 3}
                 >
                   <Feather name="camera" size={18} color={c.primary} />
                   <Text style={[styles.pickerBtnText, { color: c.warm }]}>Take Photo</Text>
                 </TouchableOpacity>
               </View>
+
+              <Text style={[styles.photoHint, { color: c.muted }]}>
+                {form.images.length}/3 photos added
+              </Text>
             </View>
           )}
 
@@ -592,23 +638,37 @@ const styles = StyleSheet.create({
   categoryChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   catChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, borderWidth: 1 },
 
-  // Photo Styles
-  previewWrap: {
-    height: 180, borderRadius: 18, overflow: 'hidden', borderWidth: 2,
+  // Photo Grid Styles
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  photoThumb: {
+    width: 100,
+    height: 100,
+    borderRadius: 14,
+    overflow: 'hidden',
     position: 'relative',
   },
-  previewImage: { width: '100%', height: '100%' },
-  removeImageBtn: {
-    position: 'absolute', top: 10, right: 10,
-    width: 32, height: 32, borderRadius: 16,
+  thumbImage: { width: '100%', height: '100%' },
+  removeThumbBtn: {
+    position: 'absolute', top: 5, right: 5,
+    width: 22, height: 22, borderRadius: 11,
     backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center', justifyContent: 'center',
   },
-  photoPlaceholder: {
-    height: 140, borderRadius: 18, borderWidth: 1, borderStyle: 'dashed',
-    alignItems: 'center', justifyContent: 'center', gap: 8,
+  primaryBadge: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    paddingVertical: 3, alignItems: 'center',
   },
-  photoPlaceholderText: { fontSize: 13, fontWeight: '500' },
+  primaryBadgeText: { fontSize: 9, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.5 },
+  addPhotoSlot: {
+    borderWidth: 1, borderStyle: 'dashed',
+    alignItems: 'center', justifyContent: 'center', gap: 4,
+  },
+  addPhotoSlotText: { fontSize: 10, fontWeight: '600' },
+  photoHint: { fontSize: 12, fontWeight: '500', textAlign: 'center', marginTop: 4 },
   uploadBtnRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
   pickerBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
