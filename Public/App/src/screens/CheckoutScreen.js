@@ -21,13 +21,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useColors } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
-import { processPaymentApi, getPaymentRatesApi } from '../services/api';
+import {
+  processPaymentApi,
+  getPaymentRatesApi,
+  createPaymentIntentApi,
+  createStripePaymentMethod,
+  confirmStripePayment,
+} from '../services/api';
 import { SCREENS } from '../constants/navigation';
 
 const PAYMENT_METHODS = [
   { id: 'wallet', label: 'MetaMask Web3', type: 'ionicons', icon: 'wallet-outline', tag: 'Sepolia ETH' },
-  { id: 'card', label: 'Credit / Debit Card', type: 'feather', icon: 'credit-card', tag: 'Instant' },
-  { id: 'bank', label: 'Bank Transfer', type: 'ionicons', icon: 'business-outline', tag: 'Wire' },
+  { id: 'card', label: 'Credit / Debit Card', type: 'feather', icon: 'credit-card', tag: 'Stripe' },
+  { id: 'bank', label: 'Bank Transfer', type: 'ionicons', icon: 'business-outline', tag: 'Stripe Wire' },
 ];
 
 export default function CheckoutScreen({ navigation, route, isDark }) {
@@ -53,19 +59,21 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
   const [purchasing, setPurchasing] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
 
-  // Exchange rates and escrow details
+  // Exchange rates, escrow details, and Stripe config
   const [rates, setRates] = useState({
     zarPerEth: 48000,
     gbpPerEth: 48000,
     escrowAddress: '0xCfD4D4c0c4A5CBeF1632Af0553776dFB72bdFDE9',
+    stripePublishableKey: null,
+    stripeMode: 'sandbox',
   });
 
-  // Card form state
+  // Card form state (clear defaults — user must type real details)
   const [cardForm, setCardForm] = useState({
-    cardNumber: '4532 8920 1938 7201',
-    cardName: user?.fullName || 'James Harrington',
-    expiry: '09/27',
-    cvc: '382',
+    cardNumber: '',
+    cardName: user?.fullName || '',
+    expiry: '',
+    cvc: '',
   });
 
   // MetaMask transaction state
@@ -91,6 +99,8 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
             zarPerEth: res.zarPerEth || res.gbpPerEth || 48000,
             gbpPerEth: res.zarPerEth || res.gbpPerEth || 48000,
             escrowAddress: res.escrowAddress || '0xCfD4D4c0c4A5CBeF1632Af0553776dFB72bdFDE9',
+            stripePublishableKey: res.stripe?.publishableKey || null,
+            stripeMode: res.stripe?.mode || 'sandbox',
           });
         }
       })
@@ -134,54 +144,146 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
       return;
     }
 
-    setPurchasing(true);
-
-    let paymentDetails = {};
-    if (selectedPayment === 'wallet') {
-      paymentDetails = {
-        txHash: walletTxHash.trim() || undefined,
-        walletAddress: user?.walletAddress || undefined,
-        ethAmount,
-      };
-    } else if (selectedPayment === 'card') {
-      paymentDetails = {
-        cardNumber: cardForm.cardNumber,
-        cardName: cardForm.cardName,
-        expiry: cardForm.expiry,
-        cvc: cardForm.cvc,
-      };
-    } else if (selectedPayment === 'bank') {
-      paymentDetails = {
-        reference: bankRef,
-        accountName: 'SmartAssets Custody Ltd',
-      };
+    // ── Card validation ──
+    if (selectedPayment === 'card') {
+      const cleanNum = cardForm.cardNumber.replace(/\s+/g, '');
+      if (cleanNum.length < 15) {
+        Alert.alert('Invalid Card', 'Please enter a valid 15-16 digit card number.');
+        return;
+      }
+      if (!cardForm.expiry || !cardForm.expiry.includes('/')) {
+        Alert.alert('Invalid Expiry', 'Please enter expiry in MM/YY format.');
+        return;
+      }
+      if (!cardForm.cvc || cardForm.cvc.length < 3) {
+        Alert.alert('Invalid CVC', 'Please enter a valid 3 or 4 digit CVC.');
+        return;
+      }
     }
 
-    try {
-      const res = await processPaymentApi(
-        {
-          assetId: asset.id,
-          assetName: asset.name,
-          assetCategory: asset.category,
-          paymentMethod: selectedPayment,
-          paymentDetails,
-          amountGbp: total,
-          purchaseType: isFractional ? 'fractional' : 'whole',
-          sharesCount: isFractional ? sharesCount : undefined,
-          riskAcknowledged: isFractional ? true : undefined,
-        },
-        token
-      );
+    setPurchasing(true);
 
-      if (res?.success) {
-        setReceiptData(res.receipt);
-        setConfirmed(true);
+    try {
+      if (selectedPayment === 'card') {
+        // ── STRIPE CARD FLOW ──────────────────────────────────────────────
+        // Step 1: Create PaymentIntent on backend → get clientSecret
+        const intentRes = await createPaymentIntentApi(
+          {
+            amount: total,
+            currency: 'zar',
+            assetId: asset.id,
+            assetName: asset.name,
+          },
+          token
+        );
+
+        if (!intentRes?.success || !intentRes.clientSecret) {
+          Alert.alert('Payment Error', 'Failed to initialize Stripe payment.');
+          setPurchasing(false);
+          return;
+        }
+
+        const { clientSecret, paymentIntentId, publishableKey, mode } = intentRes;
+
+        let stripePaymentMethodId = null;
+        let stripeStatus = 'succeeded';
+
+        if (publishableKey && publishableKey.startsWith('pk_')) {
+          // Step 2: Tokenize card via Stripe API (card data goes directly to Stripe — never to our server)
+          const expParts = cardForm.expiry.split('/');
+          let expYear = parseInt(expParts[1], 10);
+          if (expYear < 100) expYear += 2000;
+
+          const pm = await createStripePaymentMethod(publishableKey, {
+            number: cardForm.cardNumber,
+            exp_month: parseInt(expParts[0], 10),
+            exp_year: expYear,
+            cvc: cardForm.cvc,
+            name: cardForm.cardName,
+          });
+
+          stripePaymentMethodId = pm.id;
+
+          // Step 3: Confirm payment with Stripe
+          const confirmation = await confirmStripePayment(publishableKey, clientSecret, pm.id);
+          stripeStatus = confirmation.status;
+
+          if (confirmation.status !== 'succeeded') {
+            Alert.alert(
+              'Payment Processing',
+              `Payment status: ${confirmation.status}. Your order has been recorded and will be fulfilled once payment clears.`
+            );
+          }
+        }
+
+        // Step 4: Record purchase in backend (with Stripe reference)
+        const res = await processPaymentApi(
+          {
+            assetId: asset.id,
+            assetName: asset.name,
+            assetCategory: asset.category,
+            paymentMethod: 'card',
+            paymentDetails: {
+              stripePaymentIntentId: paymentIntentId,
+              stripePaymentMethodId,
+              stripeMode: mode,
+              cardLast4: cardForm.cardNumber.replace(/\s+/g, '').slice(-4),
+              cardName: cardForm.cardName,
+            },
+            amountGbp: total,
+            purchaseType: isFractional ? 'fractional' : 'whole',
+            sharesCount: isFractional ? sharesCount : undefined,
+            riskAcknowledged: isFractional ? true : undefined,
+          },
+          token
+        );
+
+        if (res?.success) {
+          setReceiptData({ ...res.receipt, stripePaymentIntentId: paymentIntentId, stripeMode: mode });
+          setConfirmed(true);
+        } else {
+          Alert.alert('Payment Error', res?.error || 'Could not record payment.');
+        }
       } else {
-        Alert.alert('Payment Error', res?.error || 'Could not process payment.');
+        // ── WALLET / BANK FLOW (unchanged) ──────────────────────────────
+        let paymentDetails = {};
+        if (selectedPayment === 'wallet') {
+          paymentDetails = {
+            txHash: walletTxHash.trim() || undefined,
+            walletAddress: user?.walletAddress || undefined,
+            ethAmount,
+          };
+        } else if (selectedPayment === 'bank') {
+          paymentDetails = {
+            reference: bankRef,
+            accountName: 'SmartAssets Custody Ltd',
+          };
+        }
+
+        const res = await processPaymentApi(
+          {
+            assetId: asset.id,
+            assetName: asset.name,
+            assetCategory: asset.category,
+            paymentMethod: selectedPayment,
+            paymentDetails,
+            amountGbp: total,
+            purchaseType: isFractional ? 'fractional' : 'whole',
+            sharesCount: isFractional ? sharesCount : undefined,
+            riskAcknowledged: isFractional ? true : undefined,
+          },
+          token
+        );
+
+        if (res?.success) {
+          setReceiptData(res.receipt);
+          setConfirmed(true);
+        } else {
+          Alert.alert('Payment Error', res?.error || 'Could not process payment.');
+        }
       }
     } catch (err) {
-      Alert.alert('Notice', err.message || 'Payment processing completed.');
-      setConfirmed(true);
+      Alert.alert('Payment Notice', err.message || 'Payment processing issue.');
     } finally {
       setPurchasing(false);
     }
@@ -210,9 +312,17 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
             <View style={styles.receiptRow}>
               <Text style={[styles.receiptLabel, { color: c.muted }]}>PAYMENT METHOD</Text>
               <Text style={[styles.receiptValue, { color: c.primary }]}>
-                {selectedPayment === 'wallet' ? '🦊 MetaMask (Sepolia ETH)' : selectedPayment === 'card' ? '💳 Credit Card' : '🏦 Bank Wire'}
+                {receiptData?.paymentRail || (selectedPayment === 'wallet' ? '🦊 MetaMask (Sepolia ETH)' : selectedPayment === 'card' ? '💳 Stripe Card' : '🏦 Stripe Wire')}
               </Text>
             </View>
+            {receiptData?.stripePaymentIntentId ? (
+              <View style={styles.receiptRow}>
+                <Text style={[styles.receiptLabel, { color: c.muted }]}>STRIPE REF</Text>
+                <Text style={[styles.receiptValue, { color: c.warm, fontFamily: 'Courier', fontSize: 11 }]}>
+                  {receiptData.stripePaymentIntentId}
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.receiptRow}>
               <Text style={[styles.receiptLabel, { color: c.muted }]}>AMOUNT PAID</Text>
               <Text style={[styles.receiptValue, { color: c.warm }]}>R{total.toLocaleString()} {selectedPayment === 'wallet' ? `(${ethAmount} ETH)` : ''}</Text>
@@ -506,9 +616,14 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
         {/* ── 2. Credit Card Tab ── */}
         {selectedPayment === 'card' && (
           <View style={[styles.paymentDetailCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <Feather name="credit-card" size={20} color={c.primary} />
-              <Text style={[styles.detailTitle, { color: c.warm }]}>Credit / Debit Card</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Feather name="credit-card" size={20} color={c.primary} />
+                <Text style={[styles.detailTitle, { color: c.warm }]}>Credit / Debit Card</Text>
+              </View>
+              <View style={{ backgroundColor: '#635BFF20', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#635BFF40' }}>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: '#635BFF' }}>⚡ Stripe API</Text>
+              </View>
             </View>
 
             <View style={{ gap: 10 }}>
@@ -559,9 +674,14 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
         {/* ── 3. Bank Transfer Tab ── */}
         {selectedPayment === 'bank' && (
           <View style={[styles.paymentDetailCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <Ionicons name="business-outline" size={20} color={c.primary} />
-              <Text style={[styles.detailTitle, { color: c.warm }]}>Bank Wire Details</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="business-outline" size={20} color={c.primary} />
+                <Text style={[styles.detailTitle, { color: c.warm }]}>Bank Wire Details</Text>
+              </View>
+              <View style={{ backgroundColor: '#635BFF20', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#635BFF40' }}>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: '#635BFF' }}>🏦 Stripe Wire</Text>
+              </View>
             </View>
 
             <View style={{ gap: 8 }}>

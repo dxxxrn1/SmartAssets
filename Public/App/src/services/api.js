@@ -158,10 +158,78 @@ export async function createAssetApi(assetData, token) {
 // ── Multi-Rail Payment Gateway API ──────────────────────────────────────────
 
 /**
- * Fetch live exchange rates (GBP to Sepolia ETH) and escrow address.
+ * Fetch live exchange rates (ZAR to Sepolia ETH), escrow address, and Stripe config.
  */
 export async function getPaymentRatesApi() {
   return apiRequest('/payments/rates', { method: 'GET' });
+}
+
+/**
+ * Create a Stripe PaymentIntent on the backend.
+ * Returns { clientSecret, paymentIntentId, publishableKey, mode }.
+ * @param {{ amount: number, currency?: string, assetId?: string, assetName?: string }} data
+ * @param {string} token - User's JWT
+ */
+export async function createPaymentIntentApi(data, token) {
+  return apiRequest(
+    '/payments/create-intent',
+    { method: 'POST', body: JSON.stringify(data) },
+    token
+  );
+}
+
+/**
+ * Tokenize a card directly with Stripe's API (PCI-safe client-side tokenization).
+ * Uses the publishable key — card data never touches our server.
+ * @param {string} publishableKey - pk_test_... key from backend /rates
+ * @param {{ number: string, exp_month: number, exp_year: number, cvc: string, name?: string }} card
+ * @returns {{ id: string, card: { brand, last4 } }} The Stripe PaymentMethod
+ */
+export async function createStripePaymentMethod(publishableKey, card) {
+  const response = await fetch('https://api.stripe.com/v1/payment_methods', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${publishableKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: [
+      'type=card',
+      `card[number]=${card.number.replace(/\s+/g, '')}`,
+      `card[exp_month]=${card.exp_month}`,
+      `card[exp_year]=${card.exp_year}`,
+      `card[cvc]=${card.cvc}`,
+      card.name ? `billing_details[name]=${encodeURIComponent(card.name)}` : '',
+    ].filter(Boolean).join('&'),
+  });
+  const data = await response.json();
+  if (data.error) {
+    throw new Error(data.error.message || 'Stripe card tokenization failed');
+  }
+  return data;
+}
+
+/**
+ * Confirm a PaymentIntent client-side using Stripe's API.
+ * Called after creating a PaymentMethod (tokenization).
+ * @param {string} publishableKey - pk_test_... key
+ * @param {string} clientSecret - pi_xxx_secret_yyy from createPaymentIntent
+ * @param {string} paymentMethodId - pm_xxx from createStripePaymentMethod
+ */
+export async function confirmStripePayment(publishableKey, clientSecret, paymentMethodId) {
+  const intentId = clientSecret.split('_secret_')[0];
+  const response = await fetch(`https://api.stripe.com/v1/payment_intents/${intentId}/confirm`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${publishableKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `payment_method=${paymentMethodId}`,
+  });
+  const data = await response.json();
+  if (data.error) {
+    throw new Error(data.error.message || 'Stripe payment confirmation failed');
+  }
+  return data;
 }
 
 /**
@@ -216,3 +284,39 @@ export async function releaseEscrowApi(orderId, token) {
     token
   );
 }
+
+/**
+ * Refund escrow funds to buyer if asset fails inspection.
+ */
+export async function refundEscrowApi(orderId, reason, token) {
+  return apiRequest(
+    '/escrow/refund',
+    {
+      method: 'POST',
+      body: JSON.stringify({ orderId, reason }),
+    },
+    token
+  );
+}
+
+/**
+ * Progress escrow order through its verification stages (Step 2 or 3).
+ */
+export async function progressEscrowStepApi(orderId, step, note, token) {
+  return apiRequest(
+    '/escrow/progress',
+    {
+      method: 'POST',
+      body: JSON.stringify({ orderId, step, note }),
+    },
+    token
+  );
+}
+
+/**
+ * Retrieve all escrow orders for the logged-in user.
+ */
+export async function getMyEscrowOrdersApi(token) {
+  return apiRequest('/escrow/my-orders', { method: 'GET' }, token);
+}
+
