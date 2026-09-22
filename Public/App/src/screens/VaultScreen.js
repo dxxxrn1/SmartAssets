@@ -82,15 +82,10 @@ export default function VaultScreen({ navigation, isDark }) {
         {/* ── UNIFIED GRADIENT (Deep Purple -> White) ── */}
         <LinearGradient
           colors={[
-            "#0c074eff",
-            "#3c1679ff",
-            "#6d35bbff",
-            "#753cceb8",
-            "#9054e6bf",
-            "#82b8ffff",
-            "#82aaffff",
-            "#9dd3ffff",
-            "#b8e9ffff",
+            "#a6c2ffff",
+            "#4d73d2ff",
+            "#0b0f16ff",
+            "#111827"
           ]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}

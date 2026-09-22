@@ -548,7 +548,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(SCREENS.VAULT)}
                 >
-                  <Ionicons name="swap-vertical" size={21} color="#7700ffb6" />
+                  <Ionicons name="swap-vertical" size={21} color="#f1f1f1b6" />
                   <Text style={styles.quickActionLabel}>Transfer</Text>
                 </TouchableOpacity>
 
@@ -557,7 +557,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(SCREENS.VAULT)}
                 >
-                  <Ionicons name="add-circle" size={21} color="#7700ffb6" />
+                  <Ionicons name="add-circle" size={21} color="#ffffffb6" />
                   <Text style={styles.quickActionLabel}>Top Up</Text>
                 </TouchableOpacity>
               </View>
@@ -569,7 +569,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(SCREENS.VAULT)}
                 >
-                  <Ionicons name="card" size={21} color="#7700ffb6" />
+                  <Ionicons name="card" size={21} color="#fcfcfcb6" />
                   <Text style={styles.quickActionLabel}>Payment</Text>
                 </TouchableOpacity>
 
@@ -578,7 +578,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(SCREENS.PROFILE)}
                 >
-                  <Ionicons name="person" size={21} color="#7700ffb6" />
+                  <Ionicons name="person" size={21} color="#d7d7d7b6" />
                   <Text style={styles.quickActionLabel}>Profile</Text>
                 </TouchableOpacity>
               </View>
