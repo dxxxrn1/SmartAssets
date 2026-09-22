@@ -19,6 +19,7 @@ import { useColors } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
 import { getMarketAssets } from "../services/api";
 import { Feather, Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 // CARD_WIDTH computed inside component via useWindowDimensions
 // to prevent stale layout values on first render
@@ -26,19 +27,34 @@ const CARD_GAP = 12;
 const CARD_H_PAD = 20;
 
 const FILTER_TABS = [
-  { id: "All",          label: "All",     icon: "grid-outline",          color: "#38BDF8" },
-  { id: "Luxury Watch", label: "Watches", icon: "watch-outline",         color: "#38BDF8" },
-  { id: "Fine Art",     label: "Art",     icon: "color-palette-outline", color: "#A78BFA" },
-  { id: "Classic Car",  label: "Cars",    icon: "car-sport-outline",     color: "#FB923C" },
-  { id: "Fine Wine",    label: "Wine",    icon: "wine-outline",          color: "#F472B6" },
+  { id: "All", label: "All", icon: "grid-outline", color: "#38BDF8" },
+  {
+    id: "Luxury Watch",
+    label: "Watches",
+    icon: "watch-outline",
+    color: "#38BDF8",
+  },
+  {
+    id: "Fine Art",
+    label: "Art",
+    icon: "color-palette-outline",
+    color: "#A78BFA",
+  },
+  {
+    id: "Classic Car",
+    label: "Cars",
+    icon: "car-sport-outline",
+    color: "#FB923C",
+  },
+  { id: "Fine Wine", label: "Wine", icon: "wine-outline", color: "#F472B6" },
 ];
 
 // Accent colour per category for card label
 const CAT_ACCENT = {
   "Luxury Watch": "#38BDF8",
-  "Fine Art":     "#A78BFA",
-  "Classic Car":  "#FB923C",
-  "Fine Wine":    "#F472B6",
+  "Fine Art": "#A78BFA",
+  "Classic Car": "#FB923C",
+  "Fine Wine": "#F472B6",
 };
 
 export default function SearchScreen({ navigation, isDark, route }) {
@@ -72,8 +88,10 @@ export default function SearchScreen({ navigation, isDark, route }) {
         }
       };
       fetchAssets();
-      return () => { cancelled = true; };
-    }, [route?.params?.initialCategory])
+      return () => {
+        cancelled = true;
+      };
+    }, [route?.params?.initialCategory]),
   );
 
   const assetList = Array.isArray(assets) ? assets : [];
@@ -86,189 +104,256 @@ export default function SearchScreen({ navigation, isDark, route }) {
     filtered = filtered.filter(
       (a) =>
         a.name?.toLowerCase().includes(query.toLowerCase()) ||
-        a.category?.toLowerCase().includes(query.toLowerCase())
+        a.category?.toLowerCase().includes(query.toLowerCase()),
     );
   }
 
-  const accent = (asset) =>
-    CAT_ACCENT[asset.category] ?? "#38BDF8";
+  const accent = (asset) => CAT_ACCENT[asset.category] ?? "#38BDF8";
 
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: "#0A1120" }]}
+      style={[styles.safe, { backgroundColor: "#0F1A2E" }]}
     >
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Marketplace</Text>
-          <Text style={styles.subtitle}>Discover verified luxury assets</Text>
-        </View>
-      </View>
+      <View style={{ flex: 1, backgroundColor: "#F4F6FA" }}>
+        {/* ══ FIXED DARK HEADER (never scrolls) ══ */}
+        <LinearGradient
+          colors={["#0F1A2E", "#1A1248", "#2D0A6B", "#3B0E87"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.3, y: 1 }}
+          style={styles.heroCard}
+        >
+          {/* Hero tagline — compact & sleek */}
+          <View style={styles.heroTextWrap}>
+            <Text style={styles.heroCaption}>
+              Verified luxury assets • Curated for bold investors
+            </Text>
+            <Text style={styles.heroTitle}>
+              {"Discover your next asset "}
+              <Text style={styles.heroToday}>TODAY!</Text>
+            </Text>
+          </View>
 
-      {/* ── Search bar ── */}
-      <View style={styles.searchBarWrap}>
-        <View style={[styles.searchBar, { backgroundColor: "#13223A", borderColor: "#223759" }]}>
-          <Feather name="search" size={17} color="#64748B" style={{ marginRight: 8 }} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search watches, art, cars, wine…"
-            placeholderTextColor="#4A6080"
-            style={styles.searchInput}
-          />
-          {query.length > 0 && (
-            <TouchableOpacity onPress={() => setQuery("")}>
-              <Feather name="x" size={16} color="#64748B" />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* ── Category filter pills ── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        {FILTER_TABS.map((tab) => {
-          const isActive = activeCategory === tab.id;
-          return (
-            <TouchableOpacity
-              key={tab.id}
-              onPress={() => setActiveCategory(tab.id)}
-              style={[
-                styles.filterPill,
-                {
-                  backgroundColor: isActive ? tab.color : "#0F1A2E",
-                  borderColor: isActive ? tab.color : "#1A3055",
-                },
-              ]}
-            >
-              <Ionicons
-                name={tab.icon}
+          {/* Search bar — always visible */}
+          <View style={styles.searchBarWrap}>
+            <View style={styles.searchBarInner}>
+              <Feather
+                name="search"
                 size={14}
-                color={isActive ? "#FFFFFF" : tab.color}
-                style={{ marginRight: 5 }}
+                color="#94A3B8"
+                style={{ marginRight: 8 }}
               />
-              <Text
-                style={[
-                  styles.filterPillText,
-                  { color: isActive ? "#FFFFFF" : "#94A3B8" },
-                ]}
-              >
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
-      {/* ── Result count label ── */}
-      <View style={styles.resultRow}>
-        <Text style={styles.resultLabel}>
-          {loading
-            ? "LOADING…"
-            : query
-            ? `${filtered.length} RESULT${filtered.length !== 1 ? "S" : ""}`
-            : "CURATED COLLECTION"}
-        </Text>
-        <Text style={styles.resultCount}>
-          {!loading && `${filtered.length} asset${filtered.length !== 1 ? "s" : ""}`}
-        </Text>
-      </View>
-
-      {/* ── 2-Column Grid ── */}
-      <ScrollView
-        contentContainerStyle={styles.grid}
-        showsVerticalScrollIndicator={false}
-      >
-        {loading ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator size="large" color="#38BDF8" />
-            <Text style={styles.loadingText}>Loading verified listings…</Text>
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search here…"
+                placeholderTextColor="#64748B"
+                style={styles.searchInput}
+              />
+              {query.length > 0 ? (
+                <TouchableOpacity onPress={() => setQuery("")}>
+                  <Feather name="x" size={13} color="#94A3B8" />
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.filterBadge}>
+                  <Text style={styles.filterBadgeText}>Filter</Text>
+                  <Feather name="sliders" size={10} color="#FFFFFF" />
+                </View>
+              )}
+            </View>
           </View>
-        ) : filtered.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Feather name="inbox" size={36} color="#1A3055" />
-            <Text style={styles.emptyText}>No assets found</Text>
-            <Text style={styles.emptySubtext}>Try a different search or category</Text>
-          </View>
-        ) : (
-          <View style={styles.gridInner}>
-            {filtered.map((asset, idx) => {
-              const accentColor = accent(asset);
-              const isVerified = asset.badge === "Verified";
-              const isLeftCol = idx % 2 === 0;
+
+          {/* Category filter pills */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+          >
+            {FILTER_TABS.map((tab) => {
+              const isActive = activeCategory === tab.id;
               return (
                 <TouchableOpacity
-                  key={asset.id}
+                  key={tab.id}
+                  onPress={() => setActiveCategory(tab.id)}
                   style={[
-                    styles.card,
+                    styles.filterPill,
                     {
-                      width: CARD_WIDTH,
-                      marginRight: isLeftCol ? CARD_GAP : 0,
-                      marginBottom: CARD_GAP,
+                      backgroundColor: isActive
+                        ? tab.color
+                        : "rgba(255,255,255,0.1)",
+                      borderColor: isActive
+                        ? tab.color
+                        : "rgba(255,255,255,0.2)",
                     },
                   ]}
-                  onPress={() => navigation.navigate(SCREENS.ASSET_DETAIL, { asset })}
-                  activeOpacity={0.88}
                 >
-                  {/* ── Image ── */}
-                  <View style={[styles.cardImgWrap, { height: CARD_WIDTH * 0.85 }]}>
-                    {asset.image ? (
-                      <Image
-                        source={{ uri: asset.image }}
-                        style={styles.cardImg}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={styles.cardImgPlaceholder}>
-                        <Feather name="box" size={28} color="#1A3055" />
-                      </View>
-                    )}
-                    {/* Verified badge — top right overlay */}
-                    {isVerified && (
-                      <View style={styles.verifiedBadge}>
-                        <Ionicons name="checkmark-sharp" size={9} color="#10B981" />
-                        <Text style={styles.verifiedText}>VERIFIED</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* ── Card body ── */}
-                  <View style={styles.cardBody}>
-                    {/* Category label */}
-                    <Text style={[styles.cardCat, { color: accentColor }]} numberOfLines={1}>
-                      {asset.category?.toUpperCase()}
-                    </Text>
-
-                    {/* Asset name */}
-                    <Text style={styles.cardName} numberOfLines={2}>
-                      {asset.name}
-                    </Text>
-
-                    {/* Price + invest button row */}
-                    <View style={styles.cardFooter}>
-                      <View>
-                        <Text style={styles.cardPriceLabel}>VALUE</Text>
-                        <Text style={styles.cardPrice}>{asset.price}</Text>
-                      </View>
-                      <TouchableOpacity
-                        style={[styles.investBtn, { backgroundColor: accentColor }]}
-                        onPress={() => navigation.navigate(SCREENS.ASSET_DETAIL, { asset })}
-                        activeOpacity={0.85}
-                      >
-                        <Feather name="plus" size={16} color="#000000" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
+                  <Ionicons
+                    name={tab.icon}
+                    size={13}
+                    color={isActive ? "#FFFFFF" : "rgba(255,255,255,0.7)"}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text
+                    style={[
+                      styles.filterPillText,
+                      { color: isActive ? "#FFFFFF" : "rgba(255,255,255,0.7)" },
+                    ]}
+                  >
+                    {tab.label}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
+          </ScrollView>
+        </LinearGradient>
+        {/* ══ END FIXED HEADER ══ */}
+
+        {/* ── SCROLLABLE CONTENT (light background) ── */}
+        <ScrollView
+          style={{ flex: 1, backgroundColor: "#F4F6FA" }}
+          contentContainerStyle={styles.grid}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Result count */}
+          <View style={styles.resultRow}>
+            <Text style={styles.resultLabel}>
+              {loading
+                ? "LOADING…"
+                : query
+                  ? `${filtered.length} RESULT${filtered.length !== 1 ? "S" : ""}`
+                  : "CURATED COLLECTION"}
+            </Text>
+            <Text style={styles.resultCount}>
+              {!loading &&
+                `${filtered.length} asset${filtered.length !== 1 ? "s" : ""}`}
+            </Text>
           </View>
-        )}
-      </ScrollView>
+
+          {loading ? (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator size="large" color="#38BDF8" />
+              <Text style={styles.loadingText}>Loading verified listings…</Text>
+            </View>
+          ) : filtered.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Feather name="inbox" size={36} color="#1A3055" />
+              <Text style={styles.emptyText}>No assets found</Text>
+              <Text style={styles.emptySubtext}>
+                Try a different search or category
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.gridInner}>
+              {filtered.map((asset, idx) => {
+                const accentColor = accent(asset);
+                const isVerified = asset.badge === "Verified";
+                const isLeftCol = idx % 2 === 0;
+                return (
+                  <TouchableOpacity
+                    key={asset.id}
+                    style={[
+                      styles.card,
+                      {
+                        width: CARD_WIDTH,
+                        marginRight: isLeftCol ? CARD_GAP : 0,
+                        marginBottom: CARD_GAP,
+                      },
+                    ]}
+                    onPress={() =>
+                      navigation.navigate(SCREENS.ASSET_DETAIL, { asset })
+                    }
+                    activeOpacity={0.88}
+                  >
+                    {/* ── Image ── */}
+                    <View
+                      style={[
+                        styles.cardImgWrap,
+                        { height: CARD_WIDTH * 0.85 },
+                      ]}
+                    >
+                      {asset.image ? (
+                        <View style={{ flex: 1, position: "relative" }}>
+                          <Image
+                            source={{ uri: asset.image }}
+                            style={styles.cardImg}
+                            resizeMode="cover"
+                          />
+                          <LinearGradient
+                            colors={[
+                              "transparent",
+                              "rgba(255,255,255,0.8)",
+                              "#FFFFFF",
+                            ]}
+                            locations={[0, 0.7, 1]}
+                            style={{
+                              position: "absolute",
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              height: 40,
+                            }}
+                          />
+                        </View>
+                      ) : (
+                        <View style={styles.cardImgPlaceholder}>
+                          <Feather name="box" size={28} color="#1A3055" />
+                        </View>
+                      )}
+                      {/* Verified badge — top right overlay */}
+                      {isVerified && (
+                        <View style={styles.verifiedBadge}>
+                          <Ionicons
+                            name="checkmark-sharp"
+                            size={9}
+                            color="#10B981"
+                          />
+                          <Text style={styles.verifiedText}>VERIFIED</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* ── Card body ── */}
+                    <View style={styles.cardBody}>
+                      {/* Category label */}
+                      <Text
+                        style={[styles.cardCat, { color: accentColor }]}
+                        numberOfLines={1}
+                      >
+                        {asset.category?.toUpperCase()}
+                      </Text>
+
+                      {/* Asset name */}
+                      <Text style={styles.cardName} numberOfLines={2}>
+                        {asset.name}
+                      </Text>
+
+                      {/* Price + invest button row */}
+                      <View style={styles.cardFooter}>
+                        <View>
+                          <Text style={styles.cardPriceLabel}>VALUE</Text>
+                          <Text style={styles.cardPrice}>{asset.price}</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={[
+                            styles.investBtn,
+                            { backgroundColor: accentColor },
+                          ]}
+                          onPress={() =>
+                            navigation.navigate(SCREENS.ASSET_DETAIL, { asset })
+                          }
+                          activeOpacity={0.85}
+                        >
+                          <Feather name="plus" size={16} color="#000000" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -276,48 +361,69 @@ export default function SearchScreen({ navigation, isDark, route }) {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
 
-  // ── Header ──
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 4,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-    color: "#F1F5F9",
-  },
-  subtitle: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "#4A6080",
-    marginTop: 2,
+  // ══ Dark Hero Card ══
+  heroCard: {
+    paddingTop: 12,
+    paddingBottom: 22,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 16,
+    zIndex: 10,
   },
 
-  // ── Search bar ──
-  searchBarWrap: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+  heroTextWrap: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 10 },
+  heroCaption: {
+    fontSize: 9.5,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.45)",
+    letterSpacing: 0.3,
+    marginBottom: 2,
   },
-  searchBar: {
+  heroTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -0.8,
+    lineHeight: 26,
+  },
+  heroTitleAccent: { color: "#A78BFA" },
+  heroToday: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#3c78faff",
+    letterSpacing: -0.8,
+    lineHeight: 26,
+  },
+
+  searchBarWrap: { paddingHorizontal: 20, paddingBottom: 20 },
+  searchBarInner: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
-    borderWidth: 1,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    borderWidth: 0,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: "#F1F5F9",
+  searchInput: { flex: 1, fontSize: 12.5, color: "#1A202C" },
+  filterBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#F59E0B",
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 9,
   },
+  filterBadgeText: { fontSize: 10, fontWeight: "700", color: "#FFFFFF" },
 
-  // ── Filter pills ──
   filterRow: {
     paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingBottom: 2,
     gap: 8,
     flexDirection: "row",
   },
@@ -326,35 +432,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     alignSelf: "flex-start",
-    height: 36,
-    paddingHorizontal: 16,
+    height: 32,
+    paddingHorizontal: 13,
     borderRadius: 999,
     borderWidth: 1,
   },
-  filterPillText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
+  filterPillText: { fontSize: 11, fontWeight: "600" },
 
-  // ── Result label ──
   resultRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingTop: 10,
+    paddingBottom: 8,
   },
   resultLabel: {
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 1.2,
-    color: "#2E4A6B",
+    color: "#64748B",
   },
-  resultCount: {
-    fontSize: 11,
-    fontWeight: "500",
-    color: "#2E4A6B",
-  },
+  resultCount: { fontSize: 11, fontWeight: "500", color: "#0F172A" },
 
   // ── Grid ──
   grid: {
@@ -376,27 +475,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  emptyText: { fontSize: 16, fontWeight: "600", color: "#2E4A6B", marginTop: 12 },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#2E4A6B",
+    marginTop: 12,
+  },
   emptySubtext: { fontSize: 13, color: "#1A3055" },
 
-  // ── Product card ──
+  // ── Product card (light mode) ──
   card: {
-    // width applied inline from CARD_WIDTH (computed in component)
-    backgroundColor: "#0F1A2E",
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#192A45",
-    shadowColor: "#000",
+    borderColor: "#F1F5F9",
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.08,
     shadowRadius: 10,
     elevation: 4,
   },
   cardImgWrap: {
-    // height applied inline from CARD_WIDTH * 0.85
     width: "100%",
-    backgroundColor: "#0A1528",
+    backgroundColor: "#F1F5F9",
     position: "relative",
   },
   cardImg: {
@@ -408,7 +510,7 @@ const styles = StyleSheet.create({
     height: "100%",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#0A1528",
+    backgroundColor: "#F1F5F9",
   },
   verifiedBadge: {
     position: "absolute",
@@ -442,7 +544,7 @@ const styles = StyleSheet.create({
   cardName: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#E2E8F0",
+    color: "#0F172A",
     lineHeight: 17,
     marginBottom: 10,
     letterSpacing: -0.2,
@@ -456,19 +558,19 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: "700",
     letterSpacing: 0.8,
-    color: "#2E4A6B",
+    color: "#64748B",
     marginBottom: 1,
   },
   cardPrice: {
     fontSize: 15,
     fontWeight: "800",
-    color: "#F1F5F9",
+    color: "#0F172A",
     letterSpacing: -0.3,
   },
   investBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
   },
