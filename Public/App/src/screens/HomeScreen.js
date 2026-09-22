@@ -1,7 +1,7 @@
 // ─── HomeScreen ───────────────────────────────────────────────────────────────
 // Home tab — portfolio card, quick actions, Your Assets list, Browse Categories grid
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,9 @@ import {
   Alert,
   ActivityIndicator,
   useWindowDimensions,
+  Animated,
+  PanResponder,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -77,8 +80,36 @@ const CATEGORIES = [
   },
 ];
 
+// ── Helper to resolve color tier based on % shares bought / funded ──
+// Over 75% -> Neon Green, 40% - 60% -> Neon Orange, 30% - 50% (lower) -> Neon Rose/Red
+const getFundingTier = (pct) => {
+  const p = Number(pct) || 0;
+  if (p >= 75) {
+    return {
+      type: "green",
+      accent: "#10B981",
+      lightAccent: "#34D399",
+      chipBg: "rgba(16, 185, 129, 0.16)",
+    };
+  }
+  if (p >= 40) {
+    return {
+      type: "orange",
+      accent: "#FB923C",
+      lightAccent: "#FBBF24",
+      chipBg: "rgba(251, 146, 60, 0.16)",
+    };
+  }
+  return {
+    type: "red",
+    accent: "#F43F5E",
+    lightAccent: "#FB7185",
+    chipBg: "rgba(244, 63, 94, 0.16)",
+  };
+};
+
 export default function HomeScreen({ navigation, isDark }) {
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const TILE_WIDTH = (screenWidth - 20 * 2 - 12) / 2;
   const c = useColors(isDark);
   const { user, token, logout } = useAuth();
@@ -93,6 +124,252 @@ export default function HomeScreen({ navigation, isDark }) {
     fractionalCount: 0,
     gainText: "+0.0% MoM",
   });
+
+  // ── MOCK DATA FOR INVESTMENT OPPORTUNITIES ──
+  const [fundingAssets, setFundingAssets] = useState([
+    {
+      id: "mock-fund-1",
+      name: "Rolex Daytona 'Paul Newman'",
+      category: "Luxury Watch",
+      image:
+        "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=500&q=80",
+      fundedPct: 88,
+      sharesRemaining: 15,
+    },
+    {
+      id: "mock-fund-2",
+      name: "1962 Ferrari 250 GTO",
+      category: "Classic Car",
+      image:
+        "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=500&q=80",
+      fundedPct: 54,
+      sharesRemaining: 320,
+    },
+    {
+      id: "mock-fund-3",
+      name: "Domaine de la Romanée-Conti 1990",
+      category: "Fine Wine",
+      image:
+        "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=500&q=80",
+      fundedPct: 36,
+      sharesRemaining: 180,
+    },
+    {
+      id: "mock-fund-4",
+      name: "Banksy 'Love is in the Air'",
+      category: "Fine Art",
+      image:
+        "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=500&q=80",
+      fundedPct: 22,
+      sharesRemaining: 420,
+    },
+  ]);
+
+  // ── Expandable Bottom Section Configuration ──
+  const COLLAPSED_HEIGHT = 295;
+  const EXPANDED_HEIGHT = Math.min(Math.round(screenHeight * 0.72), 620);
+
+  const scrollViewRef = useRef(null);
+  const animatedHeight = useRef(new Animated.Value(COLLAPSED_HEIGHT)).current;
+  const currentHeightRef = useRef(COLLAPSED_HEIGHT);
+  const isExpandedRef = useRef(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [activeFilter, setActiveFilter] = useState("all");
+
+  useEffect(() => {
+    const listener = animatedHeight.addListener(({ value }) => {
+      currentHeightRef.current = value;
+    });
+    return () => {
+      animatedHeight.removeListener(listener);
+    };
+  }, [animatedHeight]);
+
+  const expandSheet = () => {
+    setIsExpanded(true);
+    isExpandedRef.current = true;
+    Animated.spring(animatedHeight, {
+      toValue: EXPANDED_HEIGHT,
+      tension: 65,
+      friction: 11,
+      useNativeDriver: false,
+    }).start(() => {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 50);
+    });
+  };
+
+  const collapseSheet = () => {
+    setIsExpanded(false);
+    isExpandedRef.current = false;
+    Animated.spring(animatedHeight, {
+      toValue: COLLAPSED_HEIGHT,
+      tension: 65,
+      friction: 11,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const toggleSheet = () => {
+    if (isExpandedRef.current) {
+      collapseSheet();
+    } else {
+      expandSheet();
+    }
+  };
+
+  const handleMainScroll = (event) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const maxScrollY = contentSize.height - layoutMeasurement.height;
+    if (
+      maxScrollY > 0 &&
+      contentOffset.y > maxScrollY + 15 &&
+      !isExpandedRef.current
+    ) {
+      expandSheet();
+    }
+  };
+
+  const handleMainScrollEndDrag = (event) => {
+    const { layoutMeasurement, contentOffset, contentSize, velocity } =
+      event.nativeEvent;
+    const distanceFromBottom =
+      contentSize.height - (layoutMeasurement.height + contentOffset.y);
+    if (distanceFromBottom <= 40 && !isExpandedRef.current) {
+      if (velocity?.y > 0.1 || distanceFromBottom <= 8) {
+        expandSheet();
+      }
+    }
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dy) > 6;
+      },
+      onPanResponderGrant: () => {
+        animatedHeight.stopAnimation();
+      },
+      onPanResponderMove: (_, gestureState) => {
+        let newH = currentHeightRef.current - gestureState.dy;
+        if (newH < COLLAPSED_HEIGHT - 20) newH = COLLAPSED_HEIGHT - 20;
+        if (newH > EXPANDED_HEIGHT + 20) newH = EXPANDED_HEIGHT + 20;
+        animatedHeight.setValue(newH);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy < -25 || gestureState.vy < -0.3) {
+          expandSheet();
+        } else if (gestureState.dy > 25 || gestureState.vy > 0.3) {
+          collapseSheet();
+        } else {
+          if (
+            currentHeightRef.current >
+            (COLLAPSED_HEIGHT + EXPANDED_HEIGHT) / 2
+          ) {
+            expandSheet();
+          } else {
+            collapseSheet();
+          }
+        }
+      },
+    }),
+  ).current;
+
+  const ACTIVITY_FILTERS = [
+    { id: "all", label: "All" },
+    { id: "transfers", label: "Transfers", icon: "swap-horizontal" },
+    { id: "valuations", label: "Valuations", icon: "trending-up" },
+    { id: "certificates", label: "Certificates", icon: "shield-checkmark" },
+    { id: "ai", label: "AI Insights", icon: "sparkles" },
+  ];
+
+  const recentActivity = [
+    {
+      id: "act-1",
+      category: "transfers",
+      title: "Share Purchase Confirmed",
+      desc: "5 shares of 1962 Ferrari 250 GTO",
+      time: "2h ago",
+      icon: "checkmark-circle",
+      color: "#10B981",
+      iconBg: "rgba(16, 185, 129, 0.18)",
+      rightIcon: "chevron-forward",
+      targetScreen: SCREENS.VAULT,
+    },
+    {
+      id: "act-2",
+      category: "valuations",
+      title: "Valuation Updated",
+      desc: "Patek Philippe Nautilus up +4.2% MoM",
+      time: "5h ago",
+      icon: "trending-up",
+      color: "#38BDF8",
+      iconBg: "rgba(56, 189, 248, 0.18)",
+      rightIcon: "chevron-forward",
+      targetScreen: SCREENS.SEARCH,
+    },
+    {
+      id: "act-3",
+      category: "ai",
+      title: "Smart Valuation Alert",
+      desc: "Classic car category index shifted +1.8%",
+      time: "1d ago",
+      icon: "sparkles",
+      color: "#A855F7",
+      iconBg: "rgba(168, 85, 247, 0.18)",
+      rightIcon: "chatbubble-ellipses-outline",
+      targetScreen: SCREENS.HEALTH_REPORT,
+    },
+    {
+      id: "act-4",
+      category: "certificates",
+      title: "Certificate of Authenticity",
+      desc: "Digital ownership token verified on-chain",
+      time: "2d ago",
+      icon: "shield-checkmark",
+      color: "#F59E0B",
+      iconBg: "rgba(245, 158, 11, 0.18)",
+      rightIcon: "document-text-outline",
+      targetScreen: SCREENS.CERTIFICATE,
+    },
+    {
+      id: "act-5",
+      category: "transfers",
+      title: "Dividend Payout Received",
+      desc: "+R 245.00 credited from Rare Whisky Fund",
+      time: "3d ago",
+      icon: "wallet",
+      color: "#34D399",
+      iconBg: "rgba(52, 211, 153, 0.18)",
+      rightIcon: "checkmark-done-outline",
+      targetScreen: SCREENS.VAULT,
+    },
+    {
+      id: "act-6",
+      category: "ai",
+      title: "Portfolio Health Report",
+      desc: "Asset diversification score 94/100 (Optimal)",
+      time: "4d ago",
+      icon: "pulse",
+      color: "#6366F1",
+      iconBg: "rgba(99, 102, 241, 0.18)",
+      rightIcon: "chevron-forward",
+      targetScreen: SCREENS.HEALTH_REPORT,
+    },
+  ];
+
+  const filteredActivities = recentActivity.filter((act) => {
+    if (activeFilter === "all") return true;
+    return act.category === activeFilter;
+  });
+
+  const handleActivityPress = (act) => {
+    if (act.targetScreen) {
+      navigation.navigate(act.targetScreen);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -148,8 +425,12 @@ export default function HomeScreen({ navigation, isDark }) {
       style={[styles.safe, { backgroundColor: "#111827" }]}
     >
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={handleMainScroll}
+        onScrollEndDrag={handleMainScrollEndDrag}
       >
         {/* ── TOP WHITE-TO-BLUE ISLAND ── */}
         <LinearGradient
@@ -163,9 +444,12 @@ export default function HomeScreen({ navigation, isDark }) {
             <View style={styles.headerLeft}>
               <View style={styles.avatarMini}>
                 {user?.avatar_url ? (
-                  <Image source={{ uri: user.avatar_url }} style={styles.avatarImg} />
+                  <Image
+                    source={{ uri: user.avatar_url }}
+                    style={styles.avatarImg}
+                  />
                 ) : (
-                  <Feather name="user" size={16} color="#0F172A" />
+                  <Feather name="user" size={18} color="#38BDF8" />
                 )}
               </View>
               <View>
@@ -175,31 +459,58 @@ export default function HomeScreen({ navigation, isDark }) {
                 </Text>
               </View>
             </View>
-            <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={{ flexDirection: "row", gap: 7 }}>
+              <TouchableOpacity style={styles.iconBtn}>
+                <Feather name="settings" size={18} color="#38BDF8" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.iconBtn}>
+                <Feather name="bell" size={18} color="#38BDF8" />
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.iconBtn}
                 onPress={() => navigation.navigate(SCREENS.SEARCH)}
               >
-                <Feather name="search" size={14} color="#0F172A" />
+                <Feather name="search" size={18} color="#38BDF8" />
               </TouchableOpacity>
               <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
-                <Feather name="log-out" size={14} color="#0F172A" />
+                <Feather name="log-out" size={18} color="#38BDF8" />
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Portfolio Balance Card (gradient stays inside white island) */}
+          {/* Portfolio Balance Card (The Wallet — Dark Mode with Slight Silver Bottom Gradient) */}
           <View style={styles.portfolioCardContainer}>
             <LinearGradient
-              colors={["#60A5FA", "#3B82F6", "#60fa8eff"]}
+              colors={[
+                "#000000",
+                "#080F1E",
+                "#111C30",
+                "#1E2A3E",
+                "#475569",
+                "#94A3B8",
+              ]}
+              locations={[0, 0.35, 0.6, 0.8, 0.93, 1]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
+              end={{ x: 0, y: 1 }}
               style={styles.portfolioCard}
             >
               <View style={styles.portfolioHeader}>
                 <View style={styles.gainBadge}>
-                  <Feather name="trending-up" size={11} color="#A7F3D0" />
-                  <Text style={styles.gainText}>{vaultSummary.gainText}</Text>
+                  <Feather name="trending-up" size={11} color="#00ff4c62" />
+                  {(() => {
+                    const text = vaultSummary.gainText || "+4.2% MoM";
+                    if (text.toLowerCase().includes("mom")) {
+                      const parts = text.split(/mom/i);
+                      return (
+                        <Text style={styles.gainText}>
+                          {parts[0]}
+                          <Text style={styles.momText}>MoM</Text>
+                          {parts[1] || ""}
+                        </Text>
+                      );
+                    }
+                    return <Text style={styles.gainText}>{text}</Text>;
+                  })()}
                 </View>
                 <Text style={styles.cardBrandLabel}>SmartAssets</Text>
               </View>
@@ -219,47 +530,58 @@ export default function HomeScreen({ navigation, isDark }) {
             </LinearGradient>
           </View>
 
-          {/* Quick Actions inside white island */}
+          {/* Quick Actions */}
           <View style={styles.quickActionsContainer}>
             <View style={styles.quickActionsHeader}>
               <Text style={styles.quickActionsTitle}>Quick Actions</Text>
+              <TouchableOpacity
+                onPress={() => navigation.navigate(SCREENS.VAULT)}
+              >
+                <Text style={styles.seeMoreText}>See More</Text>
+              </TouchableOpacity>
             </View>
-            <View style={styles.quickActionsRow}>
-              <LinearGradient colors={["#F3E8FF", "#FCE7F3"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.quickActionBox}>
-                <TouchableOpacity style={styles.quickActionBtn} activeOpacity={0.8} onPress={() => navigation.navigate(SCREENS.VAULT)}>
-                  <View style={styles.quickActionIconCircle}>
-                    <Feather name="repeat" size={16} color="#4C1D95" />
-                  </View>
+            <View style={styles.quickActionsGrid}>
+              {/* Row 1: Left (Transfer) & Right (Top Up) */}
+              <View style={styles.quickActionsRow}>
+                <TouchableOpacity
+                  style={styles.quickActionCard}
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate(SCREENS.VAULT)}
+                >
+                  <Ionicons name="swap-vertical" size={21} color="#7700ffb6" />
                   <Text style={styles.quickActionLabel}>Transfer</Text>
                 </TouchableOpacity>
-              </LinearGradient>
-              
-              <LinearGradient colors={["#FFE4E6", "#FFEDD5"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.quickActionBox}>
-                <TouchableOpacity style={styles.quickActionBtn} activeOpacity={0.8} onPress={() => navigation.navigate(SCREENS.VAULT)}>
-                  <View style={styles.quickActionIconCircle}>
-                    <Ionicons name="card-outline" size={16} color="#B45309" />
-                  </View>
+
+                <TouchableOpacity
+                  style={styles.quickActionCard}
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate(SCREENS.VAULT)}
+                >
+                  <Ionicons name="add-circle" size={21} color="#7700ffb6" />
                   <Text style={styles.quickActionLabel}>Top Up</Text>
                 </TouchableOpacity>
-              </LinearGradient>
-              
-              <LinearGradient colors={["#ECFCCB", "#D1FAE5"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.quickActionBox}>
-                <TouchableOpacity style={styles.quickActionBtn} activeOpacity={0.8} onPress={() => navigation.navigate(SCREENS.VAULT)}>
-                  <View style={styles.quickActionIconCircle}>
-                    <Feather name="arrow-up-circle" size={16} color="#047857" />
-                  </View>
+              </View>
+
+              {/* Row 2: Left (Payment) & Right (Profile) */}
+              <View style={styles.quickActionsRow}>
+                <TouchableOpacity
+                  style={styles.quickActionCard}
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate(SCREENS.VAULT)}
+                >
+                  <Ionicons name="card" size={21} color="#7700ffb6" />
                   <Text style={styles.quickActionLabel}>Payment</Text>
                 </TouchableOpacity>
-              </LinearGradient>
-              
-              <LinearGradient colors={["#E0F2FE", "#BAE6FD"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.quickActionBox}>
-                <TouchableOpacity style={styles.quickActionBtn} activeOpacity={0.8} onPress={() => navigation.navigate(SCREENS.PROFILE)}>
-                  <View style={styles.quickActionIconCircle}>
-                    <Feather name="user" size={16} color="#0369A1" />
-                  </View>
+
+                <TouchableOpacity
+                  style={styles.quickActionCard}
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate(SCREENS.PROFILE)}
+                >
+                  <Ionicons name="person" size={21} color="#7700ffb6" />
                   <Text style={styles.quickActionLabel}>Profile</Text>
                 </TouchableOpacity>
-              </LinearGradient>
+              </View>
             </View>
           </View>
         </LinearGradient>
@@ -313,10 +635,17 @@ export default function HomeScreen({ navigation, isDark }) {
                   resizeMode="cover"
                 />
                 <LinearGradient
-                  colors={["transparent", "rgba(0,0,0,0.75)"]}
+                  colors={["transparent", "rgba(20, 21, 24, 0.9)"]}
                   start={{ x: 0, y: 0.25 }}
                   end={{ x: 0, y: 1 }}
-                  style={styles.categoryTileOverlay}
+                  style={[
+                    styles.categoryTileOverlay,
+                    {
+                      borderWidth: 1,
+                      borderColor: "rgba(184, 190, 200, 0.3)",
+                      borderRadius: 16,
+                    },
+                  ]}
                 >
                   <Text style={styles.categoryTileLabel}>{cat.label}</Text>
                   <View
@@ -331,14 +660,14 @@ export default function HomeScreen({ navigation, isDark }) {
           </View>
 
           {/* ════════════════════════════════════════════
-              YOUR ASSETS
+              YOUR ASSETS (Horizontal)
           ════════════════════════════════════════════ */}
           <View style={[styles.sectionRow, { marginTop: 28 }]}>
             <View>
               <Text style={styles.sectionTitleDark}>Your Assets</Text>
               <Text style={styles.sectionSubtitle}>
                 {vaultSummary.totalCount > 0
-                  ? `${vaultSummary.totalCount} holding${vaultSummary.totalCount !== 1 ? "s" : ""} across your portfolio`
+                  ? `${vaultSummary.totalCount} holding${vaultSummary.totalCount !== 1 ? "s" : ""} in your portfolio`
                   : "Start building your portfolio"}
               </Text>
             </View>
@@ -347,105 +676,301 @@ export default function HomeScreen({ navigation, isDark }) {
               style={styles.viewAllBtn}
             >
               <Text style={styles.viewAllText}>View All</Text>
-              <Feather name="chevron-right" size={13} color="#38BDF8" />
+              <Feather name="chevron-right" size={13} color="#4C86FF" />
             </TouchableOpacity>
           </View>
 
-          {/* Asset list rows */}
           {loadingVault ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="small" color="#38BDF8" />
-              <Text style={styles.loadingText}>Loading your holdings…</Text>
+              <ActivityIndicator size="small" color="#4C86FF" />
             </View>
           ) : vaultHoldings.length === 0 ? (
-            <TouchableOpacity
-              style={styles.emptyAssetsCard}
-              onPress={() => navigation.navigate(SCREENS.SEARCH)}
-              activeOpacity={0.85}
-            >
-              <View style={styles.emptyIconWrap}>
-                <Feather name="briefcase" size={20} color="#38BDF8" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.emptyAssetsTitle}>No holdings yet</Text>
-                <Text style={styles.emptyAssetsSubtitle}>
-                  Browse the marketplace to start investing
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={15} color="#38BDF8" />
-            </TouchableOpacity>
+            <View style={styles.emptyAssetsCard}>
+              <Feather name="briefcase" size={20} color="#4C86FF" />
+              <Text style={styles.emptyAssetsTitle}>No holdings yet</Text>
+            </View>
           ) : (
-            vaultHoldings.map((holding, idx) => (
-              <TouchableOpacity
-                key={holding.id || idx}
-                style={[
-                  styles.assetRow,
-                  idx === vaultHoldings.length - 1 && { borderBottomWidth: 0 },
-                ]}
-                onPress={() =>
-                  navigation.navigate(SCREENS.ASSET_DETAIL, {
-                    asset: {
-                      ...holding,
-                      priceNum: holding.price_num || 0,
-                      owner: user?.fullName || "You",
-                      condition: "Mint",
-                    },
-                  })
-                }
-                activeOpacity={0.85}
-              >
-                <View style={styles.assetThumb}>
-                  {holding.image ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
+            >
+              {vaultHoldings.slice(0, 3).map((holding, idx) => (
+                <TouchableOpacity
+                  key={holding.id || idx}
+                  style={styles.listingCardHorizontal}
+                  onPress={() =>
+                    navigation.navigate(SCREENS.ASSET_DETAIL, {
+                      asset: holding,
+                    })
+                  }
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={["rgba(76,134,255,0.15)", "rgba(15,26,46,0.9)"]}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                  <View style={{ position: "relative" }}>
                     <Image
                       source={{ uri: holding.image }}
-                      style={styles.assetThumbImg}
-                      resizeMode="cover"
+                      style={styles.graphiteCardImg}
                     />
-                  ) : (
-                    <View style={styles.assetThumbPlaceholder}>
-                      <Feather name="box" size={16} color="#38BDF8" />
-                    </View>
-                  )}
-                </View>
-                <View style={styles.assetRowMid}>
-                  <Text style={styles.assetRowName} numberOfLines={1}>
-                    {holding.name}
-                  </Text>
-                  <Text style={styles.assetRowCat}>
-                    {formatCategoryLabel(holding.category)}
-                  </Text>
-                </View>
-                <View style={styles.assetRowRight}>
-                  <Text style={styles.assetRowPrice}>
-                    {holding.price || "—"}
-                  </Text>
-                  <View style={styles.gainPill}>
-                    <Feather name="trending-up" size={9} color="#34D399" />
-                    <Text style={styles.gainPillText}>
-                      {holding.gain_pct || "+0%"}
+                    <LinearGradient
+                      colors={["transparent", "rgba(15,26,46,0.8)", "#0F1A2E"]}
+                      locations={[0, 0.7, 1]}
+                      style={{
+                        position: "absolute",
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        height: 40,
+                      }}
+                    />
+                  </View>
+                  <View style={styles.graphiteCardContent}>
+                    <Text style={styles.graphiteCardTitle} numberOfLines={1}>
+                      {holding.name}
+                    </Text>
+                    <Text style={styles.graphiteCardPrice}>
+                      {holding.price || "—"}
                     </Text>
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           )}
 
-          {/* Mid tabs moved to bottom */}
-          <View style={[styles.midTabContainer, { marginTop: 24 }]}>
-            {["Portfolio", "Watchlist", "Categories"].map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={[styles.midTabBtn, activeHomeTab === tab && styles.midTabBtnActive]}
-                onPress={() => setActiveHomeTab(tab)}
-              >
-                <Text style={[styles.midTabText, activeHomeTab === tab && styles.midTabTextActive]}>
-                  {tab}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          {/* ════════════════════════════════════════════
+              INVESTMENT OPPORTUNITIES
+          ════════════════════════════════════════════ */}
+          <View style={[styles.sectionRow, { marginTop: 32 }]}>
+            <View>
+              <Text style={styles.sectionTitleDark}>
+                Investment Opportunities
+              </Text>
+              <Text style={styles.sectionSubtitle}>
+                Active fractional funding rounds
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => navigation.navigate(SCREENS.SEARCH)}
+              style={styles.viewAllBtn}
+            >
+              <Text style={styles.viewAllText}>View All</Text>
+              <Feather name="chevron-right" size={13} color="#4C86FF" />
+            </TouchableOpacity>
           </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
+          >
+            {[...fundingAssets]
+              .sort((a, b) => (b.fundedPct || 0) - (a.fundedPct || 0))
+              .map((asset, idx) => {
+                const tier = getFundingTier(asset.fundedPct);
+                return (
+                  <TouchableOpacity
+                    key={asset.id || idx}
+                    style={styles.investmentOpportunityCard}
+                    onPress={() => navigation.navigate(SCREENS.SEARCH)}
+                    activeOpacity={0.88}
+                  >
+                    {/* Image with top % funded badge */}
+                    <View style={{ position: "relative" }}>
+                      <Image
+                        source={{ uri: asset.image }}
+                        style={styles.investmentCardImg}
+                      />
+
+                      {/* Top Badge with % funded */}
+                      <View style={styles.topFundedBadge}>
+                        <View
+                          style={[
+                            styles.statusDot,
+                            { backgroundColor: tier.accent },
+                          ]}
+                        />
+                        <Text
+                          style={[styles.topFundedText, { color: tier.accent }]}
+                        >
+                          {asset.fundedPct}% Funded
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Slick Status Bar on the edge of the box itself */}
+                    <View style={styles.edgeStatusBarTrack}>
+                      <View
+                        style={[
+                          styles.edgeStatusBarFill,
+                          {
+                            width: `${asset.fundedPct}%`,
+                            backgroundColor: tier.accent,
+                          },
+                        ]}
+                      />
+                    </View>
+
+                    {/* Black & Neon Content Box (Vault Portfolio Container style) */}
+                    <View style={styles.investmentCardContent}>
+                      <Text
+                        style={styles.investmentCardTitle}
+                        numberOfLines={1}
+                      >
+                        {asset.name}
+                      </Text>
+
+                      <View style={styles.investmentStatsRow}>
+                        <Text
+                          style={[
+                            styles.investmentFundedPct,
+                            { color: tier.accent },
+                          ]}
+                        >
+                          {asset.fundedPct}% funded
+                        </Text>
+                        <Text style={styles.investmentSharesLeft}>
+                          {asset.sharesRemaining} left
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+          </ScrollView>
         </LinearGradient>
         {/* ── END DARK BLUE GRADIENT BOTTOM HALF ── */}
+
+        {/* ════════════════════════════════════════════
+            RECENT ACTIVITY (Bottom Sheet at End of Screen)
+        ════════════════════════════════════════════ */}
+        <Animated.View
+          style={[styles.bottomSheetContainer, { height: animatedHeight }]}
+        >
+          {/* Drag Handle & Header (Receives PanResponder) */}
+          <View
+            {...panResponder.panHandlers}
+            style={styles.sheetHandleTouchArea}
+          >
+            <View style={styles.dragPill} />
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={toggleSheet}
+              style={styles.sheetHeaderRow}
+            >
+              <View style={styles.sheetTitleGroup}>
+                <Text style={styles.sheetTitle}>Recent Activity</Text>
+                <View style={styles.sheetBadge}>
+                  <Text style={styles.sheetBadgeText}>
+                    {filteredActivities.length}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.pullIconBtn}>
+                <Text style={styles.pullIconText}>
+                  {isExpanded ? "Pull down" : "Pull up"}
+                </Text>
+                <View style={styles.pullIconCircle}>
+                  <Ionicons
+                    name={isExpanded ? "chevron-down" : "chevron-up"}
+                    size={16}
+                    color="#FFFFFF"
+                  />
+                </View>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Horizontal Filter Chips */}
+          <View style={styles.sheetFilterRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.sheetFilterScroll}
+            >
+              {ACTIVITY_FILTERS.map((tab) => {
+                const active = activeFilter === tab.id;
+                return (
+                  <TouchableOpacity
+                    key={tab.id}
+                    onPress={() => setActiveFilter(tab.id)}
+                    style={[
+                      styles.filterChip,
+                      active && styles.filterChipActive,
+                    ]}
+                    activeOpacity={0.8}
+                  >
+                    {tab.icon && (
+                      <Ionicons
+                        name={tab.icon}
+                        size={13}
+                        color={active ? "#FFFFFF" : "#64748B"}
+                        style={{ marginRight: 5 }}
+                      />
+                    )}
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        active && styles.filterChipTextActive,
+                      ]}
+                    >
+                      {tab.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {/* Scrollable List of Activity Cards */}
+          <ScrollView
+            style={styles.sheetActivityScroll}
+            contentContainerStyle={styles.sheetActivityContent}
+            showsVerticalScrollIndicator={false}
+            nestedScrollEnabled={true}
+            scrollEnabled={isExpanded}
+          >
+            {filteredActivities.map((act) => (
+              <TouchableOpacity
+                key={act.id}
+                style={styles.activityCard}
+                activeOpacity={0.75}
+                onPress={() => handleActivityPress(act)}
+              >
+                <View
+                  style={[
+                    styles.activityIconCircle,
+                    { backgroundColor: act.iconBg || `${act.color}20` },
+                  ]}
+                >
+                  <Ionicons name={act.icon} size={18} color={act.color} />
+                </View>
+                <View style={styles.activityInfo}>
+                  <View style={styles.activityHeader}>
+                    <Text style={styles.activityCardTitle} numberOfLines={1}>
+                      {act.title}
+                    </Text>
+                    <Text style={styles.activityCardTime}>{act.time}</Text>
+                  </View>
+                  <Text style={styles.activityCardDesc} numberOfLines={1}>
+                    {act.desc}
+                  </Text>
+                </View>
+                {act.rightIcon && (
+                  <Ionicons
+                    name={act.rightIcon}
+                    size={16}
+                    color="#94A3B8"
+                    style={styles.activityCardChevron}
+                  />
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -453,25 +978,25 @@ export default function HomeScreen({ navigation, isDark }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { paddingBottom: 32 },
+  scroll: { paddingBottom: 24 },
 
   // ── Top White Island ──
   topWhiteIsland: {
     backgroundColor: "#FFFFFF",
-    paddingBottom: 16,
+    paddingBottom: 0,
     zIndex: 10,
   },
 
   topSection: { paddingBottom: 24 }, // kept for compat, unused
 
-  // ── Header — tighter, utility weight ──
+  // ── Header — balanced, matching Vault styling ──
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 14,
+    paddingTop: 24,
+    paddingBottom: 18,
   },
   headerLeft: {
     flexDirection: "row",
@@ -479,103 +1004,114 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   avatarMini: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#F1F5F9",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#000000",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderWidth: 1.5,
+    borderColor: "rgba(56, 189, 248, 0.35)",
   },
   avatarImg: { width: "100%", height: "100%" },
   greeting: {
     fontSize: 11,
-    fontWeight: "500",
+    fontWeight: "600",
     color: "#64748B",
   },
   username: {
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "800",
     letterSpacing: -0.3,
-    color: "#0F172A",
+    color: "#38BDF8",
   },
   // ── Profile avatar circle ──
   avatarCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "rgba(255,255,255,0.22)",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#000000",
     borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.45)",
+    borderColor: "rgba(56, 189, 248, 0.4)",
     alignItems: "center",
     justifyContent: "center",
   },
   avatarInitial: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: "#38BDF8",
     letterSpacing: -0.3,
   },
 
-  // ── Smaller icon buttons ──
+  // ── Icon buttons — matching VaultScreen (40x40) ──
   iconBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    backgroundColor: "#F8FAFC",
+    borderColor: "rgba(56, 189, 248, 0.25)",
+    backgroundColor: "#000000",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
   },
 
-  // ── Portfolio Card — Light Blue Gradient container ──
+  // ── Portfolio Card / The Wallet ──
   portfolioCardContainer: {
     marginHorizontal: 20,
-    marginBottom: 16,
-    borderRadius: 22,
-    shadowColor: "#3B82F6",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 14,
+    marginTop: 4,
+    marginBottom: 12,
+    borderRadius: 24,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
     elevation: 8,
   },
   portfolioCard: {
     paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 14,
-    borderRadius: 22,
+    paddingTop: 16,
+    paddingBottom: 16,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: "rgba(148, 163, 184, 0.25)",
     overflow: "hidden",
   },
   portfolioHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 12,
   },
   cardBrandLabel: {
     fontSize: 11,
     fontWeight: "700",
-    color: "rgba(255,255,255,0.6)",
+    color: "rgba(255, 255, 255, 0.65)",
     letterSpacing: 1.2,
     textTransform: "uppercase",
   },
   gainBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    gap: 5,
+    backgroundColor: "#064E3B",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#059669",
   },
-  gainText: { fontSize: 11, fontWeight: "700", color: "#A7F3D0" },
+  gainText: { fontSize: 11, fontWeight: "700", color: "#34D399" },
+  momText: { fontSize: 11, fontWeight: "700", color: "#FFFFFF" },
   portfolioLabel: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: "600",
-    color: "rgba(255,255,255,0.8)",
+    color: "rgba(255, 255, 255, 0.75)",
     letterSpacing: 0.8,
     textTransform: "uppercase",
     marginBottom: 2,
@@ -586,6 +1122,9 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: -0.5,
     marginBottom: 18,
+    textShadowColor: "rgba(0, 0, 0, 0.4)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
   },
   // ── Card bottom: 24h change + gold shield ──
   cardBottomRow: {
@@ -596,7 +1135,7 @@ const styles = StyleSheet.create({
   cardChangeLabel: {
     fontSize: 10,
     fontWeight: "600",
-    color: "rgba(255,255,255,0.65)",
+    color: "rgba(255, 255, 255, 0.65)",
     letterSpacing: 0.4,
     marginBottom: 2,
   },
@@ -607,22 +1146,22 @@ const styles = StyleSheet.create({
   },
   cardChangePct: {
     fontSize: 12,
-    fontWeight: "600",
-    color: "#A7F3D0",
+    fontWeight: "700",
+    color: "#34D399",
   },
 
   // ── Quick Actions ──
   quickActionsContainer: {
-    paddingHorizontal: 8,
-    paddingTop: 28,
-    paddingBottom: 10,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 6,
   },
   quickActionsHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
-    paddingHorizontal: 8,
+    marginBottom: 14,
+    paddingHorizontal: 2,
   },
   // ── Quick Actions title on white bg ──
   quickActionsTitle: {
@@ -630,83 +1169,51 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#0F172A",
   },
-  quickActionsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 0,
-  },
-  quickActionBox: {
-    width: "24%",
-    aspectRatio: 1,
-    borderRadius: 22,
-  },
-  quickActionBtn: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  quickActionIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  quickActionLabel: {
+  seeMoreText: {
     fontSize: 12,
-    fontWeight: "600",
-    color: "#0F172A",
-  },
-
-  // ── Dark middle canvas ──
-  darkMiddleCanvas: {
-    backgroundColor: "#0F1A2E",
-    paddingTop: 20,
-    paddingBottom: 12,
-  },
-  midTabContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
-  midTabBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-  midTabBtnActive: {
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
-  midTabText: {
-    fontSize: 14,
     fontWeight: "600",
     color: "#64748B",
   },
-  midTabTextActive: {
-    color: "#FFFFFF",
+  quickActionsGrid: {
+    gap: 10,
+  },
+  quickActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  quickActionCard: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#000000",
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+    gap: 12,
+  },
+  quickActionLabel: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#2f00ff8a",
+    letterSpacing: -0.2,
   },
 
-  // ── Bottom white sheet ──
-  bottomWhiteSheet: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    paddingTop: 28,
-    paddingBottom: 40,
-    minHeight: 400,
+  // ── Main container for sheet overlay ──
+  mainContainer: {
+    flex: 1,
+    position: "relative",
   },
 
   // ── Dark blue gradient bottom half ──
   darkBottomHalf: {
-    paddingTop: 20,
+    paddingTop: 10,
     paddingBottom: 40,
     minHeight: 400,
   },
@@ -768,96 +1275,357 @@ const styles = StyleSheet.create({
   },
   sectionSubtitle: { fontSize: 11, fontWeight: "500", color: "#3A5070" },
   viewAllBtn: { flexDirection: "row", alignItems: "center", gap: 3 },
-  viewAllText: { fontSize: 12, fontWeight: "600", color: "#38BDF8" },
+  viewAllText: { fontSize: 12, fontWeight: "600", color: "#4C86FF" },
 
-  // ── Your Assets list rows ──
-  loadingWrap: {
-    paddingVertical: 20,
-    alignItems: "center",
-    gap: 8,
-  },
-  loadingText: { color: "#3A5070", fontSize: 12 },
-
+  // ── Graphite Card System (Horizontal Lists) ──
+  loadingWrap: { paddingVertical: 20, alignItems: "center" },
   emptyAssetsCard: {
     marginHorizontal: 20,
-    backgroundColor: "#0F1A2E",
+    backgroundColor: "#1F2126",
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#1A3055",
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  emptyIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "#0D2240",
+    padding: 20,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#1B4070",
+    borderColor: "rgba(255,255,255,0.05)",
+    gap: 8,
   },
   emptyAssetsTitle: {
     fontSize: 13,
     fontWeight: "600",
     color: "#CBD5E1",
-    marginBottom: 2,
   },
-  emptyAssetsSubtitle: { fontSize: 11, fontWeight: "400", color: "#3A5070" },
+  listingCardHorizontal: {
+    width: 220,
+    backgroundColor: "#0F1A2E",
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(76, 134, 255, 0.2)",
+  },
+  graphiteCardHorizontal: {
+    width: 220,
+    backgroundColor: "#1F2126",
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.05)",
+  },
+  graphiteCardImg: {
+    width: "100%",
+    height: 120,
+  },
+  graphiteCardContent: {
+    padding: 14,
+  },
+  graphiteCardCat: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#4C86FF",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  graphiteCardTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    marginBottom: 8,
+  },
+  graphiteCardPrice: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#CBD5E1",
+  },
 
-  assetRow: {
+  // ── Funding Specific Styles ──
+  fundingBarBg: {
+    height: 4,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 2,
+    marginBottom: 6,
+    overflow: "hidden",
+  },
+  fundingBarFill: {
+    height: "100%",
+    backgroundColor: "#34D399",
+    borderRadius: 2,
+  },
+  fundingStats: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  fundingStatText: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "#94A3B8",
+  },
+
+  // ── Investment Opportunities (Black & Blue Neon Vault Container Style) ──
+  investmentOpportunityCard: {
+    width: 220,
+    backgroundColor: "#000000",
+    borderRadius: 20,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  cardTopAccentBorder: {
+    height: 3.5,
+    width: "100%",
+  },
+  investmentCardImg: {
+    width: "100%",
+    height: 120,
+  },
+  topFundedBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "rgba(10, 15, 29, 0.88)",
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
-  },
-  assetThumb: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: "#0F1A2E",
+    gap: 4.5,
     borderWidth: 1,
-    borderColor: "#1A3055",
+    borderColor: "rgba(255, 255, 255, 0.12)",
   },
-  assetThumbImg: { width: "100%", height: "100%" },
-  assetThumbPlaceholder: {
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  topFundedText: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  edgeStatusBarTrack: {
+    height: 4,
     width: "100%",
+    backgroundColor: "#0F172A",
+  },
+  edgeStatusBarFill: {
     height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#0D2240",
   },
-  assetRowMid: { flex: 1 },
-  assetRowName: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#E2E8F0",
-    marginBottom: 3,
+  investmentCardContent: {
+    padding: 14,
+    backgroundColor: "#000000",
   },
-  assetRowCat: {
+  cardCategoryChip: {
+    flexDirection: "row",
+    alignSelf: "flex-start",
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  cardCategoryText: {
     fontSize: 9.5,
     fontWeight: "700",
+    textTransform: "uppercase",
     letterSpacing: 0.8,
-    color: "#38BDF8",
   },
-  assetRowRight: { alignItems: "flex-end", gap: 4 },
-  assetRowPrice: { fontSize: 13, fontWeight: "700", color: "#F1F5F9" },
-  gainPill: {
+  investmentCardTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#F1F5F9",
+    marginBottom: 10,
+  },
+  investmentStatsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  investmentFundedPct: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  investmentSharesLeft: {
+    fontSize: 11.5,
+    fontWeight: "500",
+    color: "#94A3B8",
+  },
+
+  // ── Expandable Bottom Section Styles (Light Mode) ──
+  bottomSheetContainer: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderBottomWidth: 0,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 8,
+    overflow: "hidden",
+    marginTop: 24,
+  },
+  sheetHandleTouchArea: {
+    paddingTop: 12,
+    paddingBottom: 8,
+    paddingHorizontal: 20,
+  },
+  dragPill: {
+    width: 44,
+    height: 4.5,
+    borderRadius: 3,
+    backgroundColor: "#CBD5E1",
+    alignSelf: "center",
+    marginBottom: 12,
+  },
+  sheetHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingBottom: 4,
+  },
+  sheetTitleGroup: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
-    backgroundColor: "rgba(52, 211, 153, 0.1)",
-    borderRadius: 999,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    gap: 8,
   },
-  gainPillText: { fontSize: 9.5, fontWeight: "700", color: "#34D399" },
+  sheetTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#0F172A",
+    letterSpacing: -0.3,
+  },
+  sheetBadge: {
+    backgroundColor: "#EFF6FF",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  sheetBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#2563EB",
+  },
+  pullIconBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#F1F5F9",
+    paddingLeft: 10,
+    paddingRight: 4,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  pullIconText: {
+    fontSize: 11.5,
+    fontWeight: "700",
+    color: "#334155",
+  },
+  pullIconCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#3B82F6",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#3B82F6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sheetFilterRow: {
+    marginBottom: 10,
+  },
+  sheetFilterScroll: {
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  filterChipActive: {
+    backgroundColor: "#3B82F6",
+    borderColor: "#3B82F6",
+  },
+  filterChipText: {
+    fontSize: 12.5,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  filterChipTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  sheetActivityScroll: {
+    flex: 1,
+  },
+  sheetActivityContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 10,
+  },
+  activityCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    padding: 13,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 12,
+  },
+  activityIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  activityInfo: {
+    flex: 1,
+  },
+  activityHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 3,
+  },
+  activityCardTitle: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#0F172A",
+    flex: 1,
+    marginRight: 8,
+  },
+  activityCardTime: {
+    fontSize: 11,
+    color: "#94A3B8",
+    fontWeight: "500",
+  },
+  activityCardDesc: {
+    fontSize: 12,
+    color: "#64748B",
+  },
+  activityCardChevron: {
+    marginLeft: 4,
+  },
 
   // ── Browse Categories grid ──
   categoryGrid: {

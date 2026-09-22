@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 24,
     paddingBottom: 20,
   },
   backBtn: {
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   userInfoWrap: {
     alignItems: "center",
     marginBottom: 32,
-    marginTop: 10,
+    marginTop: 18,
   },
   avatarCircle: {
     width: 80,

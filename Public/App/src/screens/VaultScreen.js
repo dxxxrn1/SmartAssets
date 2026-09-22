@@ -38,7 +38,10 @@ export default function VaultScreen({ navigation, isDark }) {
   });
 
   const loadVault = useCallback(() => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     getUserVault(token)
       .then((res) => {
@@ -69,25 +72,42 @@ export default function VaultScreen({ navigation, isDark }) {
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: "#FFFFFF" }]}
+      style={[styles.safe, { backgroundColor: "#2D0A4E" }]}
     >
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         bounces={false}
       >
-        {/* ── TOP SECTION (WHITE-TO-BLUE) ── */}
+        {/* ── UNIFIED GRADIENT (Deep Purple -> White) ── */}
         <LinearGradient
-          colors={["#FFFFFF", "#F0F8FF", "#a6c2ffff"]}
+          colors={[
+            "#0c074eff",
+            "#3c1679ff",
+            "#6d35bbff",
+            "#753cceb8",
+            "#9054e6bf",
+            "#82b8ffff",
+            "#82aaffff",
+            "#9dd3ffff",
+            "#b8e9ffff",
+          ]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
-          style={styles.topWhiteSection}
+          style={styles.unifiedGradient}
         >
+          {/* Header */}
+          {/* Header */}
           <View style={styles.header}>
             <Text style={styles.greetingName}>My Vault</Text>
-            <TouchableOpacity style={styles.bellBtn}>
-              <Feather name="bell" size={18} color="#0F172A" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity style={styles.iconBtn}>
+                <Feather name="settings" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.iconBtn}>
+                <Feather name="bell" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.balanceContainer}>
@@ -100,7 +120,7 @@ export default function VaultScreen({ navigation, isDark }) {
 
           <View style={styles.actionRow}>
             <TouchableOpacity style={styles.withdrawBtn}>
-              <Feather name="arrow-down-left" size={16} color="#064E3B" />
+              <Feather name="arrow-down-left" size={16} color="#FFFFFF" />
               <Text style={styles.withdrawBtnText}>Withdraw</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.depositBtn}>
@@ -108,16 +128,15 @@ export default function VaultScreen({ navigation, isDark }) {
               <Text style={styles.depositBtnText}>Deposit</Text>
             </TouchableOpacity>
           </View>
-        </LinearGradient>
 
-        {/* ── MIDDLE SECTION (DARK) ── */}
-        <View style={styles.darkSection}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitleWhite}>Portfolio</Text>
-            <TouchableOpacity>
-              <Text style={styles.viewAllText}>View All</Text>
-            </TouchableOpacity>
-          </View>
+          {/* ── PORTFOLIO SECTION (White Elevated Card) ── */}
+          <View style={styles.portfolioSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitleDark}>Portfolio</Text>
+              <TouchableOpacity>
+                <Text style={styles.viewAllTextDark}>View All</Text>
+              </TouchableOpacity>
+            </View>
 
           {/* Custom Pill Tab Navigator */}
           <View style={styles.tabContainer}>
@@ -148,13 +167,13 @@ export default function VaultScreen({ navigation, isDark }) {
               </View>
             ) : (
               holdings.map((item, idx) => {
-                const bgColor = "#7B61FF"; // Solid vibrant purple from screenshot
-                const textColor = "#FFFFFF";
+                const bgColor = "#F8FAFC";
+                const textColor = "#0F172A";
 
                 return (
                   <TouchableOpacity
                     key={item.id}
-                    style={styles.portfolioAssetCard}
+                    style={styles.portfolioAssetCardWhite}
                     activeOpacity={0.9}
                     onPress={() =>
                       navigation.navigate(SCREENS.ASSET_DETAIL, {
@@ -163,14 +182,11 @@ export default function VaultScreen({ navigation, isDark }) {
                     }
                   >
                     <View style={styles.cardTopRow}>
-                      <View style={styles.cardThumbWrap}>
+                      <View style={styles.cardThumbWrapWhite}>
                         <Image source={{ uri: item.image }} style={styles.cardLogo} />
                       </View>
-                      <View>
-                        <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
-                        <View style={styles.cardCategoryChip}>
-                          <Text style={styles.cardCategoryText}>{item.category}</Text>
-                        </View>
+                      <View style={{ justifyContent: "center", flex: 1 }}>
+                        <Text style={styles.cardTitleDark} numberOfLines={1}>{item.name}</Text>
                       </View>
                     </View>
                     <View style={styles.cardBottomRow}>
@@ -187,32 +203,34 @@ export default function VaultScreen({ navigation, isDark }) {
               })
             )}
           </ScrollView>
-        </View>
-
-        {/* ── BOTTOM SECTION (WHITE) ── */}
-        <View style={styles.bottomWhiteSection}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitleDark}>My Watchlist</Text>
-            <TouchableOpacity>
-              <Text style={styles.viewAllTextDark}>View All</Text>
-            </TouchableOpacity>
           </View>
+        </LinearGradient>
+
+        {/* ── BOTTOM DARK SECTION (WATCHLIST) ── */}
+        <View style={styles.bottomDarkSectionWrapper}>
+          <View style={styles.bottomDarkSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitleDark}>My Watchlist</Text>
+              <TouchableOpacity>
+                <Text style={styles.viewAllTextDark}>View All</Text>
+              </TouchableOpacity>
+            </View>
           
           <View style={styles.watchlistContainer}>
              {/* Mock Watchlist Item 1 */}
              <View style={styles.watchlistItem}>
                 <View style={styles.watchLeft}>
                    <View style={styles.watchIconWrap}>
-                      <Feather name="coffee" size={18} color="#059669" />
+                      <Image source={{ uri: "https://images.unsplash.com/photo-1548171915-e79a380a2a4b?q=80&w=300&auto=format&fit=crop" }} style={styles.watchLogo} />
                    </View>
                    <View>
-                      <Text style={styles.watchTitle}>Sbux</Text>
-                      <Text style={styles.watchSub}>Starbucks</Text>
+                      <Text style={styles.watchTitle}>Rolex Submariner</Text>
+                      <Text style={styles.watchSub}>Watches</Text>
                    </View>
                 </View>
                 <View style={styles.watchRight}>
-                   <Text style={styles.watchPrice}>$80.30</Text>
-                   <Text style={[styles.watchGain, { color: '#059669' }]}>+1.32%</Text>
+                   <Text style={styles.watchPrice}>$12,500</Text>
+                   <Text style={[styles.watchGain, { color: '#059669' }]}>+2.4%</Text>
                 </View>
              </View>
              
@@ -220,20 +238,38 @@ export default function VaultScreen({ navigation, isDark }) {
              <View style={styles.watchlistItem}>
                 <View style={styles.watchLeft}>
                    <View style={styles.watchIconWrap}>
-                      <Feather name="activity" size={18} color="#4F46E5" />
+                      <Image source={{ uri: "https://images.unsplash.com/photo-1614165936126-2ed18e471b3b?q=80&w=300&auto=format&fit=crop" }} style={styles.watchLogo} />
                    </View>
                    <View>
-                      <Text style={styles.watchTitle}>Nike</Text>
-                      <Text style={styles.watchSub}>Nike, Inc</Text>
+                      <Text style={styles.watchTitle}>Ferrari Testarossa</Text>
+                      <Text style={styles.watchSub}>Classic Cars</Text>
                    </View>
                 </View>
                 <View style={styles.watchRight}>
-                   <Text style={styles.watchPrice}>$111.05</Text>
-                   <Text style={[styles.watchGain, { color: '#DC2626' }]}>-0.32%</Text>
+                   <Text style={styles.watchPrice}>$185,000</Text>
+                   <Text style={[styles.watchGain, { color: '#059669' }]}>+1.1%</Text>
+                </View>
+             </View>
+
+             {/* Mock Watchlist Item 3 */}
+             <View style={styles.watchlistItem}>
+                <View style={styles.watchLeft}>
+                   <View style={styles.watchIconWrap}>
+                      <Image source={{ uri: "https://images.unsplash.com/photo-1577744063259-22a0149bb892?q=80&w=300&auto=format&fit=crop" }} style={styles.watchLogo} />
+                   </View>
+                   <View>
+                      <Text style={styles.watchTitle}>Banksy Original</Text>
+                      <Text style={styles.watchSub}>Fine Art</Text>
+                   </View>
+                </View>
+                <View style={styles.watchRight}>
+                   <Text style={styles.watchPrice}>$42,000</Text>
+                   <Text style={[styles.watchGain, { color: '#059669' }]}>+0.8%</Text>
                 </View>
              </View>
           </View>
         </View>
+      </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -243,9 +279,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   scroll: { flexGrow: 1, backgroundColor: "#0F1A2E" }, 
   
-  // -- Top White Island --
-  topWhiteSection: {
-    backgroundColor: "#FFFFFF",
+  unifiedGradient: {
     paddingTop: 10,
     paddingBottom: 32,
     borderBottomLeftRadius: 32,
@@ -275,13 +309,13 @@ const styles = StyleSheet.create({
   },
   avatarImg: { width: "100%", height: "100%" },
   greetingText: { fontSize: 12, color: "#64748B", marginBottom: 2 },
-  greetingName: { fontSize: 24, fontWeight: "700", color: "#0F172A", letterSpacing: -0.4 },
-  bellBtn: {
+  greetingName: { fontSize: 24, fontWeight: "700", color: "#FFFFFF", letterSpacing: -0.4 },
+  iconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "rgba(255, 255, 255, 0.2)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -289,9 +323,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 28,
   },
-  balanceLabel: { fontSize: 13, color: "#64748B", fontWeight: "500", marginBottom: 8 },
-  balanceValue: { fontSize: 40, fontWeight: "800", color: "#0F172A", letterSpacing: -1, marginBottom: 8 },
-  balanceGain: { fontSize: 11, color: "#64748B", fontWeight: "600" },
+  balanceLabel: { fontSize: 13, color: "#E2E8F0", fontWeight: "500", marginBottom: 8 },
+  balanceValue: { fontSize: 40, fontWeight: "800", color: "#FFFFFF", letterSpacing: -1, marginBottom: 8 },
+  balanceGain: { fontSize: 11, color: "#E2E8F0", fontWeight: "600" },
   balanceGainPct: { color: "#10B981" },
   
   actionRow: {
@@ -304,17 +338,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#10B981",
+    backgroundColor: "rgba(255, 255, 255, 0.45)", // Translucent
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
   },
-  withdrawBtnText: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
+  withdrawBtnText: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" }, // White text
   depositBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#ffffff93", // Solid white
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 999,
@@ -323,11 +359,21 @@ const styles = StyleSheet.create({
   },
   depositBtnText: { fontSize: 15, fontWeight: "700", color: "#0F172A" },
 
-  // -- Middle Dark --
-  darkSection: {
-    backgroundColor: "#0F1A2E",
-    paddingTop: 32,
-    paddingBottom: 40,
+  // -- Portfolio Elevated Card --
+  portfolioSection: {
+    backgroundColor: "#000000",
+    marginTop: 20,
+    marginHorizontal: 16,
+    paddingVertical: 24,
+    borderRadius: 32,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 10,
+    minHeight: 250,
   },
   sectionHeaderRow: {
     flexDirection: "row",
@@ -341,11 +387,13 @@ const styles = StyleSheet.create({
   
   tabContainer: {
     flexDirection: "row",
-    backgroundColor: "#1E293B",
+    backgroundColor: "#0F172A",
     marginHorizontal: 24,
     borderRadius: 999,
     padding: 4,
     marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.05)",
   },
   tabBtn: {
     flex: 1,
@@ -353,31 +401,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderRadius: 999,
   },
-  tabBtnActive: { backgroundColor: "#FFFFFF" },
+  tabBtnActive: { backgroundColor: "#4C86FF" },
   tabText: { fontSize: 13, fontWeight: "600", color: "#94A3B8" },
-  tabTextActive: { color: "#0F172A" },
+  tabTextActive: { color: "#FFFFFF" },
 
   // -- Horizontal asset cards on dark canvas (dark glass mode) --
   cardsScroll: {
     paddingHorizontal: 24,
     gap: 16,
   },
-  portfolioAssetCard: {
-    width: 160,
-    height: 190,
+  portfolioAssetCardWhite: {
+    width: 220,
+    height: 140,
     borderRadius: 24,
     padding: 16,
     justifyContent: "space-between",
-    backgroundColor: "#121B2B",
+    backgroundColor: "rgba(255,255,255,0.03)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
   cardTopRow: { gap: 10 },
-  cardThumbWrap: {
+  cardThumbWrapWhite: {
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.05)",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
@@ -385,8 +433,8 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.1)",
   },
   cardLogo: { width: 36, height: 36, borderRadius: 8 },
-  cardTitle: { fontSize: 13, fontWeight: "600", marginBottom: 3, color: "#E2E8F0" },
-  cardSub: { fontSize: 11, fontWeight: "500" },
+  cardTitleDark: { fontSize: 13, fontWeight: "600", marginBottom: 3, color: "#F1F5F9" },
+  cardSub: { fontSize: 11, fontWeight: "500", color: "#94A3B8" },
   cardCategoryChip: {
     flexDirection: "row",
     alignSelf: "flex-start",
@@ -412,16 +460,17 @@ const styles = StyleSheet.create({
   cardGainText: { fontSize: 9, fontWeight: "700", color: "#34D399" },
   emptyCard: { width: 300, height: 180, alignItems: "center", justifyContent: "center", backgroundColor: "#1E293B", borderRadius: 24 },
 
-  // -- Bottom White Sheet --
-  bottomWhiteSection: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+  // -- Bottom Dark Section (Watchlist) --
+  bottomDarkSectionWrapper: {
+    backgroundColor: "transparent", 
+  },
+  bottomDarkSection: {
+    backgroundColor: "#000000",
     paddingTop: 32,
     paddingBottom: 40,
     minHeight: 300,
   },
-  sectionTitleDark: { fontSize: 15, fontWeight: "700", color: "#0F172A", marginBottom: 2 },
+  sectionTitleDark: { fontSize: 15, fontWeight: "700", color: "#F1F5F9", marginBottom: 2 },
   viewAllTextDark: { fontSize: 12, fontWeight: "600", color: "#38BDF8" },
   watchlistContainer: {
     paddingHorizontal: 24,
@@ -436,14 +485,18 @@ const styles = StyleSheet.create({
   watchIconWrap: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.05)",
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
   },
-  watchTitle: { fontSize: 13, fontWeight: "600", color: "#0F172A", marginBottom: 2 },
-  watchSub: { fontSize: 11, fontWeight: "500", color: "#64748B" },
+  watchLogo: { width: "100%", height: "100%", borderRadius: 12 },
+  watchTitle: { fontSize: 13, fontWeight: "600", color: "#F1F5F9", marginBottom: 2 },
+  watchSub: { fontSize: 11, fontWeight: "500", color: "#94A3B8" },
   watchRight: { alignItems: "flex-end", gap: 4 },
-  watchPrice: { fontSize: 13, fontWeight: "700", color: "#0F172A", marginBottom: 0 },
+  watchPrice: { fontSize: 13, fontWeight: "700", color: "#F1F5F9", marginBottom: 0 },
   watchGain: { fontSize: 9, fontWeight: "700" },
 });
