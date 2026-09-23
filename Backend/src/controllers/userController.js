@@ -3,6 +3,7 @@
 
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
+const avatarService = require('../services/avatarService');
 
 // ── GET /api/user/vault ──────────────────────────────────────────────────────
 // Returns ONLY holdings belonging to the authenticated user.
@@ -35,24 +36,37 @@ async function getVault(req, res) {
     }
 
     const items = holdings || [];
+    const vaultTxService = require('../services/vaultTransactionService');
+    const availableBalanceNum = await vaultTxService.getUserBalance(userId);
+    const availableBalanceFormatted = vaultTxService.formatZar(availableBalanceNum);
 
     // Compute personal portfolio summary
-    const totalValueNum = items.reduce((sum, item) => sum + (Number(item.price_num) || 0), 0);
+    const portfolioValueNum = items.reduce((sum, item) => sum + (Number(item.price_num) || 0), 0);
     const wholeCount = items.filter((i) => i.asset_type !== 'fractional').length;
     const fractionalCount = items.filter((i) => i.asset_type === 'fractional').length;
 
-    const formattedTotal = 'R' + Number(totalValueNum).toLocaleString('en-ZA');
+    const formattedPortfolio = vaultTxService.formatZar(portfolioValueNum);
+    const totalCombinedNum = availableBalanceNum + portfolioValueNum;
+    const totalCombinedFormatted = vaultTxService.formatZar(totalCombinedNum);
+    const transactions = vaultTxService.getUserTransactions(userId);
 
     return res.status(200).json({
       success: true,
       holdings: items,
+      transactions,
       summary: {
-        totalValueFormatted: formattedTotal,
-        totalValueNum,
+        availableBalanceNum,
+        availableBalanceFormatted,
+        portfolioValueNum,
+        portfolioValueFormatted: formattedPortfolio,
+        totalValueFormatted: availableBalanceFormatted, // Main available display
+        totalValueNum: availableBalanceNum,
+        combinedTotalNum: totalCombinedNum,
+        combinedTotalFormatted: totalCombinedFormatted,
         totalCount: items.length,
         wholeCount,
         fractionalCount,
-        gainText: items.length > 0 ? '+4.2% MoM' : '0.0%',
+        gainText: '+12.4% YTD',
       },
     });
   } catch (err) {
@@ -173,5 +187,331 @@ async function seedStarterHoldings(req, res) {
   }
 }
 
-module.exports = { getVault, addHolding, seedStarterHoldings };
+// ── GET /api/user/profile ────────────────────────────────────────────────────
+// Returns full profile metadata for the authenticated user.
+async function getProfile(req, res) {
+  try {
+    const userId = req.user.id;
+
+    // Fetch auth user from Supabase Admin
+    const { data: authData } = await supabase.auth.admin.getUserById(userId);
+    const authUser = authData?.user;
+
+    // Fetch database profile (including avatar_url stored in DB)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const userMeta = authUser?.user_metadata || {};
+    const fullName = profile?.full_name || userMeta.full_name || req.user.fullName || '';
+    const email = authUser?.email || profile?.email || req.user.email || '';
+    const walletAddress = profile?.wallet_address || userMeta.wallet_address || req.user.walletAddress || null;
+    const avatarUrl = profile?.avatar_url || userMeta.avatar_url || null;
+    const gender = userMeta.gender || '';
+    const dob = userMeta.dob || '';
+    const phone = userMeta.phone || '';
+    const createdAt = authUser?.created_at || profile?.created_at || new Date().toISOString();
+
+    return res.status(200).json({
+      success: true,
+      profile: {
+        id: userId,
+        fullName,
+        email,
+        walletAddress,
+        avatarUrl,
+        avatar_url: avatarUrl,
+        gender,
+        dob,
+        phone,
+        createdAt,
+      },
+    });
+  } catch (err) {
+    console.error('getProfile error:', err);
+    return sendError(res, 500, 'Failed to fetch user profile.');
+  }
+}
+
+// ── PUT /api/user/profile ────────────────────────────────────────────────────
+// Updates profile details (fullName, avatarUrl, gender, dob, phone, password).
+async function updateProfile(req, res) {
+  try {
+    const userId = req.user.id;
+    const { fullName, avatarUrl, gender, dob, phone, password } = req.body;
+
+    // Save avatar to the database (profiles.avatar_url column)
+    let savedAvatar = null;
+    if (avatarUrl !== undefined && avatarUrl !== null) {
+      savedAvatar = await avatarService.saveUserAvatar(userId, avatarUrl);
+    }
+
+    // Fetch current user metadata
+    const { data: authData } = await supabase.auth.admin.getUserById(userId);
+    const existingMeta = authData?.user?.user_metadata || {};
+
+    // Keep user_metadata lightweight — store a short marker, not the full base64
+    const updatedMeta = {
+      ...existingMeta,
+      ...(fullName ? { full_name: fullName.trim() } : {}),
+      ...(avatarUrl !== undefined ? { avatar_url: 'db_stored' } : {}),
+      ...(gender !== undefined ? { gender: gender.trim() } : {}),
+      ...(dob !== undefined ? { dob: dob.trim() } : {}),
+      ...(phone !== undefined ? { phone: phone.trim() } : {}),
+    };
+
+    const updatePayload = {
+      user_metadata: updatedMeta,
+    };
+
+    if (password && password.length >= 6) {
+      updatePayload.password = password;
+    }
+
+    const { data: updatedUser, error: updateError } = await supabase.auth.admin.updateUserById(
+      userId,
+      updatePayload
+    );
+
+    if (updateError) {
+      console.error('Auth metadata update error:', updateError);
+      return sendError(res, 400, updateError.message || 'Could not update user metadata.');
+    }
+
+    // Sync full_name to profiles table
+    if (fullName) {
+      await supabase
+        .from('profiles')
+        .update({ full_name: fullName.trim() })
+        .eq('id', userId);
+    }
+
+    const effectiveAvatar = savedAvatar || (await avatarService.getUserAvatar(userId)) || null;
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully!',
+      user: {
+        id: userId,
+        email: updatedUser?.user?.email || req.user.email,
+        fullName: updatedMeta.full_name || fullName || '',
+        avatarUrl: effectiveAvatar,
+        avatar_url: effectiveAvatar,
+        gender: updatedMeta.gender || '',
+        dob: updatedMeta.dob || '',
+        phone: updatedMeta.phone || '',
+      },
+    });
+  } catch (err) {
+    console.error('updateProfile error:', err);
+    return sendError(res, 500, 'Failed to update profile.');
+  }
+}
+
+// ── DELETE /api/user/account ─────────────────────────────────────────────────
+// Permanently removes the user's account and associated holdings.
+async function deleteAccount(req, res) {
+  try {
+    const userId = req.user.id;
+    console.log(`⚠️ [DeleteAccount] Deleting account for user ${userId}...`);
+
+    // Clean up stored avatar from DB
+    try {
+      await avatarService.deleteUserAvatar(userId);
+    } catch (e) {
+      console.warn('Avatar cleanup warning:', e.message);
+    }
+
+    // 1. Delete user holdings
+    try {
+      await supabase.from('user_holdings').delete().eq('user_id', userId);
+    } catch (e) {
+      console.warn('Holdings cleanup warning:', e.message);
+    }
+
+    // 2. Archive user-listed assets if any
+    try {
+      await supabase.from('assets').update({ status: 'archived' }).eq('user_id', userId);
+    } catch (e) {
+      console.warn('Assets archive warning:', e.message);
+    }
+
+    // 3. Delete database profile
+    try {
+      await supabase.from('profiles').delete().eq('id', userId);
+    } catch (e) {
+      console.warn('Profile cleanup warning:', e.message);
+    }
+
+    // 4. Delete Supabase Auth account
+    const { error: authDeleteError } = await supabase.auth.admin.deleteUser(userId);
+    if (authDeleteError) {
+      console.error('Auth user delete error:', authDeleteError);
+      return sendError(res, 500, 'Failed to remove user auth account.');
+    }
+
+    console.log(`✅ [DeleteAccount] Successfully deleted user ${userId}`);
+    return res.status(200).json({
+      success: true,
+      message: 'Your account and personal data have been permanently deleted.',
+    });
+  } catch (err) {
+    console.error('deleteAccount error:', err);
+    return sendError(res, 500, 'Internal server error deleting account.');
+  }
+}
+
+// ── POST /api/user/deposit ───────────────────────────────────────────────────
+// Deposits funds into user's vault balance
+async function deposit(req, res) {
+  try {
+    const userId = req.user.id;
+    const { amount, method, reference, notes } = req.body;
+
+    if (!amount || Number(amount) <= 0) {
+      return sendError(res, 400, 'Please enter a valid deposit amount greater than R0.');
+    }
+
+    const vaultTxService = require('../services/vaultTransactionService');
+    const result = await vaultTxService.depositFunds({
+      userId,
+      amount: Number(amount),
+      method,
+      reference,
+      notes,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Successfully deposited ${vaultTxService.formatZar(amount)} into your vault!`,
+      ...result,
+    });
+  } catch (err) {
+    console.error('deposit error:', err);
+    return sendError(res, 400, err.message || 'Deposit failed. Please try again.');
+  }
+}
+
+// ── POST /api/user/withdraw ──────────────────────────────────────────────────
+// Withdraws funds from user's vault balance
+async function withdraw(req, res) {
+  try {
+    const userId = req.user.id;
+    const { amount, method, bankDetails, walletAddress, notes } = req.body;
+
+    if (!amount || Number(amount) <= 0) {
+      return sendError(res, 400, 'Please enter a valid withdrawal amount greater than R0.');
+    }
+
+    const vaultTxService = require('../services/vaultTransactionService');
+    const result = await vaultTxService.withdrawFunds({
+      userId,
+      amount: Number(amount),
+      method,
+      bankDetails,
+      walletAddress,
+      notes,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Successfully processed withdrawal of ${vaultTxService.formatZar(amount)}!`,
+      ...result,
+    });
+  } catch (err) {
+    console.error('withdraw error:', err);
+    return sendError(res, 400, err.message || 'Withdrawal failed. Please try again.');
+  }
+}
+
+// ── GET /api/user/transactions ───────────────────────────────────────────────
+// Returns transaction history for the authenticated user
+async function getTransactions(req, res) {
+  try {
+    const userId = req.user.id;
+    const vaultTxService = require('../services/vaultTransactionService');
+    const transactions = vaultTxService.getUserTransactions(userId);
+    const balanceNum = await vaultTxService.getUserBalance(userId);
+
+    return res.status(200).json({
+      success: true,
+      transactions,
+      balance: {
+        amountNum: balanceNum,
+        amountFormatted: vaultTxService.formatZar(balanceNum),
+      },
+    });
+  } catch (err) {
+    console.error('getTransactions error:', err);
+    return sendError(res, 500, 'Failed to fetch user transaction history.');
+  }
+}
+
+// ── POST /api/user/support ───────────────────────────────────────────────────
+// Lodges a support ticket for the user.
+async function lodgeSupport(req, res) {
+  try {
+    const userId = req.user.id;
+    const { category, subject, message, priority } = req.body;
+
+    if (!subject || !subject.trim() || !message || !message.trim()) {
+      return sendError(res, 400, 'Please provide both a subject and message for your support inquiry.');
+    }
+
+    const supportService = require('../services/supportService');
+    const ticket = supportService.createTicket({
+      userId,
+      userEmail: req.user.email,
+      userName: req.user.fullName || req.user.email?.split('@')[0],
+      category,
+      subject,
+      message,
+      priority,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Support ticket lodged successfully! Our concierge team will review it shortly.',
+      ticket,
+    });
+  } catch (err) {
+    console.error('lodgeSupport error:', err);
+    return sendError(res, 500, 'Failed to lodge support ticket.');
+  }
+}
+
+// ── GET /api/user/support ────────────────────────────────────────────────────
+// Returns ticket history for the authenticated user.
+async function getSupportTickets(req, res) {
+  try {
+    const userId = req.user.id;
+    const supportService = require('../services/supportService');
+    const tickets = supportService.getUserTickets(userId);
+
+    return res.status(200).json({
+      success: true,
+      tickets,
+    });
+  } catch (err) {
+    console.error('getSupportTickets error:', err);
+    return sendError(res, 500, 'Failed to fetch support tickets.');
+  }
+}
+
+module.exports = {
+  getVault,
+  addHolding,
+  seedStarterHoldings,
+  getProfile,
+  updateProfile,
+  deleteAccount,
+  deposit,
+  withdraw,
+  getTransactions,
+  lodgeSupport,
+  getSupportTickets,
+};
+
 

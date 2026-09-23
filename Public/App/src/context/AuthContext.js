@@ -50,6 +50,10 @@ export function AuthProvider({ children }) {
     setToken(null);
   };
 
+  const updateUser = (updates) => {
+    setUser((prev) => (prev ? { ...prev, ...updates } : updates));
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -61,6 +65,7 @@ export function AuthProvider({ children }) {
         loginWithWallet,
         register,
         logout,
+        updateUser,
       }}
     >
       {children}

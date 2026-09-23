@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
+const avatarService = require('../services/avatarService');
 
 // Deterministic password generator for Web3 wallet accounts in Supabase
 function getDeterministicPassword(walletAddress) {
@@ -95,13 +96,14 @@ async function login(req, res) {
       return sendError(res, 401, 'Invalid email or password.');
     }
 
-    // ── Fetch the user's profile (fallback to user_metadata) ──
+    // ── Fetch the user's profile (including avatar) ──
     let fullName = data.user.user_metadata?.full_name || '';
     let walletAddress = data.user.user_metadata?.wallet_address || null;
+    let avatarUrl = data.user.user_metadata?.avatar_url || null;
     try {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('full_name, wallet_address')
+        .select('full_name, wallet_address, avatar_url')
         .eq('id', data.user.id)
         .maybeSingle();
 
@@ -110,6 +112,9 @@ async function login(req, res) {
       }
       if (profile?.wallet_address) {
         walletAddress = profile.wallet_address;
+      }
+      if (profile?.avatar_url) {
+        avatarUrl = profile.avatar_url;
       }
     } catch (profileFetchErr) {
       console.warn('Profile fetch warning (using metadata):', profileFetchErr.message);
@@ -123,6 +128,8 @@ async function login(req, res) {
         email: data.user.email,
         fullName,
         walletAddress,
+        avatarUrl,
+        avatar_url: avatarUrl,
       },
       session: {
         access_token: data.session.access_token,
@@ -209,6 +216,19 @@ async function walletLogin(req, res) {
 
     const { data: sessionData } = authResult;
 
+    // Fetch avatar from DB
+    let avatarUrl = sessionData.user.user_metadata?.avatar_url || null;
+    try {
+      const { data: walletProfile } = await supabase
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', sessionData.user.id)
+        .maybeSingle();
+      if (walletProfile?.avatar_url) {
+        avatarUrl = walletProfile.avatar_url;
+      }
+    } catch (_e) { /* ignore */ }
+
     return res.status(200).json({
       success: true,
       message: 'MetaMask wallet connected successfully!',
@@ -218,6 +238,8 @@ async function walletLogin(req, res) {
         fullName: displayName,
         walletAddress: cleanAddress,
         isWeb3: true,
+        avatarUrl,
+        avatar_url: avatarUrl,
       },
       session: {
         access_token: sessionData.session.access_token,
