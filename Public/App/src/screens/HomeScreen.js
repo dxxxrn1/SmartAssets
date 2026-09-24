@@ -443,9 +443,9 @@ export default function HomeScreen({ navigation, isDark }) {
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <View style={styles.avatarMini}>
-                {user?.avatar_url ? (
+                {user?.avatar_url || user?.avatarUrl ? (
                   <Image
-                    source={{ uri: user.avatar_url }}
+                    source={{ uri: user.avatar_url || user.avatarUrl }}
                     style={styles.avatarImg}
                   />
                 ) : (

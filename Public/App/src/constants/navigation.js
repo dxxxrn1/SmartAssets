@@ -7,6 +7,7 @@ export const SCREENS = {
   ONBOARDING: 'Onboarding',
   LOGIN: 'Login',
   REGISTER: 'Register',
+  RESET_PASSWORD: 'ResetPassword',
 
   // Main tab shell
   MAIN_TABS: 'MainTabs',

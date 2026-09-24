@@ -82,6 +82,28 @@ export async function loginWithWalletApi(walletAddress) {
   });
 }
 
+/**
+ * Request a password reset email.
+ * @param {{ email: string, redirectTo?: string }} params
+ */
+export async function forgotPasswordApi({ email, redirectTo }) {
+  return apiRequest('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, redirectTo }),
+  });
+}
+
+/**
+ * Complete a password reset using the access_token from the reset email link.
+ * @param {{ accessToken: string, newPassword: string }} params
+ */
+export async function resetPasswordApi({ accessToken, newPassword }) {
+  return apiRequest('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ accessToken, newPassword }),
+  });
+}
+
 // ── User-Isolated Data API ───────────────────────────────────────────────────
 
 /**
@@ -320,3 +342,94 @@ export async function getMyEscrowOrdersApi(token) {
   return apiRequest('/escrow/my-orders', { method: 'GET' }, token);
 }
 
+// ── User Profile & Account Management API ────────────────────────────────────
+
+/**
+ * Fetch full profile data for authenticated user.
+ */
+export async function getUserProfileApi(token) {
+  return apiRequest('/user/profile', { method: 'GET' }, token);
+}
+
+/**
+ * Update user profile details (fullName, avatarUrl, gender, dob, phone, password).
+ */
+export async function updateUserProfileApi(profileData, token) {
+  return apiRequest(
+    '/user/profile',
+    {
+      method: 'PUT',
+      body: JSON.stringify(profileData),
+    },
+    token
+  );
+}
+
+/**
+ * Permanently delete authenticated user's account and personal holdings.
+ */
+export async function deleteAccountApi(token) {
+  return apiRequest('/user/account', { method: 'DELETE' }, token);
+}
+
+// ── Support Tickets API ──────────────────────────────────────────────────────
+
+/**
+ * Lodge a support ticket or inquiry.
+ */
+export async function lodgeSupportTicketApi(ticketData, token) {
+  return apiRequest(
+    '/user/support',
+    {
+      method: 'POST',
+      body: JSON.stringify(ticketData),
+    },
+    token
+  );
+}
+
+/**
+ * Get ticket history for authenticated user.
+ */
+export async function getUserSupportTicketsApi(token) {
+  return apiRequest('/user/support', { method: 'GET' }, token);
+}
+
+// ── Vault Balance, Deposits & Withdrawals API ────────────────────────────────
+
+/**
+ * Deposit funds into user's vault balance.
+ * @param {{ amount: number, method?: string, reference?: string, notes?: string }} depositData
+ */
+export async function depositFundsApi(depositData, token) {
+  return apiRequest(
+    '/user/deposit',
+    {
+      method: 'POST',
+      body: JSON.stringify(depositData),
+    },
+    token
+  );
+}
+
+/**
+ * Withdraw funds from user's vault balance.
+ * @param {{ amount: number, method?: string, bankDetails?: object, walletAddress?: string, notes?: string }} withdrawData
+ */
+export async function withdrawFundsApi(withdrawData, token) {
+  return apiRequest(
+    '/user/withdraw',
+    {
+      method: 'POST',
+      body: JSON.stringify(withdrawData),
+    },
+    token
+  );
+}
+
+/**
+ * Fetch all transaction records (deposits, withdrawals, payouts) for user.
+ */
+export async function getVaultTransactionsApi(token) {
+  return apiRequest('/user/transactions', { method: 'GET' }, token);
+}
