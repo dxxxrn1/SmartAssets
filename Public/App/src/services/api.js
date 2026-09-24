@@ -82,6 +82,28 @@ export async function loginWithWalletApi(walletAddress) {
   });
 }
 
+/**
+ * Request a password reset email.
+ * @param {{ email: string, redirectTo?: string }} params
+ */
+export async function forgotPasswordApi({ email, redirectTo }) {
+  return apiRequest('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, redirectTo }),
+  });
+}
+
+/**
+ * Complete a password reset using the access_token from the reset email link.
+ * @param {{ accessToken: string, newPassword: string }} params
+ */
+export async function resetPasswordApi({ accessToken, newPassword }) {
+  return apiRequest('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ accessToken, newPassword }),
+  });
+}
+
 // ── User-Isolated Data API ───────────────────────────────────────────────────
 
 /**
@@ -411,5 +433,3 @@ export async function withdrawFundsApi(withdrawData, token) {
 export async function getVaultTransactionsApi(token) {
   return apiRequest('/user/transactions', { method: 'GET' }, token);
 }
-
-

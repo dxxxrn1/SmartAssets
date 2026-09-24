@@ -1,6 +1,3 @@
-// ─── LoginScreen ──────────────────────────────────────────────────────────────
-// Email/password login + Native MetaMask Web3 wallet authentication via Supabase
-
 import React, { useState } from 'react';
 import {
   View,
@@ -22,24 +19,39 @@ import { SCREENS } from '../constants/navigation';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 
-const DEFAULT_DEMO_WALLET = '0x71C8360f3a14672D62372c388657B43933c039A4';
+const DEFAULT_DEMO_WALLET =
+  '0x71C8360f3a14672D62372c388657B43933c039A4';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 export default function LoginScreen({ navigation, isDark }) {
   const c = useColors(isDark);
   const { login, loginWithWallet } = useAuth();
 
+  // Normal login
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // MetaMask modal state
+  // Wallet modal
   const [walletModalVisible, setWalletModalVisible] = useState(false);
   const [customWalletAddress, setCustomWalletAddress] = useState('');
   const [connectingWallet, setConnectingWallet] = useState(false);
   const [walletStatus, setWalletStatus] = useState('');
 
-  // ── Standard Email/Password Sign-In ─────────────────────────────────────────
+  // Forgot password
+  const [forgotModalVisible, setForgotModalVisible] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotError, setForgotError] = useState('');
+
+  // --------------------------------------------------
+  // NORMAL EMAIL/PASSWORD LOGIN
+  // --------------------------------------------------
+
   const handleSignIn = async () => {
     setError('');
 
@@ -49,284 +61,969 @@ export default function LoginScreen({ navigation, isDark }) {
     }
 
     setLoading(true);
+
     try {
       await login(email.trim().toLowerCase(), password);
     } catch (err) {
-      setError(err.message || 'Login failed. Please verify your email and password.');
+      setError(
+        err?.message ||
+          'Login failed. Please verify your email and password.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // ── MetaMask Connect Trigger ────────────────────────────────────────────────
+  // --------------------------------------------------
+  // FORGOT PASSWORD
+  // --------------------------------------------------
+
+  const handleForgotPassword = async () => {
+    setForgotError('');
+
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+
+    if (!cleanEmail) {
+      setForgotError('Please enter your email address.');
+      return;
+    }
+
+    if (!API_BASE_URL) {
+      setForgotError(
+        'API address is not configured. Please check EXPO_PUBLIC_API_BASE_URL.'
+      );
+      return;
+    }
+
+    // Native apps reopen via the "smartassets://" custom link.
+    // The web build reopens this same page, where the token is read
+    // straight out of the URL by AppNavigator.
+    const redirectTo =
+      Platform.OS === 'web'
+        ? (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')
+        : 'smartassets://reset-password';
+
+    setForgotLoading(true);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/auth/forgot-password`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: cleanEmail,
+            redirectTo,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ||
+            'Could not send the reset link. Please try again.'
+        );
+      }
+
+      setForgotSent(true);
+    } catch (err) {
+      setForgotError(
+        err?.message ||
+          'Could not send the reset link. Please try again.'
+      );
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const closeForgotModal = () => {
+    setForgotModalVisible(false);
+    setForgotEmail('');
+    setForgotSent(false);
+    setForgotError('');
+    setForgotLoading(false);
+  };
+
+  const openForgotPassword = () => {
+    setForgotError('');
+    setForgotSent(false);
+    setForgotEmail(email);
+    setForgotModalVisible(true);
+  };
+
+  // --------------------------------------------------
+  // METAMASK
+  // --------------------------------------------------
+
   const handleWalletConnectPress = async () => {
     setError('');
 
-    // If running in browser with MetaMask extension installed
-    if (typeof window !== 'undefined' && window.ethereum) {
+    // Web browser with MetaMask installed
+    if (
+      Platform.OS === 'web' &&
+      typeof window !== 'undefined' &&
+      window.ethereum
+    ) {
       setConnectingWallet(true);
-      setWalletStatus('Requesting MetaMask permissions…');
+      setWalletStatus('Requesting MetaMask permissions...');
+
       try {
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const accounts = await window.ethereum.request({
+          method: 'eth_requestAccounts',
+        });
+
         if (accounts && accounts[0]) {
-          setWalletStatus('Authenticating with Supabase…');
+          setWalletStatus('Authenticating with Supabase...');
+
           await loginWithWallet(accounts[0]);
+
           return;
         }
-      } catch (e) {
-        setError(e.message || 'MetaMask connection was cancelled.');
+
+        throw new Error('No MetaMask account was selected.');
+      } catch (err) {
+        setError(
+          err?.message ||
+            'MetaMask connection was cancelled.'
+        );
       } finally {
         setConnectingWallet(false);
         setWalletStatus('');
       }
+
       return;
     }
 
-    // On mobile: open the interactive MetaMask connection sheet
+    // Mobile or browser without MetaMask
     setWalletModalVisible(true);
   };
 
-  // ── Authenticate Wallet Address with Backend ────────────────────────────────
-  const processWalletLogin = async (address) => {
-    if (!address || !address.startsWith('0x') || address.length !== 42) {
-      Alert.alert('Invalid Address', 'Please provide a valid 42-character Ethereum address starting with 0x.');
+  const handleDemoWalletLogin = async () => {
+    setError('');
+    setConnectingWallet(true);
+    setWalletStatus('Connecting demo wallet...');
+
+    try {
+      await loginWithWallet(DEFAULT_DEMO_WALLET);
+    } catch (err) {
+      setError(
+        err?.message ||
+          'Demo wallet login failed.'
+      );
+    } finally {
+      setConnectingWallet(false);
+      setWalletStatus('');
+      setWalletModalVisible(false);
+    }
+  };
+
+  const handleCustomWalletLogin = async () => {
+    setError('');
+
+    const cleanWallet = customWalletAddress.trim();
+
+    if (!cleanWallet) {
+      setError('Please enter a wallet address.');
       return;
     }
 
     setConnectingWallet(true);
-    setWalletStatus('Connecting to Supabase Web3…');
+    setWalletStatus('Authenticating wallet...');
+
     try {
-      await loginWithWallet(address);
-      setWalletModalVisible(false);
+      await loginWithWallet(cleanWallet);
     } catch (err) {
-      Alert.alert('Wallet Login Error', err.message || 'Could not authenticate with MetaMask.');
+      setError(
+        err?.message ||
+          'Wallet login failed.'
+      );
     } finally {
       setConnectingWallet(false);
       setWalletStatus('');
+      setWalletModalVisible(false);
     }
   };
 
-  // ── Launch MetaMask Mobile App ──────────────────────────────────────────────
   const openMetaMaskApp = async () => {
-    const metamaskDeepLink = 'metamask://';
     try {
-      const canOpen = await Linking.canOpenURL(metamaskDeepLink);
-      if (canOpen) {
-        await Linking.openURL(metamaskDeepLink);
-      } else {
-        // If app is not installed, open download link
-        await Linking.openURL('https://metamask.io/download/');
-      }
+      await Linking.openURL(
+        'https://metamask.io/download/'
+      );
     } catch (err) {
-      Alert.alert('MetaMask', 'Could not open MetaMask app. You can use the Quick Connect button below.');
+      Alert.alert(
+        'MetaMask',
+        'Unable to open the MetaMask download page.'
+      );
     }
   };
+
+  // --------------------------------------------------
+  // RENDER
+  // --------------------------------------------------
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.obsidian }]}>
+    <SafeAreaView
+      style={[
+        styles.safeArea,
+        { backgroundColor: c.background },
+      ]}
+    >
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.keyboard}
+        behavior={
+          Platform.OS === 'ios'
+            ? 'padding'
+            : undefined
+        }
       >
-        {/* ── Back button ── */}
-        <View style={styles.navBar}>
-          <TouchableOpacity
-            style={[styles.backBtn, { backgroundColor: c.card, borderColor: c.border }]}
-            onPress={() => navigation.goBack()}
-          >
-            <Feather name="arrow-left" size={18} color={c.warm} />
-          </TouchableOpacity>
-        </View>
-
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {/* ── Heading ── */}
-          <Text style={[styles.heading, { color: c.warm }]}>Welcome back</Text>
-          <Text style={[styles.sub, { color: c.muted }]}>
-            Sign in to your SmartAssets account
-          </Text>
-
-          {/* ── Error message ── */}
-          {error ? (
-            <View style={[styles.errorBox, { backgroundColor: c.redBg }]}>
-              <Feather name="alert-circle" size={16} color={c.red} />
-              <Text style={[styles.errorText, { color: c.red }]}>{error}</Text>
+          {/* HEADER */}
+          <View style={styles.header}>
+            <View
+              style={[
+                styles.logoBox,
+                { backgroundColor: c.primary },
+              ]}
+            >
+              <Feather
+                name="shield"
+                size={26}
+                color="#FFFFFF"
+              />
             </View>
-          ) : null}
 
-          {/* ── Email field ── */}
-          <View style={styles.fieldWrap}>
-            <Text style={[styles.label, { color: c.muted }]}>EMAIL ADDRESS</Text>
-            <TextInput
-              value={email}
-              onChangeText={(text) => { setEmail(text); setError(''); }}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              placeholder="you@example.com"
+            <Text
               style={[
-                styles.input,
-                { backgroundColor: c.card, borderColor: c.border, color: c.warm },
+                styles.logoText,
+                { color: c.warm },
               ]}
-              placeholderTextColor={c.muted}
-            />
-          </View>
+            >
+              SmartAssets
+            </Text>
 
-          {/* ── Password field ── */}
-          <View style={styles.fieldWrap}>
-            <Text style={[styles.label, { color: c.muted }]}>PASSWORD</Text>
-            <TextInput
-              value={password}
-              onChangeText={(text) => { setPassword(text); setError(''); }}
-              secureTextEntry
+            <Text
               style={[
-                styles.input,
-                { backgroundColor: c.card, borderColor: c.border, color: c.warm },
+                styles.subtitle,
+                { color: c.muted },
               ]}
-              placeholder="••••••••"
-              placeholderTextColor={c.muted}
-            />
+            >
+              Smart finance. Smarter future.
+            </Text>
           </View>
 
-          {/* ── Sign In button ── */}
-          <TouchableOpacity
+          {/* LOGIN CARD */}
+          <View
             style={[
-              styles.primaryBtn,
-              { backgroundColor: loading ? c.primaryDim : c.primary },
-            ]}
-            onPress={handleSignIn}
-            activeOpacity={0.85}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Text style={styles.primaryBtnLabel}>Sign In</Text>
-            )}
-          </TouchableOpacity>
-
-          {/* ── Divider ── */}
-          <View style={styles.dividerRow}>
-            <View style={[styles.dividerLine, { backgroundColor: c.border }]} />
-            <Text style={[styles.dividerText, { color: c.muted }]}>or continue with</Text>
-            <View style={[styles.dividerLine, { backgroundColor: c.border }]} />
-          </View>
-
-          {/* ── MetaMask button ── */}
-          <TouchableOpacity
-            style={[
-              styles.walletBtn,
+              styles.card,
               {
-                backgroundColor: connectingWallet ? c.primaryBg : c.card,
-                borderColor: connectingWallet ? c.primary : c.border,
+                backgroundColor: c.card,
+                borderColor: c.border,
               },
             ]}
-            onPress={handleWalletConnectPress}
-            activeOpacity={0.85}
-            disabled={connectingWallet}
           >
-            <Ionicons name="wallet-outline" size={20} color={c.primary} style={{ marginRight: 8 }} />
-            <Text style={[styles.walletLabel, { color: c.primary }]}>
-              {connectingWallet ? (walletStatus || 'Connecting MetaMask…') : 'Connect MetaMask Wallet'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* ── Create account link ── */}
-          <Text style={[styles.createAcct, { color: c.muted }]}>
-            New to SmartAssets?{' '}
             <Text
-              style={[styles.createAcctLink, { color: c.primary }]}
-              onPress={() => navigation.navigate(SCREENS.REGISTER)}
+              style={[
+                styles.heading,
+                { color: c.warm },
+              ]}
             >
-              Create account
+              Welcome back
             </Text>
-          </Text>
+
+            <Text
+              style={[
+                styles.description,
+                { color: c.muted },
+              ]}
+            >
+              Sign in to your SmartAssets account
+            </Text>
+
+            {/* EMAIL */}
+            <View style={styles.fieldWrap}>
+              <Text
+                style={[
+                  styles.label,
+                  { color: c.muted },
+                ]}
+              >
+                EMAIL ADDRESS
+              </Text>
+
+              <TextInput
+                value={email}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  setError('');
+                }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="you@example.com"
+                placeholderTextColor={c.muted}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: c.card,
+                    borderColor: c.border,
+                    color: c.warm,
+                  },
+                ]}
+              />
+            </View>
+
+            {/* PASSWORD */}
+            <View style={styles.fieldWrap}>
+              <Text
+                style={[
+                  styles.label,
+                  { color: c.muted },
+                ]}
+              >
+                PASSWORD
+              </Text>
+
+              <View
+                style={[
+                  styles.passwordRow,
+                  {
+                    backgroundColor: c.card,
+                    borderColor: c.border,
+                  },
+                ]}
+              >
+                <TextInput
+                  value={password}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    setError('');
+                  }}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="••••••••"
+                  placeholderTextColor={c.muted}
+                  style={[
+                    styles.passwordInput,
+                    { color: c.warm },
+                  ]}
+                />
+
+                <TouchableOpacity
+                  onPress={() =>
+                    setShowPassword((v) => !v)
+                  }
+                  activeOpacity={0.7}
+                  style={styles.eyeBtn}
+                >
+                  <Feather
+                    name={
+                      showPassword
+                        ? 'eye-off'
+                        : 'eye'
+                    }
+                    size={19}
+                    color={c.muted}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* FORGOT PASSWORD BUTTON */}
+            <TouchableOpacity
+              style={styles.forgotBtn}
+              onPress={openForgotPassword}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.forgotText,
+                  { color: c.primary },
+                ]}
+              >
+                Forgot password?
+              </Text>
+            </TouchableOpacity>
+
+            {/* ERROR */}
+            {error ? (
+              <View
+                style={[
+                  styles.errorBox,
+                  {
+                    backgroundColor: c.danger
+                      ? `${c.danger}15`
+                      : '#ff000015',
+                    borderColor: c.danger || '#ff4444',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.errorText,
+                    {
+                      color:
+                        c.danger || '#ff4444',
+                    },
+                  ]}
+                >
+                  {error}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* SIGN IN */}
+            <TouchableOpacity
+              style={[
+                styles.primaryBtn,
+                {
+                  backgroundColor: loading
+                    ? c.primaryDim
+                    : c.primary,
+                },
+              ]}
+              onPress={handleSignIn}
+              activeOpacity={0.85}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.primaryBtnText}>
+                  Sign In
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* DIVIDER */}
+            <View style={styles.dividerRow}>
+              <View
+                style={[
+                  styles.divider,
+                  { backgroundColor: c.border },
+                ]}
+              />
+
+              <Text
+                style={[
+                  styles.dividerText,
+                  { color: c.muted },
+                ]}
+              >
+                or continue with
+              </Text>
+
+              <View
+                style={[
+                  styles.divider,
+                  { backgroundColor: c.border },
+                ]}
+              />
+            </View>
+
+            {/* METAMASK */}
+            <TouchableOpacity
+              style={[
+                styles.walletBtn,
+                {
+                  backgroundColor: c.card,
+                  borderColor: c.border,
+                },
+              ]}
+              onPress={handleWalletConnectPress}
+              activeOpacity={0.8}
+              disabled={connectingWallet}
+            >
+              {connectingWallet ? (
+                <ActivityIndicator
+                  color={c.primary}
+                />
+              ) : (
+                <>
+                  <Ionicons
+                    name="wallet-outline"
+                    size={20}
+                    color={c.primary}
+                  />
+
+                  <Text
+                    style={[
+                      styles.walletBtnText,
+                      { color: c.warm },
+                    ]}
+                  >
+                    Connect MetaMask
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {walletStatus ? (
+              <Text
+                style={[
+                  styles.walletStatus,
+                  { color: c.muted },
+                ]}
+              >
+                {walletStatus}
+              </Text>
+            ) : null}
+
+            {/* REGISTER */}
+            <View style={styles.registerRow}>
+              <Text
+                style={[
+                  styles.registerText,
+                  { color: c.muted },
+                ]}
+              >
+                New to SmartAssets?
+              </Text>
+
+              <TouchableOpacity
+                onPress={() =>
+                  navigation.navigate(
+                    SCREENS.REGISTER
+                  )
+                }
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.registerLink,
+                    { color: c.primary },
+                  ]}
+                >
+                  Create account
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ── MetaMask Connection Modal ── */}
+      {/* --------------------------------------------------
+          FORGOT PASSWORD MODAL
+      -------------------------------------------------- */}
+
+      <Modal
+        visible={forgotModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeForgotModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: c.card,
+                borderColor: c.border,
+              },
+            ]}
+          >
+            {!forgotSent ? (
+              <>
+                <View style={styles.modalHeader}>
+                  <View
+                    style={[
+                      styles.modalIcon,
+                      {
+                        backgroundColor:
+                          c.primary,
+                      },
+                    ]}
+                  >
+                    <Feather
+                      name="lock"
+                      size={22}
+                      color="#FFFFFF"
+                    />
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={closeForgotModal}
+                    activeOpacity={0.7}
+                  >
+                    <Feather
+                      name="x"
+                      size={24}
+                      color={c.muted}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <Text
+                  style={[
+                    styles.modalTitle,
+                    { color: c.warm },
+                  ]}
+                >
+                  Reset your password
+                </Text>
+
+                <Text
+                  style={[
+                    styles.modalDescription,
+                    { color: c.muted },
+                  ]}
+                >
+                  Enter your email address and
+                  we will send you a password
+                  reset link.
+                </Text>
+
+                {/* RESET EMAIL */}
+                <Text
+                  style={[
+                    styles.label,
+                    { color: c.muted },
+                  ]}
+                >
+                  EMAIL ADDRESS
+                </Text>
+
+                <TextInput
+                  value={forgotEmail}
+                  onChangeText={(text) => {
+                    setForgotEmail(text);
+                    setForgotError('');
+                  }}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="you@example.com"
+                  placeholderTextColor={c.muted}
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: c.card,
+                      borderColor: c.border,
+                      color: c.warm,
+                    },
+                  ]}
+                />
+
+                {/* FORGOT ERROR */}
+                {forgotError ? (
+                  <Text
+                    style={[
+                      styles.modalError,
+                      {
+                        color:
+                          c.danger ||
+                          '#ff4444',
+                      },
+                    ]}
+                  >
+                    {forgotError}
+                  </Text>
+                ) : null}
+
+                {/* SEND BUTTON */}
+                <TouchableOpacity
+                  style={[
+                    styles.primaryBtn,
+                    {
+                      backgroundColor:
+                        forgotLoading
+                          ? c.primaryDim
+                          : c.primary,
+                    },
+                  ]}
+                  onPress={
+                    handleForgotPassword
+                  }
+                  disabled={forgotLoading}
+                  activeOpacity={0.85}
+                >
+                  {forgotLoading ? (
+                    <ActivityIndicator
+                      color="#FFFFFF"
+                    />
+                  ) : (
+                    <Text
+                      style={
+                        styles.primaryBtnText
+                      }
+                    >
+                      Send reset link
+                    </Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.cancelBtn}
+                  onPress={closeForgotModal}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.cancelText,
+                      { color: c.muted },
+                    ]}
+                  >
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                {/* SUCCESS */}
+                <View style={styles.successContainer}>
+                  <View
+                    style={[
+                      styles.successIcon,
+                      {
+                        backgroundColor:
+                          c.primary,
+                      },
+                    ]}
+                  >
+                    <Feather
+                      name="check"
+                      size={30}
+                      color="#FFFFFF"
+                    />
+                  </View>
+
+                  <Text
+                    style={[
+                      styles.modalTitle,
+                      { color: c.warm },
+                    ]}
+                  >
+                    Check your email
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.modalDescription,
+                      { color: c.muted },
+                    ]}
+                  >
+                    If an account exists for that
+                    email address, a password reset
+                    link has been sent.
+                  </Text>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.primaryBtn,
+                      {
+                        backgroundColor:
+                          c.primary,
+                      },
+                    ]}
+                    onPress={closeForgotModal}
+                    activeOpacity={0.85}
+                  >
+                    <Text
+                      style={
+                        styles.primaryBtnText
+                      }
+                    >
+                      Done
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* --------------------------------------------------
+          WALLET MODAL
+      -------------------------------------------------- */}
+
       <Modal
         visible={walletModalVisible}
         transparent
-        animationType="slide"
-        onRequestClose={() => setWalletModalVisible(false)}
+        animationType="fade"
+        onRequestClose={() =>
+          setWalletModalVisible(false)
+        }
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: c.card, borderColor: c.border }]}>
-
-            {/* Modal Header */}
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: c.card,
+                borderColor: c.border,
+              },
+            ]}
+          >
             <View style={styles.modalHeader}>
-              <View style={[styles.walletIconCircle, { backgroundColor: c.primaryBg }]}>
-                <Ionicons name="wallet" size={26} color={c.primary} />
-              </View>
-              <TouchableOpacity
-                style={[styles.closeBtn, { backgroundColor: c.cardLight }]}
-                onPress={() => setWalletModalVisible(false)}
+              <View
+                style={[
+                  styles.modalIcon,
+                  {
+                    backgroundColor:
+                      c.primary,
+                  },
+                ]}
               >
-                <Feather name="x" size={18} color={c.warm} />
+                <Ionicons
+                  name="wallet-outline"
+                  size={22}
+                  color="#FFFFFF"
+                />
+              </View>
+
+              <TouchableOpacity
+                onPress={() =>
+                  setWalletModalVisible(false)
+                }
+                activeOpacity={0.7}
+              >
+                <Feather
+                  name="x"
+                  size={24}
+                  color={c.muted}
+                />
               </TouchableOpacity>
             </View>
 
-            <Text style={[styles.modalTitle, { color: c.warm }]}>Connect MetaMask</Text>
-            <Text style={[styles.modalSubtitle, { color: c.muted }]}>
-              Sign in with your Web3 Ethereum wallet to access verified luxury assets.
+            <Text
+              style={[
+                styles.modalTitle,
+                { color: c.warm },
+              ]}
+            >
+              Connect your wallet
             </Text>
 
-            {connectingWallet ? (
-              <View style={styles.modalLoadingBox}>
-                <ActivityIndicator size="large" color={c.primary} />
-                <Text style={[styles.modalLoadingText, { color: c.primary }]}>
-                  {walletStatus || 'Authenticating with Supabase…'}
+            <Text
+              style={[
+                styles.modalDescription,
+                { color: c.muted },
+              ]}
+            >
+              MetaMask was not detected. You
+              can use the demo wallet or enter
+              a wallet address.
+            </Text>
+
+            {/* DEMO WALLET */}
+            <TouchableOpacity
+              style={[
+                styles.primaryBtn,
+                {
+                  backgroundColor:
+                    c.primary,
+                },
+              ]}
+              onPress={handleDemoWalletLogin}
+              disabled={connectingWallet}
+              activeOpacity={0.85}
+            >
+              {connectingWallet ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text
+                  style={
+                    styles.primaryBtnText
+                  }
+                >
+                  Use Demo Wallet
                 </Text>
-              </View>
-            ) : (
-              <View style={styles.modalOptions}>
-                {/* Option 1: Quick Connect Demo / Active Address */}
-                <TouchableOpacity
-                  style={[styles.modalOptionBtn, { backgroundColor: c.primary }]}
-                  onPress={() => processWalletLogin(DEFAULT_DEMO_WALLET)}
-                >
-                  <Ionicons name="flash" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.modalOptionBtnText}>Quick Connect ({DEFAULT_DEMO_WALLET.slice(0, 6)}...{DEFAULT_DEMO_WALLET.slice(-4)})</Text>
-                </TouchableOpacity>
+              )}
+            </TouchableOpacity>
 
-                {/* Option 2: Open MetaMask App */}
-                <TouchableOpacity
-                  style={[styles.modalOutlineBtn, { borderColor: c.border }]}
-                  onPress={openMetaMaskApp}
-                >
-                  <Ionicons name="open-outline" size={18} color={c.primary} style={{ marginRight: 6 }} />
-                  <Text style={[styles.modalOutlineBtnText, { color: c.warm }]}>Launch MetaMask Mobile App</Text>
-                </TouchableOpacity>
+            {/* CUSTOM WALLET */}
+            <Text
+              style={[
+                styles.label,
+                {
+                  color: c.muted,
+                  marginTop: 18,
+                },
+              ]}
+            >
+              WALLET ADDRESS
+            </Text>
 
-                {/* Option 3: Enter Custom Wallet Address */}
-                <View style={styles.customAddressBox}>
-                  <Text style={[styles.customLabel, { color: c.muted }]}>OR ENTER YOUR ETHEREUM ADDRESS</Text>
-                  <TextInput
-                    value={customWalletAddress}
-                    onChangeText={setCustomWalletAddress}
-                    autoCapitalize="none"
-                    placeholder="0x..."
-                    placeholderTextColor={c.muted}
-                    style={[
-                      styles.customInput,
-                      { backgroundColor: c.cardLight, borderColor: c.border, color: c.warm },
-                    ]}
-                  />
-                  <TouchableOpacity
-                    style={[
-                      styles.customSubmitBtn,
-                      { backgroundColor: customWalletAddress.trim() ? c.primary : c.border },
-                    ]}
-                    disabled={!customWalletAddress.trim()}
-                    onPress={() => processWalletLogin(customWalletAddress.trim())}
-                  >
-                    <Text style={styles.customSubmitText}>Sign In with Address</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+            <TextInput
+              value={customWalletAddress}
+              onChangeText={setCustomWalletAddress}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="0x..."
+              placeholderTextColor={c.muted}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: c.card,
+                  borderColor: c.border,
+                  color: c.warm,
+                },
+              ]}
+            />
+
+            <TouchableOpacity
+              style={[
+                styles.walletBtn,
+                {
+                  backgroundColor: c.card,
+                  borderColor: c.border,
+                },
+              ]}
+              onPress={handleCustomWalletLogin}
+              disabled={connectingWallet}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.walletBtnText,
+                  { color: c.warm },
+                ]}
+              >
+                Connect Wallet Address
+              </Text>
+            </TouchableOpacity>
+
+            {/* METAMASK DOWNLOAD */}
+            <TouchableOpacity
+              style={styles.metamaskLink}
+              onPress={openMetaMaskApp}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.registerLink,
+                  { color: c.primary },
+                ]}
+              >
+                Get MetaMask
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() =>
+                setWalletModalVisible(false)
+              }
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.cancelText,
+                  { color: c.muted },
+                ]}
+              >
+                Cancel
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -334,219 +1031,292 @@ export default function LoginScreen({ navigation, isDark }) {
   );
 }
 
+// --------------------------------------------------
+// STYLES
+// --------------------------------------------------
+
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  navBar: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 4,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scroll: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-    gap: 16,
-  },
-  heading: {
-    fontSize: 30,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-    marginTop: 8,
-  },
-  sub: {
-    fontSize: 13,
-    marginTop: 2,
-    marginBottom: 4,
-  },
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  errorText: {
-    fontSize: 13,
-    fontWeight: '500',
+  safeArea: {
     flex: 1,
-  },
-  fieldWrap: {
-    gap: 6,
-  },
-  label: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-  },
-  input: {
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 14,
-  },
-  primaryBtn: {
-    borderRadius: 18,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  primaryBtnLabel: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  walletBtn: {
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  walletLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  createAcct: {
-    textAlign: 'center',
-    fontSize: 12,
-    marginTop: 8,
-  },
-  createAcctLink: {
-    fontWeight: '700',
-    textDecorationLine: 'underline',
   },
 
-  // Modal styles
-  modalOverlay: {
+  keyboard: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
   },
-  modalContent: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    padding: 24,
-    paddingBottom: Platform.OS === 'ios' ? 44 : 28,
-    gap: 12,
+
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 30,
+    paddingBottom: 50,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+
+  header: {
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 28,
   },
-  walletIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeBtn: {
-    width: 32,
-    height: 32,
+
+  logoBox: {
+    width: 58,
+    height: 58,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 12,
   },
-  modalTitle: {
-    fontSize: 20,
+
+  logoText: {
+    fontSize: 27,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+
+  subtitle: {
+    fontSize: 13,
+  },
+
+  card: {
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 24,
+  },
+
+  heading: {
+    fontSize: 25,
+    fontWeight: '800',
+    marginBottom: 7,
+  },
+
+  description: {
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 24,
+  },
+
+  fieldWrap: {
+    marginBottom: 17,
+  },
+
+  label: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.7,
+    marginBottom: 7,
+  },
+
+  input: {
+    width: '100%',
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    fontSize: 15,
+  },
+
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+  },
+
+  passwordInput: {
+    flex: 1,
+    minHeight: 48,
+    fontSize: 15,
+  },
+
+  eyeBtn: {
+    paddingLeft: 10,
+    paddingVertical: 10,
+  },
+
+  // IMPORTANT:
+  // This makes the Forgot password button
+  // clearly visible and easy to press.
+  forgotBtn: {
+    alignSelf: 'flex-end',
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    marginTop: -5,
+    marginBottom: 12,
+  },
+
+  forgotText: {
+    fontSize: 14,
     fontWeight: '700',
   },
-  modalSubtitle: {
+
+  errorBox: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+  },
+
+  errorText: {
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
+  },
+
+  primaryBtn: {
+    minHeight: 48,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+
+  primaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 22,
+  },
+
+  divider: {
+    flex: 1,
+    height: 1,
+  },
+
+  dividerText: {
+    fontSize: 12,
+    marginHorizontal: 10,
+  },
+
+  walletBtn: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+  },
+
+  walletBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 9,
+  },
+
+  walletStatus: {
+    textAlign: 'center',
+    fontSize: 12,
+    marginTop: 10,
+  },
+
+  registerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 24,
+    flexWrap: 'wrap',
+  },
+
+  registerText: {
+    fontSize: 13,
+  },
+
+  registerLink: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginLeft: 5,
+  },
+
+  // --------------------------------------------------
+  // MODALS
+  // --------------------------------------------------
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+
+  modalCard: {
+    width: '100%',
+    maxWidth: 460,
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 24,
+  },
+
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+
+  modalIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '800',
     marginBottom: 8,
   },
-  modalLoadingBox: {
-    padding: 32,
-    alignItems: 'center',
-    gap: 12,
+
+  modalDescription: {
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 20,
   },
-  modalLoadingText: {
+
+  modalError: {
     fontSize: 13,
+    marginTop: 9,
+    marginBottom: 12,
+    lineHeight: 19,
+  },
+
+  cancelBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    marginTop: 8,
+  },
+
+  cancelText: {
+    fontSize: 14,
     fontWeight: '600',
   },
-  modalOptions: {
-    gap: 10,
+
+  successContainer: {
+    alignItems: 'center',
   },
-  modalOptionBtn: {
-    flexDirection: 'row',
+
+  successIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+
+  metamaskLink: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
-    borderRadius: 14,
-  },
-  modalOptionBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  modalOutlineBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 13,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  modalOutlineBtnText: {
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  customAddressBox: {
-    marginTop: 8,
-    gap: 6,
-  },
-  customLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-  },
-  customInput: {
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 13,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  customSubmitBtn: {
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  customSubmitText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 13,
   },
 });
