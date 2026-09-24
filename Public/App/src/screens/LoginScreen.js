@@ -31,6 +31,7 @@ export default function LoginScreen({ navigation, isDark }) {
   // Normal login
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -94,6 +95,14 @@ export default function LoginScreen({ navigation, isDark }) {
       return;
     }
 
+    // Native apps reopen via the "smartassets://" custom link.
+    // The web build reopens this same page, where the token is read
+    // straight out of the URL by AppNavigator.
+    const redirectTo =
+      Platform.OS === 'web'
+        ? (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')
+        : 'smartassets://reset-password';
+
     setForgotLoading(true);
 
     try {
@@ -106,6 +115,7 @@ export default function LoginScreen({ navigation, isDark }) {
           },
           body: JSON.stringify({
             email: cleanEmail,
+            redirectTo,
           }),
         }
       );
@@ -381,26 +391,50 @@ export default function LoginScreen({ navigation, isDark }) {
                 PASSWORD
               </Text>
 
-              <TextInput
-                value={password}
-                onChangeText={(text) => {
-                  setPassword(text);
-                  setError('');
-                }}
-                secureTextEntry
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder="••••••••"
-                placeholderTextColor={c.muted}
+              <View
                 style={[
-                  styles.input,
+                  styles.passwordRow,
                   {
                     backgroundColor: c.card,
                     borderColor: c.border,
-                    color: c.warm,
                   },
                 ]}
-              />
+              >
+                <TextInput
+                  value={password}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    setError('');
+                  }}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="••••••••"
+                  placeholderTextColor={c.muted}
+                  style={[
+                    styles.passwordInput,
+                    { color: c.warm },
+                  ]}
+                />
+
+                <TouchableOpacity
+                  onPress={() =>
+                    setShowPassword((v) => !v)
+                  }
+                  activeOpacity={0.7}
+                  style={styles.eyeBtn}
+                >
+                  <Feather
+                    name={
+                      showPassword
+                        ? 'eye-off'
+                        : 'eye'
+                    }
+                    size={19}
+                    color={c.muted}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* FORGOT PASSWORD BUTTON */}
@@ -1080,6 +1114,27 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 14,
     fontSize: 15,
+  },
+
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+  },
+
+  passwordInput: {
+    flex: 1,
+    minHeight: 48,
+    fontSize: 15,
+  },
+
+  eyeBtn: {
+    paddingLeft: 10,
+    paddingVertical: 10,
   },
 
   // IMPORTANT:

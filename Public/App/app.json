@@ -1,3 +1,4 @@
+
 {
   "expo": {
     "name": "App",
@@ -5,6 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "scheme": "smartassets",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true

@@ -5,11 +5,11 @@
 //   npx expo install @react-navigation/native @react-navigation/native-stack @react-navigation/bottom-tabs
 //   npx expo install react-native-screens react-native-safe-area-context
 
-import React, { useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useState, useEffect, useRef } from 'react';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, Platform, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SCREENS, TABS } from '../constants/navigation';
@@ -21,6 +21,7 @@ import SplashScreen      from '../screens/SplashScreen';
 import OnboardingScreen  from '../screens/OnboardingScreen';
 import LoginScreen       from '../screens/LoginScreen';
 import RegisterScreen    from '../screens/RegisterScreen';
+import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import HomeScreen        from '../screens/HomeScreen';
 import SearchScreen      from '../screens/SearchScreen';
 import ListAssetScreen   from '../screens/ListAssetScreen';
@@ -40,6 +41,42 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
+
+// Reference used so a deep link can navigate before/after the navigator mounts
+const navigationRef = createNavigationContainerRef();
+
+// Supabase appends the recovery token to the redirect URL as a hash
+// (smartassets://reset-password#access_token=...&type=recovery) or, on
+// some flows, as a query string. This pulls the token out of either.
+function extractResetToken(url) {
+  if (!url || typeof url !== 'string') return null;
+
+  const hashIndex = url.indexOf('#');
+  const queryIndex = url.indexOf('?');
+
+  let paramsString = '';
+  if (hashIndex !== -1) {
+    paramsString = url.substring(hashIndex + 1);
+  } else if (queryIndex !== -1) {
+    paramsString = url.substring(queryIndex + 1);
+  }
+
+  if (!paramsString) return null;
+
+  const params = {};
+  paramsString.split('&').forEach((pair) => {
+    const [key, value] = pair.split('=');
+    if (key) {
+      params[decodeURIComponent(key)] = decodeURIComponent(value || '');
+    }
+  });
+
+  if (params.type === 'recovery' && params.access_token) {
+    return params.access_token;
+  }
+
+  return null;
+}
 
 // ── All tabs use unified blue palette ──────────────────────────────────────────
 const ACTIVE_BLUE = '#38BDF8';
@@ -121,7 +158,6 @@ function CustomTabBar({ state, navigation }) {
             style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 }}
             activeOpacity={0.8}
           >
-            {/* Blue pill indicator when active */}
             {focused && (
               <View style={{
                 position: 'absolute',
@@ -182,12 +218,49 @@ function MainTabs({ isDark }) {
 export default function Navigation() {
   const [isDark, setIsDark] = useState(false);
   const { isAuthenticated } = useAuth();
+  const pendingTokenRef = useRef(null);
+
+  useEffect(() => {
+    const handleIncomingUrl = (url) => {
+      const token = extractResetToken(url);
+      if (!token) return;
+
+      if (navigationRef.isReady()) {
+        navigationRef.navigate(SCREENS.RESET_PASSWORD, { accessToken: token });
+      } else {
+        pendingTokenRef.current = token;
+      }
+    };
+
+    if (Platform.OS !== 'web') {
+      Linking.getInitialURL().then((url) => {
+        if (url) handleIncomingUrl(url);
+      });
+      const subscription = Linking.addEventListener('url', ({ url }) => {
+        handleIncomingUrl(url);
+      });
+      return () => subscription.remove();
+    }
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      handleIncomingUrl(window.location.href);
+    }
+  }, []);
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        if (pendingTokenRef.current) {
+          navigationRef.navigate(SCREENS.RESET_PASSWORD, {
+            accessToken: pendingTokenRef.current,
+          });
+          pendingTokenRef.current = null;
+        }
+      }}
+    >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
-          // ── Auth screens: Only accessible before login ──
           <>
             <Stack.Screen name={SCREENS.SPLASH}>
               {(props) => <SplashScreen {...props} isDark={isDark} />}
@@ -201,9 +274,11 @@ export default function Navigation() {
             <Stack.Screen name={SCREENS.REGISTER}>
               {(props) => <RegisterScreen {...props} isDark={isDark} />}
             </Stack.Screen>
+            <Stack.Screen name={SCREENS.RESET_PASSWORD}>
+              {(props) => <ResetPasswordScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
           </>
         ) : (
-          // ── App screens: Strictly accessible ONLY to authenticated registered users ──
           <>
             <Stack.Screen name={SCREENS.MAIN_TABS}>
               {(props) => <MainTabs {...props} isDark={isDark} />}

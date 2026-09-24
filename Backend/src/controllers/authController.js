@@ -19,12 +19,26 @@ function getDeterministicPassword(walletAddress) {
   );
 }
 
+// Only allow redirect targets we control, so nobody can abuse this endpoint
+// to send Supabase reset emails that redirect to an arbitrary site.
+const ALLOWED_RESET_REDIRECTS = [
+  'smartassets://reset-password',
+  'http://localhost:3000',
+  'http://localhost:8081',
+];
+
+function isAllowedRedirect(url) {
+  if (!url || typeof url !== 'string') return false;
+  return ALLOWED_RESET_REDIRECTS.some(
+    (allowed) => url === allowed || url.startsWith(allowed)
+  );
+}
+
 // ── POST /api/auth/register ──────────────────────────────────────────────────
 async function register(req, res) {
   try {
     const { email, password, fullName } = req.body;
 
-    // ── Validate required fields ──
     if (!email || !password || !fullName) {
       return sendError(
         res,
@@ -43,7 +57,6 @@ async function register(req, res) {
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // ── Create the user in Supabase Auth ──
     const {
       data: authData,
       error: authError,
@@ -66,7 +79,6 @@ async function register(req, res) {
       return sendError(res, status, authError.message);
     }
 
-    // ── Upsert row into the profiles table ──
     try {
       const { error: profileError } = await supabase
         .from('profiles')
@@ -114,7 +126,6 @@ async function login(req, res) {
   try {
     const { email, password } = req.body;
 
-    // ── Validate required fields ──
     if (!email || !password) {
       return sendError(
         res,
@@ -125,7 +136,6 @@ async function login(req, res) {
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // ── Sign in via Supabase Auth ──
     const { data, error } =
       await supabase.auth.signInWithPassword({
         email: cleanEmail,
@@ -140,7 +150,6 @@ async function login(req, res) {
       );
     }
 
-    // ── Fetch the user's profile (fallback to user_metadata) ──
     let fullName =
       data.user.user_metadata?.full_name || '';
 
@@ -195,7 +204,6 @@ async function login(req, res) {
 }
 
 // ── POST /api/auth/wallet-login ──────────────────────────────────────────────
-// Authenticates or provisions a Supabase user via MetaMask wallet address.
 async function walletLogin(req, res) {
   try {
     const { walletAddress } = req.body;
@@ -213,7 +221,6 @@ async function walletLogin(req, res) {
 
     const cleanAddress = walletAddress.trim().toLowerCase();
 
-    // Basic Ethereum address format validation
     if (!/^0x[a-f0-9]{40}$/i.test(cleanAddress)) {
       return sendError(
         res,
@@ -234,14 +241,12 @@ async function walletLogin(req, res) {
     const displayName =
       `MetaMask (${shortAddress})`;
 
-    // 1. Try to sign in first
     let authResult =
       await supabase.auth.signInWithPassword({
         email: deterministicEmail,
         password: deterministicPassword,
       });
 
-    // 2. If user does not exist, provision a new user
     if (authResult.error) {
       const {
         data: createdUser,
@@ -270,7 +275,6 @@ async function walletLogin(req, res) {
         );
       }
 
-      // Sync into profiles table
       try {
         await supabase
           .from('profiles')
@@ -290,7 +294,6 @@ async function walletLogin(req, res) {
         );
       }
 
-      // Now sign in to obtain tokens
       authResult =
         await supabase.auth.signInWithPassword({
           email: deterministicEmail,
@@ -342,7 +345,7 @@ async function walletLogin(req, res) {
 // ── POST /api/auth/forgot-password ──────────────────────────────────────────
 async function forgotPassword(req, res) {
   try {
-    const { email } = req.body || {};
+    const { email, redirectTo } = req.body || {};
 
     if (!email || typeof email !== 'string') {
       return sendError(res, 400, 'Please provide an email address.');
@@ -354,8 +357,16 @@ async function forgotPassword(req, res) {
       return sendError(res, 400, 'Please provide an email address.');
     }
 
-    const { error } =
-      await supabase.auth.resetPasswordForEmail(cleanEmail);
+    const finalRedirect = isAllowedRedirect(redirectTo)
+      ? redirectTo
+      : process.env.PASSWORD_RESET_REDIRECT_URL;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      cleanEmail,
+      {
+        redirectTo: finalRedirect,
+      }
+    );
 
     if (error) {
       console.error('SUPABASE RESET ERROR:', error);
@@ -383,9 +394,76 @@ async function forgotPassword(req, res) {
   }
 }
 
+// ── POST /api/auth/reset-password ────────────────────────────────────────────
+// Takes the access_token that Supabase attached to the reset link, verifies it,
+// and sets the new password for that user via the Supabase admin API.
+async function resetPassword(req, res) {
+  try {
+    const { accessToken, newPassword } = req.body || {};
+
+    if (!accessToken || typeof accessToken !== 'string') {
+      return sendError(
+        res,
+        400,
+        'This reset link is invalid or has expired. Please request a new one.'
+      );
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+      return sendError(
+        res,
+        400,
+        'Password must be at least 6 characters.'
+      );
+    }
+
+    const { data: userData, error: userError } =
+      await supabase.auth.getUser(accessToken);
+
+    if (userError || !userData?.user) {
+      console.error('RESET PASSWORD TOKEN ERROR:', userError);
+
+      return sendError(
+        res,
+        401,
+        'This reset link is invalid or has expired. Please request a new one.'
+      );
+    }
+
+    const { error: updateError } =
+      await supabase.auth.admin.updateUserById(userData.user.id, {
+        password: newPassword,
+      });
+
+    if (updateError) {
+      console.error('RESET PASSWORD UPDATE ERROR:', updateError);
+
+      return sendError(
+        res,
+        500,
+        updateError.message || 'Could not update your password.'
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password updated successfully!',
+    });
+  } catch (err) {
+    console.error('RESET PASSWORD ERROR:', err);
+
+    return sendError(
+      res,
+      500,
+      'Internal server error. Please try again.'
+    );
+  }
+}
+
 module.exports = {
   register,
   login,
   walletLogin,
   forgotPassword,
+  resetPassword,
 };
