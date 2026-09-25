@@ -449,7 +449,7 @@ export default function HomeScreen({ navigation, isDark }) {
                     style={styles.avatarImg}
                   />
                 ) : (
-                  <Feather name="user" size={18} color="#38BDF8" />
+                  <Feather name="user" size={18} color="#0F172A" />
                 )}
               </View>
               <View>
@@ -461,19 +461,19 @@ export default function HomeScreen({ navigation, isDark }) {
             </View>
             <View style={{ flexDirection: "row", gap: 7 }}>
               <TouchableOpacity style={styles.iconBtn}>
-                <Feather name="settings" size={18} color="#38BDF8" />
+                <Feather name="settings" size={18} color="#0F172A" />
               </TouchableOpacity>
               <TouchableOpacity style={styles.iconBtn}>
-                <Feather name="bell" size={18} color="#38BDF8" />
+                <Feather name="bell" size={18} color="#0F172A" />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.iconBtn}
                 onPress={() => navigation.navigate(SCREENS.SEARCH)}
               >
-                <Feather name="search" size={18} color="#38BDF8" />
+                <Feather name="search" size={18} color="#0F172A" />
               </TouchableOpacity>
               <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
-                <Feather name="log-out" size={18} color="#38BDF8" />
+                <Feather name="log-out" size={18} color="#0F172A" />
               </TouchableOpacity>
             </View>
           </View>
@@ -485,8 +485,8 @@ export default function HomeScreen({ navigation, isDark }) {
                 "#000000",
                 "#080F1E",
                 "#111C30",
-                "#1E2A3E",
-                "#475569",
+                "#132035ff",
+                "#0060e6ff",
                 "#94A3B8",
               ]}
               locations={[0, 0.35, 0.6, 0.8, 0.93, 1]}
@@ -495,23 +495,7 @@ export default function HomeScreen({ navigation, isDark }) {
               style={styles.portfolioCard}
             >
               <View style={styles.portfolioHeader}>
-                <View style={styles.gainBadge}>
-                  <Feather name="trending-up" size={11} color="#00ff4c62" />
-                  {(() => {
-                    const text = vaultSummary.gainText || "+4.2% MoM";
-                    if (text.toLowerCase().includes("mom")) {
-                      const parts = text.split(/mom/i);
-                      return (
-                        <Text style={styles.gainText}>
-                          {parts[0]}
-                          <Text style={styles.momText}>MoM</Text>
-                          {parts[1] || ""}
-                        </Text>
-                      );
-                    }
-                    return <Text style={styles.gainText}>{text}</Text>;
-                  })()}
-                </View>
+                <Ionicons name="shield-checkmark" size={24} color="#F59E0B" />
                 <Text style={styles.cardBrandLabel}>SmartAssets</Text>
               </View>
               <Text style={styles.portfolioLabel}>Portfolio Balance</Text>
@@ -525,7 +509,6 @@ export default function HomeScreen({ navigation, isDark }) {
                     +R 68.00 <Text style={styles.cardChangePct}>+4.2%</Text>
                   </Text>
                 </View>
-                <Ionicons name="shield-checkmark" size={30} color="#F59E0B" />
               </View>
             </LinearGradient>
           </View>
@@ -548,7 +531,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(SCREENS.VAULT)}
                 >
-                  <Ionicons name="swap-vertical" size={21} color="#f1f1f1b6" />
+                  <Ionicons name="swap-vertical" size={18} color="#000000ff" />
                   <Text style={styles.quickActionLabel}>Transfer</Text>
                 </TouchableOpacity>
 
@@ -557,7 +540,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(SCREENS.VAULT)}
                 >
-                  <Ionicons name="add-circle" size={21} color="#ffffffb6" />
+                  <Ionicons name="add-circle" size={18} color="#000000ff" />
                   <Text style={styles.quickActionLabel}>Top Up</Text>
                 </TouchableOpacity>
               </View>
@@ -569,7 +552,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(SCREENS.VAULT)}
                 >
-                  <Ionicons name="card" size={21} color="#fcfcfcb6" />
+                  <Ionicons name="card" size={18} color="#000000ff" />
                   <Text style={styles.quickActionLabel}>Payment</Text>
                 </TouchableOpacity>
 
@@ -578,7 +561,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(SCREENS.PROFILE)}
                 >
-                  <Ionicons name="person" size={21} color="#d7d7d7b6" />
+                  <Ionicons name="person" size={18} color="#000000ff" />
                   <Text style={styles.quickActionLabel}>Profile</Text>
                 </TouchableOpacity>
               </View>
@@ -1007,12 +990,17 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#000000",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    borderWidth: 1.5,
-    borderColor: "rgba(56, 189, 248, 0.35)",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   avatarImg: { width: "100%", height: "100%" },
   greeting: {
@@ -1024,48 +1012,53 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "800",
     letterSpacing: -0.3,
-    color: "#38BDF8",
+    color: "#0F172A",
   },
   // ── Profile avatar circle ──
   avatarCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#000000",
-    borderWidth: 1.5,
-    borderColor: "rgba(56, 189, 248, 0.4)",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   avatarInitial: {
     fontSize: 17,
     fontWeight: "700",
-    color: "#38BDF8",
+    color: "#0F172A",
     letterSpacing: -0.3,
   },
 
-  // ── Icon buttons — matching VaultScreen (40x40) ──
+  // ── Icon buttons — white deposit button theme (40x40) ──
   iconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(56, 189, 248, 0.25)",
-    backgroundColor: "#000000",
+    borderColor: "#E2E8F0",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowRadius: 8,
+    elevation: 4,
   },
 
   // ── Portfolio Card / The Wallet ──
   portfolioCardContainer: {
     marginHorizontal: 20,
-    marginTop: 4,
-    marginBottom: 12,
+    marginTop: 12,
+    marginBottom: 18,
     borderRadius: 24,
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: 8 },
@@ -1074,9 +1067,9 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   portfolioCard: {
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 24,
     borderRadius: 24,
     borderWidth: 1.5,
     borderColor: "rgba(148, 163, 184, 0.25)",
@@ -1185,23 +1178,19 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#000000",
-    borderRadius: 18,
-    paddingHorizontal: 16,
+    justifyContent: "flex-start",
+    gap: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    paddingHorizontal: 18,
     paddingVertical: 14,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 4,
-    gap: 12,
+    borderColor: "rgba(255, 255, 255, 0.4)",
   },
   quickActionLabel: {
-    fontSize: 13.5,
+    fontSize: 14.5,
     fontWeight: "700",
-    color: "#2f00ff8a",
+    color: "#000000ff",
     letterSpacing: -0.2,
   },
 
