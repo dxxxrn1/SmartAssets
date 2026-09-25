@@ -529,24 +529,24 @@ export default function VaultScreen({ navigation, isDark }) {
         onRequestClose={() => setDepositModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: "#FFFFFF", borderColor: "#E2E8F0" }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Deposit Funds</Text>
+              <Text style={[styles.modalTitle, { color: "#0F172A" }]}>Deposit Funds</Text>
               <TouchableOpacity
                 onPress={() => setDepositModalVisible(false)}
                 style={styles.closeBtn}
               >
-                <Feather name="x" size={20} color="#94A3B8" />
+                <Feather name="x" size={20} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputLabel}>Deposit Amount (ZAR)</Text>
-            <View style={styles.amountInputWrap}>
-              <Text style={styles.currencyPrefix}>R</Text>
+            <Text style={[styles.inputLabel, { color: "#475569" }]}>Deposit Amount (ZAR)</Text>
+            <View style={[styles.amountInputWrap, { backgroundColor: "#F8FAFC", borderColor: "#E2E8F0" }]}>
+              <Text style={[styles.currencyPrefix, { color: "#475569" }]}>R</Text>
               <TextInput
-                style={styles.amountInput}
+                style={[styles.amountInput, { color: "#0F172A" }]}
                 placeholder="0.00"
-                placeholderTextColor="#64748B"
+                placeholderTextColor="#94A3B8"
                 keyboardType="numeric"
                 value={depositAmount}
                 onChangeText={setDepositAmount}
@@ -558,16 +558,16 @@ export default function VaultScreen({ navigation, isDark }) {
               {[500, 1000, 5000, 10000].map((val) => (
                 <TouchableOpacity
                   key={val}
-                  style={styles.chipBtn}
+                  style={[styles.chipBtn, { backgroundColor: "#F1F5F9", borderColor: "#E2E8F0" }]}
                   onPress={() => setDepositAmount(String(val))}
                 >
-                  <Text style={styles.chipText}>+R{val.toLocaleString()}</Text>
+                  <Text style={[styles.chipText, { color: "#334155" }]}>+R{val.toLocaleString()}</Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             {/* Payment Method Selector */}
-            <Text style={styles.inputLabel}>Payment Method</Text>
+            <Text style={[styles.inputLabel, { color: "#475569" }]}>Payment Method</Text>
             <View style={styles.methodSelectorRow}>
               {[
                 { id: "Instant EFT / Card", label: "Instant EFT / Card", icon: "credit-card" },
@@ -577,19 +577,21 @@ export default function VaultScreen({ navigation, isDark }) {
                   key={m.id}
                   style={[
                     styles.methodBtn,
-                    depositMethod === m.id && styles.methodBtnActive,
+                    { backgroundColor: "#F1F5F9", borderColor: "#E2E8F0" },
+                    depositMethod === m.id && { backgroundColor: "#0F172A", borderColor: "#0F172A" },
                   ]}
                   onPress={() => setDepositMethod(m.id)}
                 >
                   <Feather
                     name={m.icon}
                     size={14}
-                    color={depositMethod === m.id ? "#FFFFFF" : "#94A3B8"}
+                    color={depositMethod === m.id ? "#FFFFFF" : "#64748B"}
                   />
                   <Text
                     style={[
                       styles.methodBtnText,
-                      depositMethod === m.id && styles.methodBtnTextActive,
+                      { color: "#475569" },
+                      depositMethod === m.id && { color: "#FFFFFF" },
                     ]}
                   >
                     {m.label}
@@ -599,27 +601,39 @@ export default function VaultScreen({ navigation, isDark }) {
             </View>
 
             {/* Summary info */}
-            <View style={styles.modalSummaryBox}>
+            <View style={[styles.modalSummaryBox, { backgroundColor: "#F8FAFC", borderColor: "#E2E8F0" }]}>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Transaction Fee</Text>
+                <Text style={[styles.summaryLabel, { color: "#475569" }]}>Transaction Fee</Text>
                 <Text style={styles.summaryValueFree}>R0.00 (Free)</Text>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Vault Processing</Text>
-                <Text style={styles.summaryValue}>Instant Credit</Text>
+                <Text style={[styles.summaryLabel, { color: "#475569" }]}>Vault Processing</Text>
+                <Text style={[styles.summaryValue, { color: "#0F172A" }]}>Instant Credit</Text>
               </View>
             </View>
 
             {/* Confirm Button */}
             <TouchableOpacity
-              style={styles.modalActionBtn}
+              style={[
+                styles.modalActionBtn, 
+                { 
+                  backgroundColor: "#ffffffff", 
+                  borderWidth: 1, 
+                  borderColor: "#E2E8F0", 
+                  shadowOpacity: 0.15, 
+                  shadowRadius: 8, 
+                  elevation: 4, 
+                  shadowOffset: { width: 0, height: 4 },
+                  marginTop: 16
+                }
+              ]}
               onPress={handleDeposit}
               disabled={depositing}
             >
               {depositing ? (
                 <ActivityIndicator color="#0F172A" />
               ) : (
-                <Text style={styles.modalActionBtnText}>Confirm Deposit</Text>
+                <Text style={[styles.modalActionBtnText, { color: "#0F172A" }]}>Confirm Deposit</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -634,9 +648,9 @@ export default function VaultScreen({ navigation, isDark }) {
         onRequestClose={() => setWithdrawModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: "#000000", borderColor: "rgba(255, 255, 255, 0.08)" }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Withdraw Funds</Text>
+              <Text style={[styles.modalTitle, { color: "#F1F5F9" }]}>Withdraw Funds</Text>
               <TouchableOpacity
                 onPress={() => setWithdrawModalVisible(false)}
                 style={styles.closeBtn}
@@ -645,31 +659,31 @@ export default function VaultScreen({ navigation, isDark }) {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.availBanner}>
-              <Text style={styles.availBannerLabel}>Available to withdraw:</Text>
-              <Text style={styles.availBannerValue}>
+            <View style={[styles.availBanner, { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)" }]}>
+              <Text style={[styles.availBannerLabel, { color: "#94A3B8" }]}>Available to withdraw:</Text>
+              <Text style={[styles.availBannerValue, { color: "#F1F5F9" }]}>
                 {summary.availableBalanceFormatted || "R0"}
               </Text>
             </View>
 
-            <Text style={styles.inputLabel}>Withdraw Amount (ZAR)</Text>
-            <View style={styles.amountInputWrap}>
-              <Text style={styles.currencyPrefix}>R</Text>
+            <Text style={[styles.inputLabel, { color: "#94A3B8" }]}>Withdraw Amount (ZAR)</Text>
+            <View style={[styles.amountInputWrap, { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)" }]}>
+              <Text style={[styles.currencyPrefix, { color: "#94A3B8" }]}>R</Text>
               <TextInput
-                style={styles.amountInput}
+                style={[styles.amountInput, { color: "#F1F5F9" }]}
                 placeholder="0.00"
                 placeholderTextColor="#64748B"
                 keyboardType="numeric"
                 value={withdrawAmount}
                 onChangeText={setWithdrawAmount}
               />
-              <TouchableOpacity style={styles.maxBtn} onPress={handleMaxWithdraw}>
-                <Text style={styles.maxBtnText}>MAX</Text>
+              <TouchableOpacity style={[styles.maxBtn, { backgroundColor: "rgba(255, 255, 255, 0.08)" }]} onPress={handleMaxWithdraw}>
+                <Text style={[styles.maxBtnText, { color: "#F1F5F9" }]}>MAX</Text>
               </TouchableOpacity>
             </View>
 
             {/* Destination Selector */}
-            <Text style={styles.inputLabel}>Payout Destination</Text>
+            <Text style={[styles.inputLabel, { color: "#94A3B8" }]}>Payout Destination</Text>
             <View style={styles.methodSelectorRow}>
               {[
                 { id: "Bank EFT", label: "Bank Account (EFT)", icon: "home" },
@@ -679,19 +693,21 @@ export default function VaultScreen({ navigation, isDark }) {
                   key={m.id}
                   style={[
                     styles.methodBtn,
-                    withdrawMethod === m.id && styles.methodBtnActive,
+                    { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)" },
+                    withdrawMethod === m.id && { backgroundColor: "#F1F5F9", borderColor: "#F1F5F9" },
                   ]}
                   onPress={() => setWithdrawMethod(m.id)}
                 >
                   <Feather
                     name={m.icon}
                     size={14}
-                    color={withdrawMethod === m.id ? "#FFFFFF" : "#94A3B8"}
+                    color={withdrawMethod === m.id ? "#0F172A" : "#94A3B8"}
                   />
                   <Text
                     style={[
                       styles.methodBtnText,
-                      withdrawMethod === m.id && styles.methodBtnTextActive,
+                      { color: "#94A3B8" },
+                      withdrawMethod === m.id && { color: "#0F172A" },
                     ]}
                   >
                     {m.label}
@@ -703,14 +719,14 @@ export default function VaultScreen({ navigation, isDark }) {
             {withdrawMethod === "Bank EFT" ? (
               <View style={{ gap: 8, marginTop: 4 }}>
                 <TextInput
-                  style={styles.textInput}
+                  style={[styles.textInput, { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)", color: "#F1F5F9" }]}
                   placeholder="Bank Name (e.g. Standard Bank, FNB)"
                   placeholderTextColor="#64748B"
                   value={bankName}
                   onChangeText={setBankName}
                 />
                 <TextInput
-                  style={styles.textInput}
+                  style={[styles.textInput, { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)", color: "#F1F5F9" }]}
                   placeholder="Account Number"
                   placeholderTextColor="#64748B"
                   keyboardType="numeric"
@@ -721,7 +737,7 @@ export default function VaultScreen({ navigation, isDark }) {
             ) : (
               <View style={{ marginTop: 4 }}>
                 <TextInput
-                  style={styles.textInput}
+                  style={[styles.textInput, { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)", color: "#F1F5F9" }]}
                   placeholder="Ethereum / Sepolia Address (0x...)"
                   placeholderTextColor="#64748B"
                   value={cryptoAddress}
@@ -732,14 +748,22 @@ export default function VaultScreen({ navigation, isDark }) {
 
             {/* Confirm Withdrawal Button */}
             <TouchableOpacity
-              style={[styles.modalActionBtn, { backgroundColor: "#38BDF8", marginTop: 16 }]}
+              style={[
+                styles.modalActionBtn, 
+                { 
+                  backgroundColor: "#F1F5F9", 
+                  borderColor: "#F1F5F9", 
+                  borderWidth: 1, 
+                  marginTop: 16 
+                }
+              ]}
               onPress={handleWithdraw}
               disabled={withdrawing}
             >
               {withdrawing ? (
                 <ActivityIndicator color="#0F172A" />
               ) : (
-                <Text style={styles.modalActionBtnText}>Confirm Withdrawal</Text>
+                <Text style={[styles.modalActionBtnText, { color: "#0F172A" }]}>Confirm Withdrawal</Text>
               )}
             </TouchableOpacity>
           </View>

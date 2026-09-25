@@ -103,5 +103,20 @@
     "updatedAt": "2026-09-23T23:51:33.719Z",
     "responseEstimate": "2-4 hours",
     "assignedTeam": "Smart Contract Settlement Desk"
+  },
+  {
+    "id": "TKT-477697",
+    "userId": "47a8f198-06e0-4eb7-b0ec-617b30318091",
+    "userEmail": "darrenforster3@gmail.com",
+    "userName": "darrenforster3",
+    "category": "General",
+    "subject": "Upload",
+    "message": "isuues",
+    "priority": "normal",
+    "status": "Open",
+    "createdAt": "2026-09-25T08:58:01.693Z",
+    "updatedAt": "2026-09-25T08:58:01.693Z",
+    "responseEstimate": "2-4 hours",
+    "assignedTeam": "Luxury Concierge Team"
   }
 ]
