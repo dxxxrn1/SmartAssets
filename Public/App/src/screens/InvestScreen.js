@@ -77,10 +77,16 @@ export default function InvestScreen({ navigation, isDark }) {
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
+      <LinearGradient
+        colors={["#F1EFFB", "#F8F6FE", "#FCF8F9", "#FEF5F2"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={{ flex: 1 }}
       >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+        >
         {/* ── Header ── */}
         <View style={styles.header}>
           <Text style={styles.title}>Fractional Invest</Text>
@@ -302,17 +308,19 @@ export default function InvestScreen({ navigation, isDark }) {
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </LinearGradient>
+  </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#090E17",
+    backgroundColor: "#F1EFFB",
   },
   scroll: {
     paddingBottom: 40,
+    backgroundColor: "transparent",
   },
   header: {
     paddingHorizontal: 20,
@@ -323,12 +331,12 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "800",
     letterSpacing: -0.5,
-    color: "#FFFFFF",
+    color: "#0F172A",
     marginBottom: 6,
   },
   sub: {
     fontSize: 14,
-    color: "#94A3B8",
+    color: "#64748B",
   },
 
   // -- Top Metrics Header --
@@ -339,7 +347,7 @@ const styles = StyleSheet.create({
   poolLabel: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#94A3B8",
+    color: "#64748B",
     marginBottom: 6,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -352,7 +360,7 @@ const styles = StyleSheet.create({
   poolValue: {
     fontSize: 34,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: "#0F172A",
     letterSpacing: -1,
     marginRight: 12,
   },
@@ -382,17 +390,17 @@ const styles = StyleSheet.create({
   secondaryStatValue: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: "#0F172A",
   },
   secondaryStatLabel: {
     fontSize: 13,
     fontWeight: "500",
-    color: "#94A3B8",
+    color: "#64748B",
   },
   statDivider: {
     width: 1,
     height: 14,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "#CBD5E1",
     marginHorizontal: 12,
   },
 
@@ -408,9 +416,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: "#121B2B",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.07)",
+    borderColor: "#E2E8F0",
   },
   filterPillActive: {
     paddingHorizontal: 16,
@@ -418,7 +426,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   filterTextInactive: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 13,
     fontWeight: "600",
   },
@@ -434,17 +442,22 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   emptyText: {
-    color: "#94A3B8",
+    color: "#64748B",
     textAlign: "center",
     marginTop: 32,
     fontSize: 14,
   },
 
   card: {
-    backgroundColor: "#121B2B",
+    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.07)",
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
     overflow: "hidden",
   },
   heroImage: {
@@ -504,6 +517,7 @@ const styles = StyleSheet.create({
   cardBody: {
     padding: 20,
     paddingTop: 16,
+    backgroundColor: "#FFFFFF",
   },
   financialRow: {
     flexDirection: "row",
@@ -517,12 +531,12 @@ const styles = StyleSheet.create({
   assetName: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: "#0F172A",
     marginBottom: 4,
   },
   assetValuation: {
     fontSize: 13,
-    color: "#94A3B8",
+    color: "#64748B",
     fontWeight: "500",
   },
   finRight: {
@@ -531,12 +545,12 @@ const styles = StyleSheet.create({
   sharePrice: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: "#0F172A",
     marginBottom: 4,
   },
   sharePriceUnit: {
     fontSize: 13,
-    color: "#94A3B8",
+    color: "#64748B",
     fontWeight: "500",
   },
   irrTag: {
@@ -561,7 +575,7 @@ const styles = StyleSheet.create({
   },
   fundingStatusText: {
     fontSize: 13,
-    color: "#94A3B8",
+    color: "#64748B",
     fontWeight: "500",
   },
   fundingPctText: {
@@ -571,7 +585,7 @@ const styles = StyleSheet.create({
   progressTrack: {
     height: 6,
     borderRadius: 3,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: "#E2E8F0",
     overflow: "hidden",
   },
   progressFill: {

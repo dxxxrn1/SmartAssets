@@ -113,20 +113,32 @@ export default function SearchScreen({ navigation, isDark, route }) {
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: "#0F1A2E" }]}
+      style={[styles.safe, { backgroundColor: "#F1EFFB" }]}
     >
-      <View style={{ flex: 1, backgroundColor: "#F4F6FA" }}>
-        {/* ══ FIXED DARK HEADER (never scrolls) ══ */}
+      <LinearGradient
+        colors={["#F1EFFB", "#F8F6FE", "#FCF8F9", "#FEF5F2"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={{ flex: 1 }}
+      >
+        {/* ══ FIXED PURPLE/VIOLET HERO HEADER (Matching Reference Card) ══ */}
         <LinearGradient
-          colors={["#0F1A2E", "#1A1248", "#2D0A6B", "#3B0E87"]}
+          colors={[
+            "#30126B",
+            "#4F1E9E",
+            "#7C3AED",
+            "#9333EA",
+            "#C084FC",
+            "#E879F9",
+          ]}
           start={{ x: 0, y: 0 }}
-          end={{ x: 0.3, y: 1 }}
+          end={{ x: 1, y: 1 }}
           style={styles.heroCard}
         >
           {/* Hero tagline — compact & sleek */}
           <View style={styles.heroTextWrap}>
             <Text style={styles.heroCaption}>
-              Verified luxury assets • Curated for bold investors
+              VERIFIED LUXURY ASSETS · CURATED COLLECTION
             </Text>
             <Text style={styles.heroTitle}>
               {"Discover your next asset "}
@@ -140,7 +152,7 @@ export default function SearchScreen({ navigation, isDark, route }) {
               <Feather
                 name="search"
                 size={14}
-                color="#94A3B8"
+                color="#64748B"
                 style={{ marginRight: 8 }}
               />
               <TextInput
@@ -152,7 +164,7 @@ export default function SearchScreen({ navigation, isDark, route }) {
               />
               {query.length > 0 ? (
                 <TouchableOpacity onPress={() => setQuery("")}>
-                  <Feather name="x" size={13} color="#94A3B8" />
+                  <Feather name="x" size={13} color="#64748B" />
                 </TouchableOpacity>
               ) : (
                 <View style={styles.filterBadge}>
@@ -180,23 +192,24 @@ export default function SearchScreen({ navigation, isDark, route }) {
                     {
                       backgroundColor: isActive
                         ? tab.color
-                        : "rgba(255,255,255,0.1)",
+                        : "rgba(255,255,255,0.12)",
                       borderColor: isActive
                         ? tab.color
                         : "rgba(255,255,255,0.2)",
                     },
                   ]}
+                  activeOpacity={0.8}
                 >
                   <Ionicons
                     name={tab.icon}
                     size={13}
-                    color={isActive ? "#FFFFFF" : "rgba(255,255,255,0.7)"}
+                    color={isActive ? "#FFFFFF" : "rgba(255,255,255,0.85)"}
                     style={{ marginRight: 4 }}
                   />
                   <Text
                     style={[
                       styles.filterPillText,
-                      { color: isActive ? "#FFFFFF" : "rgba(255,255,255,0.7)" },
+                      { color: isActive ? "#FFFFFF" : "rgba(255,255,255,0.85)" },
                     ]}
                   >
                     {tab.label}
@@ -208,9 +221,9 @@ export default function SearchScreen({ navigation, isDark, route }) {
         </LinearGradient>
         {/* ══ END FIXED HEADER ══ */}
 
-        {/* ── SCROLLABLE CONTENT (light background) ── */}
+        {/* ── SCROLLABLE CONTENT (White Mode) ── */}
         <ScrollView
-          style={{ flex: 1, backgroundColor: "#F4F6FA" }}
+          style={{ flex: 1, backgroundColor: "transparent" }}
           contentContainerStyle={styles.grid}
           showsVerticalScrollIndicator={false}
         >
@@ -236,7 +249,7 @@ export default function SearchScreen({ navigation, isDark, route }) {
             </View>
           ) : filtered.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Feather name="inbox" size={36} color="#1A3055" />
+              <Feather name="inbox" size={36} color="#94A3B8" />
               <Text style={styles.emptyText}>No assets found</Text>
               <Text style={styles.emptySubtext}>
                 Try a different search or category
@@ -278,25 +291,10 @@ export default function SearchScreen({ navigation, isDark, route }) {
                             style={styles.cardImg}
                             resizeMode="cover"
                           />
-                          <LinearGradient
-                            colors={[
-                              "transparent",
-                              "rgba(255,255,255,0.8)",
-                              "#FFFFFF",
-                            ]}
-                            locations={[0, 0.7, 1]}
-                            style={{
-                              position: "absolute",
-                              bottom: 0,
-                              left: 0,
-                              right: 0,
-                              height: 40,
-                            }}
-                          />
                         </View>
                       ) : (
                         <View style={styles.cardImgPlaceholder}>
-                          <Feather name="box" size={28} color="#1A3055" />
+                          <Feather name="box" size={28} color="#94A3B8" />
                         </View>
                       )}
                       {/* Verified badge — top right overlay */}
@@ -305,7 +303,7 @@ export default function SearchScreen({ navigation, isDark, route }) {
                           <Ionicons
                             name="checkmark-sharp"
                             size={9}
-                            color="#10B981"
+                            color="#059669"
                           />
                           <Text style={styles.verifiedText}>VERIFIED</Text>
                         </View>
@@ -336,7 +334,7 @@ export default function SearchScreen({ navigation, isDark, route }) {
                         <TouchableOpacity
                           style={[
                             styles.investBtn,
-                            { backgroundColor: accentColor },
+                            { backgroundColor: "#02ff39ff" },
                           ]}
                           onPress={() =>
                             navigation.navigate(SCREENS.ASSET_DETAIL, { asset })
@@ -353,35 +351,37 @@ export default function SearchScreen({ navigation, isDark, route }) {
             </View>
           )}
         </ScrollView>
-      </View>
+      </LinearGradient>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
+  safe: { flex: 1, backgroundColor: "#F1EFFB" },
 
-  // ══ Dark Hero Card ══
+  // ══ Hero Card (Purple/Violet Theme) ══
   heroCard: {
-    paddingTop: 12,
-    paddingBottom: 22,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 14 },
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 24,
+    paddingTop: 16,
+    paddingBottom: 20,
+    shadowColor: "#6B21A8",
+    shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.35,
-    shadowRadius: 24,
-    elevation: 16,
+    shadowRadius: 20,
+    elevation: 12,
     zIndex: 10,
   },
 
   heroTextWrap: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 10 },
   heroCaption: {
     fontSize: 9.5,
-    fontWeight: "600",
-    color: "rgba(255,255,255,0.45)",
-    letterSpacing: 0.3,
-    marginBottom: 2,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.75)",
+    letterSpacing: 0.8,
+    marginBottom: 4,
+    textTransform: "uppercase",
   },
   heroTitle: {
     fontSize: 22,
@@ -390,11 +390,11 @@ const styles = StyleSheet.create({
     letterSpacing: -0.8,
     lineHeight: 26,
   },
-  heroTitleAccent: { color: "#A78BFA" },
+  heroTitleAccent: { color: "#FDE047" },
   heroToday: {
     fontSize: 22,
     fontWeight: "900",
-    color: "#3c78faff",
+    color: "#FDE047",
     letterSpacing: -0.8,
     lineHeight: 26,
   },
@@ -403,13 +403,18 @@ const styles = StyleSheet.create({
   searchBarInner: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.95)",
     borderWidth: 0,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  searchInput: { flex: 1, fontSize: 12.5, color: "#1A202C" },
+  searchInput: { flex: 1, fontSize: 13, color: "#0F172A", fontWeight: "500" },
   filterBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -444,20 +449,22 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 8,
+    paddingTop: 16,
+    paddingBottom: 10,
   },
   resultLabel: {
     fontSize: 10,
-    fontWeight: "700",
+    fontWeight: "800",
     letterSpacing: 1.2,
     color: "#64748B",
+    textTransform: "uppercase",
   },
-  resultCount: { fontSize: 11, fontWeight: "500", color: "#0F172A" },
+  resultCount: { fontSize: 11, fontWeight: "700", color: "#0F172A" },
 
   // ── Grid ──
   grid: {
     paddingBottom: 28,
+    backgroundColor: "transparent",
   },
   gridInner: {
     flexDirection: "row",
@@ -469,7 +476,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  loadingText: { color: "#2E4A6B", fontSize: 13 },
+  loadingText: { color: "#64748B", fontSize: 13, fontWeight: "500" },
   emptyWrap: {
     paddingTop: 60,
     alignItems: "center",
@@ -477,28 +484,28 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    fontWeight: "600",
-    color: "#2E4A6B",
+    fontWeight: "700",
+    color: "#0F172A",
     marginTop: 12,
   },
-  emptySubtext: { fontSize: 13, color: "#1A3055" },
+  emptySubtext: { fontSize: 13, color: "#64748B" },
 
-  // ── Product card (light mode) ──
+  // ── Product card (Light luxury mode) ──
   card: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#F1F5F9",
-    shadowColor: "#0F172A",
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.06,
     shadowRadius: 10,
-    elevation: 4,
+    elevation: 3,
   },
   cardImgWrap: {
     width: "100%",
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8FAFC",
     position: "relative",
   },
   cardImg: {
@@ -510,7 +517,7 @@ const styles = StyleSheet.create({
     height: "100%",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F8FAFC",
   },
   verifiedBadge: {
     position: "absolute",
@@ -519,9 +526,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    backgroundColor: "rgba(16, 185, 129, 0.18)",
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.4)",
+    borderColor: "rgba(16, 185, 129, 0.35)",
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 999,
@@ -529,23 +536,24 @@ const styles = StyleSheet.create({
   verifiedText: {
     fontSize: 8,
     fontWeight: "800",
-    color: "#10B981",
+    color: "#059669",
     letterSpacing: 0.5,
   },
   cardBody: {
-    padding: 11,
+    padding: 12,
+    backgroundColor: "#FFFFFF",
   },
   cardCat: {
     fontSize: 9,
     fontWeight: "800",
     letterSpacing: 1,
-    marginBottom: 3,
+    marginBottom: 4,
   },
   cardName: {
     fontSize: 13,
     fontWeight: "700",
     color: "#0F172A",
-    lineHeight: 17,
+    lineHeight: 18,
     marginBottom: 10,
     letterSpacing: -0.2,
   },
@@ -558,8 +566,8 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: "700",
     letterSpacing: 0.8,
-    color: "#64748B",
-    marginBottom: 1,
+    color: "#94A3B8",
+    marginBottom: 2,
   },
   cardPrice: {
     fontSize: 15,
@@ -568,10 +576,15 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   investBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
 });
