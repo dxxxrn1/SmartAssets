@@ -77,8 +77,8 @@ const ACTIVE_TAB = '#333D9B';          // Royal Indigo
 const INACTIVE_TAB = '#94A3B8';        // Muted Slate
 
 const TAB_CONFIG = {
-  [SCREENS.HOME]:       { active: 'grid',             inactive: 'grid-outline',           label: 'Market'  },
-  [SCREENS.SEARCH]:     { active: 'search',            inactive: 'search-outline',         label: 'Search'  },
+  [SCREENS.HOME]:       { active: 'home',             inactive: 'home-outline',           label: 'Home'    },
+  [SCREENS.SEARCH]:     { active: 'grid',             inactive: 'grid-outline',           label: 'Market'  },
   [SCREENS.LIST_ASSET]: { active: 'add',               inactive: 'add',                    label: ''        },
   [SCREENS.INVEST]:     { active: 'trending-up',       inactive: 'trending-up-outline',    label: 'Invest'  },
   [SCREENS.VAULT]:      { active: 'shield-checkmark',  inactive: 'shield-outline',         label: 'Vault'   },

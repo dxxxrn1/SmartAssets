@@ -2,10 +2,52 @@
 // CRUD operations for marketplace assets, Ethereum Sepolia NFT minting,
 // and provenance history chain-of-custody tracking.
 
+const fs = require('fs');
+const path = require('path');
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const web3Service = require('../services/web3Service');
 const aiDetectionService = require('../services/aiDetectionService');
+
+// Ensure static uploads directory exists
+const UPLOADS_DIR = path.resolve(__dirname, '../../uploads/assets');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+function saveBase64Image(base64Str, req) {
+  if (!base64Str || typeof base64Str !== 'string') return base64Str;
+  if (!base64Str.startsWith('data:image/')) return base64Str;
+
+  try {
+    const matches = base64Str.match(/^data:image\/([a-zA-Z0-9.+_-]+);base64,(.+)$/);
+    if (!matches) return base64Str;
+
+    const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+    const data = matches[2];
+    const fileName = `asset_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    const filePath = path.join(UPLOADS_DIR, fileName);
+
+    fs.writeFileSync(filePath, Buffer.from(data, 'base64'));
+
+    const host = req.get('host') || 'localhost:5000';
+    const protocol = req.protocol || 'http';
+    return `${protocol}://${host}/uploads/assets/${fileName}`;
+  } catch (err) {
+    console.warn('⚠️ Could not save base64 image to disk, falling back to original:', err.message);
+    return base64Str;
+  }
+}
+
+// In-memory server cache to protect Supabase database egress from repetitive queries
+let assetsCache = null;
+let assetsCacheTime = 0;
+const ASSETS_CACHE_TTL = 60 * 1000; // 60 seconds
+
+function invalidateAssetsCache() {
+  assetsCache = null;
+  assetsCacheTime = 0;
+}
 
 /**
  * Helper to parse multiple images from description comment and return clean description.
@@ -38,6 +80,11 @@ function extractImagesAndCleanDescription(description, primaryImage) {
 async function getAssets(req, res) {
   try {
     const { category, q } = req.query;
+    const isDefaultQuery = (!category || category === 'All') && (!q || !q.trim());
+
+    if (isDefaultQuery && assetsCache && Date.now() - assetsCacheTime < ASSETS_CACHE_TTL) {
+      return res.json({ success: true, assets: assetsCache, cached: true });
+    }
 
     let query = supabase
       .from('assets')
@@ -105,6 +152,11 @@ async function getAssets(req, res) {
       aiScanStatus: row.ai_scan_status || (row.badge === 'Verified' || row.badge === 'Verified On-Chain' ? 'passed' : null),
       };
     });
+
+    if (isDefaultQuery) {
+      assetsCache = assets;
+      assetsCacheTime = Date.now();
+    }
 
     return res.json({ success: true, assets });
   } catch (err) {
@@ -340,6 +392,9 @@ async function createAsset(req, res) {
     const catCode = (category || 'COL').replace(/\s+/g, '').substring(0, 3).toUpperCase();
     const certNumber = `SA-${catCode}-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    // Convert bulky base64 image into a lightweight static upload URL to prevent draining Supabase egress
+    const savedImageUrl = saveBase64Image(image, req) || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
+
     // Mint ERC-721 Certificate of Authenticity on Ethereum Sepolia
     console.log(`⛓️ [Blockchain] Minting Certificate for ${name} on Ethereum Sepolia...`);
     const mintRes = await web3Service.mintAssetNFT({
@@ -351,7 +406,7 @@ async function createAsset(req, res) {
       certNumber,
       year: parseInt(year, 10) || new Date().getFullYear(),
       condition: condition || 'Mint / Verified',
-      image,
+      image: savedImageUrl,
     });
 
     console.log(`✅ [Blockchain] NFT Minted! Token ID: #${mintRes.tokenId}, Tx: ${mintRes.txHash}`);
@@ -365,7 +420,7 @@ async function createAsset(req, res) {
       year: parseInt(year, 10) || new Date().getFullYear(),
       condition: condition || 'Not specified',
       description: description || '',
-      image: image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
+      image: savedImageUrl,
       badge: 'Verified On-Chain',
       cert: certNumber,
       status: 'active',
@@ -448,6 +503,8 @@ async function createAsset(req, res) {
       positive: true,
     });
 
+    invalidateAssetsCache();
+
     return res.status(201).json({
       success: true,
       message: 'Asset listed and NFT Certificate minted on Ethereum Sepolia!',
@@ -467,4 +524,4 @@ async function createAsset(req, res) {
   }
 }
 
-module.exports = { getAssets, getAssetById, createAsset };
+module.exports = { getAssets, getAssetById, createAsset, invalidateAssetsCache };

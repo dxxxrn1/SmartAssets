@@ -140,17 +140,42 @@ export async function seedUserStarter(token) {
 
 // ── Dynamic Marketplace & Provenance History API ────────────────────────────
 
+// Client-side in-memory cache to prevent draining Supabase egress on repeated visits
+let clientMarketAssetsCache = null;
+let clientMarketAssetsCacheTime = 0;
+const CLIENT_MARKET_CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+
+export function invalidateMarketAssetsCache() {
+  clientMarketAssetsCache = null;
+  clientMarketAssetsCacheTime = 0;
+}
+
 /**
  * Fetch all marketplace assets with optional category or search query.
+ * Uses client-side caching for default queries to eliminate egress overhead.
  * @param {string} [category]
  * @param {string} [searchQuery]
+ * @param {boolean} [forceRefresh]
  */
-export async function getMarketAssets(category = 'All', searchQuery = '') {
+export async function getMarketAssets(category = 'All', searchQuery = '', forceRefresh = false) {
+  const isDefaultQuery = (!category || category === 'All') && (!searchQuery || !searchQuery.trim());
+
+  if (!forceRefresh && isDefaultQuery && clientMarketAssetsCache && (Date.now() - clientMarketAssetsCacheTime < CLIENT_MARKET_CACHE_TTL)) {
+    return { success: true, assets: clientMarketAssetsCache, cached: true };
+  }
+
   const params = new URLSearchParams();
   if (category && category !== 'All') params.append('category', category);
   if (searchQuery && searchQuery.trim()) params.append('q', searchQuery.trim());
   const qs = params.toString() ? `?${params.toString()}` : '';
-  return apiRequest(`/assets${qs}`, { method: 'GET' });
+  const data = await apiRequest(`/assets${qs}`, { method: 'GET' });
+
+  if (isDefaultQuery && data?.assets) {
+    clientMarketAssetsCache = data.assets;
+    clientMarketAssetsCacheTime = Date.now();
+  }
+
+  return data;
 }
 
 /**
@@ -163,10 +188,12 @@ export async function getAssetDetails(assetId) {
 
 /**
  * Create a new asset listing with picture and provenance history.
+ * Automatically invalidates client marketplace cache so the new asset appears immediately.
  * @param {object} assetData - { name, category, askingPrice, year, condition, description, image, history }
  * @param {string} token - User's Supabase JWT access token
  */
 export async function createAssetApi(assetData, token) {
+  invalidateMarketAssetsCache();
   return apiRequest(
     '/assets',
     {

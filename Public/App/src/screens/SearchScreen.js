@@ -12,6 +12,7 @@ import {
   Image,
   ActivityIndicator,
   useWindowDimensions,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -25,6 +26,16 @@ import { LinearGradient } from "expo-linear-gradient";
 // to prevent stale layout values on first render
 const CARD_GAP = 12;
 const CARD_H_PAD = 20;
+
+// Module-level cache to persist across re-mounts and tab switching (0 network egress on return)
+let cachedScreenAssets = [];
+let lastScreenFetchTime = 0;
+const SCREEN_CACHE_TTL = 3 * 60 * 1000; // 3 minutes fresh cache
+
+export function clearSearchScreenCache() {
+  cachedScreenAssets = [];
+  lastScreenFetchTime = 0;
+}
 
 const FILTER_TABS = [
   { id: "All", label: "All", icon: "grid-outline", color: "#3B82F6" },
@@ -64,8 +75,31 @@ export default function SearchScreen({ navigation, isDark, route }) {
   const initialCat = route?.params?.initialCategory ?? "All";
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState(initialCat);
-  const [assets, setAssets] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [assets, setAssets] = useState(cachedScreenAssets);
+  const [loading, setLoading] = useState(cachedScreenAssets.length === 0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchAssetsFromNetwork = useCallback(async (isPullToRefresh = false) => {
+    try {
+      if (isPullToRefresh) {
+        setRefreshing(true);
+      } else if (cachedScreenAssets.length === 0) {
+        setLoading(true);
+      }
+      const res = await getMarketAssets("All", "", isPullToRefresh);
+      if (res?.assets) {
+        const list = Array.isArray(res.assets) ? res.assets : [];
+        cachedScreenAssets = list;
+        lastScreenFetchTime = Date.now();
+        setAssets(list);
+      }
+    } catch (err) {
+      console.error("Failed to fetch market assets:", err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -73,26 +107,28 @@ export default function SearchScreen({ navigation, isDark, route }) {
       if (route?.params?.initialCategory) {
         setActiveCategory(route.params.initialCategory);
       }
-      let cancelled = false;
-      const fetchAssets = async () => {
-        try {
-          setLoading(true);
-          const res = await getMarketAssets();
-          if (!cancelled) {
-            setAssets(Array.isArray(res?.assets) ? res.assets : []);
-          }
-        } catch (err) {
-          console.error("Failed to fetch market assets:", err);
-        } finally {
-          if (!cancelled) setLoading(false);
+
+      const now = Date.now();
+      const isFresh =
+        cachedScreenAssets.length > 0 &&
+        now - lastScreenFetchTime < SCREEN_CACHE_TTL;
+
+      // If fresh cached data exists, avoid redundant network downloads
+      if (isFresh) {
+        if (assets.length === 0) {
+          setAssets(cachedScreenAssets);
         }
-      };
-      fetchAssets();
-      return () => {
-        cancelled = true;
-      };
-    }, [route?.params?.initialCategory]),
+        setLoading(false);
+        return;
+      }
+
+      fetchAssetsFromNetwork(false);
+    }, [route?.params?.initialCategory, fetchAssetsFromNetwork, assets.length]),
   );
+
+  const onRefresh = useCallback(() => {
+    fetchAssetsFromNetwork(true);
+  }, [fetchAssetsFromNetwork]);
 
   const assetList = Array.isArray(assets) ? assets : [];
   let filtered = assetList;
@@ -214,6 +250,14 @@ export default function SearchScreen({ navigation, isDark, route }) {
           style={{ flex: 1, backgroundColor: "transparent" }}
           contentContainerStyle={styles.grid}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#38BDF8"
+              colors={["#38BDF8", "#7C3AED"]}
+            />
+          }
         >
           {/* Result count */}
           <View style={styles.resultRow}>

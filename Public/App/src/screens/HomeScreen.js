@@ -1,6 +1,5 @@
 // ─── HomeScreen ───────────────────────────────────────────────────────────────
 // Home tab — net worth hero, quick actions, Your Assets, vault teaser, investment opps, recent activity
-
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
@@ -472,10 +471,11 @@ export default function HomeScreen({ navigation, isDark }) {
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: "#F1EFFB" }]}
+      style={styles.safe}
     >
       <LinearGradient
-        colors={["#F1EFFB", "#F8F6FE", "#FCF8F9", "#FEF5F2"]}
+        colors={["#ECEBFA", "#F0EEFB", "#F7F5FE", "#FBF7FA", "#FFF8F2", "#FFF7EF"]}
+        locations={[0, 0.15, 0.5, 0.7, 0.9, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={{ flex: 1 }}
@@ -532,7 +532,6 @@ export default function HomeScreen({ navigation, isDark }) {
               </TouchableOpacity>
             </View>
           </View>
-
           {/* ════════════════════════════════════════════
               THE WALLET CARD (Dual-Tone Purple & Lavender Stack)
           ════════════════════════════════════════════ */}
@@ -593,33 +592,31 @@ export default function HomeScreen({ navigation, isDark }) {
                         <Ionicons
                           name="trending-up"
                           size={13}
-                          color="#4ADE80"
+                          color="#2563EB"
                         />
                         <Text style={styles.walletGrowthPillText}>+4.2%</Text>
                       </View>
                     </View>
 
-                    {/* Right: shield and lock side by side on the bottom right */}
+                    {/* Right: lock on the bottom right */}
                     <View
                       style={{
-                        flexDirection: "row",
                         alignItems: "center",
                         alignSelf: "flex-end",
-                        gap: 10,
                       }}
                     >
-                      <Ionicons
-                        name="shield-checkmark"
-                        size={30}
-                        color="#F59E0B"
-                      />
                       <Ionicons name="lock-closed" size={26} color="#F59E0B" />
                     </View>
                   </View>
                 </LinearGradient>
 
-                {/* Black Bottom Section */}
-                <View style={styles.walletLavenderBottom}>
+                {/* Yellow Bottom Section Matching Side Peek */}
+                <LinearGradient
+                  colors={["#E5FF00", "#31322c"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.walletLavenderBottom}
+                >
                   {/* Left: Account Balance */}
                   <View style={styles.walletBottomCol}>
                     <Text style={styles.walletBottomLabel}>
@@ -638,12 +635,11 @@ export default function HomeScreen({ navigation, isDark }) {
                       <Ionicons
                         name={showBalance ? "eye-outline" : "eye-off-outline"}
                         size={15}
-                        color="#ffffff65"
+                        color="#FFFFFF"
                         style={{ marginLeft: 6 }}
                       />
                     </TouchableOpacity>
                   </View>
-
                   {/* Right: Vault ID */}
                   <View
                     style={[styles.walletBottomCol, { alignItems: "flex-end" }]}
@@ -653,14 +649,12 @@ export default function HomeScreen({ navigation, isDark }) {
                       {vaultSummary.accountNumber || "SA-8525-9632"}
                     </Text>
                   </View>
-                </View>
+                </LinearGradient>
               </View>
-
               {/* Right Green Card Peek (Matching reference screenshot) */}
-              <View style={styles.walletGreenPeek} />
+              {/* <View style={styles.walletGreenPeek} /> */}
             </View>
           </View>
-
           {/* ════════════════════════════════════════════
               QUICK ACTIONS
           ════════════════════════════════════════════ */}
@@ -684,7 +678,6 @@ export default function HomeScreen({ navigation, isDark }) {
                 </View>
                 <Text style={styles.quickActionLabel}>Transfer</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={styles.quickActionCard}
                 activeOpacity={0.8}
@@ -772,7 +765,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.85}
                 >
                   <LinearGradient
-                    colors={["rgba(76,134,255,0.08)", "rgba(0,0,0,0.95)"]}
+                    colors={["rgba(99,160,255,0.05)", "rgba(148,196,255,0.08)"]}
                     style={StyleSheet.absoluteFillObject}
                   />
                   <View style={{ position: "relative" }}>
@@ -781,8 +774,8 @@ export default function HomeScreen({ navigation, isDark }) {
                       style={styles.graphiteCardImg}
                     />
                     <LinearGradient
-                      colors={["transparent", "rgba(0,0,0,0.7)", "#000000"]}
-                      locations={[0, 0.65, 1]}
+                      colors={["transparent", "rgba(76,134,255,0.12)", "rgba(99,160,255,0.22)"]}
+                      locations={[0, 0.6, 1]}
                       style={{
                         position: "absolute",
                         bottom: 0,
@@ -923,20 +916,20 @@ export default function HomeScreen({ navigation, isDark }) {
           </View>
 
           <View style={styles.portfolioSnapshotGrid}>
-            {/* Left Card: Our Assets (Purple Gradient matching reference screenshot) */}
+            {/* Left Card: Our Assets (Left blue-purple half of reference gradient) */}
             <TouchableOpacity
               style={styles.snapshotCardDarkWrap}
               activeOpacity={0.85}
               onPress={() => navigation.navigate(SCREENS.VAULT)}
             >
               <LinearGradient
-                colors={["#1E1668", "#2E249E", "#4B32DF", "#6E3DF0", "#8A4AF3"]}
+                colors={["#d7d1f3ff", "#7B4CF0"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.snapshotCardDark}
               >
                 <View style={styles.snapshotIconCircleDark}>
-                  <Feather name="arrow-down" size={18} color="#9aff4cff" />
+                  <Feather name="arrow-down" size={18} color="#2563EB" />
                 </View>
 
                 <Text style={styles.snapshotCardLabelDark}>Assets</Text>
@@ -954,20 +947,20 @@ export default function HomeScreen({ navigation, isDark }) {
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* Right Card: Investment Perf (Light Blue matching right of wallet) */}
+            {/* Right Card: Investment Perf (Right lighter orchid-coral half of reference gradient) */}
             <TouchableOpacity
               style={styles.snapshotCardLightBlueWrap}
               activeOpacity={0.85}
               onPress={() => navigation.navigate(SCREENS.VAULT)}
             >
               <LinearGradient
-                colors={["#2fff00ff", "#00ffb3ff"]}
+                colors={["#A852D4", "#EE6F82"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.snapshotCardLightBlue}
               >
                 <View style={styles.snapshotIconCircleLightBlue}>
-                  <Feather name="arrow-up" size={18} color="#66ff00ff" />
+                  <Feather name="arrow-up" size={18} color="#2563EB" />
                 </View>
 
                 <Text style={styles.snapshotCardLabelLightBlue}>
@@ -980,7 +973,7 @@ export default function HomeScreen({ navigation, isDark }) {
                     : "+18.7%"}
                 </Text>
                 <Text style={styles.snapshotCardSubLightBlue}>
-                  <Text style={{ color: "#000000ff", fontWeight: "800" }}>
+                  <Text style={{ color: "#FFFFFF", fontWeight: "800" }}>
                     +R 243
                   </Text>{" "}
                   net return
@@ -997,6 +990,12 @@ export default function HomeScreen({ navigation, isDark }) {
         <Animated.View
           style={[styles.bottomSheetContainer, { height: animatedHeight }]}
         >
+          <LinearGradient
+            colors={["#FAF5FF", "#F6F0FE", "#FBF7FF"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
           {/* Drag Handle & Header (Receives PanResponder) */}
           <View
             {...panResponder.panHandlers}
@@ -1126,7 +1125,7 @@ export default function HomeScreen({ navigation, isDark }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F1EFFB" },
+  safe: { flex: 1, backgroundColor: "#ECEBFA" },
   scroll: { flexGrow: 1, backgroundColor: "transparent" },
 
   // ── Top White Island ──
@@ -1205,11 +1204,11 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 22,
     overflow: "hidden",
-    shadowColor: "#7952EC",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 2,
   },
   walletPurpleTop: {
     paddingHorizontal: 20,
@@ -1250,7 +1249,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   walletLavenderBottom: {
-    backgroundColor: "#000000ff",
     paddingHorizontal: 20,
     paddingVertical: 14,
     flexDirection: "row",
@@ -1261,17 +1259,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(0, 102, 255, 0.12)",
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(0, 0, 0, 0.35)",
+    borderColor: "rgba(255, 255, 255, 0.4)",
   },
   walletGrowthPillText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#4ADE80",
+    color: "#2563EB",
     letterSpacing: 0.2,
   },
   walletBottomCol: {
@@ -1279,8 +1277,8 @@ const styles = StyleSheet.create({
   },
   walletBottomLabel: {
     fontSize: 11,
-    fontWeight: "600",
-    color: "#66ff00ff",
+    fontWeight: "700",
+    color: "#FFFFFF",
     marginBottom: 3,
   },
   walletBalanceToggleRow: {
@@ -1290,12 +1288,12 @@ const styles = StyleSheet.create({
   walletBottomValue: {
     fontSize: 17,
     fontWeight: "800",
-    color: "#ffffff65",
+    color: "#FFFFFF",
   },
   walletBottomCode: {
     fontSize: 15,
     fontWeight: "800",
-    color: "#ffffff65",
+    color: "#FFFFFF",
     letterSpacing: 0.5,
   },
   walletGreenPeek: {
@@ -1306,11 +1304,6 @@ const styles = StyleSheet.create({
     marginLeft: 7,
     height: "76%",
     alignSelf: "center",
-    shadowColor: "#ffe600e1",
-    shadowOffset: { width: 2, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 3,
   },
   cardChangePct: {
     fontSize: 12,
@@ -1329,11 +1322,6 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 24,
     overflow: "hidden",
-    shadowColor: "#3B28CC",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-    elevation: 6,
   },
   snapshotCardDark: {
     flex: 1,
@@ -1346,17 +1334,10 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#000000",
-    borderWidth: 1.5,
-    borderColor: "#ffffff",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
   },
   snapshotCardLabelDark: {
     fontSize: 12.5,
@@ -1376,57 +1357,49 @@ const styles = StyleSheet.create({
   snapshotCardSubDark: {
     fontSize: 11,
     fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "rgba(255, 255, 255, 0.85)",
   },
 
   snapshotCardLightBlueWrap: {
     flex: 1,
     borderRadius: 24,
     overflow: "hidden",
-    shadowColor: "#000000ff",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 6,
   },
   snapshotCardLightBlue: {
     flex: 1,
     padding: 18,
     borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.18)",
   },
   snapshotIconCircleLightBlue: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#000000ff",
-    borderWidth: 1.5,
-    borderColor: "#ffffffff",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
   },
   snapshotCardLabelLightBlue: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: "700",
-    color: "#05162E",
+    color: "rgba(255, 255, 255, 0.85)",
     marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   snapshotCardValueLightBlue: {
     fontSize: 24,
     fontWeight: "800",
-    color: "#05162E",
+    color: "#FFFFFF",
     letterSpacing: -0.5,
     marginBottom: 4,
   },
   snapshotCardSubLightBlue: {
     fontSize: 11,
-    fontWeight: "700",
-    color: "#052042",
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.85)",
   },
 
   // ── Quick Actions ──
@@ -1438,14 +1411,14 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 14,
     borderRadius: 24,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    shadowColor: "#26002b7a",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 10,
-    overflow: "hidden",
+    borderColor: "rgba(0, 0, 0, 0.05)",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
   },
   quickActionsHeader: {
     flexDirection: "row",
@@ -1456,13 +1429,13 @@ const styles = StyleSheet.create({
   quickActionsTitle: {
     fontSize: 17,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: "#0F172A",
     letterSpacing: -0.3,
   },
   seeMoreText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#02ff39ff",
+    color: "#2563EB",
   },
   quickActionsGrid: {
     flexDirection: "row",
@@ -1480,16 +1453,16 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "rgba(0, 0, 0, 0.08)",
+    backgroundColor: "#F8FAFC",
     borderWidth: 1,
-    borderColor: "rgba(0, 0, 0, 0.3)",
+    borderColor: "rgba(0, 0, 0, 0.06)",
     alignItems: "center",
     justifyContent: "center",
   },
   quickActionLabel: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#E2E8F0",
+    color: "#334155",
     letterSpacing: -0.2,
     textAlign: "center",
   },
@@ -1647,24 +1620,19 @@ const styles = StyleSheet.create({
   },
   listingCardHorizontal: {
     width: 220,
-    backgroundColor: "#000000",
+    backgroundColor: "#EEF4FF",
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(76, 134, 255, 0.25)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 6,
+    borderColor: "rgba(76,134,255,0.15)",
   },
   graphiteCardHorizontal: {
     width: 220,
-    backgroundColor: "#1F2126",
+    backgroundColor: "#EEF4FF",
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(76,134,255,0.15)",
   },
   graphiteCardImg: {
     width: "100%",
@@ -1672,28 +1640,28 @@ const styles = StyleSheet.create({
   },
   graphiteCardContent: {
     padding: 14,
-    backgroundColor: "#000000",
+    backgroundColor: "rgba(238,244,255,0.97)",
     borderTopWidth: 1,
-    borderTopColor: "rgba(76, 134, 255, 0.15)",
+    borderTopColor: "rgba(76,134,255,0.12)",
   },
   graphiteCardCat: {
     fontSize: 10,
-    fontWeight: "800",
-    color: "#38BDF8",
+    fontWeight: "700",
+    color: "#6BA3FF",
     textTransform: "uppercase",
     letterSpacing: 0.8,
     marginBottom: 5,
   },
   graphiteCardTitle: {
     fontSize: 14,
-    fontWeight: "700",
-    color: "#FFFFFF",
+    fontWeight: "600",
+    color: "#1A2744",
     marginBottom: 6,
   },
   graphiteCardPrice: {
     fontSize: 13,
-    fontWeight: "700",
-    color: "#E2E8F0",
+    fontWeight: "600",
+    color: "#4C86FF",
   },
 
   // ── Funding Specific Styles ──
@@ -1837,17 +1805,17 @@ const styles = StyleSheet.create({
 
   // ── Expandable Bottom Section Styles (Light Mode) ──
   bottomSheetContainer: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#FAF5FF",
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#EDE9FE",
     borderBottomWidth: 0,
-    shadowColor: "#000",
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.06,
     shadowRadius: 16,
-    elevation: 8,
+    elevation: 6,
     overflow: "hidden",
     marginTop: "auto",
   },
@@ -1860,7 +1828,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 4.5,
     borderRadius: 3,
-    backgroundColor: "#CBD5E1",
+    backgroundColor: "#DDD6FE",
     alignSelf: "center",
     marginBottom: 12,
   },
@@ -1882,17 +1850,17 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   sheetBadge: {
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#F3E8FF",
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: "#E9D5FF",
   },
   sheetBadgeText: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#2563EB",
+    color: "#7C3AED",
   },
   pullIconBtn: {
     flexDirection: "row",

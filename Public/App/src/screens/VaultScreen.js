@@ -2,7 +2,7 @@
 // User-Isolated Portfolio Vault — displays ONLY assets belonging to the logged-in user,
 // with working Deposit & Withdraw capabilities and live transaction history.
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -69,12 +69,22 @@ export default function VaultScreen({ navigation, isDark }) {
   const [cryptoAddress, setCryptoAddress] = useState(user?.walletAddress || "");
   const [withdrawing, setWithdrawing] = useState(false);
 
-  const loadVault = useCallback(() => {
+  const lastVaultFetchRef = useRef(0);
+
+  const loadVault = useCallback((force = false) => {
     if (!token) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    const now = Date.now();
+    if (!force && holdings.length > 0 && now - lastVaultFetchRef.current < 60000) {
+      setLoading(false);
+      return;
+    }
+    lastVaultFetchRef.current = now;
+    if (holdings.length === 0) {
+      setLoading(true);
+    }
     getUserVault(token)
       .then((res) => {
         if (res.success) {
@@ -95,11 +105,11 @@ export default function VaultScreen({ navigation, isDark }) {
         }
       })
       .catch(() => {});
-  }, [token]);
+  }, [token, holdings.length]);
 
   useFocusEffect(
     useCallback(() => {
-      loadVault();
+      loadVault(false);
     }, [loadVault]),
   );
 
@@ -242,17 +252,27 @@ export default function VaultScreen({ navigation, isDark }) {
             </View>
           </View>
 
-          {/* Balance Container */}
-          <View style={styles.balanceContainer}>
+          {/* Balance Container Card */}
+          <LinearGradient
+            colors={["#8E73F1", "#53ACF7", "#18E4FD"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0.1 }}
+            style={styles.balanceContainer}
+          >
             <Text style={styles.balanceLabel}>Available Liquid Balance</Text>
             <Text style={styles.balanceValue}>
               {summary.availableBalanceFormatted || summary.totalValueFormatted || "R0"}
             </Text>
-            <Text style={styles.balanceGain}>
-              Portfolio Assets: {summary.portfolioValueFormatted || "R0"}{" "}
-              <Text style={styles.balanceGainPct}>{summary.gainText || "+12.4% YTD"}</Text>
-            </Text>
-          </View>
+            <View style={styles.balanceGainRow}>
+              <Text style={styles.balanceGain}>
+                Portfolio Assets: {summary.portfolioValueFormatted || "R0"}
+              </Text>
+              <View style={styles.balanceGainPill}>
+                <Ionicons name="arrow-up" size={11} color="#059669" />
+                <Text style={styles.balanceGainPct}>{summary.gainText || "+12.4% YTD"}</Text>
+              </View>
+            </View>
+          </LinearGradient>
 
           {/* Deposit & Withdraw Action Buttons */}
           <View style={styles.actionRow}>
@@ -276,11 +296,16 @@ export default function VaultScreen({ navigation, isDark }) {
           </View>
 
           {/* ── PORTFOLIO SECTION (Elevated Container) ── */}
-          <View style={styles.portfolioSection}>
+          <LinearGradient
+            colors={["#8E73F1", "#53ACF7", "#18E4FD"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0.1 }}
+            style={styles.portfolioSection}
+          >
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitleDark}>Vault Ledger</Text>
+              <Text style={[styles.sectionTitleDark, { color: "#FFFFFF", fontWeight: "800" }]}>Vault Ledger</Text>
               <TouchableOpacity onPress={() => loadVault()}>
-                <Text style={styles.viewAllTextDark}>Refresh</Text>
+                <Text style={[styles.viewAllTextDark, { color: "#FFFFFF", fontWeight: "700", opacity: 0.95 }]}>Refresh</Text>
               </TouchableOpacity>
             </View>
 
@@ -345,7 +370,7 @@ export default function VaultScreen({ navigation, isDark }) {
                         </View>
                       </View>
                       <View style={styles.cardBottomRow}>
-                        <Text style={[styles.cardPrice, { color: "#FFFFFF" }]}>{item.price}</Text>
+                        <Text style={styles.cardPrice}>{item.price}</Text>
                         <View style={styles.cardGainPill}>
                           <Feather name={item.positive ? "trending-up" : "trending-down"} size={10} color="#FFFFFF" />
                           <Text style={styles.cardGainText}>{item.gain_pct || "+0%"}</Text>
@@ -395,7 +420,7 @@ export default function VaultScreen({ navigation, isDark }) {
                           </View>
                         </View>
                         <View style={styles.cardBottomRow}>
-                          <Text style={[styles.cardPrice, { color: "#FFFFFF" }]}>{item.price}</Text>
+                          <Text style={styles.cardPrice}>{item.price}</Text>
                           <View style={styles.cardGainPill}>
                             <Feather name="check" size={10} color="#FFFFFF" />
                             <Text style={styles.cardGainText}>Verified Co-Owner</Text>
@@ -464,7 +489,7 @@ export default function VaultScreen({ navigation, isDark }) {
                 )}
               </View>
             )}
-          </View>
+          </LinearGradient>
         </View>
 
         {/* ── BOTTOM SECTION (WATCHLIST) ── */}
@@ -820,13 +845,62 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   balanceContainer: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 20,
+    paddingVertical: 22,
+    paddingHorizontal: 20,
+    borderRadius: 24,
     alignItems: "center",
-    marginBottom: 24,
+    shadowColor: "#53ACF7",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 4,
   },
-  balanceLabel: { fontSize: 13, color: "#64748B", fontWeight: "500", marginBottom: 6 },
-  balanceValue: { fontSize: 38, fontWeight: "800", color: "#0F172A", letterSpacing: -1, marginBottom: 6 },
-  balanceGain: { fontSize: 12, color: "#64748B", fontWeight: "600" },
-  balanceGainPct: { color: "#059669", fontWeight: "700" },
+  balanceLabel: {
+    fontSize: 13,
+    color: "#FFFFFF",
+    fontWeight: "700",
+    opacity: 0.9,
+    marginBottom: 6,
+    letterSpacing: 0.3,
+  },
+  balanceValue: {
+    fontSize: 38,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -1,
+    marginBottom: 10,
+  },
+  balanceGainRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.22)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  balanceGain: {
+    fontSize: 12,
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  balanceGainPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    gap: 2,
+  },
+  balanceGainPct: {
+    color: "#059669",
+    fontWeight: "800",
+    fontSize: 11,
+  },
 
   actionRow: {
     flexDirection: "row",
@@ -872,18 +946,15 @@ const styles = StyleSheet.create({
 
   // -- Portfolio Elevated Card --
   portfolioSection: {
-    backgroundColor: "#FFFFFF",
     marginTop: 16,
     marginHorizontal: 16,
     paddingVertical: 24,
     borderRadius: 28,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
+    shadowColor: "#53ACF7",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
     shadowRadius: 14,
-    elevation: 3,
+    elevation: 4,
     minHeight: 250,
   },
   sectionHeaderRow: {
@@ -898,13 +969,13 @@ const styles = StyleSheet.create({
 
   tabContainer: {
     flexDirection: "row",
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
     marginHorizontal: 20,
     borderRadius: 999,
     padding: 4,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "rgba(255, 255, 255, 0.35)",
   },
   tabBtn: {
     flex: 1,
@@ -912,9 +983,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderRadius: 999,
   },
-  tabBtnActive: { backgroundColor: "#0F172A" },
-  tabText: { fontSize: 13, fontWeight: "600", color: "#64748B" },
-  tabTextActive: { color: "#FFFFFF", fontWeight: "700" },
+  tabBtnActive: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  tabText: { fontSize: 13, fontWeight: "700", color: "rgba(255, 255, 255, 0.85)" },
+  tabTextActive: { color: "#0F172A", fontWeight: "800" },
 
   // -- Horizontal asset cards --
   cardsScroll: {
@@ -927,9 +1005,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
     justifyContent: "space-between",
-    backgroundColor: "#F8FAFC",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cardTopRow: { gap: 10 },
   cardThumbWrapWhite: {
@@ -964,11 +1045,14 @@ const styles = StyleSheet.create({
     height: 150,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 16,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
 
   // -- Transactions Tab --
@@ -980,12 +1064,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   txLeft: {
     flexDirection: "row",
@@ -1029,39 +1116,39 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   bottomDarkSection: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F7F1FE",
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingTop: 14,
     paddingBottom: 40,
     minHeight: 260,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#EADEFB",
     borderBottomWidth: 0,
-    shadowColor: "#000",
+    shadowColor: "#8E73F1",
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.1,
     shadowRadius: 16,
     elevation: 6,
   },
   sheetBadge: {
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "rgba(142, 115, 241, 0.14)",
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: "rgba(142, 115, 241, 0.3)",
   },
   sheetBadgeText: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#2563EB",
+    color: "#7C3AED",
   },
   dragPill: {
     width: 44,
     height: 4.5,
     borderRadius: 3,
-    backgroundColor: "#CBD5E1",
+    backgroundColor: "#D8C7F8",
     alignSelf: "center",
     marginBottom: 16,
   },
@@ -1073,11 +1160,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFFFFF",
     padding: 12,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#EADEFB",
+    shadowColor: "#8E73F1",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
   watchLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
   watchIconWrap: {
