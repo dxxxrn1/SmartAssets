@@ -2,7 +2,7 @@
 // User-Isolated Portfolio Vault — displays ONLY assets belonging to the logged-in user,
 // with working Deposit & Withdraw capabilities and live transaction history.
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -69,12 +69,22 @@ export default function VaultScreen({ navigation, isDark }) {
   const [cryptoAddress, setCryptoAddress] = useState(user?.walletAddress || "");
   const [withdrawing, setWithdrawing] = useState(false);
 
-  const loadVault = useCallback(() => {
+  const lastVaultFetchRef = useRef(0);
+
+  const loadVault = useCallback((force = false) => {
     if (!token) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    const now = Date.now();
+    if (!force && holdings.length > 0 && now - lastVaultFetchRef.current < 60000) {
+      setLoading(false);
+      return;
+    }
+    lastVaultFetchRef.current = now;
+    if (holdings.length === 0) {
+      setLoading(true);
+    }
     getUserVault(token)
       .then((res) => {
         if (res.success) {
@@ -95,11 +105,11 @@ export default function VaultScreen({ navigation, isDark }) {
         }
       })
       .catch(() => {});
-  }, [token]);
+  }, [token, holdings.length]);
 
   useFocusEffect(
     useCallback(() => {
-      loadVault();
+      loadVault(false);
     }, [loadVault]),
   );
 
