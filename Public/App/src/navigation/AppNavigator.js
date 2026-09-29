@@ -190,7 +190,10 @@ function CustomTabBar({ state, navigation }) {
 function MainTabs({ isDark }) {
   return (
     <Tab.Navigator
-      screenOptions={{ headerShown: false }}
+      // unmountOnBlur: true prevents inactive tab screens from rendering on web,
+      // which fixes the duplicate floating settings gear icon (Bug #5).
+      // On native, React Navigation already suspends inactive tabs visually.
+      screenOptions={{ headerShown: false, unmountOnBlur: true }}
       tabBar={(props) => <CustomTabBar {...props} />}
     >
       <Tab.Screen name={SCREENS.HOME}>

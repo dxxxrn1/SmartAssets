@@ -215,29 +215,29 @@ export default function VaultScreen({ navigation, isDark }) {
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: ALIM.darkHeader }]}
+      style={[styles.safe, { backgroundColor: "#F1EFFB" }]}
     >
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        bounces={false}
+      <LinearGradient
+        colors={["#F1EFFB", "#F8F6FE", "#FCF8F9", "#FEF5F2"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={{ flex: 1 }}
       >
-        {/* ── UNIFIED GRADIENT (Deep Purple -> Midnight) ── */}
-        <LinearGradient
-          colors={ALIM.darkHeaderGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.unifiedGradient}
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
         >
+          <View style={styles.topSection}>
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.greetingName}>My Vault</Text>
             <View style={{ flexDirection: "row", gap: 12 }}>
               <TouchableOpacity style={styles.iconBtn}>
-                <Feather name="settings" size={18} color="#FFFFFF" />
+                <Feather name="settings" size={18} color="#0F172A" />
               </TouchableOpacity>
               <TouchableOpacity style={styles.iconBtn}>
-                <Feather name="bell" size={18} color="#FFFFFF" />
+                <Feather name="bell" size={18} color="#0F172A" />
               </TouchableOpacity>
             </View>
           </View>
@@ -261,7 +261,7 @@ export default function VaultScreen({ navigation, isDark }) {
               onPress={() => setWithdrawModalVisible(true)}
               activeOpacity={0.8}
             >
-              <Feather name="arrow-down-left" size={16} color="#FFFFFF" />
+              <Feather name="arrow-down-left" size={16} color="#0F172A" />
               <Text style={styles.withdrawBtnText}>Withdraw</Text>
             </TouchableOpacity>
 
@@ -275,13 +275,8 @@ export default function VaultScreen({ navigation, isDark }) {
             </TouchableOpacity>
           </View>
 
-          {/* ── PORTFOLIO SECTION (Elevated Coral Crimson Container #FB2A52) ── */}
-          <LinearGradient
-            colors={["#FB2A52", "#E11D48"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0.8, y: 1 }}
-            style={styles.portfolioSection}
-          >
+          {/* ── PORTFOLIO SECTION (Elevated Container) ── */}
+          <View style={styles.portfolioSection}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitleDark}>Vault Ledger</Text>
               <TouchableOpacity onPress={() => loadVault()}>
@@ -316,12 +311,12 @@ export default function VaultScreen({ navigation, isDark }) {
                 contentContainerStyle={styles.cardsScroll}
               >
                 {loading ? (
-                  <ActivityIndicator size="large" color="#00A86B" style={{ margin: 40 }} />
+                  <ActivityIndicator size="large" color="#0F172A" style={{ margin: 40 }} />
                 ) : holdings.length === 0 ? (
                   <View style={styles.emptyCard}>
-                    <Feather name="shield" size={28} color="#94A3B8" style={{ marginBottom: 8 }} />
-                    <Text style={{ color: "#F1F5F9", fontWeight: "700", fontSize: 13 }}>No Assets in Vault</Text>
-                    <Text style={{ color: "#94A3B8", fontSize: 11, textAlign: "center", marginTop: 4, paddingHorizontal: 20 }}>
+                    <Feather name="shield" size={28} color="#64748B" style={{ marginBottom: 8 }} />
+                    <Text style={{ color: "#0F172A", fontWeight: "700", fontSize: 13 }}>No Assets in Vault</Text>
+                    <Text style={{ color: "#64748B", fontSize: 11, textAlign: "center", marginTop: 4, paddingHorizontal: 20 }}>
                       Purchase certified luxury goods from the marketplace to lock in your vault.
                     </Text>
                   </View>
@@ -372,9 +367,9 @@ export default function VaultScreen({ navigation, isDark }) {
               >
                 {holdings.filter((i) => i.asset_type === "fractional").length === 0 ? (
                   <View style={styles.emptyCard}>
-                    <Feather name="pie-chart" size={28} color="#94A3B8" style={{ marginBottom: 8 }} />
-                    <Text style={{ color: "#F1F5F9", fontWeight: "700", fontSize: 13 }}>No Fractional Shares</Text>
-                    <Text style={{ color: "#94A3B8", fontSize: 11, textAlign: "center", marginTop: 4, paddingHorizontal: 20 }}>
+                    <Feather name="pie-chart" size={28} color="#64748B" style={{ marginBottom: 8 }} />
+                    <Text style={{ color: "#0F172A", fontWeight: "700", fontSize: 13 }}>No Fractional Shares</Text>
+                    <Text style={{ color: "#64748B", fontSize: 11, textAlign: "center", marginTop: 4, paddingHorizontal: 20 }}>
                       Buy fractional co-ownership shares in fine art and supercars to trade on-chain.
                     </Text>
                   </View>
@@ -418,9 +413,9 @@ export default function VaultScreen({ navigation, isDark }) {
               <View style={styles.transactionsContainer}>
                 {transactions.length === 0 ? (
                   <View style={[styles.emptyCard, { width: "100%", height: 130 }]}>
-                    <Feather name="file-text" size={24} color="#94A3B8" style={{ marginBottom: 6 }} />
-                    <Text style={{ color: "#F1F5F9", fontWeight: "700", fontSize: 13 }}>No Transaction History</Text>
-                    <Text style={{ color: "#94A3B8", fontSize: 11, marginTop: 2 }}>
+                    <Feather name="file-text" size={24} color="#64748B" style={{ marginBottom: 6 }} />
+                    <Text style={{ color: "#0F172A", fontWeight: "700", fontSize: 13 }}>No Transaction History</Text>
+                    <Text style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>
                       Make a deposit or withdrawal to track activity.
                     </Text>
                   </View>
@@ -433,15 +428,15 @@ export default function VaultScreen({ navigation, isDark }) {
                             styles.txIconWrap,
                             {
                               backgroundColor: tx.positive
-                                ? "rgba(16, 185, 129, 0.15)"
-                                : "rgba(56, 189, 248, 0.15)",
+                                ? "rgba(16, 185, 129, 0.12)"
+                                : "rgba(37, 99, 235, 0.12)",
                             },
                           ]}
                         >
                           <Feather
                             name={tx.type === "deposit" ? "arrow-up-right" : "arrow-down-left"}
                             size={16}
-                            color={tx.positive ? "#10B981" : "#38BDF8"}
+                            color={tx.positive ? "#059669" : "#2563EB"}
                           />
                         </View>
                         <View style={{ gap: 2 }}>
@@ -457,7 +452,7 @@ export default function VaultScreen({ navigation, isDark }) {
                         <Text
                           style={[
                             styles.txAmount,
-                            { color: tx.positive ? "#10B981" : "#FFFFFF" },
+                            { color: tx.positive ? "#059669" : "#0F172A" },
                           ]}
                         >
                           {tx.amountFormatted}
@@ -469,14 +464,20 @@ export default function VaultScreen({ navigation, isDark }) {
                 )}
               </View>
             )}
-          </LinearGradient>
-        </LinearGradient>
+          </View>
+        </View>
 
-        {/* ── BOTTOM DARK SECTION (WATCHLIST) ── */}
+        {/* ── BOTTOM SECTION (WATCHLIST) ── */}
         <View style={styles.bottomDarkSectionWrapper}>
           <View style={styles.bottomDarkSection}>
+            <View style={styles.dragPill} />
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitleDark}>Market Watchlist</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={styles.sectionTitleDark}>Market Watchlist</Text>
+                <View style={styles.sheetBadge}>
+                  <Text style={styles.sheetBadgeText}>2</Text>
+                </View>
+              </View>
               <TouchableOpacity>
                 <Text style={styles.viewAllTextDark}>View All</Text>
               </TouchableOpacity>
@@ -528,6 +529,7 @@ export default function VaultScreen({ navigation, isDark }) {
           </View>
         </View>
       </ScrollView>
+    </LinearGradient>
 
       {/* ── DEPOSIT MODAL ── */}
       <Modal
@@ -625,11 +627,10 @@ export default function VaultScreen({ navigation, isDark }) {
               style={[
                 styles.modalActionBtn, 
                 { 
-                  backgroundColor: "#3666DD", 
+                  backgroundColor: "#0F172A", 
                   borderWidth: 1, 
-                  borderColor: "#3666DD", 
-                  shadowColor: "#2563EB",
-                  shadowOpacity: 0.35, 
+                  borderColor: "#0F172A", 
+                  shadowOpacity: 0.15, 
                   shadowRadius: 8, 
                   elevation: 4, 
                   shadowOffset: { width: 0, height: 4 },
@@ -642,7 +643,7 @@ export default function VaultScreen({ navigation, isDark }) {
               {depositing ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={[styles.modalActionBtnText, { color: "#FFFFFF", fontWeight: "800" }]}>Confirm Deposit</Text>
+                <Text style={[styles.modalActionBtnText, { color: "#FFFFFF" }]}>Confirm Deposit</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -657,42 +658,42 @@ export default function VaultScreen({ navigation, isDark }) {
         onRequestClose={() => setWithdrawModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: "#000000", borderColor: "rgba(255, 255, 255, 0.08)" }]}>
+          <View style={[styles.modalCard, { backgroundColor: "#FFFFFF", borderColor: "#E2E8F0" }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: "#F1F5F9" }]}>Withdraw Funds</Text>
+              <Text style={[styles.modalTitle, { color: "#0F172A" }]}>Withdraw Funds</Text>
               <TouchableOpacity
                 onPress={() => setWithdrawModalVisible(false)}
                 style={styles.closeBtn}
               >
-                <Feather name="x" size={20} color="#94A3B8" />
+                <Feather name="x" size={20} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <View style={[styles.availBanner, { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)" }]}>
-              <Text style={[styles.availBannerLabel, { color: "#94A3B8" }]}>Available to withdraw:</Text>
-              <Text style={[styles.availBannerValue, { color: "#F1F5F9" }]}>
+            <View style={[styles.availBanner, { backgroundColor: "#F8FAFC", borderColor: "#E2E8F0" }]}>
+              <Text style={[styles.availBannerLabel, { color: "#64748B" }]}>Available to withdraw:</Text>
+              <Text style={[styles.availBannerValue, { color: "#0F172A" }]}>
                 {summary.availableBalanceFormatted || "R0"}
               </Text>
             </View>
 
-            <Text style={[styles.inputLabel, { color: "#94A3B8" }]}>Withdraw Amount (ZAR)</Text>
-            <View style={[styles.amountInputWrap, { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)" }]}>
-              <Text style={[styles.currencyPrefix, { color: "#94A3B8" }]}>R</Text>
+            <Text style={[styles.inputLabel, { color: "#475569" }]}>Withdraw Amount (ZAR)</Text>
+            <View style={[styles.amountInputWrap, { backgroundColor: "#F8FAFC", borderColor: "#E2E8F0" }]}>
+              <Text style={[styles.currencyPrefix, { color: "#475569" }]}>R</Text>
               <TextInput
-                style={[styles.amountInput, { color: "#F1F5F9" }]}
+                style={[styles.amountInput, { color: "#0F172A" }]}
                 placeholder="0.00"
-                placeholderTextColor="#64748B"
+                placeholderTextColor="#94A3B8"
                 keyboardType="numeric"
                 value={withdrawAmount}
                 onChangeText={setWithdrawAmount}
               />
-              <TouchableOpacity style={[styles.maxBtn, { backgroundColor: "rgba(255, 255, 255, 0.08)" }]} onPress={handleMaxWithdraw}>
-                <Text style={[styles.maxBtnText, { color: "#F1F5F9" }]}>MAX</Text>
+              <TouchableOpacity style={[styles.maxBtn, { backgroundColor: "#E2E8F0" }]} onPress={handleMaxWithdraw}>
+                <Text style={[styles.maxBtnText, { color: "#0F172A" }]}>MAX</Text>
               </TouchableOpacity>
             </View>
 
             {/* Destination Selector */}
-            <Text style={[styles.inputLabel, { color: "#94A3B8" }]}>Payout Destination</Text>
+            <Text style={[styles.inputLabel, { color: "#475569" }]}>Payout Destination</Text>
             <View style={styles.methodSelectorRow}>
               {[
                 { id: "Bank EFT", label: "Bank Account (EFT)", icon: "home" },
@@ -702,21 +703,21 @@ export default function VaultScreen({ navigation, isDark }) {
                   key={m.id}
                   style={[
                     styles.methodBtn,
-                    { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)" },
-                    withdrawMethod === m.id && { backgroundColor: "#F1F5F9", borderColor: "#F1F5F9" },
+                    { backgroundColor: "#F1F5F9", borderColor: "#E2E8F0" },
+                    withdrawMethod === m.id && { backgroundColor: "#0F172A", borderColor: "#0F172A" },
                   ]}
                   onPress={() => setWithdrawMethod(m.id)}
                 >
                   <Feather
                     name={m.icon}
                     size={14}
-                    color={withdrawMethod === m.id ? "#0F172A" : "#94A3B8"}
+                    color={withdrawMethod === m.id ? "#FFFFFF" : "#64748B"}
                   />
                   <Text
                     style={[
                       styles.methodBtnText,
-                      { color: "#94A3B8" },
-                      withdrawMethod === m.id && { color: "#0F172A" },
+                      { color: "#475569" },
+                      withdrawMethod === m.id && { color: "#FFFFFF" },
                     ]}
                   >
                     {m.label}
@@ -728,14 +729,14 @@ export default function VaultScreen({ navigation, isDark }) {
             {withdrawMethod === "Bank EFT" ? (
               <View style={{ gap: 8, marginTop: 4 }}>
                 <TextInput
-                  style={[styles.textInput, { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)", color: "#F1F5F9" }]}
+                  style={[styles.textInput, { backgroundColor: "#F8FAFC", borderColor: "#E2E8F0", color: "#0F172A" }]}
                   placeholder="Bank Name (e.g. Standard Bank, FNB)"
                   placeholderTextColor="#64748B"
                   value={bankName}
                   onChangeText={setBankName}
                 />
                 <TextInput
-                  style={[styles.textInput, { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)", color: "#F1F5F9" }]}
+                  style={[styles.textInput, { backgroundColor: "#F8FAFC", borderColor: "#E2E8F0", color: "#0F172A" }]}
                   placeholder="Account Number"
                   placeholderTextColor="#64748B"
                   keyboardType="numeric"
@@ -746,7 +747,7 @@ export default function VaultScreen({ navigation, isDark }) {
             ) : (
               <View style={{ marginTop: 4 }}>
                 <TextInput
-                  style={[styles.textInput, { backgroundColor: "rgba(255, 255, 255, 0.03)", borderColor: "rgba(255, 255, 255, 0.06)", color: "#F1F5F9" }]}
+                  style={[styles.textInput, { backgroundColor: "#F8FAFC", borderColor: "#E2E8F0", color: "#0F172A" }]}
                   placeholder="Ethereum / Sepolia Address (0x...)"
                   placeholderTextColor="#64748B"
                   value={cryptoAddress}
@@ -760,8 +761,8 @@ export default function VaultScreen({ navigation, isDark }) {
               style={[
                 styles.modalActionBtn, 
                 { 
-                  backgroundColor: "#3666DD", 
-                  borderColor: "#3666DD", 
+                  backgroundColor: "#0F172A", 
+                  borderColor: "#0F172A", 
                   borderWidth: 1, 
                   shadowColor: "#2563EB",
                   shadowOpacity: 0.35, 
@@ -776,7 +777,7 @@ export default function VaultScreen({ navigation, isDark }) {
               {withdrawing ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={[styles.modalActionBtnText, { color: "#FFFFFF", fontWeight: "800" }]}>Confirm Withdrawal</Text>
+                <Text style={[styles.modalActionBtnText, { color: "#FFFFFF" }]}>Confirm Withdrawal</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -787,194 +788,204 @@ export default function VaultScreen({ navigation, isDark }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  scroll: { flexGrow: 1, backgroundColor: ALIM.canvas },
+  safe: { flex: 1, backgroundColor: "#F1EFFB" },
+  scroll: { flexGrow: 1, backgroundColor: "transparent" },
 
-  unifiedGradient: {
+  topSection: {
     paddingTop: 10,
-    paddingBottom: 32,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    paddingBottom: 16,
+    backgroundColor: "transparent",
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 24,
-    marginBottom: 28,
+    marginBottom: 24,
   },
-  greetingName: { fontSize: 24, fontWeight: "700", color: "#FFFFFF", letterSpacing: -0.4 },
+  greetingName: { fontSize: 24, fontWeight: "700", color: "#0F172A", letterSpacing: -0.4 },
   iconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: "#E2E8F0",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
   balanceContainer: {
     alignItems: "center",
-    marginBottom: 28,
+    marginBottom: 24,
   },
-  balanceLabel: { fontSize: 13, color: "#E2E8F0", fontWeight: "500", marginBottom: 8 },
-  balanceValue: {
-    fontSize: 38,
-    fontWeight: "800", color: "#FFFFFF", letterSpacing: -1, marginBottom: 8 },
-  balanceGain: { fontSize: 12, color: "#E2E8F0", fontWeight: "600" },
-  balanceGainPct: { color: "#10B981", fontWeight: "700" },
+  balanceLabel: { fontSize: 13, color: "#64748B", fontWeight: "500", marginBottom: 6 },
+  balanceValue: { fontSize: 38, fontWeight: "800", color: "#0F172A", letterSpacing: -1, marginBottom: 6 },
+  balanceGain: { fontSize: 12, color: "#64748B", fontWeight: "600" },
+  balanceGainPct: { color: "#059669", fontWeight: "700" },
 
   actionRow: {
     flexDirection: "row",
     justifyContent: "center",
     gap: 16,
     paddingHorizontal: 24,
+    marginBottom: 8,
   },
   withdrawBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 28,
     paddingVertical: 14,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  withdrawBtnText: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
+  withdrawBtnText: { fontSize: 15, fontWeight: "700", color: "#0F172A" },
   depositBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: '#FF9500',
+    backgroundColor: "#0F172A",
     paddingHorizontal: 28,
     paddingVertical: 14,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#FF9500',
-    shadowColor: '#EA580C',
+    borderColor: "#0F172A",
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    shadowColor: '#EA580C',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  depositBtnText: { fontSize: 15, fontWeight: "800", color: '#FFFFFF' },
+  depositBtnText: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
 
   // -- Portfolio Elevated Card --
   portfolioSection: {
-    backgroundColor: "#FB2A52",
-    marginTop: 20,
+    backgroundColor: "#FFFFFF",
+    marginTop: 16,
     marginHorizontal: 16,
     paddingVertical: 24,
-    borderRadius: 32,
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.25)",
-    shadowColor: "#9F1239",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 5,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 3,
     minHeight: 250,
   },
   sectionHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
-    marginBottom: 20,
+    paddingHorizontal: 20,
+    marginBottom: 18,
   },
-  sectionTitleDark: { fontSize: 17, fontWeight: "800", color: "#FFFFFF", marginBottom: 2 },
-  viewAllTextDark: { fontSize: 12, fontWeight: "800", color: "#FFFFFF" },
+  sectionTitleDark: { fontSize: 16, fontWeight: "700", color: "#0F172A" },
+  viewAllTextDark: { fontSize: 12, fontWeight: "600", color: "#2563EB" },
 
   tabContainer: {
     flexDirection: "row",
     backgroundColor: "#F1F5F9",
-    marginHorizontal: 24,
+    marginHorizontal: 20,
     borderRadius: 999,
     padding: 4,
-    marginBottom: 24,
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: "#EDE9E1",
+    borderColor: "#E2E8F0",
   },
   tabBtn: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 9,
     alignItems: "center",
     borderRadius: 999,
   },
-  tabBtnActive: { backgroundColor: '#9333EA' },
+  tabBtnActive: { backgroundColor: "#0F172A" },
   tabText: { fontSize: 13, fontWeight: "600", color: "#64748B" },
-  tabTextActive: { color: '#FFFFFF', fontWeight: "700" },
+  tabTextActive: { color: "#FFFFFF", fontWeight: "700" },
 
   // -- Horizontal asset cards --
   cardsScroll: {
-    paddingHorizontal: 24,
-    gap: 16,
+    paddingHorizontal: 20,
+    gap: 14,
   },
   portfolioAssetCardWhite: {
     width: 220,
     height: 140,
-    borderRadius: 24,
+    borderRadius: 20,
     padding: 16,
     justifyContent: "space-between",
-    backgroundColor: "#AF52DE",
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.3)",
-    shadowColor: "#581C87",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 4,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   cardTopRow: { gap: 10 },
   cardThumbWrapWhite: {
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.35)",
+    borderColor: "#E2E8F0",
   },
   cardLogo: { width: 36, height: 36, borderRadius: 8 },
-  cardTitleDark: { fontSize: 14, fontWeight: "800", marginBottom: 2, color: "#FFFFFF" },
-
-  cardSub: { fontSize: 11, fontWeight: "600", color: "rgba(255, 255, 255, 0.85)" },
-  cardBottomRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  cardPrice: { fontSize: 15, fontWeight: "800", color: "#FFFFFF" },
+  cardTitleDark: { fontSize: 13, fontWeight: "700", marginBottom: 2, color: "#0F172A" },
+  cardSub: { fontSize: 11, fontWeight: "500", color: "#64748B" },
+  cardBottomRow: { gap: 6 },
+  cardPrice: { fontSize: 13, fontWeight: "800", color: "#0F172A" },
   cardGainPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.22)",
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    alignSelf: "flex-start",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
-  cardGainText: { fontSize: 10, fontWeight: "800", color: "#FFFFFF" },
-
+  cardGainText: { fontSize: 9, fontWeight: "700", color: "#059669" },
+  emptyCard: {
+    width: 300,
+    height: 150,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
 
   // -- Transactions Tab --
   transactionsContainer: {
-    paddingHorizontal: 24,
-    gap: 12,
+    paddingHorizontal: 20,
+    gap: 10,
   },
   txRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 18,
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.25)",
+    borderColor: "#E2E8F0",
   },
   txLeft: {
     flexDirection: "row",
@@ -991,11 +1002,11 @@ const styles = StyleSheet.create({
   txTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: "#0F172A",
   },
   txSub: {
     fontSize: 11,
-    color: "rgba(255, 255, 255, 0.75)",
+    color: "#64748B",
   },
   txRight: {
     alignItems: "flex-end",
@@ -1008,49 +1019,84 @@ const styles = StyleSheet.create({
   },
   txStatus: {
     fontSize: 10,
-    color: "#00A86B",
+    color: "#059669",
     fontWeight: "700",
   },
 
-  // -- Bottom Dark Section (Watchlist) --
+  // -- Bottom Section (Watchlist) --
   bottomDarkSectionWrapper: {
     backgroundColor: "transparent",
+    marginTop: 16,
   },
   bottomDarkSection: {
-    backgroundColor: ALIM.canvas,
-    paddingTop: 32,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingTop: 14,
     paddingBottom: 40,
     minHeight: 260,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderBottomWidth: 0,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  sheetBadge: {
+    backgroundColor: "#EFF6FF",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  sheetBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#2563EB",
+  },
+  dragPill: {
+    width: 44,
+    height: 4.5,
+    borderRadius: 3,
+    backgroundColor: "#CBD5E1",
+    alignSelf: "center",
+    marginBottom: 16,
   },
   watchlistContainer: {
-    paddingHorizontal: 24,
-    gap: 20,
+    paddingHorizontal: 20,
+    gap: 10,
   },
   watchlistItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   watchLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
   watchIconWrap: {
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: "#E2E8F0",
   },
   watchLogo: { width: "100%", height: "100%", borderRadius: 12 },
-  watchTitle: { fontSize: 13, fontWeight: "700", color: "#FFFFFF", marginBottom: 2 },
+  watchTitle: { fontSize: 13, fontWeight: "700", color: "#0F172A", marginBottom: 2 },
   watchSub: { fontSize: 11, fontWeight: "500", color: "#64748B" },
   watchRight: { alignItems: "flex-end", gap: 4 },
-  watchPrice: {
-    fontSize: 13,
-    fontWeight: "800", color: "#FFFFFF",
-  },
+  watchPrice: { fontSize: 13, fontWeight: "800", color: "#0F172A" },
+  watchGain: { fontSize: 9, fontWeight: "700" },
 
   // -- Modal Styles --
   modalOverlay: {

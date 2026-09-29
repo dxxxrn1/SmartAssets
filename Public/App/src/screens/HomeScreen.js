@@ -1,5 +1,5 @@
 // ─── HomeScreen ───────────────────────────────────────────────────────────────
-// Home tab — portfolio card, quick actions, Your Assets list, Browse Categories grid
+// Home tab — net worth hero, quick actions, Your Assets, vault teaser, investment opps, recent activity
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
@@ -18,11 +18,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { useColors, ALIM } from "../constants/theme";
+import { useColors } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
-import { getUserVault, getMarketAssets, getVaultTransactionsApi, getMyEscrowOrdersApi } from "../services/api";
+import { getUserVault } from "../services/api";
 import { LinearGradient } from "expo-linear-gradient";
 
 // TILE_WIDTH is now computed inside the component via useWindowDimensions
@@ -81,31 +81,75 @@ const CATEGORIES = [
 ];
 
 // ── Helper to resolve color tier based on % shares bought / funded ──
-// Over 75% -> Neon Green, 40% - 60% -> Neon Orange, 30% - 50% (lower) -> Neon Rose/Red
+// Gradients flow from pure White (#FFFFFF) to the darkest color of each % tier
 const getFundingTier = (pct) => {
   const p = Number(pct) || 0;
   if (p >= 75) {
     return {
       type: "green",
+      gradient: ["#FFFFFF", "rgba(174, 0, 255, 1)ff", "#059669", "#064E3B"],
       accent: "#10B981",
+      pillBg: "#065F46",
+      pillText: "#FFFFFF",
       lightAccent: "#34D399",
-      chipBg: "rgba(16, 185, 129, 0.16)",
+      text: "#0F172A",
+      isDark: false,
+      statusBarFill: "#059669",
     };
   }
   if (p >= 40) {
     return {
       type: "orange",
-      accent: "#FB923C",
-      lightAccent: "#FBBF24",
-      chipBg: "rgba(251, 146, 60, 0.16)",
+      gradient: ["#FFFFFF", "rgba(174, 0, 255, 1)ff", "#EA580C", "#7C2D12"],
+      accent: "#F97316",
+      pillBg: "#9A3412",
+      pillText: "#FFFFFF",
+      lightAccent: "#FB923C",
+      text: "#0F172A",
+      isDark: false,
+      statusBarFill: "#EA580C",
     };
   }
   return {
-    type: "red",
-    accent: "#F43F5E",
-    lightAccent: "#FB7185",
-    chipBg: "rgba(244, 63, 94, 0.16)",
+    type: "dark",
+    gradient: ["#FFFFFF", "rgba(174, 0, 255, 1)ff", "#0284C7", "#082F49"],
+    accent: "#0EA5E9",
+    pillBg: "#075985",
+    pillText: "#FFFFFF",
+    lightAccent: "#38BDF8",
+    text: "#0F172A",
+    isDark: false,
+    statusBarFill: "#0284C7",
   };
+};
+
+// ── Helper to render text with a left-to-right color gradient across each letter ──
+// Wallet gradient default: #976af0 (Purple) to #00fbff (Cyan)
+const GradientText = ({
+  text,
+  style,
+  startColor = { r: 151, g: 106, b: 240 }, // #976af0 (Purple)
+  endColor = { r: 0, g: 251, b: 255 }, // #00fbff (Cyan)
+}) => {
+  const str = String(text || "");
+  const chars = Array.from(str);
+  const total = chars.length;
+
+  return (
+    <Text style={style}>
+      {chars.map((char, i) => {
+        const t = total > 1 ? i / (total - 1) : 0;
+        const r = Math.round(startColor.r + (endColor.r - startColor.r) * t);
+        const g = Math.round(startColor.g + (endColor.g - startColor.g) * t);
+        const b = Math.round(startColor.b + (endColor.b - startColor.b) * t);
+        return (
+          <Text key={`${char}-${i}`} style={{ color: `rgb(${r}, ${g}, ${b})` }}>
+            {char}
+          </Text>
+        );
+      })}
+    </Text>
+  );
 };
 
 export default function HomeScreen({ navigation, isDark }) {
@@ -119,16 +163,57 @@ export default function HomeScreen({ navigation, isDark }) {
   const [loadingVault, setLoadingVault] = useState(true);
   const [vaultSummary, setVaultSummary] = useState({
     totalValueFormatted: "R0",
+    totalValueNum: 0,
+    availableBalanceFormatted: "R0",
+    availableBalanceNum: 0,
+    portfolioValueFormatted: "R0",
+    portfolioValueNum: 0,
     totalCount: 0,
     wholeCount: 0,
     fractionalCount: 0,
     gainText: "+0.0% MoM",
   });
+  const [showBalance, setShowBalance] = useState(true);
 
-  // ── DYNAMIC INVESTMENT OPPORTUNITIES (Loaded from Marketplace API) ──
-  const [fundingAssets, setFundingAssets] = useState([]);
-  const [recentActivity, setRecentActivity] = useState([]);
-  const [loadingActivity, setLoadingActivity] = useState(true);
+  // ── MOCK DATA FOR INVESTMENT OPPORTUNITIES ──
+  const [fundingAssets, setFundingAssets] = useState([
+    {
+      id: "mock-fund-1",
+      name: "Rolex Daytona 'Paul Newman'",
+      category: "Luxury Watch",
+      image:
+        "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=500&q=80",
+      fundedPct: 88,
+      sharesRemaining: 15,
+    },
+    {
+      id: "mock-fund-2",
+      name: "1962 Ferrari 250 GTO",
+      category: "Classic Car",
+      image:
+        "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=500&q=80",
+      fundedPct: 54,
+      sharesRemaining: 320,
+    },
+    {
+      id: "mock-fund-3",
+      name: "Domaine de la Romanée-Conti 1990",
+      category: "Fine Wine",
+      image:
+        "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=500&q=80",
+      fundedPct: 36,
+      sharesRemaining: 180,
+    },
+    {
+      id: "mock-fund-4",
+      name: "Banksy 'Love is in the Air'",
+      category: "Fine Art",
+      image:
+        "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=500&q=80",
+      fundedPct: 22,
+      sharesRemaining: 420,
+    },
+  ]);
 
   // ── Expandable Bottom Section Configuration ──
   const COLLAPSED_HEIGHT = 295;
@@ -250,7 +335,80 @@ export default function HomeScreen({ navigation, isDark }) {
     { id: "ai", label: "AI Insights", icon: "sparkles" },
   ];
 
-// Dynamic recentActivity loaded via API in useFocusEffect
+  const recentActivity = [
+    {
+      id: "act-1",
+      category: "transfers",
+      title: "Share Purchase Confirmed",
+      desc: "5 shares of 1962 Ferrari 250 GTO",
+      time: "2h ago",
+      icon: "checkmark-circle",
+      color: "#10B981",
+      iconBg: "rgba(16, 185, 129, 0.18)",
+      rightIcon: "chevron-forward",
+      targetScreen: SCREENS.VAULT,
+    },
+    {
+      id: "act-2",
+      category: "valuations",
+      title: "Valuation Updated",
+      desc: "Patek Philippe Nautilus up +4.2% MoM",
+      time: "5h ago",
+      icon: "trending-up",
+      color: "#38BDF8",
+      iconBg: "rgba(56, 189, 248, 0.18)",
+      rightIcon: "chevron-forward",
+      targetScreen: SCREENS.SEARCH,
+    },
+    {
+      id: "act-3",
+      category: "ai",
+      title: "Smart Valuation Alert",
+      desc: "Classic car category index shifted +1.8%",
+      time: "1d ago",
+      icon: "sparkles",
+      color: "#A855F7",
+      iconBg: "rgba(168, 85, 247, 0.18)",
+      rightIcon: "chatbubble-ellipses-outline",
+      targetScreen: SCREENS.HEALTH_REPORT,
+    },
+    {
+      id: "act-4",
+      category: "certificates",
+      title: "Certificate of Authenticity",
+      desc: "Digital ownership token verified on-chain",
+      time: "2d ago",
+      icon: "shield-checkmark",
+      color: "#F59E0B",
+      iconBg: "rgba(245, 158, 11, 0.18)",
+      rightIcon: "document-text-outline",
+      targetScreen: SCREENS.CERTIFICATE,
+    },
+    {
+      id: "act-5",
+      category: "transfers",
+      title: "Dividend Payout Received",
+      desc: "+R 245.00 credited from Rare Whisky Fund",
+      time: "3d ago",
+      icon: "wallet",
+      color: "#34D399",
+      iconBg: "rgba(52, 211, 153, 0.18)",
+      rightIcon: "checkmark-done-outline",
+      targetScreen: SCREENS.VAULT,
+    },
+    {
+      id: "act-6",
+      category: "ai",
+      title: "Portfolio Health Report",
+      desc: "Asset diversification score 94/100 (Optimal)",
+      time: "4d ago",
+      icon: "pulse",
+      color: "#6366F1",
+      iconBg: "rgba(99, 102, 241, 0.18)",
+      rightIcon: "chevron-forward",
+      targetScreen: SCREENS.HEALTH_REPORT,
+    },
+  ];
 
   const filteredActivities = recentActivity.filter((act) => {
     if (activeFilter === "all") return true;
@@ -259,175 +417,30 @@ export default function HomeScreen({ navigation, isDark }) {
 
   const handleActivityPress = (act) => {
     if (act.targetScreen) {
-      navigation.navigate(act.targetScreen, act.targetParams);
+      navigation.navigate(act.targetScreen);
     }
-  };
-
-  // ── Helper to format relative time ──
-  const formatTimeAgo = (dateStr) => {
-    if (!dateStr) return "recently";
-    const diffMs = Date.now() - new Date(dateStr).getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return "just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
   };
 
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
-
-      // 1. Fetch Real Marketplace Assets for Investment Opportunities
-      getMarketAssets()
-        .then((res) => {
-          if (!isMounted) return;
-          if (Array.isArray(res?.assets) && res.assets.length > 0) {
-            const liveOpps = res.assets.map((a, i) => {
-              const totalShares = a.shares || 100;
-              const sharesSold = a.sharesSold || a.shares_sold || Math.min(totalShares - 5, Math.max(10, Math.round(totalShares * (0.35 + (i * 0.17) % 0.55))));
-              const fundedPct = a.fundedPct || Math.min(96, Math.max(15, Math.round((sharesSold / totalShares) * 100)));
-              return {
-                id: a.id,
-                name: a.name,
-                category: a.category,
-                image: a.image,
-                price: a.price,
-                price_num: a.price_num,
-                fundedPct,
-                sharesRemaining: Math.max(1, totalShares - sharesSold),
-                rawAsset: a,
-              };
-            });
-            setFundingAssets(liveOpps);
-          }
-        })
-        .catch((err) => console.warn("Market assets fetch error:", err.message));
-
-      // 2. Fetch User Vault & Activity
       if (token) {
         setLoadingVault(true);
-        setLoadingActivity(true);
-
-        Promise.all([
-          getUserVault(token).catch(() => null),
-          getVaultTransactionsApi(token).catch(() => null),
-          getMyEscrowOrdersApi(token).catch(() => null),
-        ])
-          .then(([vaultRes, txRes, escrowRes]) => {
-            if (!isMounted) return;
-
-            // Process Vault
-            if (vaultRes?.summary) setVaultSummary(vaultRes.summary);
-            const userHoldings = vaultRes?.holdings || [];
-            setVaultHoldings(userHoldings.slice(0, 5));
-
-            // Process Activities from real data
-            const activities = [];
-
-            // Transactions (Deposits / Withdrawals)
-            const txs = txRes?.transactions || vaultRes?.transactions || [];
-            txs.forEach((tx) => {
-              const isDeposit = tx.type === "deposit";
-              activities.push({
-                id: tx.id || `tx-${Math.random()}`,
-                category: "transfers",
-                title: isDeposit ? "Vault Cash Deposit" : "Vault Cash Withdrawal",
-                desc: `${tx.amountFormatted} • ${tx.method || "EFT"}`,
-                time: formatTimeAgo(tx.createdAt),
-                timestamp: new Date(tx.createdAt || Date.now()).getTime(),
-                icon: isDeposit ? "arrow-down-circle" : "arrow-up-circle",
-                color: isDeposit ? "#10B981" : "#F59E0B",
-                iconBg: isDeposit ? "rgba(16, 185, 129, 0.18)" : "rgba(245, 158, 11, 0.18)",
-                rightIcon: "chevron-forward",
-                targetScreen: SCREENS.VAULT,
-              });
-            });
-
-            // Escrows
-            const escrows = escrowRes?.orders || [];
-            escrows.forEach((escrow) => {
-              activities.push({
-                id: escrow.orderId || `esc-${Math.random()}`,
-                category: "certificates",
-                title: `${escrow.assetName || "Asset"} Escrow`,
-                desc: `Status: ${String(escrow.status || "Active").toUpperCase()} • Step ${escrow.currentStep || 1}/4`,
-                time: formatTimeAgo(escrow.createdAt),
-                timestamp: new Date(escrow.createdAt || Date.now()).getTime(),
-                icon: "shield-checkmark",
-                color: "#38BDF8",
-                iconBg: "rgba(56, 189, 248, 0.18)",
-                rightIcon: "chevron-forward",
-                targetScreen: SCREENS.ESCROW_TRACKER,
-                targetParams: { orderId: escrow.orderId },
-              });
-            });
-
-            // Vault Holdings additions
-            userHoldings.forEach((h) => {
-              activities.push({
-                id: `holding-${h.id}`,
-                category: "valuations",
-                title: `Vaulted: ${h.name}`,
-                desc: `${h.category} • ${h.price} (${h.gain || "+0.0%"})`,
-                time: formatTimeAgo(h.created_at),
-                timestamp: new Date(h.created_at || Date.now()).getTime(),
-                icon: "briefcase",
-                color: "#A855F7",
-                iconBg: "rgba(168, 85, 247, 0.18)",
-                rightIcon: "chevron-forward",
-                targetScreen: SCREENS.VAULT,
-              });
-            });
-
-            // If user has activities, sort descending by date
-            if (activities.length > 0) {
-              activities.sort((a, b) => b.timestamp - a.timestamp);
-              setRecentActivity(activities);
-            } else {
-              // Helpful first-time starter guidance
-              setRecentActivity([
-                {
-                  id: "start-1",
-                  category: "transfers",
-                  title: "Activate Your Liquid Vault",
-                  desc: "Make your first deposit to fund investment opportunities",
-                  time: "Action required",
-                  icon: "wallet",
-                  color: "#10B981",
-                  iconBg: "rgba(16, 185, 129, 0.18)",
-                  rightIcon: "chevron-forward",
-                  targetScreen: SCREENS.VAULT,
-                },
-                {
-                  id: "start-2",
-                  category: "valuations",
-                  title: "Explore Verified Marketplace",
-                  desc: "Browse luxury watches, vintage cars, and rare art",
-                  time: "Marketplace ready",
-                  icon: "compass",
-                  color: "#38BDF8",
-                  iconBg: "rgba(56, 189, 248, 0.18)",
-                  rightIcon: "chevron-forward",
-                  targetScreen: SCREENS.SEARCH,
-                },
-              ]);
+        getUserVault(token)
+          .then((res) => {
+            if (isMounted) {
+              if (res?.summary) setVaultSummary(res.summary);
+              // API returns res.holdings (not res.assets) — see VaultScreen
+              if (res?.holdings) setVaultHoldings(res.holdings.slice(0, 5));
             }
           })
-          .catch((err) => console.warn("Activity fetch error:", err.message))
+          .catch((err) => console.warn("Vault fetch error:", err.message))
           .finally(() => {
-            if (isMounted) {
-              setLoadingVault(false);
-              setLoadingActivity(false);
-            }
+            if (isMounted) setLoadingVault(false);
           });
       } else {
         setLoadingVault(false);
-        setLoadingActivity(false);
       }
-
       return () => {
         isMounted = false;
       };
@@ -459,30 +472,54 @@ export default function HomeScreen({ navigation, isDark }) {
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: ALIM.darkHeader }]}
+      style={[styles.safe, { backgroundColor: "#F1EFFB" }]}
     >
-      <ScrollView
-        ref={scrollViewRef}
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
-        onScroll={handleMainScroll}
-        onScrollEndDrag={handleMainScrollEndDrag}
+      <LinearGradient
+        colors={["#F1EFFB", "#F8F6FE", "#FCF8F9", "#FEF5F2"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={{ flex: 1 }}
       >
-        {/* ── TOP WHITE-TO-BLUE ISLAND ── */}
-        <LinearGradient
-          colors={ALIM.darkHeaderGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.topWhiteIsland}
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={[styles.scroll, { backgroundColor: "transparent" }]}
+          showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={handleMainScroll}
+          onScrollEndDrag={handleMainScrollEndDrag}
         >
+          {/* ── TOP ISLAND ── */}
+          <View style={[styles.topWhiteIsland, { backgroundColor: "transparent" }]}>
           {/* Header */}
           <View style={styles.header}>
-            <View style={styles.headerLeft}>
+            <View>
+              <Text style={styles.headerWelcomeText}>Welcome Back</Text>
+              <GradientText
+                text={
+                  user?.fullName ||
+                  user?.email?.split("@")[0] ||
+                  "Robin Mathuis"
+                }
+                style={styles.headerUsername}
+              />
+            </View>
+
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+            >
+              <TouchableOpacity
+                style={styles.iconBtn}
+                onPress={() => navigation.navigate(SCREENS.SEARCH)}
+              >
+                <Feather name="search" size={17} color="#0F172A" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.iconBtn}>
+                <Feather name="bell" size={17} color="#0F172A" />
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.avatarMini}
-                activeOpacity={0.8}
                 onPress={() => navigation.navigate(SCREENS.PROFILE)}
+                activeOpacity={0.8}
               >
                 {user?.avatar_url || user?.avatarUrl ? (
                   <Image
@@ -490,272 +527,207 @@ export default function HomeScreen({ navigation, isDark }) {
                     style={styles.avatarImg}
                   />
                 ) : (
-                  <Feather name="user" size={18} color="#FFFFFF" />
+                  <Feather name="user" size={18} color="#0F172A" />
                 )}
               </TouchableOpacity>
-              <View>
-                <Text style={styles.username}>
-                  Hi, {user?.fullName ? user.fullName.split(" ")[0] : (user?.email?.split("@")[0] || "Member")}
-                </Text>
-              </View>
-            </View>
-            <View style={{ flexDirection: "row", gap: 7 }}>
-              <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={() => navigation.navigate(SCREENS.PROFILE)}
-              >
-                <Feather name="settings" size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.iconBtn}>
-                <Feather name="bell" size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={() => navigation.navigate(SCREENS.SEARCH)}
-              >
-                <Feather name="search" size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
-                <Feather name="log-out" size={18} color="#FFFFFF" />
-              </TouchableOpacity>
             </View>
           </View>
 
-          {/* ── Balance & White Debit Card Hero Row (Mockup Style) ── */}
-          <View style={styles.heroRow}>
-            {/* Left Column: Balance Info */}
-            <View style={styles.heroBalanceCol}>
-              <Text style={styles.heroBalanceLabel}>Balance</Text>
-              <Text style={styles.heroBalanceValue}>
-                {vaultSummary.totalValueFormatted}
-              </Text>
-              <View style={styles.heroGainRow}>
-                <Ionicons name="arrow-up" size={13} color="#34D399" />
-                <Text style={styles.heroGainText}>{vaultSummary.gainText || "+12.4% YTD"}</Text>
-              </View>
-            </View>
+          {/* ════════════════════════════════════════════
+              THE WALLET CARD (Dual-Tone Purple & Lavender Stack)
+          ════════════════════════════════════════════ */}
+          <View style={styles.walletCardOuterContainer}>
+            <View style={styles.walletStackRow}>
+              {/* Main Dual-Tone Card */}
+              <View style={styles.walletDualCard}>
+                {/* Purple Top Section */}
+                <LinearGradient
+                  colors={["#976af0ff", "#00fbffff"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.walletPurpleTop}
+                >
+                  {/* Two-column layout: left (label+balance+pill) | right (shield+lock) */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    {/* Left column */}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.walletPurpleLabel}>
+                        Personal Assets
+                      </Text>
+                      <Text
+                        style={[styles.walletPurpleBalance, { marginTop: 4 }]}
+                      >
+                        {showBalance
+                          ? (() => {
+                              const liq = vaultSummary.availableBalanceNum || 0;
+                              const port = vaultSummary.portfolioValueNum || 0;
+                              const netWorth = liq + port;
+                              if (netWorth === 0)
+                                return (
+                                  vaultSummary.totalValueFormatted ||
+                                  "R 1,299.00"
+                                );
+                              return (
+                                "R " +
+                                netWorth.toLocaleString("en-ZA", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })
+                              );
+                            })()
+                          : "R • • • • • •"}
+                      </Text>
+                      {/* Growth pill under balance */}
+                      <View
+                        style={[
+                          styles.walletGrowthPill,
+                          { marginTop: 8, alignSelf: "flex-start" },
+                        ]}
+                      >
+                        <Ionicons
+                          name="trending-up"
+                          size={13}
+                          color="#4ADE80"
+                        />
+                        <Text style={styles.walletGrowthPillText}>+4.2%</Text>
+                      </View>
+                    </View>
 
-            {/* Right Column: Sunset Orange Card (Gateway to Profile & Analytics) */}
-            <TouchableOpacity
-              style={styles.heroDebitCard}
-              activeOpacity={0.85}
-              onPress={() => navigation.navigate(SCREENS.PROFILE_ANALYTICS)}
-            >
-              <LinearGradient
-                colors={['#FB923C', '#F05F3B', '#EA580C']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.heroDebitCardGradient}
-              >
-                <View style={styles.cardTopBadgeRow}>
-                  <View style={styles.cardAnalyticsIconWrap}>
-                    <Ionicons name="stats-chart" size={16} color="#FFFFFF" />
+                    {/* Right: shield and lock side by side on the bottom right */}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        alignSelf: "flex-end",
+                        gap: 10,
+                      }}
+                    >
+                      <Ionicons
+                        name="shield-checkmark"
+                        size={30}
+                        color="#F59E0B"
+                      />
+                      <Ionicons name="lock-closed" size={26} color="#F59E0B" />
+                    </View>
                   </View>
-                  <View style={styles.cardProfileBadge}>
-                    <Text style={styles.cardProfileBadgeText}>ANALYTICS</Text>
-                    <Feather name="chevron-right" size={10} color="#FFFFFF" />
+                </LinearGradient>
+
+                {/* Black Bottom Section */}
+                <View style={styles.walletLavenderBottom}>
+                  {/* Left: Account Balance */}
+                  <View style={styles.walletBottomCol}>
+                    <Text style={styles.walletBottomLabel}>
+                      Account Balance
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.walletBalanceToggleRow}
+                      onPress={() => setShowBalance(!showBalance)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.walletBottomValue}>
+                        {showBalance
+                          ? vaultSummary.availableBalanceFormatted || "R 0.00"
+                          : "••••••••"}
+                      </Text>
+                      <Ionicons
+                        name={showBalance ? "eye-outline" : "eye-off-outline"}
+                        size={15}
+                        color="#ffffff65"
+                        style={{ marginLeft: 6 }}
+                      />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Right: Vault ID */}
+                  <View
+                    style={[styles.walletBottomCol, { alignItems: "flex-end" }]}
+                  >
+                    <Text style={styles.walletBottomLabel}>Vault ID</Text>
+                    <Text style={styles.walletBottomCode}>
+                      {vaultSummary.accountNumber || "SA-8525-9632"}
+                    </Text>
                   </View>
                 </View>
-                <Text style={styles.cardSubTitle}>SmartAssets Vault</Text>
-                <Text style={styles.cardDigits}>
-                  {user?.walletAddress
-                    ? `${user.walletAddress.slice(0, 4)} •••• ${user.walletAddress.slice(-4)}`
-                    : user?.id
-                    ? `SA-${String(user.id).slice(0, 4).toUpperCase()} •••• ${String(user.id).slice(-4).toUpperCase()}`
-                    : "3759 •••• 2100"}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
+              </View>
+
+              {/* Right Green Card Peek (Matching reference screenshot) */}
+              <View style={styles.walletGreenPeek} />
+            </View>
           </View>
 
-          {/* ── 3 Vibrant Action Cards (Blue, Coral Orange, Teal from Reference Mockup) ── */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.featureCardsScroll}
-          >
-            {/* Card 1: Electric Blue */}
-            <TouchableOpacity
-              style={styles.featureCard}
-              activeOpacity={0.88}
-              onPress={() => navigation.navigate(SCREENS.VAULT)}
-            >
-              <LinearGradient
-                colors={['#3B82F6', '#2563EB', '#1D4ED8']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.featureCardGradient}
-              >
-                <Text style={styles.featureCardTitle}>Save part of your recent deposit</Text>
-                <View style={styles.featureCardBottom}>
-                  <Ionicons name="stats-chart" size={26} color="#FFFFFF" />
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            {/* Card 2: Vibrant Pink */}
-            <TouchableOpacity
-              style={styles.featureCard}
-              activeOpacity={0.88}
-              onPress={() => navigation.navigate(SCREENS.INVEST)}
-            >
-              <LinearGradient
-                colors={['#FF3B69', '#F1254E', '#D9123D']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.featureCardGradient}
-              >
-                <Text style={styles.featureCardTitle}>Fractional luxury investments</Text>
-                <View style={styles.featureCardBottom}>
-                  <Ionicons name="car-sport" size={26} color="#FFFFFF" />
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            {/* Card 3: Emerald / Teal */}
-            <TouchableOpacity
-              style={styles.featureCard}
-              activeOpacity={0.88}
-              onPress={() => navigation.navigate(SCREENS.SEARCH)}
-            >
-              <LinearGradient
-                colors={['#2DD4BF', '#4BB7A9', '#0D9488']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.featureCardGradient}
-              >
-                <Text style={styles.featureCardTitle}>Escrow protected asset vault</Text>
-                <View style={styles.featureCardBottom}>
-                  <Ionicons name="shield-checkmark" size={26} color="#FFFFFF" />
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-          </ScrollView>
-
-          {/* ── Quick Actions Navigation (Transfer, Top Up, Payment, Profile) ── */}
+          {/* ════════════════════════════════════════════
+              QUICK ACTIONS
+          ════════════════════════════════════════════ */}
           <View style={styles.quickActionsContainer}>
             <View style={styles.quickActionsHeader}>
-              <Text style={styles.quickActionsTitle}>Quick Services</Text>
-              <TouchableOpacity onPress={() => navigation.navigate(SCREENS.VAULT)}>
+              <Text style={styles.quickActionsTitle}>Quick Actions</Text>
+              <TouchableOpacity
+                onPress={() => navigation.navigate(SCREENS.VAULT)}
+              >
                 <Text style={styles.seeMoreText}>See More</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.quickActionsGrid}>
-              <View style={styles.quickActionsRow}>
-                <TouchableOpacity
-                  style={styles.quickActionCard}
-                  activeOpacity={0.8}
-                  onPress={() => navigation.navigate(SCREENS.VAULT)}
-                >
-                  <Ionicons name="swap-vertical" size={18} color="#60A5FA" />
-                  <Text style={styles.quickActionLabel}>Transfer</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.quickActionCard}
-                  activeOpacity={0.8}
-                  onPress={() => navigation.navigate(SCREENS.VAULT)}
-                >
-                  <Ionicons name="add-circle" size={18} color="#60A5FA" />
-                  <Text style={styles.quickActionLabel}>Top Up</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.quickActionsRow}>
-                <TouchableOpacity
-                  style={styles.quickActionCard}
-                  activeOpacity={0.8}
-                  onPress={() => navigation.navigate(SCREENS.ESCROW_TRACKER)}
-                >
-                  <Ionicons name="card" size={18} color="#60A5FA" />
-                  <Text style={styles.quickActionLabel}>Payment</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.quickActionCard}
-                  activeOpacity={0.8}
-                  onPress={() => navigation.navigate(SCREENS.PROFILE)}
-                >
-                  <Ionicons name="person" size={18} color="#60A5FA" />
-                  <Text style={styles.quickActionLabel}>Profile</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </LinearGradient>
-        {/* ── END TOP WHITE-TO-BLUE ISLAND ── */}
-
-        {/* ── DARK BLUE GRADIENT BOTTOM HALF ── */}
-        <View style={styles.darkBottomHalf}>
-          {/* ════════════════════════════════════════════
-              BROWSE CATEGORIES
-          ════════════════════════════════════════════ */}
-          <View style={styles.sectionRow}>
-            <View>
-              <Text style={styles.sectionTitleDark}>Browse Categories</Text>
-              <Text style={styles.sectionSubtitle}>
-                Explore what SmartAssets offers
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => navigation.navigate(SCREENS.SEARCH)}
-              style={styles.viewAllBtn}
-            >
-              <Text style={styles.viewAllText}>View All</Text>
-              <Feather name="chevron-right" size={13} color="#333D9B" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Grid rows — 2 columns */}
-          <View style={styles.categoryGrid}>
-            {CATEGORIES.map((cat) => (
               <TouchableOpacity
-                key={cat.id}
-                style={[
-                  styles.categoryTile,
-                  { backgroundColor: cat.color, width: TILE_WIDTH },
-                ]}
-                onPress={() =>
-                  navigation.navigate(SCREENS.SEARCH, {
-                    initialCategory: cat.id,
-                  })
-                }
-                activeOpacity={0.88}
+                style={styles.quickActionCard}
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate(SCREENS.VAULT)}
               >
-                <Image
-                  source={{ uri: cat.image }}
-                  style={styles.categoryTileImage}
-                  resizeMode="cover"
-                />
-                <LinearGradient
-                  colors={["transparent", "rgba(20, 21, 24, 0.9)"]}
-                  start={{ x: 0, y: 0.25 }}
-                  end={{ x: 0, y: 1 }}
-                  style={[
-                    styles.categoryTileOverlay,
-                    {
-                      borderWidth: 1,
-                      borderColor: "rgba(184, 190, 200, 0.3)",
-                      borderRadius: 16,
-                    },
-                  ]}
-                >
-                  <Text style={styles.categoryTileLabel}>{cat.label}</Text>
-                  <View
-                    style={[
-                      styles.categoryAccentDot,
-                      { backgroundColor: cat.accent },
-                    ]}
-                  />
-                </LinearGradient>
+                <View style={styles.quickActionIconCircle}>
+                  <Ionicons name="swap-vertical" size={20} color="#0F172A" />
+                </View>
+                <Text style={styles.quickActionLabel}>Transfer</Text>
               </TouchableOpacity>
-            ))}
-          </View>
 
+              <TouchableOpacity
+                style={styles.quickActionCard}
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate(SCREENS.VAULT)}
+              >
+                <View style={styles.quickActionIconCircle}>
+                  <Ionicons name="add-circle" size={20} color="#0F172A" />
+                </View>
+                <Text style={styles.quickActionLabel}>Top Up</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.quickActionCard}
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate(SCREENS.VAULT)}
+              >
+                <View style={styles.quickActionIconCircle}>
+                  <Ionicons name="card" size={20} color="#0F172A" />
+                </View>
+                <Text style={styles.quickActionLabel}>Payment</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.quickActionCard}
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate(SCREENS.PROFILE)}
+              >
+                <View style={styles.quickActionIconCircle}>
+                  <Ionicons name="person" size={20} color="#0F172A" />
+                </View>
+                <Text style={styles.quickActionLabel}>Profile</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+        {/* ── END TOP ISLAND ── */}
+
+        {/* ── BOTTOM HALF ── */}
+        <View style={styles.darkBottomHalf}>
           {/* ════════════════════════════════════════════
               YOUR ASSETS (Horizontal)
           ════════════════════════════════════════════ */}
-          <View style={[styles.sectionRow, { marginTop: 28 }]}>
+          <View style={[styles.sectionRow, { marginTop: 16 }]}>
             <View>
               <Text style={styles.sectionTitleDark}>Your Assets</Text>
               <Text style={styles.sectionSubtitle}>
@@ -769,13 +741,13 @@ export default function HomeScreen({ navigation, isDark }) {
               style={styles.viewAllBtn}
             >
               <Text style={styles.viewAllText}>View All</Text>
-              <Feather name="chevron-right" size={13} color="#333D9B" />
+              <Feather name="chevron-right" size={13} color="#4C86FF" />
             </TouchableOpacity>
           </View>
 
           {loadingVault ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="small" color="#333D9B" />
+              <ActivityIndicator size="small" color="#4C86FF" />
             </View>
           ) : vaultHoldings.length === 0 ? (
             <View style={styles.emptyAssetsCard}>
@@ -788,10 +760,7 @@ export default function HomeScreen({ navigation, isDark }) {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
             >
-              {vaultHoldings.slice(0, 3).map((holding, idx) => {
-                const ACCENTS = ['#FF2D55', '#9333EA', '#FF9500'];
-                const cardAccent = ACCENTS[idx % ACCENTS.length];
-                return (
+              {vaultHoldings.slice(0, 3).map((holding, idx) => (
                 <TouchableOpacity
                   key={holding.id || idx}
                   style={styles.listingCardHorizontal}
@@ -803,7 +772,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.85}
                 >
                   <LinearGradient
-                    colors={["rgba(76,134,255,0.15)", "rgba(15,26,46,0.9)"]}
+                    colors={["rgba(76,134,255,0.08)", "rgba(0,0,0,0.95)"]}
                     style={StyleSheet.absoluteFillObject}
                   />
                   <View style={{ position: "relative" }}>
@@ -812,28 +781,30 @@ export default function HomeScreen({ navigation, isDark }) {
                       style={styles.graphiteCardImg}
                     />
                     <LinearGradient
-                      colors={["transparent", "rgba(15,26,46,0.8)", "#0F1A2E"]}
-                      locations={[0, 0.7, 1]}
+                      colors={["transparent", "rgba(0,0,0,0.7)", "#000000"]}
+                      locations={[0, 0.65, 1]}
                       style={{
                         position: "absolute",
                         bottom: 0,
                         left: 0,
                         right: 0,
-                        height: 40,
+                        height: 48,
                       }}
                     />
                   </View>
                   <View style={styles.graphiteCardContent}>
+                    <Text style={styles.graphiteCardCat} numberOfLines={1}>
+                      {holding.category || "ASSET"}
+                    </Text>
                     <Text style={styles.graphiteCardTitle} numberOfLines={1}>
                       {holding.name}
                     </Text>
-                    <Text style={[styles.graphiteCardPrice, { color: cardAccent }]}>
+                    <Text style={styles.graphiteCardPrice}>
                       {holding.price || "—"}
                     </Text>
                   </View>
                 </TouchableOpacity>
-              );
-            })}
+              ))}
             </ScrollView>
           )}
 
@@ -854,7 +825,7 @@ export default function HomeScreen({ navigation, isDark }) {
               style={styles.viewAllBtn}
             >
               <Text style={styles.viewAllText}>View All</Text>
-              <Feather name="chevron-right" size={13} color="#333D9B" />
+              <Feather name="chevron-right" size={13} color="#4C86FF" />
             </TouchableOpacity>
           </View>
 
@@ -867,43 +838,18 @@ export default function HomeScreen({ navigation, isDark }) {
               .sort((a, b) => (b.fundedPct || 0) - (a.fundedPct || 0))
               .map((asset, idx) => {
                 const tier = getFundingTier(asset.fundedPct);
-                const TRIO_COLORS = ['#FF2D55', '#9333EA', '#FF9500'];
-                const cardTrioColor = TRIO_COLORS[idx % TRIO_COLORS.length];
                 return (
                   <TouchableOpacity
                     key={asset.id || idx}
                     style={styles.investmentOpportunityCard}
-                    onPress={() => {
-                      if (asset.rawAsset) {
-                        navigation.navigate(SCREENS.ASSET_DETAIL, { asset: asset.rawAsset });
-                      } else {
-                        navigation.navigate(SCREENS.SEARCH);
-                      }
-                    }}
+                    onPress={() => navigation.navigate(SCREENS.SEARCH)}
                     activeOpacity={0.88}
                   >
-                    {/* Image with top % funded badge */}
-                    <View style={{ position: "relative" }}>
-                      <Image
-                        source={{ uri: asset.image }}
-                        style={styles.investmentCardImg}
-                      />
-
-                      {/* Top Badge with % funded */}
-                      <View style={styles.topFundedBadge}>
-                        <View
-                          style={[
-                            styles.statusDot,
-                            { backgroundColor: tier.accent },
-                          ]}
-                        />
-                        <Text
-                          style={[styles.topFundedText, { color: cardTrioColor }]}
-                        >
-                          {asset.fundedPct}% Funded
-                        </Text>
-                      </View>
-                    </View>
+                    {/* Image */}
+                    <Image
+                      source={{ uri: asset.image }}
+                      style={styles.investmentCardImg}
+                    />
 
                     {/* Slick Status Bar on the edge of the box itself */}
                     <View style={styles.edgeStatusBarTrack}>
@@ -912,41 +858,138 @@ export default function HomeScreen({ navigation, isDark }) {
                           styles.edgeStatusBarFill,
                           {
                             width: `${asset.fundedPct}%`,
-                            backgroundColor: cardTrioColor,
+                            backgroundColor: tier.statusBarFill || "#000000",
                           },
                         ]}
                       />
                     </View>
 
-                    {/* Black & Neon Content Box (Vault Portfolio Container style) */}
-                    <View style={styles.investmentCardContent}>
+                    {/* Content Box with corresponding tier gradient */}
+                    <LinearGradient
+                      colors={tier.gradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={[
+                        styles.investmentCardContent,
+                        tier.isDark && styles.investmentCardContentDark,
+                      ]}
+                    >
                       <Text
-                        style={styles.investmentCardTitle}
+                        style={[
+                          styles.investmentCardTitle,
+                          tier.isDark && styles.investmentCardTitleDark,
+                        ]}
                         numberOfLines={1}
                       >
                         {asset.name}
                       </Text>
 
                       <View style={styles.investmentStatsRow}>
-                        <Text
+                        <View
                           style={[
-                            styles.investmentFundedPct,
-                            { color: tier.accent },
+                            styles.investmentPctPill,
+                            { backgroundColor: tier.pillBg },
                           ]}
                         >
-                          {asset.fundedPct}% funded
-                        </Text>
+                          <Text
+                            style={[
+                              styles.investmentFundedPct,
+                              { color: tier.pillText },
+                            ]}
+                          >
+                            {asset.fundedPct}% funded
+                          </Text>
+                        </View>
                         <Text style={styles.investmentSharesLeft}>
                           {asset.sharesRemaining} left
                         </Text>
                       </View>
-                    </View>
+                    </LinearGradient>
                   </TouchableOpacity>
                 );
               })}
           </ScrollView>
+
+          {/* ════════════════════════════════════════════
+              PORTFOLIO SNAPSHOT (Takes space of My Vault)
+          ════════════════════════════════════════════ */}
+          <View style={[styles.sectionRow, { marginTop: 32 }]}>
+            <View>
+              <Text style={styles.sectionTitleDark}>Portfolio</Text>
+              <Text style={styles.sectionSubtitle}>
+                Performance & asset summary
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.portfolioSnapshotGrid}>
+            {/* Left Card: Our Assets (Purple Gradient matching reference screenshot) */}
+            <TouchableOpacity
+              style={styles.snapshotCardDarkWrap}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate(SCREENS.VAULT)}
+            >
+              <LinearGradient
+                colors={["#1E1668", "#2E249E", "#4B32DF", "#6E3DF0", "#8A4AF3"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.snapshotCardDark}
+              >
+                <View style={styles.snapshotIconCircleDark}>
+                  <Feather name="arrow-down" size={18} color="#9aff4cff" />
+                </View>
+
+                <Text style={styles.snapshotCardLabelDark}>Assets</Text>
+                <Text style={styles.snapshotCardValueDark}>
+                  {vaultSummary.portfolioValueNum > 0
+                    ? vaultSummary.portfolioValueFormatted
+                    : "R 1,299"}
+                </Text>
+                <Text style={styles.snapshotCardSubDark}>
+                  <Text style={{ color: "#FFFFFF", fontWeight: "800" }}>
+                    +R 243
+                  </Text>{" "}
+                  this month
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* Right Card: Investment Perf (Light Blue matching right of wallet) */}
+            <TouchableOpacity
+              style={styles.snapshotCardLightBlueWrap}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate(SCREENS.VAULT)}
+            >
+              <LinearGradient
+                colors={["#2fff00ff", "#00ffb3ff"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.snapshotCardLightBlue}
+              >
+                <View style={styles.snapshotIconCircleLightBlue}>
+                  <Feather name="arrow-up" size={18} color="#66ff00ff" />
+                </View>
+
+                <Text style={styles.snapshotCardLabelLightBlue}>
+                  Investment Perf
+                </Text>
+                <Text style={styles.snapshotCardValueLightBlue}>
+                  {vaultSummary.gainText &&
+                  vaultSummary.gainText !== "+0.0% MoM"
+                    ? vaultSummary.gainText
+                    : "+18.7%"}
+                </Text>
+                <Text style={styles.snapshotCardSubLightBlue}>
+                  <Text style={{ color: "#000000ff", fontWeight: "800" }}>
+                    +R 243
+                  </Text>{" "}
+                  net return
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
         </View>
-        {/* ── END BOTTOM HALF ── */}
+        {/* ── END DARK BLUE GRADIENT BOTTOM HALF ── */}
 
         {/* ════════════════════════════════════════════
             RECENT ACTIVITY (Bottom Sheet at End of Screen)
@@ -982,7 +1025,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   <Ionicons
                     name={isExpanded ? "chevron-down" : "chevron-up"}
                     size={16}
-                    color={ALIM.mintText}
+                    color="#FFFFFF"
                   />
                 </View>
               </View>
@@ -1038,364 +1081,236 @@ export default function HomeScreen({ navigation, isDark }) {
             nestedScrollEnabled={true}
             scrollEnabled={isExpanded}
           >
-            {filteredActivities.length === 0 ? (
-              <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 24, paddingHorizontal: 16 }}>
-                <Ionicons name="sparkles-outline" size={24} color="#94A3B8" />
-                <Text style={{ fontSize: 13, fontWeight: "700", color: "#64748B", marginTop: 8 }}>
-                  No activities in this filter
-                </Text>
-              </View>
-            ) : (
-              filteredActivities.map((act) => (
-                <TouchableOpacity
-                  key={act.id}
-                  style={styles.activityCard}
-                  activeOpacity={0.75}
-                  onPress={() => handleActivityPress(act)}
-                >
-                  <View
-                    style={[
-                      styles.activityIconCircle,
+            {filteredActivities.map((act) => (
+              <TouchableOpacity
+                key={act.id}
+                style={styles.activityCard}
+                activeOpacity={0.75}
+                onPress={() => handleActivityPress(act)}
+              >
+                <View
+                  style={[
+                    styles.activityIconCircle,
                     { backgroundColor: act.iconBg || `${act.color}20` },
-                    ]}
-                  >
-                    <Ionicons name={act.icon} size={18} color={act.color} />
-                  </View>
-                  <View style={styles.activityInfo}>
-                    <View style={styles.activityHeader}>
-                      <Text style={styles.activityCardTitle} numberOfLines={1}>
-                        {act.title}
-                      </Text>
-                      <Text style={styles.activityCardTime}>{act.time}</Text>
-                    </View>
-                    <Text style={styles.activityCardDesc} numberOfLines={1}>
-                      {act.desc}
+                  ]}
+                >
+                  <Ionicons name={act.icon} size={18} color={act.color} />
+                </View>
+                <View style={styles.activityInfo}>
+                  <View style={styles.activityHeader}>
+                    <Text style={styles.activityCardTitle} numberOfLines={1}>
+                      {act.title}
                     </Text>
+                    <Text style={styles.activityCardTime}>{act.time}</Text>
                   </View>
-                  {act.rightIcon && (
-                    <Ionicons
-                      name={act.rightIcon}
-                      size={16}
-                      color="#94A3B8"
-                      style={styles.activityCardChevron}
-                    />
-                  )}
-                </TouchableOpacity>
-              ))
-            )}
+                  <Text style={styles.activityCardDesc} numberOfLines={1}>
+                    {act.desc}
+                  </Text>
+                </View>
+                {act.rightIcon && (
+                  <Ionicons
+                    name={act.rightIcon}
+                    size={16}
+                    color="#94A3B8"
+                    style={styles.activityCardChevron}
+                  />
+                )}
+              </TouchableOpacity>
+            ))}
           </ScrollView>
         </Animated.View>
       </ScrollView>
-    </SafeAreaView>
+    </LinearGradient>
+  </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  // ── Hero Row & Debit Card Styles (Reference Mockup) ──
-  heroRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginTop: 6,
-    marginBottom: 20,
-    gap: 14,
-  },
-  heroBalanceCol: {
-    flex: 1,
-  },
-  heroBalanceLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#C7D2FE',
-    letterSpacing: 0.4,
-    marginBottom: 4,
-  },
-  heroBalanceValue: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-    marginBottom: 4,
-  },
-  heroGainRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  heroGainText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#34D399',
-  },
-  heroDebitCard: {
-    width: 156,
-    height: 102,
-    borderRadius: 18,
-    overflow: 'hidden',
-    shadowColor: '#EA580C',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  heroDebitCardGradient: {
-    flex: 1,
-    padding: 12,
-    justifyContent: 'space-between',
-  },
-  cardAnalyticsIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardTopBadgeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cardProfileBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  cardProfileBadgeText: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.4,
-  },
-  cardCirclesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  cardCircle: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-  },
-  cardSubTitle: {
-    fontSize: 9.5,
-    fontWeight: '700',
-    color: 'rgba(255, 255, 255, 0.9)',
-  },
-  cardDigits: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-
-  // ── Feature Cards (Blue, Coral, Teal from Reference Mockup) ──
-  featureCardsScroll: {
-    paddingHorizontal: 20,
-    paddingBottom: 22,
-    gap: 12,
-  },
-  featureCard: {
-    width: 140,
-    height: 146,
-    borderRadius: 22,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  featureCardGradient: {
-    flex: 1,
-    padding: 14,
-    justifyContent: 'space-between',
-  },
-  featureCardTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    lineHeight: 18,
-  },
-  featureCardBottom: {
-    alignSelf: 'flex-end',
-  },
-
-  safe: { flex: 1 },
-  scroll: { paddingBottom: 24 },
+  safe: { flex: 1, backgroundColor: "#F1EFFB" },
+  scroll: { flexGrow: 1, backgroundColor: "transparent" },
 
   // ── Top White Island ──
   topWhiteIsland: {
-    backgroundColor: ALIM.darkHeader,
-    paddingBottom: 16,
+    backgroundColor: "transparent",
+    paddingBottom: 20,
     zIndex: 10,
   },
 
   topSection: { paddingBottom: 24 }, // kept for compat, unused
 
-  // ── Header — balanced, matching Vault styling ──
+  // ── Header — inspired by modern reference ──
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 18,
+    paddingTop: 16,
+    paddingBottom: 14,
   },
-  headerLeft: {
-    flexDirection: "row",
+  headerWelcomeText: {
+    fontSize: 12.5,
+    fontWeight: "500",
+    color: "#94A3B8",
+    marginBottom: 2,
+  },
+  headerUsername: {
+    fontSize: 19,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "#171B26",
     alignItems: "center",
-    gap: 12,
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
   },
   avatarMini: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#171B26",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.2)",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
   },
   avatarImg: { width: "100%", height: "100%" },
-  greeting: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#94A3B8",
-  },
-  username: {
-    fontSize: 18,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    color: "#FFFFFF",
-  },
-  // ── Profile avatar circle ──
-  avatarCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  avatarInitial: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#0F172A",
-    letterSpacing: -0.3,
-  },
 
-  // ── Icon buttons — white deposit button theme (40x40) ──
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.12)",
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  // ── Portfolio Card / The Wallet ──
-  portfolioCardContainer: {
+  // ── Dual-Tone Wallet Card (Reference Design) ──
+  walletCardOuterContainer: {
     marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 18,
-    borderRadius: 24,
-    shadowColor: "#000000",
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  walletStackRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+  },
+  walletDualCard: {
+    flex: 1,
+    borderRadius: 22,
+    overflow: "hidden",
+    shadowColor: "#7952EC",
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.35,
     shadowRadius: 16,
     elevation: 8,
   },
-  portfolioCard: {
+  walletPurpleTop: {
     paddingHorizontal: 20,
-    paddingTop: 22,
-    paddingBottom: 24,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    overflow: "hidden",
+    paddingTop: 18,
+    paddingBottom: 20,
   },
-  portfolioHeader: {
+  walletPurpleHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
-  },
-  cardBrandLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "rgba(255, 255, 255, 0.65)",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
-  gainBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#064E3B",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#059669",
-  },
-  gainText: { fontSize: 11, fontWeight: "700", color: "#34D399" },
-  momText: { fontSize: 11, fontWeight: "700", color: "#FFFFFF" },
-  portfolioLabel: {
-    fontSize: 10.5,
-    fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.75)",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
     marginBottom: 2,
   },
-  portfolioValue: {
-    fontSize: 34,
+  walletPurpleLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.85)",
+  },
+  walletBrandPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  walletBrandText: {
+    fontSize: 10.5,
     fontWeight: "800",
     color: "#FFFFFF",
-    letterSpacing: -0.5,
-    marginBottom: 18,
-    textShadowColor: "rgba(0, 0, 0, 0.4)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
-  // ── Card bottom: 24h change + gold shield ──
-  cardBottomRow: {
+  walletPurpleBalance: {
+    fontSize: 27,
+    fontWeight: "800",
+    color: "#ffffffff",
+    letterSpacing: -0.5,
+  },
+  walletLavenderBottom: {
+    backgroundColor: "#000000ff",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-end",
+    alignItems: "center",
   },
-  cardChangeLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.65)",
-    letterSpacing: 0.4,
-    marginBottom: 2,
+  walletGrowthPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0, 102, 255, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(0, 0, 0, 0.35)",
   },
-  cardChangeValue: {
-    fontSize: 14,
+  walletGrowthPillText: {
+    fontSize: 12,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: "#4ADE80",
+    letterSpacing: 0.2,
+  },
+  walletBottomCol: {
+    justifyContent: "center",
+  },
+  walletBottomLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#66ff00ff",
+    marginBottom: 3,
+  },
+  walletBalanceToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  walletBottomValue: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#ffffff65",
+  },
+  walletBottomCode: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#ffffff65",
+    letterSpacing: 0.5,
+  },
+  walletGreenPeek: {
+    width: 14,
+    backgroundColor: "#e5ff00c0",
+    borderTopRightRadius: 20,
+    borderBottomRightRadius: 20,
+    marginLeft: 7,
+    height: "76%",
+    alignSelf: "center",
+    shadowColor: "#ffe600e1",
+    shadowOffset: { width: 2, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 3,
   },
   cardChangePct: {
     fontSize: 12,
@@ -1403,55 +1318,240 @@ const styles = StyleSheet.create({
     color: "#34D399",
   },
 
+  // ── Portfolio Snapshot Grid (Design inspired by reference image) ──
+  portfolioSnapshotGrid: {
+    flexDirection: "row",
+    gap: 12,
+    marginHorizontal: 20,
+    marginBottom: 8,
+  },
+  snapshotCardDarkWrap: {
+    flex: 1,
+    borderRadius: 24,
+    overflow: "hidden",
+    shadowColor: "#3B28CC",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  snapshotCardDark: {
+    flex: 1,
+    padding: 18,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.18)",
+  },
+  snapshotIconCircleDark: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#000000",
+    borderWidth: 1.5,
+    borderColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  snapshotCardLabelDark: {
+    fontSize: 12.5,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.85)",
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  snapshotCardValueDark: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  snapshotCardSubDark: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.8)",
+  },
+
+  snapshotCardLightBlueWrap: {
+    flex: 1,
+    borderRadius: 24,
+    overflow: "hidden",
+    shadowColor: "#000000ff",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  snapshotCardLightBlue: {
+    flex: 1,
+    padding: 18,
+    borderRadius: 24,
+  },
+  snapshotIconCircleLightBlue: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#000000ff",
+    borderWidth: 1.5,
+    borderColor: "#ffffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  snapshotCardLabelLightBlue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#05162E",
+    marginBottom: 4,
+  },
+  snapshotCardValueLightBlue: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#05162E",
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  snapshotCardSubLightBlue: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#052042",
+  },
+
   // ── Quick Actions ──
   quickActionsContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 6,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 4,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 14,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowColor: "#26002b7a",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+    overflow: "hidden",
   },
   quickActionsHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
-    paddingHorizontal: 2,
+    marginBottom: 12,
   },
-  // ── Quick Actions title on white bg ──
   quickActionsTitle: {
     fontSize: 17,
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#FFFFFF",
+    letterSpacing: -0.3,
   },
   seeMoreText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
-    color: "#94A3B8",
+    color: "#02ff39ff",
   },
   quickActionsGrid: {
-    gap: 10,
-  },
-  quickActionsRow: {
     flexDirection: "row",
-    gap: 10,
+    justifyContent: "space-around",
+    alignItems: "center",
   },
   quickActionCard: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+  },
+  quickActionIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(0, 0, 0, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(0, 0, 0, 0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickActionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#E2E8F0",
+    letterSpacing: -0.2,
+    textAlign: "center",
+  },
+
+  // ── Vault Teaser Card — pure black, matching VaultScreen portfolioSection ──
+  vaultTeaserCard: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    backgroundColor: "#000000",
+    borderRadius: 24,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  vaultTeaserRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  vaultTeaserLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#38BDF8",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  vaultTeaserValue: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -0.5,
+  },
+  vaultTeaserActions: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  vaultTeaserBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-start",
-    gap: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-    paddingHorizontal: 18,
-    paddingVertical: 13,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.18)",
+    justifyContent: "center",
+    gap: 7,
+    backgroundColor: "#4C86FF",
+    paddingVertical: 12,
+    borderRadius: 12,
   },
-  quickActionLabel: {
-    fontSize: 14.5,
+  vaultTeaserBtnOutline: {
+    backgroundColor: "transparent",
+    borderWidth: 1.5,
+    borderColor: "#4C86FF",
+  },
+  vaultTeaserBtnText: {
+    fontSize: 13.5,
     fontWeight: "700",
     color: "#FFFFFF",
-    letterSpacing: -0.2,
   },
 
   // ── Main container for sheet overlay ──
@@ -1462,10 +1562,10 @@ const styles = StyleSheet.create({
 
   // ── Dark blue gradient bottom half ──
   darkBottomHalf: {
-    backgroundColor: ALIM.canvas,
-    paddingTop: 20,
+    paddingTop: 16,
     paddingBottom: 40,
     minHeight: 400,
+    backgroundColor: "transparent",
   },
 
   // ── Profile card (light blue gradient) ──
@@ -1518,45 +1618,45 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitleDark: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: "#0F172A",
     marginBottom: 2,
   },
   sectionSubtitle: { fontSize: 11, fontWeight: "500", color: "#64748B" },
   viewAllBtn: { flexDirection: "row", alignItems: "center", gap: 3 },
-  viewAllText: { fontSize: 12, fontWeight: "700", color: "#333D9B" },
+  viewAllText: { fontSize: 12, fontWeight: "600", color: "#2563EB" },
 
   // ── Graphite Card System (Horizontal Lists) ──
   loadingWrap: { paddingVertical: 20, alignItems: "center" },
   emptyAssetsCard: {
     marginHorizontal: 20,
-    backgroundColor: "#1F2126",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 20,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
+    borderColor: "#E2E8F0",
     gap: 8,
   },
   emptyAssetsTitle: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#CBD5E1",
+    color: "#0F172A",
   },
   listingCardHorizontal: {
     width: 220,
-    backgroundColor: "#1E293B",
+    backgroundColor: "#000000",
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "rgba(76, 134, 255, 0.25)",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 6,
   },
   graphiteCardHorizontal: {
     width: 220,
@@ -1572,14 +1672,17 @@ const styles = StyleSheet.create({
   },
   graphiteCardContent: {
     padding: 14,
+    backgroundColor: "#000000",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(76, 134, 255, 0.15)",
   },
   graphiteCardCat: {
     fontSize: 10,
-    fontWeight: "700",
-    color: "#4C86FF",
+    fontWeight: "800",
+    color: "#38BDF8",
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 4,
+    letterSpacing: 0.8,
+    marginBottom: 5,
   },
   graphiteCardTitle: {
     fontSize: 14,
@@ -1588,9 +1691,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   graphiteCardPrice: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#2563EB",
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#E2E8F0",
   },
 
   // ── Funding Specific Styles ──
@@ -1619,16 +1722,16 @@ const styles = StyleSheet.create({
   // ── Investment Opportunities (Black & Blue Neon Vault Container Style) ──
   investmentOpportunityCard: {
     width: 220,
-    backgroundColor: "#1E293B",
+    backgroundColor: "#000000",
     borderRadius: 20,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.08)",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 8,
   },
   cardTopAccentBorder: {
     height: 3.5,
@@ -1663,16 +1766,21 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   edgeStatusBarTrack: {
-    height: 4,
+    height: 3.5,
     width: "100%",
-    backgroundColor: "#EDE9E1",
+    backgroundColor: "rgba(0, 0, 0, 0.08)",
   },
   edgeStatusBarFill: {
     height: "100%",
+    backgroundColor: "#16A34A",
   },
   investmentCardContent: {
     padding: 14,
-    backgroundColor: "#1E293B",
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: "rgba(255, 255, 255, 0.15)",
   },
   cardCategoryChip: {
     flexDirection: "row",
@@ -1689,25 +1797,42 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   investmentCardTitle: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 14.5,
+    fontWeight: "800",
     color: "#0F172A",
-    marginBottom: 10,
+    marginBottom: 8,
+    letterSpacing: -0.2,
   },
-
   investmentStatsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
+  investmentPctPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 7,
+  },
   investmentFundedPct: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -0.1,
   },
   investmentSharesLeft: {
     fontSize: 11.5,
-    fontWeight: "500",
-    color: "#94A3B8",
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  investmentCardContentDark: {
+    borderWidth: 1.2,
+    borderTopWidth: 0,
+    borderColor: "rgba(255, 255, 255, 0.18)",
+  },
+  investmentCardTitleDark: {
+    color: "#0F172A",
   },
 
   // ── Expandable Bottom Section Styles (Light Mode) ──
@@ -1724,7 +1849,7 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
     overflow: "hidden",
-    marginTop: 24,
+    marginTop: "auto",
   },
   sheetHandleTouchArea: {
     paddingTop: 12,
@@ -1802,7 +1927,6 @@ const styles = StyleSheet.create({
   sheetFilterRow: {
     marginBottom: 10,
   },
-
   sheetFilterScroll: {
     paddingHorizontal: 20,
     gap: 8,
@@ -1818,8 +1942,8 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
   },
   filterChipActive: {
-    backgroundColor: "#333D9B",
-    borderColor: "#333D9B",
+    backgroundColor: "#3B82F6",
+    borderColor: "#3B82F6",
   },
   filterChipText: {
     fontSize: 12.5,
@@ -1841,7 +1965,7 @@ const styles = StyleSheet.create({
   activityCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F8FAFC",
     padding: 13,
     borderRadius: 16,
     borderWidth: 1,
@@ -1935,4 +2059,4 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginBottom: 2,
   },
-  });
+});

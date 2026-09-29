@@ -15,7 +15,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { ALIM } from "../constants/theme";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -428,7 +427,7 @@ export default function ProfileScreen({ navigation }) {
   ];
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={[styles.safe, { backgroundColor: ALIM.darkHeader }]}>
+    <SafeAreaView edges={["top", "left", "right"]} style={[styles.safe, { backgroundColor: "#0A1120" }]}>
       {/* ── Header ── */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -443,7 +442,7 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.userInfoWrap}>
           <TouchableOpacity style={styles.avatarCircle} onPress={handlePickAvatar} activeOpacity={0.85}>
             {uploadingAvatar ? (
-              <ActivityIndicator color="#00A86B" size="small" />
+              <ActivityIndicator color="#3B82F6" size="small" />
             ) : avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={styles.avatar} />
             ) : (
@@ -773,28 +772,21 @@ const styles = StyleSheet.create({
   },
   scroll: {
     paddingBottom: 40,
-    backgroundColor: ALIM.canvas,
   },
   userInfoWrap: {
     alignItems: "center",
-    paddingBottom: 28,
-    paddingTop: 10,
-    backgroundColor: ALIM.darkHeader,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-    marginBottom: 20,
+    marginBottom: 32,
+    marginTop: 18,
   },
   avatarCircle: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: "#1E293B",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
     position: "relative",
-    borderWidth: 2.5,
-    borderColor: '#3666DD',
   },
   avatar: {
     width: "100%",
@@ -805,14 +797,14 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 0,
     right: 0,
-    backgroundColor: '#3666DD',
+    backgroundColor: "#3B82F6",
     width: 26,
     height: 26,
     borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: ALIM.darkHeader,
+    borderColor: "#0A1120",
   },
   userName: {
     fontSize: 18,
@@ -828,13 +820,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: "#EDE9E1",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    elevation: 4,
     overflow: "hidden",
   },
   menuItemWrap: {},
@@ -893,17 +878,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: "center",
-    backgroundColor: '#3666DD',
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 4,
   },
   saveBtnText: {
     fontSize: 14,
-    fontWeight: "800",
-    color: '#FFFFFF',
+    fontWeight: "700",
   },
   prefRow: {
     flexDirection: "row",
