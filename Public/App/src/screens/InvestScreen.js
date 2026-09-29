@@ -13,7 +13,7 @@ import {
   ImageBackground,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useColors } from "../constants/theme";
+import { useColors, ALIM } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
 import { getMarketAssets } from "../services/api";
 import { useFocusEffect } from "@react-navigation/native";
@@ -135,7 +135,7 @@ export default function InvestScreen({ navigation, isDark }) {
                 >
                   {isActive ? (
                     <LinearGradient
-                      colors={["#00C2FF", "#0077FE"]}
+                      colors={['#3B82F6', '#2563EB']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.filterPillActive}
@@ -156,7 +156,7 @@ export default function InvestScreen({ navigation, isDark }) {
           {loading ? (
             <ActivityIndicator
               size="large"
-              color="#00C2FF"
+              color="#2563EB"
               style={{ marginTop: 32 }}
             />
           ) : filteredOfferings.length === 0 ? (
@@ -164,7 +164,15 @@ export default function InvestScreen({ navigation, isDark }) {
               No offerings available in this category right now.
             </Text>
           ) : (
-            filteredOfferings.map((asset) => {
+            filteredOfferings.map((asset, idx) => {
+              const TRIO_COLORS = ['#FF2D55', '#9333EA', '#FF9500'];
+              const TRIO_GRADIENTS = [
+                ['#FF416C', '#FF2D55'],
+                ['#A855F7', '#9333EA'],
+                ['#FFA502', '#FF9500'],
+              ];
+              const cardColor = TRIO_COLORS[idx % TRIO_COLORS.length];
+              const cardGradient = TRIO_GRADIENTS[idx % TRIO_GRADIENTS.length];
               const totalShares = asset.shares || 100;
               const sharePrice =
                 asset.sharePrice ||
@@ -194,13 +202,13 @@ export default function InvestScreen({ navigation, isDark }) {
                     imageStyle={styles.heroImageRadius}
                   >
                     <View style={styles.heroTopRow}>
-                      <View style={styles.categoryBadge}>
+                      <View style={[styles.categoryBadge, { borderColor: cardColor || '#FF2D55' }]}>
                         <Text style={styles.categoryBadgeText}>
                           {asset.category}
                         </Text>
                       </View>
                       <View style={styles.authBadge}>
-                        <Feather name="shield" size={12} color="#00C2FF" />
+                        <Feather name="shield" size={12} color="#00A86B" />
                         <Text style={styles.authBadgeText}>SA-CERT</Text>
                       </View>
                     </View>
@@ -245,7 +253,7 @@ export default function InvestScreen({ navigation, isDark }) {
                       </View>
                       <View style={styles.progressTrack}>
                         <LinearGradient
-                          colors={["#00C2FF", "#0077FE"]}
+                          colors={cardGradient}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 0 }}
                           style={[styles.progressFill, { width: `${pct}%` }]}
@@ -286,7 +294,7 @@ export default function InvestScreen({ navigation, isDark }) {
                         </View>
                       ) : (
                         <LinearGradient
-                          colors={["#00C2FF", "#0077FE"]}
+                          colors={cardGradient}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                           style={styles.investBtn}
@@ -309,15 +317,17 @@ export default function InvestScreen({ navigation, isDark }) {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#090E17",
+    backgroundColor: ALIM.darkHeader,
   },
   scroll: {
     paddingBottom: 40,
+    backgroundColor: ALIM.canvas,
   },
   header: {
+    backgroundColor: ALIM.darkHeader,
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 24,
+    paddingTop: 16,
+    paddingBottom: 20,
   },
   title: {
     fontSize: 28,
@@ -334,7 +344,18 @@ const styles = StyleSheet.create({
   // -- Top Metrics Header --
   poolHeader: {
     marginHorizontal: 20,
+    marginTop: 14,
     marginBottom: 24,
+    backgroundColor: "#1E2768",
+    padding: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 4,
   },
   poolLabel: {
     fontSize: 13,
@@ -408,9 +429,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: "#121B2B",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.07)",
+    borderColor: "#EDE9E1",
   },
   filterPillActive: {
     paddingHorizontal: 16,
@@ -418,7 +439,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   filterTextInactive: {
-    color: "#94A3B8",
+    color: "#64748B",
     fontSize: 13,
     fontWeight: "600",
   },
@@ -441,10 +462,15 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    backgroundColor: "#121B2B",
+    backgroundColor: "#161E36",
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.07)",
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 16,
+    elevation: 4,
     overflow: "hidden",
   },
   heroImage: {
@@ -485,11 +511,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(0, 194, 255, 0.3)",
+    borderColor: "rgba(37, 99, 235, 0.3)",
     gap: 4,
   },
   authBadgeText: {
-    color: "#00C2FF",
+    color: "#00A86B",
     fontSize: 10,
     fontWeight: "800",
   },
@@ -522,7 +548,7 @@ const styles = StyleSheet.create({
   },
   assetValuation: {
     fontSize: 13,
-    color: "#94A3B8",
+    color: "#64748B",
     fontWeight: "500",
   },
   finRight: {
@@ -531,22 +557,22 @@ const styles = StyleSheet.create({
   sharePrice: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: "#2563EB",
     marginBottom: 4,
   },
   sharePriceUnit: {
     fontSize: 13,
-    color: "#94A3B8",
+    color: "#64748B",
     fontWeight: "500",
   },
   irrTag: {
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    backgroundColor: "rgba(0, 168, 107, 0.12)",
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 6,
   },
   irrText: {
-    color: "#10B981",
+    color: "#00A86B",
     fontSize: 11,
     fontWeight: "700",
   },
@@ -561,17 +587,16 @@ const styles = StyleSheet.create({
   },
   fundingStatusText: {
     fontSize: 13,
-    color: "#94A3B8",
+    color: "#64748B",
     fontWeight: "500",
   },
   fundingPctText: {
-    color: "#00C2FF",
     fontWeight: "700",
   },
   progressTrack: {
     height: 6,
     borderRadius: 3,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     overflow: "hidden",
   },
   progressFill: {

@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { useColors } from "../constants/theme";
+import { useColors, ALIM } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
 import { getMarketAssets } from "../services/api";
 import { Feather, Ionicons } from "@expo/vector-icons";
@@ -27,26 +27,26 @@ const CARD_GAP = 12;
 const CARD_H_PAD = 20;
 
 const FILTER_TABS = [
-  { id: "All", label: "All", icon: "grid-outline", color: "#38BDF8" },
+  { id: "All", label: "All", icon: "grid-outline", color: "#3B82F6" },
   {
     id: "Luxury Watch",
     label: "Watches",
     icon: "watch-outline",
-    color: "#38BDF8",
+    color: "#F59E0B",
   },
   {
     id: "Fine Art",
     label: "Art",
     icon: "color-palette-outline",
-    color: "#A78BFA",
+    color: "#8B5CF6",
   },
   {
     id: "Classic Car",
     label: "Cars",
     icon: "car-sport-outline",
-    color: "#FB923C",
+    color: "#EC4899",
   },
-  { id: "Fine Wine", label: "Wine", icon: "wine-outline", color: "#F472B6" },
+  { id: "Fine Wine", label: "Wine", icon: "wine-outline", color: "#EF4444" },
 ];
 
 // Accent colour per category for card label
@@ -115,12 +115,12 @@ export default function SearchScreen({ navigation, isDark, route }) {
       edges={["top", "left", "right"]}
       style={[styles.safe, { backgroundColor: "#0F1A2E" }]}
     >
-      <View style={{ flex: 1, backgroundColor: "#F4F6FA" }}>
+      <View style={{ flex: 1, backgroundColor: ALIM.canvas }}>
         {/* ══ FIXED DARK HEADER (never scrolls) ══ */}
         <LinearGradient
-          colors={["#0F1A2E", "#1A1248", "#2D0A6B", "#3B0E87"]}
+          colors={ALIM.darkHeaderGradient}
           start={{ x: 0, y: 0 }}
-          end={{ x: 0.3, y: 1 }}
+          end={{ x: 0, y: 1 }}
           style={styles.heroCard}
         >
           {/* Hero tagline — compact & sleek */}
@@ -231,7 +231,7 @@ export default function SearchScreen({ navigation, isDark, route }) {
 
           {loading ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="large" color="#38BDF8" />
+              <ActivityIndicator size="large" color="#00A86B" />
               <Text style={styles.loadingText}>Loading verified listings…</Text>
             </View>
           ) : filtered.length === 0 ? (
@@ -245,6 +245,8 @@ export default function SearchScreen({ navigation, isDark, route }) {
           ) : (
             <View style={styles.gridInner}>
               {filtered.map((asset, idx) => {
+                const TRIO = ['#FF2D55', '#9333EA', '#FF9500'];
+                const itemTrioColor = TRIO[idx % TRIO.length];
                 const accentColor = accent(asset);
                 const isVerified = asset.badge === "Verified";
                 const isLeftCol = idx % 2 === 0;
@@ -279,11 +281,7 @@ export default function SearchScreen({ navigation, isDark, route }) {
                             resizeMode="cover"
                           />
                           <LinearGradient
-                            colors={[
-                              "transparent",
-                              "rgba(255,255,255,0.8)",
-                              "#FFFFFF",
-                            ]}
+                            colors={["transparent", "rgba(22, 30, 54, 0.85)", "#161E36"]}
                             locations={[0, 0.7, 1]}
                             style={{
                               position: "absolute",
@@ -331,7 +329,7 @@ export default function SearchScreen({ navigation, isDark, route }) {
                       <View style={styles.cardFooter}>
                         <View>
                           <Text style={styles.cardPriceLabel}>VALUE</Text>
-                          <Text style={styles.cardPrice}>{asset.price}</Text>
+                          <Text style={[styles.cardPrice, { color: itemTrioColor }]}>{asset.price}</Text>
                         </View>
                         <TouchableOpacity
                           style={[
@@ -343,7 +341,7 @@ export default function SearchScreen({ navigation, isDark, route }) {
                           }
                           activeOpacity={0.85}
                         >
-                          <Feather name="plus" size={16} color="#000000" />
+                          <Feather name="plus" size={16} color={ALIM.mintText} />
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -377,18 +375,18 @@ const styles = StyleSheet.create({
 
   heroTextWrap: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 10 },
   heroCaption: {
-    fontSize: 9.5,
-    fontWeight: "600",
-    color: "rgba(255,255,255,0.45)",
-    letterSpacing: 0.3,
-    marginBottom: 2,
+    fontSize: 11,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.85)",
+    letterSpacing: 0.4,
+    marginBottom: 4,
   },
   heroTitle: {
-    fontSize: 22,
-    fontWeight: "800",
+    fontSize: 23,
+    fontWeight: "900",
     color: "#FFFFFF",
     letterSpacing: -0.8,
-    lineHeight: 26,
+    lineHeight: 28,
   },
   heroTitleAccent: { color: "#A78BFA" },
   heroToday: {
@@ -409,7 +407,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.95)",
     borderWidth: 0,
   },
-  searchInput: { flex: 1, fontSize: 12.5, color: "#1A202C" },
+  searchInput: { flex: 1, fontSize: 13.5, fontWeight: "700", color: "#1E293B" },
   filterBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -419,7 +417,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 9,
   },
-  filterBadgeText: { fontSize: 10, fontWeight: "700", color: "#FFFFFF" },
+  filterBadgeText: { fontSize: 11, fontWeight: "900", color: "#FFFFFF" },
 
   filterRow: {
     paddingHorizontal: 20,
@@ -437,23 +435,38 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  filterPillText: { fontSize: 11, fontWeight: "600" },
-
+  filterPillText: {
+    fontSize: 12.5,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    color: "#64748B",
+  },
+    // ── Result header ──
   resultRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 8,
+    paddingTop: 16,
+    paddingBottom: 14,
   },
   resultLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.2,
-    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    color: "#0F172A",
+    textTransform: "uppercase",
   },
-  resultCount: { fontSize: 11, fontWeight: "500", color: "#0F172A" },
+  resultCount: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#1D4ED8",
+    backgroundColor: "rgba(37, 99, 235, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    overflow: "hidden",
+  },
 
   // ── Grid ──
   grid: {
@@ -469,36 +482,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  loadingText: { color: "#2E4A6B", fontSize: 13 },
+  loadingText: { color: "#0F172A", fontSize: 14, fontWeight: "800" },
   emptyWrap: {
     paddingTop: 60,
     alignItems: "center",
     gap: 8,
   },
   emptyText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#2E4A6B",
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#0F172A",
     marginTop: 12,
   },
-  emptySubtext: { fontSize: 13, color: "#1A3055" },
+  emptySubtext: { fontSize: 13, fontWeight: "700", color: "#64748B" },
 
   // ── Product card (light mode) ──
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#161E36",
     borderRadius: 20,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderColor: "rgba(255, 255, 255, 0.08)",
     shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.06,
     shadowRadius: 10,
     elevation: 4,
   },
   cardImgWrap: {
     width: "100%",
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#0F172A",
     position: "relative",
   },
   cardImg: {
@@ -519,33 +532,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    backgroundColor: "rgba(16, 185, 129, 0.18)",
+    backgroundColor: "rgba(0, 168, 107, 0.12)",
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.4)",
+    borderColor: "rgba(0, 168, 107, 0.3)",
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 999,
   },
   verifiedText: {
-    fontSize: 8,
-    fontWeight: "800",
-    color: "#10B981",
-    letterSpacing: 0.5,
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#00A86B",
+    letterSpacing: 0.6,
   },
   cardBody: {
     padding: 11,
   },
   cardCat: {
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 1,
-    marginBottom: 3,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.1,
+    marginBottom: 4,
   },
   cardName: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#0F172A",
-    lineHeight: 17,
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    lineHeight: 18,
     marginBottom: 10,
     letterSpacing: -0.2,
   },
@@ -555,16 +568,15 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   cardPriceLabel: {
-    fontSize: 8,
-    fontWeight: "700",
+    fontSize: 9,
+    fontWeight: "800",
     letterSpacing: 0.8,
-    color: "#64748B",
-    marginBottom: 1,
+    color: "#94A3B8",
+    marginBottom: 2,
   },
   cardPrice: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#0F172A",
+    fontSize: 16,
+    fontWeight: "900",
     letterSpacing: -0.3,
   },
   investBtn: {
@@ -573,5 +585,6 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: '#FF9500',
   },
 });

@@ -1,4 +1,6 @@
-// ─── Navigation Root ──────────────────────────────────────────────────────────
+﻿const fs = require('fs');
+
+const navigatorCode = `// ─── Navigation Root ──────────────────────────────────────────────────────────
 // Wires all screens together using React Navigation
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -31,7 +33,6 @@ import CheckoutScreen    from '../screens/CheckoutScreen';
 import VerificationScreen from '../screens/VerificationScreen';
 import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
 import ProfileScreen     from '../screens/ProfileScreen';
-import ProfileAnalyticsScreen from '../screens/ProfileAnalyticsScreen';
 
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -73,7 +74,7 @@ function extractResetToken(url) {
 }
 
 // ── Modern AlimBank Emerald Tab Bar Palette ───────────────────────────────────
-const ACTIVE_TAB = '#333D9B';          // Royal Indigo
+const ACTIVE_TAB = ALIM.emerald;       // #00A86B
 const INACTIVE_TAB = '#94A3B8';        // Muted Slate
 
 const TAB_CONFIG = {
@@ -126,7 +127,7 @@ function CustomTabBar({ state, navigation }) {
               activeOpacity={0.85}
             >
               <LinearGradient
-                colors={['#3B82F6', '#2563EB', '#1E2768']}
+                colors={['#00B377', '#00965E']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={{
@@ -136,11 +137,11 @@ function CustomTabBar({ state, navigation }) {
                   alignItems: 'center',
                   justifyContent: 'center',
                   marginBottom: 4,
-                  shadowColor: '#2563EB',
+                  shadowColor: '#00A86B',
                   shadowOffset: { width: 0, height: 4 },
                   shadowOpacity: 0.35,
-                  shadowRadius: 10,
-                  elevation: 7,
+                  shadowRadius: 8,
+                  elevation: 6,
                 }}
               >
                 <Ionicons name="add" size={26} color="#FFFFFF" />
@@ -254,72 +255,66 @@ export default function Navigation() {
           animation: 'slide_from_right',
         }}
       >
-        {!isAuthenticated ? (
-          <>
-            <Stack.Screen name={SCREENS.SPLASH}>
-              {(props) => <SplashScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.SPLASH}>
+          {(props) => <SplashScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.ONBOARDING}>
-              {(props) => <OnboardingScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.ONBOARDING}>
+          {(props) => <OnboardingScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.LOGIN}>
-              {(props) => <LoginScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.LOGIN}>
+          {(props) => <LoginScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.REGISTER}>
-              {(props) => <RegisterScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.REGISTER}>
+          {(props) => <RegisterScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.RESET_PASSWORD}>
-              {(props) => <ResetPasswordScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
-          </>
-        ) : (
-          <>
-            <Stack.Screen name={SCREENS.MAIN_TABS}>
-              {() => <MainTabs isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.RESET_PASSWORD}>
+          {(props) => <ResetPasswordScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.ASSET_DETAIL}>
-              {(props) => <AssetDetailScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.MAIN_TABS}>
+          {() => <MainTabs isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.CERTIFICATE}>
-              {(props) => <CertificateScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.ASSET_DETAIL}>
+          {(props) => <AssetDetailScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.PROVENANCE}>
-              {(props) => <ProvenanceScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.CERTIFICATE}>
+          {(props) => <CertificateScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.HEALTH_REPORT}>
-              {(props) => <HealthReportScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.PROVENANCE}>
+          {(props) => <ProvenanceScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.CHECKOUT}>
-              {(props) => <CheckoutScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.HEALTH_REPORT}>
+          {(props) => <HealthReportScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.VERIFICATION}>
-              {(props) => <VerificationScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.CHECKOUT}>
+          {(props) => <CheckoutScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.ESCROW_TRACKER}>
-              {(props) => <EscrowTrackerScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.VERIFICATION}>
+          {(props) => <VerificationScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.PROFILE}>
-              {(props) => <ProfileScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
+        <Stack.Screen name={SCREENS.ESCROW_TRACKER}>
+          {(props) => <EscrowTrackerScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.PROFILE_ANALYTICS}>
-              {(props) => <ProfileAnalyticsScreen {...props} isDark={isDark} />}
-            </Stack.Screen>
-          </>
-        )}
+        <Stack.Screen name={SCREENS.PROFILE}>
+          {(props) => <ProfileScreen {...props} isDark={isDark} />}
+        </Stack.Screen>
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
+`;
+
+fs.writeFileSync('Public/App/src/navigation/AppNavigator.js', navigatorCode, 'utf8');
+console.log('Successfully wrote AppNavigator.js directly to disk');

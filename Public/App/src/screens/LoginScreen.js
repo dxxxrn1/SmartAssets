@@ -1174,7 +1174,7 @@ const styles = StyleSheet.create({
   },
 
   primaryBtnText: {
-    color: '#FFFFFF',
+    color: '#004C3C',
     fontSize: 15,
     fontWeight: '700',
   },

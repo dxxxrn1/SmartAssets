@@ -1,5 +1,7 @@
-// ─── SplashScreen ─────────────────────────────────────────────────────────────
-// First screen: SmartAssets brand + Get Started / Sign In CTAs
+// ─── SplashScreen / Landing Page ──────────────────────────────────────────────
+// Modern high-converting fintech landing page inspired by the reference design:
+// Full-screen lifestyle hero photography with golden spiral & sparkle accents,
+// smooth dark vignette gradient, clean bold typography, and a luminous mint CTA pill.
 
 import React from 'react';
 import {
@@ -7,166 +9,222 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Image,
+  StatusBar,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useColors } from '../constants/theme';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SCREENS } from '../constants/navigation';
-import { Feather } from '@expo/vector-icons';
+import { ALIM } from '../constants/theme';
+import { Feather, Ionicons } from '@expo/vector-icons';
 
-export default function SplashScreen({ navigation, isDark }) {
-  const c = useColors(isDark);
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-  const features = [
-    { text: 'Blockchain-verified authenticity', icon: 'shield' },
-    { text: 'AI-powered appraisal & health check', icon: 'cpu' },
-    { text: 'Secure smart contract escrow', icon: 'lock' },
-  ];
-
+export default function SplashScreen({ navigation }) {
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: c.obsidian }]}>
-      {/* ── Brand Icon ── */}
-      <View style={styles.center}>
-        <View style={[styles.logoWrap, { backgroundColor: c.primary }]}>
-          {/* TODO: Replace with actual SmartAssets SVG logo */}
-          <Text style={styles.logoText}>SA</Text>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
+      {/* ── Background Hero Image (Lifestyle Photography with Golden Spiral) ── */}
+      <Image
+        source={require('../../assets/landing_hero.png')}
+        style={styles.heroBackground}
+        resizeMode="cover"
+      />
+
+      {/* ── Deep Vignette Fade (Darkens bottom half for high text readability) ── */}
+      <LinearGradient
+        colors={[
+          'rgba(30, 39, 104, 0.05)',
+          'rgba(30, 39, 104, 0.35)',
+          'rgba(30, 39, 104, 0.85)',
+          '#1E2768',
+          '#1E2768',
+        ]}
+        locations={[0, 0.38, 0.62, 0.82, 1]}
+        style={styles.vignetteOverlay}
+      />
+
+      {/* ── Top Subtle Brand Header ── */}
+      <SafeAreaView edges={['top']} style={styles.topSafeArea}>
+        <View style={styles.topBrandRow}>
+          <View style={styles.brandPill}>
+            <Ionicons name="shield-checkmark" size={14} color="#F59E0B" />
+            <Text style={styles.brandPillText}>SMARTASSETS</Text>
+          </View>
         </View>
+      </SafeAreaView>
 
-        {/* ── Brand Name ── */}
-        <Text style={[styles.brandName, { color: c.warm }]}>
-          Smart<Text style={{ color: c.primary }}>Assets</Text>
-        </Text>
-        <Text style={[styles.tagline, { color: c.muted }]}>
-          Verified Luxury & Collectibles Marketplace
-        </Text>
+      {/* ── Bottom Content & CTA Section (Matching Mockup) ── */}
+      <SafeAreaView edges={['bottom', 'left', 'right']} style={styles.bottomSafeArea}>
+        <View style={styles.contentWrap}>
+          {/* Headline */}
+          <Text style={styles.headline}>SmartAssets</Text>
 
-        {/* ── Feature Pills ── */}
-        <View style={styles.features}>
-          {features.map((f) => (
-            <View
-              key={f.text}
-              style={[
-                styles.featurePill,
-                { backgroundColor: c.card, borderColor: c.border },
-              ]}
+          {/* Subtitle */}
+          <Text style={styles.subtitle}>
+            One-stop solution to verified luxury assets & fractional investments
+          </Text>
+
+          {/* ── Primary Action: Vibrant Luminous Mint Pill Button ── */}
+          <TouchableOpacity
+            style={styles.ctaButton}
+            activeOpacity={0.88}
+            onPress={() => navigation.navigate(SCREENS.ONBOARDING)}
+          >
+            <LinearGradient
+              colors={['#3B82F6', '#2563EB']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.ctaGradient}
             >
-              <View style={[styles.featureDot, { backgroundColor: c.primaryBg }]}>
-                <Feather name={f.icon} size={11} color={c.primary} />
-              </View>
-              <Text style={[styles.featureText, { color: c.warm }]}>{f.text}</Text>
-            </View>
-          ))}
+              <Text style={styles.ctaText}>Get Started</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* ── Secondary Action: Sign In Link ── */}
+          <TouchableOpacity
+            style={styles.signInTouch}
+            activeOpacity={0.75}
+            onPress={() => navigation.navigate(SCREENS.LOGIN)}
+          >
+            <Text style={styles.signInPrompt}>
+              Already have an account?{' '}
+              <Text style={styles.signInHighlight}>Sign In</Text>
+            </Text>
+          </TouchableOpacity>
         </View>
-      </View>
-
-      {/* ── CTAs ── */}
-      <View style={styles.ctas}>
-        <TouchableOpacity
-          style={[styles.primaryBtn, { backgroundColor: c.primary }]}
-          onPress={() => navigation.navigate(SCREENS.ONBOARDING)}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.primaryBtnLabel}>Get Started</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.ghostBtn, { backgroundColor: c.card, borderColor: c.border }]}
-          onPress={() => navigation.navigate(SCREENS.LOGIN)}
-          activeOpacity={0.85}
-        >
-          <Text style={[styles.ghostBtnLabel, { color: c.primary }]}>Sign In</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#1E2768',
   },
-  center: {
-    flex: 1,
-    alignItems: 'center',
+
+  heroBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+  },
+
+  vignetteOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: SCREEN_HEIGHT * 0.72,
+  },
+
+  topSafeArea: {
+    zIndex: 10,
+  },
+
+  topBrandRow: {
+    flexDirection: 'row',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingTop: 12,
   },
-  logoWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    // TODO: add shadow / glow via elevation / shadowColor
-  },
-  logoText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 26,
-  },
-  brandName: {
-    fontSize: 36,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-    marginBottom: 4,
-  },
-  tagline: {
-    fontSize: 13,
-    fontWeight: '500',
-    textAlign: 'center',
-    marginBottom: 28,
-  },
-  features: {
-    width: '100%',
-    gap: 10,
-  },
-  featurePill: {
+
+  brandPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    padding: 10,
-    borderRadius: 14,
+    gap: 6,
+    backgroundColor: 'rgba(30, 39, 104, 0.75)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
     borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
-  featureDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+
+  brandPillText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 1.4,
+  },
+
+  bottomSafeArea: {
+    marginTop: 'auto',
+    zIndex: 10,
+  },
+
+  contentWrap: {
+    paddingHorizontal: 28,
+    paddingBottom: 24,
+    alignItems: 'center',
+  },
+
+  headline: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.8,
+    textAlign: 'center',
+    marginBottom: 10,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+  },
+
+  subtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#CBD5E1',
+    fontWeight: '400',
+    textAlign: 'center',
+    marginBottom: 32,
+    paddingHorizontal: 10,
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+
+  ctaButton: {
+    width: '100%',
+    borderRadius: 999,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 8,
+    marginBottom: 18,
+  },
+
+  ctaGradient: {
+    paddingVertical: 18,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  featureDotText: {
-    fontSize: 9,
+
+  ctaText: {
+    fontSize: 16.5,
     fontWeight: '800',
-  },
-  featureText: {
-    fontSize: 12,
-    fontWeight: '500',
-    flex: 1,
-  },
-  ctas: {
-    paddingHorizontal: 24,
-    paddingBottom: 36,
-    gap: 12,
-  },
-  primaryBtn: {
-    borderRadius: 18,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  primaryBtnLabel: {
     color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+
+  signInTouch: {
+    paddingVertical: 8,
+  },
+
+  signInPrompt: {
+    fontSize: 13.5,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+
+  signInHighlight: {
+    color: '#60A5FA',
     fontWeight: '700',
-    fontSize: 15,
-  },
-  ghostBtn: {
-    borderRadius: 18,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  ghostBtnLabel: {
-    fontWeight: '600',
-    fontSize: 14,
+    textDecorationLine: 'underline',
   },
 });

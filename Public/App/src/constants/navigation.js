@@ -28,6 +28,7 @@ export const SCREENS = {
   VERIFICATION: 'Verification',
   ESCROW_TRACKER: 'EscrowTracker',
   PROFILE: 'Profile',
+  PROFILE_ANALYTICS: 'ProfileAnalytics',
 };
 
 // Bottom tab config — mirrors BottomNav in prototype

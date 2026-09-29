@@ -347,6 +347,13 @@ export async function getMyEscrowOrdersApi(token) {
 /**
  * Fetch full profile data for authenticated user.
  */
+/**
+ * Fetch aggregated analytics for authenticated user since joining.
+ */
+export async function getUserAnalyticsApi(token) {
+  return apiRequest('/user/analytics', { method: 'GET' }, token);
+}
+
 export async function getUserProfileApi(token) {
   return apiRequest('/user/profile', { method: 'GET' }, token);
 }

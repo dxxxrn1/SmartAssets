@@ -16,6 +16,7 @@ const {
   getTransactions,
   lodgeSupport,
   getSupportTickets,
+  getAnalytics,
 } = require('../controllers/userController');
 
 // All user routes are protected by requireAuth
@@ -32,6 +33,7 @@ router.get('/transactions', getTransactions);
 
 // Profile & Account Management
 router.get('/profile', getProfile);
+router.get('/analytics', getAnalytics);
 router.put('/profile', updateProfile);
 router.delete('/account', deleteAccount);
 

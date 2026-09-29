@@ -19,7 +19,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { useColors } from "../constants/theme";
+import { useColors, ALIM } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -215,7 +215,7 @@ export default function VaultScreen({ navigation, isDark }) {
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: "#2D0A4E" }]}
+      style={[styles.safe, { backgroundColor: ALIM.darkHeader }]}
     >
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -224,12 +224,7 @@ export default function VaultScreen({ navigation, isDark }) {
       >
         {/* ── UNIFIED GRADIENT (Deep Purple -> Midnight) ── */}
         <LinearGradient
-          colors={[
-            "#a6c2ffff",
-            "#4d73d2ff",
-            "#0b0f16ff",
-            "#111827"
-          ]}
+          colors={ALIM.darkHeaderGradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={styles.unifiedGradient}
@@ -275,13 +270,18 @@ export default function VaultScreen({ navigation, isDark }) {
               onPress={() => setDepositModalVisible(true)}
               activeOpacity={0.8}
             >
-              <Feather name="arrow-up-right" size={16} color="#0F172A" />
+              <Feather name="arrow-up-right" size={16} color="#FFFFFF" />
               <Text style={styles.depositBtnText}>Deposit</Text>
             </TouchableOpacity>
           </View>
 
-          {/* ── PORTFOLIO SECTION (Elevated Dark Container) ── */}
-          <View style={styles.portfolioSection}>
+          {/* ── PORTFOLIO SECTION (Elevated Coral Crimson Container #FB2A52) ── */}
+          <LinearGradient
+            colors={["#FB2A52", "#E11D48"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
+            style={styles.portfolioSection}
+          >
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitleDark}>Vault Ledger</Text>
               <TouchableOpacity onPress={() => loadVault()}>
@@ -316,7 +316,7 @@ export default function VaultScreen({ navigation, isDark }) {
                 contentContainerStyle={styles.cardsScroll}
               >
                 {loading ? (
-                  <ActivityIndicator size="large" color="#BBF7D0" style={{ margin: 40 }} />
+                  <ActivityIndicator size="large" color="#00A86B" style={{ margin: 40 }} />
                 ) : holdings.length === 0 ? (
                   <View style={styles.emptyCard}>
                     <Feather name="shield" size={28} color="#94A3B8" style={{ marginBottom: 8 }} />
@@ -326,7 +326,10 @@ export default function VaultScreen({ navigation, isDark }) {
                     </Text>
                   </View>
                 ) : (
-                  holdings.map((item) => (
+                  holdings.map((item, idx) => {
+                    const ACCENT_COLORS = ['#FF2D55', '#9333EA', '#FF9500'];
+                    const itemAccent = ACCENT_COLORS[idx % ACCENT_COLORS.length];
+                    return (
                     <TouchableOpacity
                       key={item.id}
                       style={styles.portfolioAssetCardWhite}
@@ -347,14 +350,15 @@ export default function VaultScreen({ navigation, isDark }) {
                         </View>
                       </View>
                       <View style={styles.cardBottomRow}>
-                        <Text style={styles.cardPrice}>{item.price}</Text>
+                        <Text style={[styles.cardPrice, { color: "#FFFFFF" }]}>{item.price}</Text>
                         <View style={styles.cardGainPill}>
-                          <Feather name={item.positive ? "trending-up" : "trending-down"} size={10} color="#059669" />
+                          <Feather name={item.positive ? "trending-up" : "trending-down"} size={10} color="#FFFFFF" />
                           <Text style={styles.cardGainText}>{item.gain_pct || "+0%"}</Text>
                         </View>
                       </View>
                     </TouchableOpacity>
-                  ))
+                    );
+                  })
                 )}
               </ScrollView>
             )}
@@ -377,7 +381,10 @@ export default function VaultScreen({ navigation, isDark }) {
                 ) : (
                   holdings
                     .filter((i) => i.asset_type === "fractional")
-                    .map((item) => (
+                    .map((item, idx) => {
+                      const ACCENT_COLORS = ['#FF2D55', '#9333EA', '#FF9500'];
+                      const itemAccent = ACCENT_COLORS[idx % ACCENT_COLORS.length];
+                      return (
                       <TouchableOpacity
                         key={item.id}
                         style={styles.portfolioAssetCardWhite}
@@ -393,14 +400,15 @@ export default function VaultScreen({ navigation, isDark }) {
                           </View>
                         </View>
                         <View style={styles.cardBottomRow}>
-                          <Text style={styles.cardPrice}>{item.price}</Text>
+                          <Text style={[styles.cardPrice, { color: "#FFFFFF" }]}>{item.price}</Text>
                           <View style={styles.cardGainPill}>
-                            <Feather name="check" size={10} color="#059669" />
+                            <Feather name="check" size={10} color="#FFFFFF" />
                             <Text style={styles.cardGainText}>Verified Co-Owner</Text>
                           </View>
                         </View>
                       </TouchableOpacity>
-                    ))
+                      );
+                    })
                 )}
               </ScrollView>
             )}
@@ -461,7 +469,7 @@ export default function VaultScreen({ navigation, isDark }) {
                 )}
               </View>
             )}
-          </View>
+          </LinearGradient>
         </LinearGradient>
 
         {/* ── BOTTOM DARK SECTION (WATCHLIST) ── */}
@@ -617,10 +625,11 @@ export default function VaultScreen({ navigation, isDark }) {
               style={[
                 styles.modalActionBtn, 
                 { 
-                  backgroundColor: "#ffffffff", 
+                  backgroundColor: "#3666DD", 
                   borderWidth: 1, 
-                  borderColor: "#E2E8F0", 
-                  shadowOpacity: 0.15, 
+                  borderColor: "#3666DD", 
+                  shadowColor: "#2563EB",
+                  shadowOpacity: 0.35, 
                   shadowRadius: 8, 
                   elevation: 4, 
                   shadowOffset: { width: 0, height: 4 },
@@ -631,9 +640,9 @@ export default function VaultScreen({ navigation, isDark }) {
               disabled={depositing}
             >
               {depositing ? (
-                <ActivityIndicator color="#0F172A" />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={[styles.modalActionBtnText, { color: "#0F172A" }]}>Confirm Deposit</Text>
+                <Text style={[styles.modalActionBtnText, { color: "#FFFFFF", fontWeight: "800" }]}>Confirm Deposit</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -751,9 +760,13 @@ export default function VaultScreen({ navigation, isDark }) {
               style={[
                 styles.modalActionBtn, 
                 { 
-                  backgroundColor: "#F1F5F9", 
-                  borderColor: "#F1F5F9", 
+                  backgroundColor: "#3666DD", 
+                  borderColor: "#3666DD", 
                   borderWidth: 1, 
+                  shadowColor: "#2563EB",
+                  shadowOpacity: 0.35, 
+                  shadowRadius: 8, 
+                  elevation: 4, 
                   marginTop: 16 
                 }
               ]}
@@ -761,9 +774,9 @@ export default function VaultScreen({ navigation, isDark }) {
               disabled={withdrawing}
             >
               {withdrawing ? (
-                <ActivityIndicator color="#0F172A" />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={[styles.modalActionBtnText, { color: "#0F172A" }]}>Confirm Withdrawal</Text>
+                <Text style={[styles.modalActionBtnText, { color: "#FFFFFF", fontWeight: "800" }]}>Confirm Withdrawal</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -775,7 +788,7 @@ export default function VaultScreen({ navigation, isDark }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { flexGrow: 1, backgroundColor: "#0F1A2E" },
+  scroll: { flexGrow: 1, backgroundColor: ALIM.canvas },
 
   unifiedGradient: {
     paddingTop: 10,
@@ -805,7 +818,9 @@ const styles = StyleSheet.create({
     marginBottom: 28,
   },
   balanceLabel: { fontSize: 13, color: "#E2E8F0", fontWeight: "500", marginBottom: 8 },
-  balanceValue: { fontSize: 38, fontWeight: "800", color: "#FFFFFF", letterSpacing: -1, marginBottom: 8 },
+  balanceValue: {
+    fontSize: 38,
+    fontWeight: "800", color: "#FFFFFF", letterSpacing: -1, marginBottom: 8 },
   balanceGain: { fontSize: 12, color: "#E2E8F0", fontWeight: "600" },
   balanceGainPct: { color: "#10B981", fontWeight: "700" },
 
@@ -819,46 +834,50 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     paddingHorizontal: 28,
     paddingVertical: 14,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.4)",
+    borderColor: "rgba(255, 255, 255, 0.15)",
   },
   withdrawBtnText: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
   depositBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: '#FF9500',
     paddingHorizontal: 28,
     paddingVertical: 14,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    shadowColor: "#000",
+    borderColor: '#FF9500',
+    shadowColor: '#EA580C',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    shadowColor: '#EA580C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 5,
   },
-  depositBtnText: { fontSize: 15, fontWeight: "700", color: "#0F172A" },
+  depositBtnText: { fontSize: 15, fontWeight: "800", color: '#FFFFFF' },
 
   // -- Portfolio Elevated Card --
   portfolioSection: {
-    backgroundColor: "#000000",
+    backgroundColor: "#FB2A52",
     marginTop: 20,
     marginHorizontal: 16,
     paddingVertical: 24,
     borderRadius: 32,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 10,
+    borderColor: "rgba(255, 255, 255, 0.25)",
+    shadowColor: "#9F1239",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 5,
     minHeight: 250,
   },
   sectionHeaderRow: {
@@ -868,18 +887,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     marginBottom: 20,
   },
-  sectionTitleDark: { fontSize: 15, fontWeight: "700", color: "#F1F5F9", marginBottom: 2 },
-  viewAllTextDark: { fontSize: 12, fontWeight: "600", color: "#38BDF8" },
+  sectionTitleDark: { fontSize: 17, fontWeight: "800", color: "#FFFFFF", marginBottom: 2 },
+  viewAllTextDark: { fontSize: 12, fontWeight: "800", color: "#FFFFFF" },
 
   tabContainer: {
     flexDirection: "row",
-    backgroundColor: "#0F172A",
+    backgroundColor: "#F1F5F9",
     marginHorizontal: 24,
     borderRadius: 999,
     padding: 4,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
+    borderColor: "#EDE9E1",
   },
   tabBtn: {
     flex: 1,
@@ -887,9 +906,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderRadius: 999,
   },
-  tabBtnActive: { backgroundColor: "#3B82F6" },
-  tabText: { fontSize: 13, fontWeight: "600", color: "#94A3B8" },
-  tabTextActive: { color: "#FFFFFF" },
+  tabBtnActive: { backgroundColor: '#9333EA' },
+  tabText: { fontSize: 13, fontWeight: "600", color: "#64748B" },
+  tabTextActive: { color: '#FFFFFF', fontWeight: "700" },
 
   // -- Horizontal asset cards --
   cardsScroll: {
@@ -902,47 +921,44 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 16,
     justifyContent: "space-between",
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "#AF52DE",
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#581C87",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
   },
   cardTopRow: { gap: 10 },
   cardThumbWrapWhite: {
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(255, 255, 255, 0.35)",
   },
   cardLogo: { width: 36, height: 36, borderRadius: 8 },
-  cardTitleDark: { fontSize: 13, fontWeight: "600", marginBottom: 2, color: "#F1F5F9" },
-  cardSub: { fontSize: 11, fontWeight: "500", color: "#94A3B8" },
-  cardBottomRow: { gap: 6 },
-  cardPrice: { fontSize: 13, fontWeight: "700", color: "#F1F5F9" },
+  cardTitleDark: { fontSize: 14, fontWeight: "800", marginBottom: 2, color: "#FFFFFF" },
+
+  cardSub: { fontSize: 11, fontWeight: "600", color: "rgba(255, 255, 255, 0.85)" },
+  cardBottomRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  cardPrice: { fontSize: 15, fontWeight: "800", color: "#FFFFFF" },
   cardGainPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(52,211,153,0.12)",
-    alignSelf: "flex-start",
+    backgroundColor: "rgba(255, 255, 255, 0.22)",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
-  cardGainText: { fontSize: 9, fontWeight: "700", color: "#34D399" },
-  emptyCard: {
-    width: 300,
-    height: 160,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#1E293B",
-    borderRadius: 24,
-    padding: 16,
-  },
+  cardGainText: { fontSize: 10, fontWeight: "800", color: "#FFFFFF" },
+
 
   // -- Transactions Tab --
   transactionsContainer: {
@@ -953,12 +969,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(255,255,255,0.03)",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(255, 255, 255, 0.25)",
   },
   txLeft: {
     flexDirection: "row",
@@ -975,11 +991,11 @@ const styles = StyleSheet.create({
   txTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#F1F5F9",
+    color: "#FFFFFF",
   },
   txSub: {
     fontSize: 11,
-    color: "#94A3B8",
+    color: "rgba(255, 255, 255, 0.75)",
   },
   txRight: {
     alignItems: "flex-end",
@@ -988,10 +1004,11 @@ const styles = StyleSheet.create({
   txAmount: {
     fontSize: 14,
     fontWeight: "800",
+    color: "#FFFFFF",
   },
   txStatus: {
     fontSize: 10,
-    color: "#10B981",
+    color: "#00A86B",
     fontWeight: "700",
   },
 
@@ -1000,7 +1017,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   bottomDarkSection: {
-    backgroundColor: "#000000",
+    backgroundColor: ALIM.canvas,
     paddingTop: 32,
     paddingBottom: 40,
     minHeight: 260,
@@ -1027,11 +1044,13 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.1)",
   },
   watchLogo: { width: "100%", height: "100%", borderRadius: 12 },
-  watchTitle: { fontSize: 13, fontWeight: "600", color: "#F1F5F9", marginBottom: 2 },
-  watchSub: { fontSize: 11, fontWeight: "500", color: "#94A3B8" },
+  watchTitle: { fontSize: 13, fontWeight: "700", color: "#FFFFFF", marginBottom: 2 },
+  watchSub: { fontSize: 11, fontWeight: "500", color: "#64748B" },
   watchRight: { alignItems: "flex-end", gap: 4 },
-  watchPrice: { fontSize: 13, fontWeight: "700", color: "#F1F5F9" },
-  watchGain: { fontSize: 9, fontWeight: "700" },
+  watchPrice: {
+    fontSize: 13,
+    fontWeight: "800", color: "#FFFFFF",
+  },
 
   // -- Modal Styles --
   modalOverlay: {
@@ -1040,12 +1059,12 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   modalCard: {
-    backgroundColor: "#0F172A",
+    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
     borderTopWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: "#E2E8F0",
     maxHeight: "85%",
   },
   modalHeader: {
@@ -1057,7 +1076,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: "#0F172A",
   },
   closeBtn: {
     padding: 4,
@@ -1086,24 +1105,24 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#94A3B8",
+    color: "#475569",
     marginBottom: 8,
     marginTop: 6,
   },
   amountInputWrap: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1E293B",
+    backgroundColor: "#F8FAFC",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#334155",
+    borderColor: "#E2E8F0",
     paddingHorizontal: 16,
     marginBottom: 12,
   },
   currencyPrefix: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#94A3B8",
+    color: "#475569",
     marginRight: 6,
   },
   amountInput: {
@@ -1111,7 +1130,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 18,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: "#0F172A",
   },
   maxBtn: {
     backgroundColor: "rgba(56, 189, 248, 0.15)",
@@ -1131,9 +1150,9 @@ const styles = StyleSheet.create({
   },
   chipBtn: {
     flex: 1,
-    backgroundColor: "#1E293B",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "#334155",
+    borderColor: "#E2E8F0",
     paddingVertical: 8,
     borderRadius: 10,
     alignItems: "center",
@@ -1141,7 +1160,7 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#E2E8F0",
+    color: "#334155",
   },
   methodSelectorRow: {
     flexDirection: "row",
@@ -1154,43 +1173,43 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "#1E293B",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: "#334155",
+    borderColor: "#E2E8F0",
     paddingVertical: 10,
     borderRadius: 12,
   },
   methodBtnActive: {
-    backgroundColor: "#3B82F6",
-    borderColor: "#3B82F6",
+    backgroundColor: "#3666DD",
+    borderColor: "#3666DD",
   },
   methodBtnText: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#94A3B8",
+    color: "#475569",
   },
   methodBtnTextActive: {
     color: "#FFFFFF",
   },
   textInput: {
-    backgroundColor: "#1E293B",
+    backgroundColor: "#F8FAFC",
     borderWidth: 1,
-    borderColor: "#334155",
+    borderColor: "#E2E8F0",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 13,
-    color: "#FFFFFF",
+    color: "#0F172A",
     fontWeight: "500",
   },
   modalSummaryBox: {
-    backgroundColor: "rgba(255,255,255,0.03)",
+    backgroundColor: "#F8FAFC",
     borderRadius: 12,
     padding: 12,
     marginVertical: 14,
     gap: 6,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    borderColor: "#E2E8F0",
   },
   summaryRow: {
     flexDirection: "row",
@@ -1198,12 +1217,12 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 12,
-    color: "#94A3B8",
+    color: "#475569",
   },
   summaryValue: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#F1F5F9",
+    color: "#0F172A",
   },
   summaryValueFree: {
     fontSize: 12,
@@ -1211,7 +1230,7 @@ const styles = StyleSheet.create({
     color: "#10B981",
   },
   modalActionBtn: {
-    backgroundColor: "#10B981",
+    backgroundColor: "#3666DD",
     paddingVertical: 16,
     borderRadius: 14,
     alignItems: "center",
@@ -1220,6 +1239,7 @@ const styles = StyleSheet.create({
   modalActionBtnText: {
     fontSize: 15,
     fontWeight: "800",
-    color: "#0F172A",
+    color: "#FFFFFF",
   },
+
 });

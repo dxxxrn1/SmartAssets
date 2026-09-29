@@ -23,6 +23,7 @@ import { useColors } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
 import {
   getEscrowOrderApi,
+  getMyEscrowOrdersApi,
   releaseEscrowApi,
   refundEscrowApi,
   progressEscrowStepApi,
@@ -69,7 +70,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
           onPress: async () => {
             setReleasing(true);
             try {
-              const res = await releaseEscrowApi(orderId, token);
+              const res = await releaseEscrowApi(order?.orderId, token);
               if (res?.success && res.order) {
                 setOrder(res.order);
                 Alert.alert(
@@ -95,7 +96,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
   const handleProgressStep = async (nextStep, note) => {
     setProgressing(true);
     try {
-      const res = await progressEscrowStepApi(orderId, nextStep, note, token);
+      const res = await progressEscrowStepApi(order?.orderId, nextStep, note, token);
       if (res?.success && res.order) {
         setOrder(res.order);
         Alert.alert(

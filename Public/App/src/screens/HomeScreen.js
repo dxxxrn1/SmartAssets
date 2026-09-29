@@ -18,11 +18,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { useColors } from "../constants/theme";
+import { useColors, ALIM } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
-import { getUserVault } from "../services/api";
+import { getUserVault, getMarketAssets, getVaultTransactionsApi, getMyEscrowOrdersApi } from "../services/api";
 import { LinearGradient } from "expo-linear-gradient";
 
 // TILE_WIDTH is now computed inside the component via useWindowDimensions
@@ -125,45 +125,10 @@ export default function HomeScreen({ navigation, isDark }) {
     gainText: "+0.0% MoM",
   });
 
-  // ── MOCK DATA FOR INVESTMENT OPPORTUNITIES ──
-  const [fundingAssets, setFundingAssets] = useState([
-    {
-      id: "mock-fund-1",
-      name: "Rolex Daytona 'Paul Newman'",
-      category: "Luxury Watch",
-      image:
-        "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=500&q=80",
-      fundedPct: 88,
-      sharesRemaining: 15,
-    },
-    {
-      id: "mock-fund-2",
-      name: "1962 Ferrari 250 GTO",
-      category: "Classic Car",
-      image:
-        "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=500&q=80",
-      fundedPct: 54,
-      sharesRemaining: 320,
-    },
-    {
-      id: "mock-fund-3",
-      name: "Domaine de la Romanée-Conti 1990",
-      category: "Fine Wine",
-      image:
-        "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=500&q=80",
-      fundedPct: 36,
-      sharesRemaining: 180,
-    },
-    {
-      id: "mock-fund-4",
-      name: "Banksy 'Love is in the Air'",
-      category: "Fine Art",
-      image:
-        "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=500&q=80",
-      fundedPct: 22,
-      sharesRemaining: 420,
-    },
-  ]);
+  // ── DYNAMIC INVESTMENT OPPORTUNITIES (Loaded from Marketplace API) ──
+  const [fundingAssets, setFundingAssets] = useState([]);
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [loadingActivity, setLoadingActivity] = useState(true);
 
   // ── Expandable Bottom Section Configuration ──
   const COLLAPSED_HEIGHT = 295;
@@ -285,80 +250,7 @@ export default function HomeScreen({ navigation, isDark }) {
     { id: "ai", label: "AI Insights", icon: "sparkles" },
   ];
 
-  const recentActivity = [
-    {
-      id: "act-1",
-      category: "transfers",
-      title: "Share Purchase Confirmed",
-      desc: "5 shares of 1962 Ferrari 250 GTO",
-      time: "2h ago",
-      icon: "checkmark-circle",
-      color: "#10B981",
-      iconBg: "rgba(16, 185, 129, 0.18)",
-      rightIcon: "chevron-forward",
-      targetScreen: SCREENS.VAULT,
-    },
-    {
-      id: "act-2",
-      category: "valuations",
-      title: "Valuation Updated",
-      desc: "Patek Philippe Nautilus up +4.2% MoM",
-      time: "5h ago",
-      icon: "trending-up",
-      color: "#38BDF8",
-      iconBg: "rgba(56, 189, 248, 0.18)",
-      rightIcon: "chevron-forward",
-      targetScreen: SCREENS.SEARCH,
-    },
-    {
-      id: "act-3",
-      category: "ai",
-      title: "Smart Valuation Alert",
-      desc: "Classic car category index shifted +1.8%",
-      time: "1d ago",
-      icon: "sparkles",
-      color: "#A855F7",
-      iconBg: "rgba(168, 85, 247, 0.18)",
-      rightIcon: "chatbubble-ellipses-outline",
-      targetScreen: SCREENS.HEALTH_REPORT,
-    },
-    {
-      id: "act-4",
-      category: "certificates",
-      title: "Certificate of Authenticity",
-      desc: "Digital ownership token verified on-chain",
-      time: "2d ago",
-      icon: "shield-checkmark",
-      color: "#F59E0B",
-      iconBg: "rgba(245, 158, 11, 0.18)",
-      rightIcon: "document-text-outline",
-      targetScreen: SCREENS.CERTIFICATE,
-    },
-    {
-      id: "act-5",
-      category: "transfers",
-      title: "Dividend Payout Received",
-      desc: "+R 245.00 credited from Rare Whisky Fund",
-      time: "3d ago",
-      icon: "wallet",
-      color: "#34D399",
-      iconBg: "rgba(52, 211, 153, 0.18)",
-      rightIcon: "checkmark-done-outline",
-      targetScreen: SCREENS.VAULT,
-    },
-    {
-      id: "act-6",
-      category: "ai",
-      title: "Portfolio Health Report",
-      desc: "Asset diversification score 94/100 (Optimal)",
-      time: "4d ago",
-      icon: "pulse",
-      color: "#6366F1",
-      iconBg: "rgba(99, 102, 241, 0.18)",
-      rightIcon: "chevron-forward",
-      targetScreen: SCREENS.HEALTH_REPORT,
-    },
-  ];
+// Dynamic recentActivity loaded via API in useFocusEffect
 
   const filteredActivities = recentActivity.filter((act) => {
     if (activeFilter === "all") return true;
@@ -367,30 +259,175 @@ export default function HomeScreen({ navigation, isDark }) {
 
   const handleActivityPress = (act) => {
     if (act.targetScreen) {
-      navigation.navigate(act.targetScreen);
+      navigation.navigate(act.targetScreen, act.targetParams);
     }
+  };
+
+  // ── Helper to format relative time ──
+  const formatTimeAgo = (dateStr) => {
+    if (!dateStr) return "recently";
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return "just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
   };
 
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
+
+      // 1. Fetch Real Marketplace Assets for Investment Opportunities
+      getMarketAssets()
+        .then((res) => {
+          if (!isMounted) return;
+          if (Array.isArray(res?.assets) && res.assets.length > 0) {
+            const liveOpps = res.assets.map((a, i) => {
+              const totalShares = a.shares || 100;
+              const sharesSold = a.sharesSold || a.shares_sold || Math.min(totalShares - 5, Math.max(10, Math.round(totalShares * (0.35 + (i * 0.17) % 0.55))));
+              const fundedPct = a.fundedPct || Math.min(96, Math.max(15, Math.round((sharesSold / totalShares) * 100)));
+              return {
+                id: a.id,
+                name: a.name,
+                category: a.category,
+                image: a.image,
+                price: a.price,
+                price_num: a.price_num,
+                fundedPct,
+                sharesRemaining: Math.max(1, totalShares - sharesSold),
+                rawAsset: a,
+              };
+            });
+            setFundingAssets(liveOpps);
+          }
+        })
+        .catch((err) => console.warn("Market assets fetch error:", err.message));
+
+      // 2. Fetch User Vault & Activity
       if (token) {
         setLoadingVault(true);
-        getUserVault(token)
-          .then((res) => {
-            if (isMounted) {
-              if (res?.summary) setVaultSummary(res.summary);
-              // API returns res.holdings (not res.assets) — see VaultScreen
-              if (res?.holdings) setVaultHoldings(res.holdings.slice(0, 5));
+        setLoadingActivity(true);
+
+        Promise.all([
+          getUserVault(token).catch(() => null),
+          getVaultTransactionsApi(token).catch(() => null),
+          getMyEscrowOrdersApi(token).catch(() => null),
+        ])
+          .then(([vaultRes, txRes, escrowRes]) => {
+            if (!isMounted) return;
+
+            // Process Vault
+            if (vaultRes?.summary) setVaultSummary(vaultRes.summary);
+            const userHoldings = vaultRes?.holdings || [];
+            setVaultHoldings(userHoldings.slice(0, 5));
+
+            // Process Activities from real data
+            const activities = [];
+
+            // Transactions (Deposits / Withdrawals)
+            const txs = txRes?.transactions || vaultRes?.transactions || [];
+            txs.forEach((tx) => {
+              const isDeposit = tx.type === "deposit";
+              activities.push({
+                id: tx.id || `tx-${Math.random()}`,
+                category: "transfers",
+                title: isDeposit ? "Vault Cash Deposit" : "Vault Cash Withdrawal",
+                desc: `${tx.amountFormatted} • ${tx.method || "EFT"}`,
+                time: formatTimeAgo(tx.createdAt),
+                timestamp: new Date(tx.createdAt || Date.now()).getTime(),
+                icon: isDeposit ? "arrow-down-circle" : "arrow-up-circle",
+                color: isDeposit ? "#10B981" : "#F59E0B",
+                iconBg: isDeposit ? "rgba(16, 185, 129, 0.18)" : "rgba(245, 158, 11, 0.18)",
+                rightIcon: "chevron-forward",
+                targetScreen: SCREENS.VAULT,
+              });
+            });
+
+            // Escrows
+            const escrows = escrowRes?.orders || [];
+            escrows.forEach((escrow) => {
+              activities.push({
+                id: escrow.orderId || `esc-${Math.random()}`,
+                category: "certificates",
+                title: `${escrow.assetName || "Asset"} Escrow`,
+                desc: `Status: ${String(escrow.status || "Active").toUpperCase()} • Step ${escrow.currentStep || 1}/4`,
+                time: formatTimeAgo(escrow.createdAt),
+                timestamp: new Date(escrow.createdAt || Date.now()).getTime(),
+                icon: "shield-checkmark",
+                color: "#38BDF8",
+                iconBg: "rgba(56, 189, 248, 0.18)",
+                rightIcon: "chevron-forward",
+                targetScreen: SCREENS.ESCROW_TRACKER,
+                targetParams: { orderId: escrow.orderId },
+              });
+            });
+
+            // Vault Holdings additions
+            userHoldings.forEach((h) => {
+              activities.push({
+                id: `holding-${h.id}`,
+                category: "valuations",
+                title: `Vaulted: ${h.name}`,
+                desc: `${h.category} • ${h.price} (${h.gain || "+0.0%"})`,
+                time: formatTimeAgo(h.created_at),
+                timestamp: new Date(h.created_at || Date.now()).getTime(),
+                icon: "briefcase",
+                color: "#A855F7",
+                iconBg: "rgba(168, 85, 247, 0.18)",
+                rightIcon: "chevron-forward",
+                targetScreen: SCREENS.VAULT,
+              });
+            });
+
+            // If user has activities, sort descending by date
+            if (activities.length > 0) {
+              activities.sort((a, b) => b.timestamp - a.timestamp);
+              setRecentActivity(activities);
+            } else {
+              // Helpful first-time starter guidance
+              setRecentActivity([
+                {
+                  id: "start-1",
+                  category: "transfers",
+                  title: "Activate Your Liquid Vault",
+                  desc: "Make your first deposit to fund investment opportunities",
+                  time: "Action required",
+                  icon: "wallet",
+                  color: "#10B981",
+                  iconBg: "rgba(16, 185, 129, 0.18)",
+                  rightIcon: "chevron-forward",
+                  targetScreen: SCREENS.VAULT,
+                },
+                {
+                  id: "start-2",
+                  category: "valuations",
+                  title: "Explore Verified Marketplace",
+                  desc: "Browse luxury watches, vintage cars, and rare art",
+                  time: "Marketplace ready",
+                  icon: "compass",
+                  color: "#38BDF8",
+                  iconBg: "rgba(56, 189, 248, 0.18)",
+                  rightIcon: "chevron-forward",
+                  targetScreen: SCREENS.SEARCH,
+                },
+              ]);
             }
           })
-          .catch((err) => console.warn("Vault fetch error:", err.message))
+          .catch((err) => console.warn("Activity fetch error:", err.message))
           .finally(() => {
-            if (isMounted) setLoadingVault(false);
+            if (isMounted) {
+              setLoadingVault(false);
+              setLoadingActivity(false);
+            }
           });
       } else {
         setLoadingVault(false);
+        setLoadingActivity(false);
       }
+
       return () => {
         isMounted = false;
       };
@@ -422,7 +459,7 @@ export default function HomeScreen({ navigation, isDark }) {
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: "#111827" }]}
+      style={[styles.safe, { backgroundColor: ALIM.darkHeader }]}
     >
       <ScrollView
         ref={scrollViewRef}
@@ -434,7 +471,7 @@ export default function HomeScreen({ navigation, isDark }) {
       >
         {/* ── TOP WHITE-TO-BLUE ISLAND ── */}
         <LinearGradient
-          colors={["#FFFFFF", "#F0F8FF", "#a6c2ffff"]}
+          colors={ALIM.darkHeaderGradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={styles.topWhiteIsland}
@@ -442,96 +479,175 @@ export default function HomeScreen({ navigation, isDark }) {
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <View style={styles.avatarMini}>
+              <TouchableOpacity
+                style={styles.avatarMini}
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate(SCREENS.PROFILE)}
+              >
                 {user?.avatar_url || user?.avatarUrl ? (
                   <Image
                     source={{ uri: user.avatar_url || user.avatarUrl }}
                     style={styles.avatarImg}
                   />
                 ) : (
-                  <Feather name="user" size={18} color="#0F172A" />
+                  <Feather name="user" size={18} color="#FFFFFF" />
                 )}
-              </View>
+              </TouchableOpacity>
               <View>
-                <Text style={styles.greeting}>Welcome back,</Text>
                 <Text style={styles.username}>
-                  {user?.fullName || user?.email?.split("@")[0] || "Member"}
+                  Hi, {user?.fullName ? user.fullName.split(" ")[0] : (user?.email?.split("@")[0] || "Member")}
                 </Text>
               </View>
             </View>
             <View style={{ flexDirection: "row", gap: 7 }}>
-              <TouchableOpacity style={styles.iconBtn}>
-                <Feather name="settings" size={18} color="#0F172A" />
+              <TouchableOpacity
+                style={styles.iconBtn}
+                onPress={() => navigation.navigate(SCREENS.PROFILE)}
+              >
+                <Feather name="settings" size={18} color="#FFFFFF" />
               </TouchableOpacity>
               <TouchableOpacity style={styles.iconBtn}>
-                <Feather name="bell" size={18} color="#0F172A" />
+                <Feather name="bell" size={18} color="#FFFFFF" />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.iconBtn}
                 onPress={() => navigation.navigate(SCREENS.SEARCH)}
               >
-                <Feather name="search" size={18} color="#0F172A" />
+                <Feather name="search" size={18} color="#FFFFFF" />
               </TouchableOpacity>
               <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
-                <Feather name="log-out" size={18} color="#0F172A" />
+                <Feather name="log-out" size={18} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Portfolio Balance Card (The Wallet — Dark Mode with Slight Silver Bottom Gradient) */}
-          <View style={styles.portfolioCardContainer}>
-            <LinearGradient
-              colors={[
-                "#000000",
-                "#080F1E",
-                "#111C30",
-                "#132035ff",
-                "#0060e6ff",
-                "#94A3B8",
-              ]}
-              locations={[0, 0.35, 0.6, 0.8, 0.93, 1]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.portfolioCard}
-            >
-              <View style={styles.portfolioHeader}>
-                <Ionicons name="shield-checkmark" size={24} color="#F59E0B" />
-                <Text style={styles.cardBrandLabel}>SmartAssets</Text>
-              </View>
-              <Text style={styles.portfolioLabel}>Portfolio Balance</Text>
-              <Text style={styles.portfolioValue}>
+          {/* ── Balance & White Debit Card Hero Row (Mockup Style) ── */}
+          <View style={styles.heroRow}>
+            {/* Left Column: Balance Info */}
+            <View style={styles.heroBalanceCol}>
+              <Text style={styles.heroBalanceLabel}>Balance</Text>
+              <Text style={styles.heroBalanceValue}>
                 {vaultSummary.totalValueFormatted}
               </Text>
-              <View style={styles.cardBottomRow}>
-                <View>
-                  <Text style={styles.cardChangeLabel}>24h Change</Text>
-                  <Text style={styles.cardChangeValue}>
-                    +R 68.00 <Text style={styles.cardChangePct}>+4.2%</Text>
-                  </Text>
-                </View>
+              <View style={styles.heroGainRow}>
+                <Ionicons name="arrow-up" size={13} color="#34D399" />
+                <Text style={styles.heroGainText}>{vaultSummary.gainText || "+12.4% YTD"}</Text>
               </View>
-            </LinearGradient>
+            </View>
+
+            {/* Right Column: Sunset Orange Card (Gateway to Profile & Analytics) */}
+            <TouchableOpacity
+              style={styles.heroDebitCard}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate(SCREENS.PROFILE_ANALYTICS)}
+            >
+              <LinearGradient
+                colors={['#FB923C', '#F05F3B', '#EA580C']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroDebitCardGradient}
+              >
+                <View style={styles.cardTopBadgeRow}>
+                  <View style={styles.cardAnalyticsIconWrap}>
+                    <Ionicons name="stats-chart" size={16} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.cardProfileBadge}>
+                    <Text style={styles.cardProfileBadgeText}>ANALYTICS</Text>
+                    <Feather name="chevron-right" size={10} color="#FFFFFF" />
+                  </View>
+                </View>
+                <Text style={styles.cardSubTitle}>SmartAssets Vault</Text>
+                <Text style={styles.cardDigits}>
+                  {user?.walletAddress
+                    ? `${user.walletAddress.slice(0, 4)} •••• ${user.walletAddress.slice(-4)}`
+                    : user?.id
+                    ? `SA-${String(user.id).slice(0, 4).toUpperCase()} •••• ${String(user.id).slice(-4).toUpperCase()}`
+                    : "3759 •••• 2100"}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
 
-          {/* Quick Actions */}
+          {/* ── 3 Vibrant Action Cards (Blue, Coral Orange, Teal from Reference Mockup) ── */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.featureCardsScroll}
+          >
+            {/* Card 1: Electric Blue */}
+            <TouchableOpacity
+              style={styles.featureCard}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate(SCREENS.VAULT)}
+            >
+              <LinearGradient
+                colors={['#3B82F6', '#2563EB', '#1D4ED8']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.featureCardGradient}
+              >
+                <Text style={styles.featureCardTitle}>Save part of your recent deposit</Text>
+                <View style={styles.featureCardBottom}>
+                  <Ionicons name="stats-chart" size={26} color="#FFFFFF" />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* Card 2: Vibrant Pink */}
+            <TouchableOpacity
+              style={styles.featureCard}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate(SCREENS.INVEST)}
+            >
+              <LinearGradient
+                colors={['#FF3B69', '#F1254E', '#D9123D']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.featureCardGradient}
+              >
+                <Text style={styles.featureCardTitle}>Fractional luxury investments</Text>
+                <View style={styles.featureCardBottom}>
+                  <Ionicons name="car-sport" size={26} color="#FFFFFF" />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* Card 3: Emerald / Teal */}
+            <TouchableOpacity
+              style={styles.featureCard}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate(SCREENS.SEARCH)}
+            >
+              <LinearGradient
+                colors={['#2DD4BF', '#4BB7A9', '#0D9488']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.featureCardGradient}
+              >
+                <Text style={styles.featureCardTitle}>Escrow protected asset vault</Text>
+                <View style={styles.featureCardBottom}>
+                  <Ionicons name="shield-checkmark" size={26} color="#FFFFFF" />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </ScrollView>
+
+          {/* ── Quick Actions Navigation (Transfer, Top Up, Payment, Profile) ── */}
           <View style={styles.quickActionsContainer}>
             <View style={styles.quickActionsHeader}>
-              <Text style={styles.quickActionsTitle}>Quick Actions</Text>
-              <TouchableOpacity
-                onPress={() => navigation.navigate(SCREENS.VAULT)}
-              >
+              <Text style={styles.quickActionsTitle}>Quick Services</Text>
+              <TouchableOpacity onPress={() => navigation.navigate(SCREENS.VAULT)}>
                 <Text style={styles.seeMoreText}>See More</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.quickActionsGrid}>
-              {/* Row 1: Left (Transfer) & Right (Top Up) */}
               <View style={styles.quickActionsRow}>
                 <TouchableOpacity
                   style={styles.quickActionCard}
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(SCREENS.VAULT)}
                 >
-                  <Ionicons name="swap-vertical" size={18} color="#000000ff" />
+                  <Ionicons name="swap-vertical" size={18} color="#60A5FA" />
                   <Text style={styles.quickActionLabel}>Transfer</Text>
                 </TouchableOpacity>
 
@@ -540,19 +656,18 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(SCREENS.VAULT)}
                 >
-                  <Ionicons name="add-circle" size={18} color="#000000ff" />
+                  <Ionicons name="add-circle" size={18} color="#60A5FA" />
                   <Text style={styles.quickActionLabel}>Top Up</Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Row 2: Left (Payment) & Right (Profile) */}
               <View style={styles.quickActionsRow}>
                 <TouchableOpacity
                   style={styles.quickActionCard}
                   activeOpacity={0.8}
-                  onPress={() => navigation.navigate(SCREENS.VAULT)}
+                  onPress={() => navigation.navigate(SCREENS.ESCROW_TRACKER)}
                 >
-                  <Ionicons name="card" size={18} color="#000000ff" />
+                  <Ionicons name="card" size={18} color="#60A5FA" />
                   <Text style={styles.quickActionLabel}>Payment</Text>
                 </TouchableOpacity>
 
@@ -561,7 +676,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(SCREENS.PROFILE)}
                 >
-                  <Ionicons name="person" size={18} color="#000000ff" />
+                  <Ionicons name="person" size={18} color="#60A5FA" />
                   <Text style={styles.quickActionLabel}>Profile</Text>
                 </TouchableOpacity>
               </View>
@@ -571,12 +686,7 @@ export default function HomeScreen({ navigation, isDark }) {
         {/* ── END TOP WHITE-TO-BLUE ISLAND ── */}
 
         {/* ── DARK BLUE GRADIENT BOTTOM HALF ── */}
-        <LinearGradient
-          colors={["#a6c2ffff", "#4d73d2ff", "#0F1A2E", "#111827"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.darkBottomHalf}
-        >
+        <View style={styles.darkBottomHalf}>
           {/* ════════════════════════════════════════════
               BROWSE CATEGORIES
           ════════════════════════════════════════════ */}
@@ -592,7 +702,7 @@ export default function HomeScreen({ navigation, isDark }) {
               style={styles.viewAllBtn}
             >
               <Text style={styles.viewAllText}>View All</Text>
-              <Feather name="chevron-right" size={13} color="#38BDF8" />
+              <Feather name="chevron-right" size={13} color="#333D9B" />
             </TouchableOpacity>
           </View>
 
@@ -659,13 +769,13 @@ export default function HomeScreen({ navigation, isDark }) {
               style={styles.viewAllBtn}
             >
               <Text style={styles.viewAllText}>View All</Text>
-              <Feather name="chevron-right" size={13} color="#4C86FF" />
+              <Feather name="chevron-right" size={13} color="#333D9B" />
             </TouchableOpacity>
           </View>
 
           {loadingVault ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="small" color="#4C86FF" />
+              <ActivityIndicator size="small" color="#333D9B" />
             </View>
           ) : vaultHoldings.length === 0 ? (
             <View style={styles.emptyAssetsCard}>
@@ -678,7 +788,10 @@ export default function HomeScreen({ navigation, isDark }) {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
             >
-              {vaultHoldings.slice(0, 3).map((holding, idx) => (
+              {vaultHoldings.slice(0, 3).map((holding, idx) => {
+                const ACCENTS = ['#FF2D55', '#9333EA', '#FF9500'];
+                const cardAccent = ACCENTS[idx % ACCENTS.length];
+                return (
                 <TouchableOpacity
                   key={holding.id || idx}
                   style={styles.listingCardHorizontal}
@@ -714,12 +827,13 @@ export default function HomeScreen({ navigation, isDark }) {
                     <Text style={styles.graphiteCardTitle} numberOfLines={1}>
                       {holding.name}
                     </Text>
-                    <Text style={styles.graphiteCardPrice}>
+                    <Text style={[styles.graphiteCardPrice, { color: cardAccent }]}>
                       {holding.price || "—"}
                     </Text>
                   </View>
                 </TouchableOpacity>
-              ))}
+              );
+            })}
             </ScrollView>
           )}
 
@@ -740,7 +854,7 @@ export default function HomeScreen({ navigation, isDark }) {
               style={styles.viewAllBtn}
             >
               <Text style={styles.viewAllText}>View All</Text>
-              <Feather name="chevron-right" size={13} color="#4C86FF" />
+              <Feather name="chevron-right" size={13} color="#333D9B" />
             </TouchableOpacity>
           </View>
 
@@ -753,11 +867,19 @@ export default function HomeScreen({ navigation, isDark }) {
               .sort((a, b) => (b.fundedPct || 0) - (a.fundedPct || 0))
               .map((asset, idx) => {
                 const tier = getFundingTier(asset.fundedPct);
+                const TRIO_COLORS = ['#FF2D55', '#9333EA', '#FF9500'];
+                const cardTrioColor = TRIO_COLORS[idx % TRIO_COLORS.length];
                 return (
                   <TouchableOpacity
                     key={asset.id || idx}
                     style={styles.investmentOpportunityCard}
-                    onPress={() => navigation.navigate(SCREENS.SEARCH)}
+                    onPress={() => {
+                      if (asset.rawAsset) {
+                        navigation.navigate(SCREENS.ASSET_DETAIL, { asset: asset.rawAsset });
+                      } else {
+                        navigation.navigate(SCREENS.SEARCH);
+                      }
+                    }}
                     activeOpacity={0.88}
                   >
                     {/* Image with top % funded badge */}
@@ -776,7 +898,7 @@ export default function HomeScreen({ navigation, isDark }) {
                           ]}
                         />
                         <Text
-                          style={[styles.topFundedText, { color: tier.accent }]}
+                          style={[styles.topFundedText, { color: cardTrioColor }]}
                         >
                           {asset.fundedPct}% Funded
                         </Text>
@@ -790,7 +912,7 @@ export default function HomeScreen({ navigation, isDark }) {
                           styles.edgeStatusBarFill,
                           {
                             width: `${asset.fundedPct}%`,
-                            backgroundColor: tier.accent,
+                            backgroundColor: cardTrioColor,
                           },
                         ]}
                       />
@@ -823,8 +945,8 @@ export default function HomeScreen({ navigation, isDark }) {
                 );
               })}
           </ScrollView>
-        </LinearGradient>
-        {/* ── END DARK BLUE GRADIENT BOTTOM HALF ── */}
+        </View>
+        {/* ── END BOTTOM HALF ── */}
 
         {/* ════════════════════════════════════════════
             RECENT ACTIVITY (Bottom Sheet at End of Screen)
@@ -860,7 +982,7 @@ export default function HomeScreen({ navigation, isDark }) {
                   <Ionicons
                     name={isExpanded ? "chevron-down" : "chevron-up"}
                     size={16}
-                    color="#FFFFFF"
+                    color={ALIM.mintText}
                   />
                 </View>
               </View>
@@ -916,42 +1038,51 @@ export default function HomeScreen({ navigation, isDark }) {
             nestedScrollEnabled={true}
             scrollEnabled={isExpanded}
           >
-            {filteredActivities.map((act) => (
-              <TouchableOpacity
-                key={act.id}
-                style={styles.activityCard}
-                activeOpacity={0.75}
-                onPress={() => handleActivityPress(act)}
-              >
-                <View
-                  style={[
-                    styles.activityIconCircle,
-                    { backgroundColor: act.iconBg || `${act.color}20` },
-                  ]}
+            {filteredActivities.length === 0 ? (
+              <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 24, paddingHorizontal: 16 }}>
+                <Ionicons name="sparkles-outline" size={24} color="#94A3B8" />
+                <Text style={{ fontSize: 13, fontWeight: "700", color: "#64748B", marginTop: 8 }}>
+                  No activities in this filter
+                </Text>
+              </View>
+            ) : (
+              filteredActivities.map((act) => (
+                <TouchableOpacity
+                  key={act.id}
+                  style={styles.activityCard}
+                  activeOpacity={0.75}
+                  onPress={() => handleActivityPress(act)}
                 >
-                  <Ionicons name={act.icon} size={18} color={act.color} />
-                </View>
-                <View style={styles.activityInfo}>
-                  <View style={styles.activityHeader}>
-                    <Text style={styles.activityCardTitle} numberOfLines={1}>
-                      {act.title}
-                    </Text>
-                    <Text style={styles.activityCardTime}>{act.time}</Text>
+                  <View
+                    style={[
+                      styles.activityIconCircle,
+                    { backgroundColor: act.iconBg || `${act.color}20` },
+                    ]}
+                  >
+                    <Ionicons name={act.icon} size={18} color={act.color} />
                   </View>
-                  <Text style={styles.activityCardDesc} numberOfLines={1}>
-                    {act.desc}
-                  </Text>
-                </View>
-                {act.rightIcon && (
-                  <Ionicons
-                    name={act.rightIcon}
-                    size={16}
-                    color="#94A3B8"
-                    style={styles.activityCardChevron}
-                  />
-                )}
-              </TouchableOpacity>
-            ))}
+                  <View style={styles.activityInfo}>
+                    <View style={styles.activityHeader}>
+                      <Text style={styles.activityCardTitle} numberOfLines={1}>
+                        {act.title}
+                      </Text>
+                      <Text style={styles.activityCardTime}>{act.time}</Text>
+                    </View>
+                    <Text style={styles.activityCardDesc} numberOfLines={1}>
+                      {act.desc}
+                    </Text>
+                  </View>
+                  {act.rightIcon && (
+                    <Ionicons
+                      name={act.rightIcon}
+                      size={16}
+                      color="#94A3B8"
+                      style={styles.activityCardChevron}
+                    />
+                  )}
+                </TouchableOpacity>
+              ))
+            )}
           </ScrollView>
         </Animated.View>
       </ScrollView>
@@ -960,13 +1091,147 @@ export default function HomeScreen({ navigation, isDark }) {
 }
 
 const styles = StyleSheet.create({
+  // ── Hero Row & Debit Card Styles (Reference Mockup) ──
+  heroRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginTop: 6,
+    marginBottom: 20,
+    gap: 14,
+  },
+  heroBalanceCol: {
+    flex: 1,
+  },
+  heroBalanceLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#C7D2FE',
+    letterSpacing: 0.4,
+    marginBottom: 4,
+  },
+  heroBalanceValue: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  heroGainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  heroGainText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#34D399',
+  },
+  heroDebitCard: {
+    width: 156,
+    height: 102,
+    borderRadius: 18,
+    overflow: 'hidden',
+    shadowColor: '#EA580C',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  heroDebitCardGradient: {
+    flex: 1,
+    padding: 12,
+    justifyContent: 'space-between',
+  },
+  cardAnalyticsIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardTopBadgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardProfileBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  cardProfileBadgeText: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
+  },
+  cardCirclesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+  },
+  cardSubTitle: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  cardDigits: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+
+  // ── Feature Cards (Blue, Coral, Teal from Reference Mockup) ──
+  featureCardsScroll: {
+    paddingHorizontal: 20,
+    paddingBottom: 22,
+    gap: 12,
+  },
+  featureCard: {
+    width: 140,
+    height: 146,
+    borderRadius: 22,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  featureCardGradient: {
+    flex: 1,
+    padding: 14,
+    justifyContent: 'space-between',
+  },
+  featureCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    lineHeight: 18,
+  },
+  featureCardBottom: {
+    alignSelf: 'flex-end',
+  },
+
   safe: { flex: 1 },
   scroll: { paddingBottom: 24 },
 
   // ── Top White Island ──
   topWhiteIsland: {
-    backgroundColor: "#FFFFFF",
-    paddingBottom: 0,
+    backgroundColor: ALIM.darkHeader,
+    paddingBottom: 16,
     zIndex: 10,
   },
 
@@ -1006,13 +1271,13 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#64748B",
+    color: "#94A3B8",
   },
   username: {
     fontSize: 18,
     fontWeight: "800",
     letterSpacing: -0.3,
-    color: "#0F172A",
+    color: "#FFFFFF",
   },
   // ── Profile avatar circle ──
   avatarCircle: {
@@ -1043,15 +1308,10 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    backgroundColor: "#FFFFFF",
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
   },
 
   // ── Portfolio Card / The Wallet ──
@@ -1071,8 +1331,8 @@ const styles = StyleSheet.create({
     paddingTop: 22,
     paddingBottom: 24,
     borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: "rgba(148, 163, 184, 0.25)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
     overflow: "hidden",
   },
   portfolioHeader: {
@@ -1160,12 +1420,12 @@ const styles = StyleSheet.create({
   quickActionsTitle: {
     fontSize: 17,
     fontWeight: "700",
-    color: "#0F172A",
+    color: "#FFFFFF",
   },
   seeMoreText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#64748B",
+    color: "#94A3B8",
   },
   quickActionsGrid: {
     gap: 10,
@@ -1180,17 +1440,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-start",
     gap: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
     paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingVertical: 13,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.4)",
+    borderColor: "rgba(255, 255, 255, 0.18)",
   },
   quickActionLabel: {
     fontSize: 14.5,
     fontWeight: "700",
-    color: "#000000ff",
+    color: "#FFFFFF",
     letterSpacing: -0.2,
   },
 
@@ -1202,7 +1462,8 @@ const styles = StyleSheet.create({
 
   // ── Dark blue gradient bottom half ──
   darkBottomHalf: {
-    paddingTop: 10,
+    backgroundColor: ALIM.canvas,
+    paddingTop: 20,
     paddingBottom: 40,
     minHeight: 400,
   },
@@ -1257,14 +1518,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitleDark: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
-    color: "#F1F5F9",
+    color: "#0F172A",
     marginBottom: 2,
   },
-  sectionSubtitle: { fontSize: 11, fontWeight: "500", color: "#3A5070" },
+  sectionSubtitle: { fontSize: 11, fontWeight: "500", color: "#64748B" },
   viewAllBtn: { flexDirection: "row", alignItems: "center", gap: 3 },
-  viewAllText: { fontSize: 12, fontWeight: "600", color: "#4C86FF" },
+  viewAllText: { fontSize: 12, fontWeight: "700", color: "#333D9B" },
 
   // ── Graphite Card System (Horizontal Lists) ──
   loadingWrap: { paddingVertical: 20, alignItems: "center" },
@@ -1286,11 +1547,16 @@ const styles = StyleSheet.create({
   },
   listingCardHorizontal: {
     width: 220,
-    backgroundColor: "#0F1A2E",
+    backgroundColor: "#1E293B",
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(76, 134, 255, 0.2)",
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
   },
   graphiteCardHorizontal: {
     width: 220,
@@ -1317,14 +1583,14 @@ const styles = StyleSheet.create({
   },
   graphiteCardTitle: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#FFFFFF",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   graphiteCardPrice: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#CBD5E1",
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#2563EB",
   },
 
   // ── Funding Specific Styles ──
@@ -1353,16 +1619,16 @@ const styles = StyleSheet.create({
   // ── Investment Opportunities (Black & Blue Neon Vault Container Style) ──
   investmentOpportunityCard: {
     width: 220,
-    backgroundColor: "#000000",
+    backgroundColor: "#1E293B",
     borderRadius: 20,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.08)",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   cardTopAccentBorder: {
     height: 3.5,
@@ -1399,14 +1665,14 @@ const styles = StyleSheet.create({
   edgeStatusBarTrack: {
     height: 4,
     width: "100%",
-    backgroundColor: "#0F172A",
+    backgroundColor: "#EDE9E1",
   },
   edgeStatusBarFill: {
     height: "100%",
   },
   investmentCardContent: {
     padding: 14,
-    backgroundColor: "#000000",
+    backgroundColor: "#1E293B",
   },
   cardCategoryChip: {
     flexDirection: "row",
@@ -1425,9 +1691,10 @@ const styles = StyleSheet.create({
   investmentCardTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#F1F5F9",
+    color: "#0F172A",
     marginBottom: 10,
   },
+
   investmentStatsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1535,6 +1802,7 @@ const styles = StyleSheet.create({
   sheetFilterRow: {
     marginBottom: 10,
   },
+
   sheetFilterScroll: {
     paddingHorizontal: 20,
     gap: 8,
@@ -1550,8 +1818,8 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
   },
   filterChipActive: {
-    backgroundColor: "#3B82F6",
-    borderColor: "#3B82F6",
+    backgroundColor: "#333D9B",
+    borderColor: "#333D9B",
   },
   filterChipText: {
     fontSize: 12.5,
@@ -1573,7 +1841,7 @@ const styles = StyleSheet.create({
   activityCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFFFFF",
     padding: 13,
     borderRadius: 16,
     borderWidth: 1,
@@ -1667,4 +1935,4 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginBottom: 2,
   },
-});
+  });

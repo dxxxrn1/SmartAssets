@@ -8,6 +8,30 @@ const web3Service = require('../services/web3Service');
 const aiDetectionService = require('../services/aiDetectionService');
 
 /**
+ * Helper to parse multiple images from description comment and return clean description.
+ */
+function extractImagesAndCleanDescription(description, primaryImage) {
+  let images = primaryImage ? [primaryImage] : [];
+  let cleanDesc = description || '';
+  if (cleanDesc.includes('<!--images:')) {
+    const match = cleanDesc.match(/<!--images:([\s\S]*?)-->/);
+    if (match) {
+      try {
+        const extra = JSON.parse(match[1]);
+        if (Array.isArray(extra)) {
+          extra.forEach((img) => {
+            if (img && !images.includes(img)) images.push(img);
+          });
+        }
+      } catch (_) {}
+    }
+    cleanDesc = cleanDesc.replace(/<!--images:[\s\S]*?-->/g, '').trim();
+  }
+  return { images, cleanDescription: cleanDesc };
+}
+
+
+/**
  * GET /api/assets?category=...&q=...
  * Fetch all active marketplace assets with optional category and search filters.
  */
@@ -36,8 +60,21 @@ async function getAssets(req, res) {
       return sendError(res, 500, 'Failed to fetch marketplace assets.');
     }
 
+    // Fetch profiles to map user_id to actual seller display name
+    let profileMap = new Map();
+    try {
+      const { data: profiles } = await supabase.from('profiles').select('id, full_name, email');
+      (profiles || []).forEach((p) => {
+        profileMap.set(p.id, p.full_name || (p.email ? p.email.split('@')[0] : 'User ' + String(p.id).slice(0, 8)));
+      });
+    } catch (e) {
+      console.warn('Could not fetch profiles for owner mapping:', e.message);
+    }
+
     // Map DB rows to the shape the frontend expects
-    const assets = (data || []).map((row) => ({
+    const assets = (data || []).map((row) => {
+      const { images, cleanDescription } = extractImagesAndCleanDescription(row.description, row.image);
+      return {
       id: row.id,
       name: row.name,
       category: row.category,
@@ -45,7 +82,9 @@ async function getAssets(req, res) {
       price_num: row.price_num,
       year: row.year,
       condition: row.condition,
-      description: row.description,
+      description: cleanDescription,
+      image: row.image,
+      images,
       image: row.image,
       badge: row.badge || 'Verified',
       cert: row.cert || 'SmartAssets Verified',
@@ -60,11 +99,12 @@ async function getAssets(req, res) {
       etherscanUrl: row.etherscan_url || (row.tx_hash ? `https://sepolia.etherscan.io/tx/${row.tx_hash}` : null),
       // Owner/Creator
       userId: row.user_id || null,
-      owner: row.user_id ? `User ${String(row.user_id).slice(0, 8)}` : (row.owner || 'Verified Seller'),
+      owner: row.user_id ? (profileMap.get(row.user_id) || `User ${String(row.user_id).slice(0, 8)}`) : (row.owner || 'Verified Seller'),
       // AI Fraud & Authenticity Verification
       aiScanScore: row.ai_scan_score ?? null,
       aiScanStatus: row.ai_scan_status || (row.badge === 'Verified' || row.badge === 'Verified On-Chain' ? 'passed' : null),
-    }));
+      };
+    });
 
     return res.json({ success: true, assets });
   } catch (err) {
@@ -112,7 +152,9 @@ async function getAssetById(req, res) {
           asset = {
             ...matchingAsset,
             id: holding.id,
-            user_id: holding.user_id,
+            // Preserve the original lister's user_id so they remain the creator/seller
+            user_id: matchingAsset.user_id,
+            holder_user_id: holding.user_id,
             price: holding.price || matchingAsset.price,
             price_num: holding.price_num || matchingAsset.price_num,
           };
@@ -171,6 +213,22 @@ async function getAssetById(req, res) {
       ];
     }
 
+    let sellerName = asset.owner || 'Verified Seller';
+    if (asset.user_id) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name, email')
+          .eq('id', asset.user_id)
+          .maybeSingle();
+        if (profile) {
+          sellerName = profile.full_name || (profile.email ? profile.email.split('@')[0] : 'Verified Seller');
+        }
+      } catch (_) {}
+    }
+
+    const { images, cleanDescription } = extractImagesAndCleanDescription(asset.description, asset.image);
+
     return res.json({
       success: true,
       asset: {
@@ -181,8 +239,9 @@ async function getAssetById(req, res) {
         price_num: asset.price_num,
         year: asset.year,
         condition: asset.condition,
-        description: asset.description,
+        description: cleanDescription,
         image: asset.image,
+        images,
         badge: asset.badge || 'Verified',
         cert: asset.cert || 'SmartAssets Verified',
         shares: asset.shares || 100,
@@ -194,7 +253,7 @@ async function getAssetById(req, res) {
         contractAddress: asset.contract_address || null,
         etherscanUrl: asset.etherscan_url || (asset.tx_hash ? `https://sepolia.etherscan.io/tx/${asset.tx_hash}` : null),
         userId: asset.user_id || null,
-        owner: asset.user_id ? `User ${String(asset.user_id).slice(0, 8)}` : (asset.owner || 'Verified Seller'),
+        owner: sellerName,
         // AI Fraud & Authenticity Verification
         aiScanScore: asset.ai_scan_score ?? null,
         aiScanStatus: asset.ai_scan_status || (asset.badge === 'Verified' || asset.badge === 'Verified On-Chain' ? 'passed' : null),
