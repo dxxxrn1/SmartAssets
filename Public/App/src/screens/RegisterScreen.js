@@ -19,10 +19,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
 import { Feather } from '@expo/vector-icons';
+import { useTheme } from '../context/ThemeContext';
+import { useNetwork, OfflineBanner } from '../context/NetworkContext';
 import { registerUser } from '../services/api';
 
-export default function RegisterScreen({ navigation, isDark }) {
+export default function RegisterScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme }) {
+  const themeContext = useTheme();
+  const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
+  const toggleTheme = propToggleTheme || themeContext.toggleTheme;
   const c = useColors(isDark);
+  const { isConnected, isOffline, checkConnection } = useNetwork();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -61,6 +67,15 @@ export default function RegisterScreen({ navigation, isDark }) {
   // ── Handle registration ────────────────────────────────────────────────────
   const handleRegister = async () => {
     setError('');
+
+    const online = await checkConnection();
+    if (!online || isOffline || !isConnected) {
+      const msg = 'No internet connection. Please connect to the internet to create an account.';
+      setError(msg);
+      Alert.alert('No Internet Connection', msg);
+      return;
+    }
+
     if (!validate()) return;
 
     setLoading(true);
@@ -108,6 +123,13 @@ export default function RegisterScreen({ navigation, isDark }) {
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
         >
+          {/* OFFLINE BANNER */}
+          <OfflineBanner
+            isDark={isDark}
+            message="You are currently offline. Connect to the internet to register."
+            style={{ marginHorizontal: 0, marginBottom: 14 }}
+          />
+
           {/* ── Heading ── */}
           <Text style={[styles.heading, { color: c.warm }]}>Create Account</Text>
           <Text style={[styles.sub, { color: c.muted }]}>

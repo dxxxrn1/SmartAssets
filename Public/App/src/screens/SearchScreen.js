@@ -1,7 +1,7 @@
 // ─── SearchScreen ─────────────────────────────────────────────────────────────
 // Marketplace / Discover Assets — 2-column product grid with search & category filters
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,9 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useColors, ALIM } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
 import { getMarketAssets } from "../services/api";
+import { useTheme } from "../context/ThemeContext";
+import { OfflineBanner } from "../context/NetworkContext";
+import { getMarketAssetsCache } from "../services/storage";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -68,7 +71,10 @@ const CAT_ACCENT = {
   "Fine Wine": "#F472B6",
 };
 
-export default function SearchScreen({ navigation, isDark, route }) {
+export default function SearchScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme, route }) {
+  const themeContext = useTheme();
+  const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
+  const toggleTheme = propToggleTheme || themeContext.toggleTheme;
   const { width: screenWidth } = useWindowDimensions();
   const CARD_WIDTH = (screenWidth - CARD_H_PAD * 2 - CARD_GAP) / 2;
   const c = useColors(isDark);
@@ -78,6 +84,17 @@ export default function SearchScreen({ navigation, isDark, route }) {
   const [assets, setAssets] = useState(cachedScreenAssets);
   const [loading, setLoading] = useState(cachedScreenAssets.length === 0);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Immediately hydrate from AsyncStorage cache so user sees market assets while offline
+  useEffect(() => {
+    getMarketAssetsCache().then((cached) => {
+      if (cached && cached.length > 0 && assets.length === 0) {
+        setAssets(cached);
+        cachedScreenAssets = cached;
+        setLoading(false);
+      }
+    });
+  }, []);
 
   const fetchAssetsFromNetwork = useCallback(async (isPullToRefresh = false) => {
     try {
@@ -259,6 +276,13 @@ export default function SearchScreen({ navigation, isDark, route }) {
             />
           }
         >
+          {/* OFFLINE BANNER */}
+          <OfflineBanner
+            isDark={isDark}
+            message="⚡ Offline Mode — Showing saved marketplace assets."
+            style={{ marginHorizontal: 0, marginBottom: 12 }}
+          />
+
           {/* Result count */}
           <View style={styles.resultRow}>
             <Text style={styles.resultLabel}>

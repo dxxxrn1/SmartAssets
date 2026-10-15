@@ -21,6 +21,9 @@ import { useColors } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
+import { OfflineBanner } from "../context/NetworkContext";
+import { getVaultCache } from "../services/storage";
 import { getUserVault } from "../services/api";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -151,7 +154,10 @@ const GradientText = ({
   );
 };
 
-export default function HomeScreen({ navigation, isDark }) {
+export default function HomeScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme }) {
+  const themeContext = useTheme();
+  const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
+  const toggleTheme = propToggleTheme || themeContext.toggleTheme;
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const TILE_WIDTH = (screenWidth - 20 * 2 - 12) / 2;
   const c = useColors(isDark);
@@ -173,6 +179,17 @@ export default function HomeScreen({ navigation, isDark }) {
     gainText: "+0.0% MoM",
   });
   const [showBalance, setShowBalance] = useState(true);
+
+  // Immediately hydrate from AsyncStorage cache so user sees last viewed state
+  useEffect(() => {
+    getVaultCache().then((cached) => {
+      if (cached) {
+        if (cached.summary) setVaultSummary(cached.summary);
+        if (cached.holdings && cached.holdings.length > 0) setVaultHoldings(cached.holdings.slice(0, 5));
+        setLoadingVault(false);
+      }
+    });
+  }, []);
 
   // ── MOCK DATA FOR INVESTMENT OPPORTUNITIES ──
   const [fundingAssets, setFundingAssets] = useState([
@@ -509,6 +526,14 @@ export default function HomeScreen({ navigation, isDark }) {
             >
               <TouchableOpacity
                 style={styles.iconBtn}
+                onPress={toggleTheme}
+                activeOpacity={0.7}
+                accessibilityLabel="Toggle Theme"
+              >
+                <Feather name={isDark ? "sun" : "moon"} size={17} color={isDark ? "#FBBF24" : "#0F172A"} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.iconBtn}
                 onPress={() => navigation.navigate(SCREENS.SEARCH)}
               >
                 <Feather name="search" size={17} color="#0F172A" />
@@ -532,6 +557,13 @@ export default function HomeScreen({ navigation, isDark }) {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* OFFLINE BANNER */}
+          <OfflineBanner
+            isDark={isDark}
+            message="⚡ Offline Mode — Showing your saved portfolio and assets."
+            style={{ marginHorizontal: 0, marginBottom: 14 }}
+          />
           {/* ════════════════════════════════════════════
               THE WALLET CARD (Dual-Tone Purple & Lavender Stack)
           ════════════════════════════════════════════ */}

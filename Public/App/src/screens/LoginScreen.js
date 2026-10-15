@@ -18,15 +18,33 @@ import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { useNetwork, OfflineBanner } from '../context/NetworkContext';
 
 const DEFAULT_DEMO_WALLET =
   '0x71C8360f3a14672D62372c388657B43933c039A4';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
-export default function LoginScreen({ navigation, isDark }) {
+export default function LoginScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme }) {
+  const themeContext = useTheme();
+  const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
+  const toggleTheme = propToggleTheme || themeContext.toggleTheme;
   const c = useColors(isDark);
   const { login, loginWithWallet } = useAuth();
+  const { isConnected, isOffline, checkConnection } = useNetwork();
+
+  // Network check helper before auth actions
+  const verifyOnline = async () => {
+    const online = await checkConnection();
+    if (!online || isOffline || !isConnected) {
+      const msg = 'No internet connection. Please connect to the internet to sign in.';
+      setError(msg);
+      Alert.alert('No Internet Connection', msg);
+      return false;
+    }
+    return true;
+  };
 
   // Normal login
   const [email, setEmail] = useState('');
@@ -55,6 +73,11 @@ export default function LoginScreen({ navigation, isDark }) {
   const handleSignIn = async () => {
     setError('');
 
+    const isOnline = await verifyOnline();
+    if (!isOnline) {
+      return;
+    }
+
     if (!email.trim() || !password) {
       setError('Please enter your email and password.');
       return;
@@ -80,6 +103,12 @@ export default function LoginScreen({ navigation, isDark }) {
 
   const handleForgotPassword = async () => {
     setForgotError('');
+
+    const isOnline = await verifyOnline();
+    if (!isOnline) {
+      setForgotError('No internet connection. Please connect to the internet to request a reset link.');
+      return;
+    }
 
     const cleanEmail = forgotEmail.trim().toLowerCase();
 
@@ -162,6 +191,11 @@ export default function LoginScreen({ navigation, isDark }) {
   const handleWalletConnectPress = async () => {
     setError('');
 
+    const isOnline = await verifyOnline();
+    if (!isOnline) {
+      return;
+    }
+
     // Web browser with MetaMask installed
     if (
       Platform.OS === 'web' &&
@@ -204,6 +238,12 @@ export default function LoginScreen({ navigation, isDark }) {
 
   const handleDemoWalletLogin = async () => {
     setError('');
+
+    const isOnline = await verifyOnline();
+    if (!isOnline) {
+      return;
+    }
+
     setConnectingWallet(true);
     setWalletStatus('Connecting demo wallet...');
 
@@ -223,6 +263,11 @@ export default function LoginScreen({ navigation, isDark }) {
 
   const handleCustomWalletLogin = async () => {
     setError('');
+
+    const isOnline = await verifyOnline();
+    if (!isOnline) {
+      return;
+    }
 
     const cleanWallet = customWalletAddress.trim();
 
@@ -269,7 +314,7 @@ export default function LoginScreen({ navigation, isDark }) {
     <SafeAreaView
       style={[
         styles.safeArea,
-        { backgroundColor: c.background },
+        { backgroundColor: c.canvas || (isDark ? '#0F172A' : '#FFFFFF') },
       ]}
     >
       <KeyboardAvoidingView
@@ -287,6 +332,26 @@ export default function LoginScreen({ navigation, isDark }) {
         >
           {/* HEADER */}
           <View style={styles.header}>
+            {/* Quick theme toggle */}
+            <TouchableOpacity
+              onPress={toggleTheme}
+              style={[
+                styles.themeToggleBtn,
+                {
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+                },
+              ]}
+              activeOpacity={0.7}
+              accessibilityLabel="Toggle theme"
+            >
+              <Feather
+                name={isDark ? 'sun' : 'moon'}
+                size={18}
+                color={isDark ? '#FBBF24' : '#4B5563'}
+              />
+            </TouchableOpacity>
+
             <View
               style={[
                 styles.logoBox,
@@ -318,6 +383,13 @@ export default function LoginScreen({ navigation, isDark }) {
               Smart finance. Smarter future.
             </Text>
           </View>
+
+          {/* OFFLINE BANNER */}
+          <OfflineBanner
+            isDark={isDark}
+            message="You are currently offline. Please connect to the internet to sign in."
+            style={{ maxWidth: 480, alignSelf: 'center', width: '100%', marginBottom: 16 }}
+          />
 
           {/* LOGIN CARD */}
           <View
@@ -1054,6 +1126,21 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 28,
+    position: 'relative',
+    width: '100%',
+  },
+
+  themeToggleBtn: {
+    position: 'absolute',
+    top: 0,
+    right: 4,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
   },
 
   logoBox: {

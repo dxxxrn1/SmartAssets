@@ -1,7 +1,7 @@
 // ─── InvestScreen (Fractional) ────────────────────────────────────────────────
 // Fractional ownership — invest tab with asset share listings
 
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,9 @@ import { SCREENS } from "../constants/navigation";
 import { getMarketAssets } from "../services/api";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
+import { OfflineBanner } from "../context/NetworkContext";
+import { getMarketAssetsCache } from "../services/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
 
@@ -30,13 +33,26 @@ const FILTER_CATEGORIES = [
   "Real Estate",
 ];
 
-export default function InvestScreen({ navigation, isDark }) {
+export default function InvestScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme }) {
+  const themeContext = useTheme();
+  const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
+  const toggleTheme = propToggleTheme || themeContext.toggleTheme;
   const c = useColors(isDark);
   const { user } = useAuth();
 
   const [offerings, setOfferings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState("All");
+
+  // Immediately hydrate from AsyncStorage cache so user sees offerings while offline
+  useEffect(() => {
+    getMarketAssetsCache().then((cached) => {
+      if (cached && cached.length > 0 && offerings.length === 0) {
+        setOfferings(cached);
+        setLoading(false);
+      }
+    });
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -94,6 +110,13 @@ export default function InvestScreen({ navigation, isDark }) {
             Co-own verified luxury assets from R100/share
           </Text>
         </View>
+
+        {/* OFFLINE BANNER */}
+        <OfflineBanner
+          isDark={isDark}
+          message="⚡ Offline Mode — Showing saved investment opportunities."
+          style={{ marginHorizontal: 0, marginBottom: 14 }}
+        />
 
         {/* ── Investment Pool Header (Top Metrics) ── */}
         <View style={styles.poolHeader}>

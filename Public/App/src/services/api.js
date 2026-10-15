@@ -2,6 +2,14 @@
 // Handles all HTTP communication between the React Native app and the backend.
 
 import { Platform } from 'react-native';
+import {
+  saveVaultCache,
+  getVaultCache,
+  saveMarketAssetsCache,
+  getMarketAssetsCache,
+  saveUserProfile,
+  getUserProfile,
+} from './storage';
 
 // ── Base URL — configured via EXPO_PUBLIC_API_BASE_URL in .env ───────────────
 // Team members: update EXPO_PUBLIC_API_BASE_URL in .env with your computer's IP!
@@ -19,6 +27,10 @@ const API_BASE_URL = getBaseUrl();
 
 // ── Generic request helper ───────────────────────────────────────────────────
 async function apiRequest(endpoint, options = {}, token = null) {
+  if (Platform.OS === 'web' && typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw new Error('No internet connection. Please connect to the internet to continue.');
+  }
+
   const url = `${API_BASE_URL}${endpoint}`;
 
   const headers = {
@@ -38,9 +50,15 @@ async function apiRequest(endpoint, options = {}, token = null) {
     }
     return data;
   } catch (error) {
-    if (error.message === 'Network request failed') {
+    const msg = error.message || '';
+    if (
+      msg === 'Network request failed' ||
+      msg.includes('Failed to fetch') ||
+      msg.includes('NetworkError') ||
+      msg.includes('fetch failed')
+    ) {
       throw new Error(
-        `Cannot connect to server at ${API_BASE_URL}.\nMake sure the backend is running and your IP in .env is correct.`
+        'No internet connection or cannot connect to server. Please check your internet connection.'
       );
     }
     throw error;
@@ -111,7 +129,30 @@ export async function resetPasswordApi({ accessToken, newPassword }) {
  * @param {string} token - User's Supabase JWT access token
  */
 export async function getUserVault(token) {
-  return apiRequest('/user/vault', { method: 'GET' }, token);
+  try {
+    const data = await apiRequest('/user/vault', { method: 'GET' }, token);
+    if (data?.success) {
+      saveVaultCache({
+        summary: data.summary,
+        holdings: data.holdings,
+        transactions: data.transactions,
+      }).catch(() => {});
+    }
+    return data;
+  } catch (err) {
+    const cached = await getVaultCache();
+    if (cached) {
+      return {
+        success: true,
+        summary: cached.summary,
+        holdings: cached.holdings || [],
+        transactions: cached.transactions || [],
+        isOffline: true,
+        cachedAt: cached.cachedAt,
+      };
+    }
+    throw err;
+  }
 }
 
 /**
@@ -164,18 +205,41 @@ export async function getMarketAssets(category = 'All', searchQuery = '', forceR
     return { success: true, assets: clientMarketAssetsCache, cached: true };
   }
 
-  const params = new URLSearchParams();
-  if (category && category !== 'All') params.append('category', category);
-  if (searchQuery && searchQuery.trim()) params.append('q', searchQuery.trim());
-  const qs = params.toString() ? `?${params.toString()}` : '';
-  const data = await apiRequest(`/assets${qs}`, { method: 'GET' });
+  try {
+    const params = new URLSearchParams();
+    if (category && category !== 'All') params.append('category', category);
+    if (searchQuery && searchQuery.trim()) params.append('q', searchQuery.trim());
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const data = await apiRequest(`/assets${qs}`, { method: 'GET' });
 
-  if (isDefaultQuery && data?.assets) {
-    clientMarketAssetsCache = data.assets;
-    clientMarketAssetsCacheTime = Date.now();
+    if (isDefaultQuery && data?.assets) {
+      clientMarketAssetsCache = data.assets;
+      clientMarketAssetsCacheTime = Date.now();
+      saveMarketAssetsCache(data.assets).catch(() => {});
+    }
+
+    return data;
+  } catch (err) {
+    const cachedAssets = await getMarketAssetsCache();
+    if (cachedAssets && cachedAssets.length > 0) {
+      let filtered = cachedAssets;
+      if (category && category !== 'All') {
+        filtered = filtered.filter((a) => a.category === category);
+      }
+      if (searchQuery && searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        filtered = filtered.filter(
+          (a) => a.name?.toLowerCase().includes(q) || a.category?.toLowerCase().includes(q)
+        );
+      }
+      return {
+        success: true,
+        assets: filtered,
+        isOffline: true,
+      };
+    }
+    throw err;
   }
-
-  return data;
 }
 
 /**
@@ -382,7 +446,19 @@ export async function getUserAnalyticsApi(token) {
 }
 
 export async function getUserProfileApi(token) {
-  return apiRequest('/user/profile', { method: 'GET' }, token);
+  try {
+    const data = await apiRequest('/user/profile', { method: 'GET' }, token);
+    if (data?.success && data?.profile) {
+      saveUserProfile(data.profile).catch(() => {});
+    }
+    return data;
+  } catch (err) {
+    const cached = await getUserProfile();
+    if (cached) {
+      return { success: true, profile: cached, isOffline: true };
+    }
+    throw err;
+  }
 }
 
 /**

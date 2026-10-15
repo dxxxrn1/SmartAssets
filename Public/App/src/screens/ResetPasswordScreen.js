@@ -14,10 +14,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
+import { useTheme } from '../context/ThemeContext';
+import { useNetwork, OfflineBanner } from '../context/NetworkContext';
 import { resetPasswordApi } from '../services/api';
 
-export default function ResetPasswordScreen({ navigation, route, isDark }) {
+export default function ResetPasswordScreen({ navigation, route, isDark: propIsDark, toggleTheme: propToggleTheme }) {
+  const themeContext = useTheme();
+  const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
+  const toggleTheme = propToggleTheme || themeContext.toggleTheme;
   const c = useColors(isDark);
+  const { isConnected, isOffline, checkConnection } = useNetwork();
   const accessToken = route?.params?.accessToken || null;
 
   const [newPassword, setNewPassword] = useState('');
@@ -30,6 +36,14 @@ export default function ResetPasswordScreen({ navigation, route, isDark }) {
 
   const handleResetPassword = async () => {
     setError('');
+
+    const online = await checkConnection();
+    if (!online || isOffline || !isConnected) {
+      const msg = 'No internet connection. Please connect to the internet to reset your password.';
+      setError(msg);
+      Alert.alert('No Internet Connection', msg);
+      return;
+    }
 
     if (!accessToken) {
       setError('This reset link is invalid or has expired. Please request a new one.');
@@ -66,7 +80,7 @@ export default function ResetPasswordScreen({ navigation, route, isDark }) {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: c.background }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: c.canvas || (isDark ? '#0F172A' : '#FFFFFF') }]}>
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -76,6 +90,13 @@ export default function ResetPasswordScreen({ navigation, route, isDark }) {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {/* OFFLINE BANNER */}
+          <OfflineBanner
+            isDark={isDark}
+            message="You are currently offline. Connect to the internet to reset password."
+            style={{ maxWidth: 480, alignSelf: 'center', width: '100%', marginBottom: 14 }}
+          />
+
           <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
             {!success ? (
               <>

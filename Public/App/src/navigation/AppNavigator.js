@@ -5,12 +5,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, TouchableOpacity, Platform, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, Platform, Linking, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SCREENS, TABS } from '../constants/navigation';
 import { ALIM, useColors } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 // ── Screen imports ────────────────────────────────────────────────────────────
 import SplashScreen      from '../screens/SplashScreen';
@@ -87,16 +88,19 @@ const TAB_CONFIG = {
 const TAB_ORDER = [SCREENS.HOME, SCREENS.SEARCH, SCREENS.LIST_ASSET, SCREENS.INVEST, SCREENS.VAULT];
 
 // ── Custom tab bar ─────────────────────────────────────────────────────────────
-function CustomTabBar({ state, navigation }) {
+function CustomTabBar({ state, navigation, isDark }) {
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 16 : 12);
+  const bgColor = isDark ? '#111827' : '#FFFFFF';
+  const borderColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#EDE9E1';
+  const inactiveColor = isDark ? '#94A3B8' : '#64748B';
 
   return (
     <View style={{
       flexDirection: 'row',
-      backgroundColor: '#FFFFFF',
+      backgroundColor: bgColor,
       borderTopWidth: 1,
-      borderTopColor: '#EDE9E1',
+      borderTopColor: borderColor,
       paddingBottom: bottomInset,
       paddingTop: 8,
       height: 56 + bottomInset,
@@ -169,12 +173,12 @@ function CustomTabBar({ state, navigation }) {
             <Ionicons
               name={iconName}
               size={22}
-              color={focused ? ACTIVE_TAB : INACTIVE_TAB}
+              color={focused ? ACTIVE_TAB : inactiveColor}
             />
             <Text style={{
               fontSize: 10,
               fontWeight: '700',
-              color: focused ? ACTIVE_TAB : INACTIVE_TAB,
+              color: focused ? ACTIVE_TAB : inactiveColor,
               letterSpacing: 0.2,
             }}>
               {cfg.label}
@@ -187,29 +191,29 @@ function CustomTabBar({ state, navigation }) {
 }
 
 // ── Main tab navigator ─────────────────────────────────────────────────────────
-function MainTabs({ isDark }) {
+function MainTabs({ isDark, toggleTheme }) {
   return (
     <Tab.Navigator
       // unmountOnBlur: true prevents inactive tab screens from rendering on web,
       // which fixes the duplicate floating settings gear icon (Bug #5).
       // On native, React Navigation already suspends inactive tabs visually.
       screenOptions={{ headerShown: false, unmountOnBlur: true }}
-      tabBar={(props) => <CustomTabBar {...props} />}
+      tabBar={(props) => <CustomTabBar {...props} isDark={isDark} />}
     >
       <Tab.Screen name={SCREENS.HOME}>
-        {(props) => <HomeScreen {...props} isDark={isDark} />}
+        {(props) => <HomeScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
       </Tab.Screen>
       <Tab.Screen name={SCREENS.SEARCH}>
-        {(props) => <SearchScreen {...props} isDark={isDark} />}
+        {(props) => <SearchScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
       </Tab.Screen>
       <Tab.Screen name={SCREENS.LIST_ASSET}>
-        {(props) => <ListAssetScreen {...props} isDark={isDark} />}
+        {(props) => <ListAssetScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
       </Tab.Screen>
       <Tab.Screen name={SCREENS.INVEST}>
-        {(props) => <InvestScreen {...props} isDark={isDark} />}
+        {(props) => <InvestScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
       </Tab.Screen>
       <Tab.Screen name={SCREENS.VAULT}>
-        {(props) => <VaultScreen {...props} isDark={isDark} />}
+        {(props) => <VaultScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
       </Tab.Screen>
     </Tab.Navigator>
   );
@@ -217,8 +221,8 @@ function MainTabs({ isDark }) {
 
 // ── Root stack ────────────────────────────────────────────────────────────────
 export default function Navigation() {
-  const [isDark, setIsDark] = useState(false);
-  const { isAuthenticated } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
+  const { isAuthenticated, isInitializing } = useAuth();
 
   // Listen for Supabase password-recovery deep link
   useEffect(() => {
@@ -249,6 +253,14 @@ export default function Navigation() {
     };
   }, []);
 
+  if (isInitializing) {
+    return (
+      <View style={{ flex: 1, backgroundColor: isDark ? '#0A0E1A' : '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color="#3666DD" />
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
@@ -260,29 +272,29 @@ export default function Navigation() {
         {!isAuthenticated ? (
           <>
             <Stack.Screen name={SCREENS.SPLASH}>
-              {(props) => <SplashScreen {...props} isDark={isDark} />}
+              {(props) => <SplashScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.ONBOARDING}>
-              {(props) => <OnboardingScreen {...props} isDark={isDark} />}
+              {(props) => <OnboardingScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.LOGIN}>
-              {(props) => <LoginScreen {...props} isDark={isDark} />}
+              {(props) => <LoginScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.REGISTER}>
-              {(props) => <RegisterScreen {...props} isDark={isDark} />}
+              {(props) => <RegisterScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.RESET_PASSWORD}>
-              {(props) => <ResetPasswordScreen {...props} isDark={isDark} />}
+              {(props) => <ResetPasswordScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
           </>
         ) : (
           <>
             <Stack.Screen name={SCREENS.MAIN_TABS}>
-              {() => <MainTabs isDark={isDark} />}
+              {() => <MainTabs isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.ASSET_DETAIL}>
@@ -314,11 +326,11 @@ export default function Navigation() {
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.PROFILE}>
-              {(props) => <ProfileScreen {...props} isDark={isDark} />}
+              {(props) => <ProfileScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.PROFILE_ANALYTICS}>
-              {(props) => <ProfileAnalyticsScreen {...props} isDark={isDark} />}
+              {(props) => <ProfileAnalyticsScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
           </>
         )}

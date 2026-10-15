@@ -2,7 +2,7 @@
 // User-Isolated Portfolio Vault — displays ONLY assets belonging to the logged-in user,
 // with working Deposit & Withdraw capabilities and live transaction history.
 
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -22,6 +22,9 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useColors, ALIM } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
+import { OfflineBanner } from "../context/NetworkContext";
+import { getVaultCache } from "../services/storage";
 import {
   getUserVault,
   depositFundsApi,
@@ -30,7 +33,10 @@ import {
 } from "../services/api";
 import { Feather, Ionicons } from "@expo/vector-icons";
 
-export default function VaultScreen({ navigation, isDark }) {
+export default function VaultScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme }) {
+  const themeContext = useTheme();
+  const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
+  const toggleTheme = propToggleTheme || themeContext.toggleTheme;
   const c = useColors(isDark);
   const { user, token, logout } = useAuth();
 
@@ -70,6 +76,18 @@ export default function VaultScreen({ navigation, isDark }) {
   const [withdrawing, setWithdrawing] = useState(false);
 
   const lastVaultFetchRef = useRef(0);
+
+  // Immediately hydrate from AsyncStorage cache so user sees vault while offline
+  useEffect(() => {
+    getVaultCache().then((cached) => {
+      if (cached) {
+        if (cached.holdings) setHoldings(cached.holdings);
+        if (cached.summary) setSummary(cached.summary);
+        if (cached.transactions) setTransactions(cached.transactions);
+        setLoading(false);
+      }
+    });
+  }, []);
 
   const loadVault = useCallback((force = false) => {
     if (!token) {
@@ -243,6 +261,9 @@ export default function VaultScreen({ navigation, isDark }) {
           <View style={styles.header}>
             <Text style={styles.greetingName}>My Vault</Text>
             <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity style={styles.iconBtn} onPress={toggleTheme} activeOpacity={0.7}>
+                <Feather name={isDark ? "sun" : "moon"} size={18} color={isDark ? "#FBBF24" : "#0F172A"} />
+              </TouchableOpacity>
               <TouchableOpacity style={styles.iconBtn}>
                 <Feather name="settings" size={18} color="#0F172A" />
               </TouchableOpacity>
@@ -251,6 +272,13 @@ export default function VaultScreen({ navigation, isDark }) {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* OFFLINE BANNER */}
+          <OfflineBanner
+            isDark={isDark}
+            message="⚡ Offline Mode — Showing your saved vault balance and holdings."
+            style={{ marginHorizontal: 0, marginBottom: 14 }}
+          />
 
           {/* Balance Container Card */}
           <LinearGradient
