@@ -17,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
 import {
   getUserProfileApi,
   updateUserProfileApi,
@@ -27,6 +28,7 @@ import {
 
 export default function ProfileScreen({ navigation }) {
   const { user, token, logout, updateUser } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
 
   // State to manage which accordion section is expanded
   const [expandedSection, setExpandedSection] = useState(null);
@@ -418,6 +420,13 @@ export default function ProfileScreen({ navigation }) {
       textColor: "#14532D",
     },
     {
+      id: "theme",
+      label: "Theme & Appearance",
+      icon: "moon",
+      bgColor: "#E0E7FF",
+      textColor: "#3730A3",
+    },
+    {
       id: "delete",
       label: "Delete Account",
       icon: "trash-2",
@@ -688,6 +697,27 @@ export default function ProfileScreen({ navigation }) {
                         ))}
                       </View>
                     )}
+                  </View>
+                )}
+
+                {/* ── Expanded: Theme & Appearance ── */}
+                {isExpanded && item.id === "theme" && (
+                  <View style={[styles.expandedContent, { backgroundColor: "#F8FAFC" }]}>
+                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>Theme & Appearance</Text>
+                    <View style={styles.prefRow}>
+                      <View style={{ flex: 1, marginRight: 10 }}>
+                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#1E293B" }}>Dark Mode</Text>
+                        <Text style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                          {isDark ? "Dark theme active (persisted offline)" : "Light theme active (persisted offline)"}
+                        </Text>
+                      </View>
+                      <Switch
+                        value={isDark}
+                        onValueChange={toggleTheme}
+                        trackColor={{ false: "#CBD5E1", true: "#3B82F6" }}
+                        thumbColor="#FFFFFF"
+                      />
+                    </View>
                   </View>
                 )}
 

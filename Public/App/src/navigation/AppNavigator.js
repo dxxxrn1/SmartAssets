@@ -5,12 +5,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, TouchableOpacity, Platform, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, Platform, Linking, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SCREENS, TABS } from '../constants/navigation';
-import { ALIM, useColors } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { ActivityIndicator } from 'react-native';
 
 // ── Screen imports ────────────────────────────────────────────────────────────
 import SplashScreen      from '../screens/SplashScreen';
@@ -72,8 +73,9 @@ function extractResetToken(url) {
   return null;
 }
 
-// ── Modern AlimBank Emerald Tab Bar Palette ───────────────────────────────────
-const ACTIVE_TAB = '#333D9B';          // Royal Indigo
+// ── Modern Floating Tab Bar Palette ──────────────────────────────────────────
+// Selection color matches the user's signature purple (#976af0)
+const ACTIVE_TAB = '#976af0';          // Brand Purple
 const INACTIVE_TAB = '#94A3B8';        // Muted Slate
 
 const TAB_CONFIG = {
@@ -86,102 +88,186 @@ const TAB_CONFIG = {
 
 const TAB_ORDER = [SCREENS.HOME, SCREENS.SEARCH, SCREENS.LIST_ASSET, SCREENS.INVEST, SCREENS.VAULT];
 
-// ── Custom tab bar ─────────────────────────────────────────────────────────────
-function CustomTabBar({ state, navigation }) {
+// ── Custom floating tab bar ───────────────────────────────────────────────────
+function CustomTabBar({ state, navigation, isDark }) {
   const insets = useSafeAreaInsets();
-  const bottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 16 : 12);
+  // Safe bottom offset ensuring floating pill sits gracefully above home indicator / navigation bar
+  const bottomMargin = Math.max(insets.bottom, Platform.OS === 'android' ? 16 : 14);
 
   return (
-    <View style={{
-      flexDirection: 'row',
-      backgroundColor: '#FFFFFF',
-      borderTopWidth: 1,
-      borderTopColor: '#EDE9E1',
-      paddingBottom: bottomInset,
-      paddingTop: 8,
-      height: 56 + bottomInset,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: -3 },
-      shadowOpacity: 0.04,
-      shadowRadius: 8,
-      elevation: 6,
-    }}>
-      {state.routes.map((route, idx) => {
-        const cfg = TAB_CONFIG[route.name] || {};
-        const focused = state.index === idx;
-        const isFAB = route.name === SCREENS.LIST_ASSET;
-        const iconName = focused ? cfg.active : cfg.inactive;
+    <View
+      pointerEvents="box-none"
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        alignItems: 'center',
+        paddingBottom: bottomMargin,
+        paddingHorizontal: 16,
+        zIndex: 100,
+      }}
+    >
+      <View
+        pointerEvents="auto"
+        style={{
+          width: '100%',
+          maxWidth: 460,
+          borderRadius: 32,
+          borderWidth: 1,
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.75)',
+          shadowColor: isDark ? '#000000' : '#1E2768',
+          shadowOffset: { width: 0, height: 10 },
+          shadowOpacity: isDark ? 0.45 : 0.14,
+          shadowRadius: 24,
+          elevation: 12,
+          overflow: 'hidden',
+          position: 'relative',
+          backgroundColor: isDark ? 'rgba(21, 29, 66, 0.72)' : 'rgba(255, 255, 255, 0.75)',
+          ...(Platform.OS === 'web'
+            ? {
+                backdropFilter: 'blur(20px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                boxShadow: isDark
+                  ? '0 16px 36px -4px rgba(0, 0, 0, 0.55), 0 8px 16px -6px rgba(0, 0, 0, 0.35)'
+                  : '0 16px 36px -4px rgba(30, 39, 104, 0.16), 0 8px 16px -6px rgba(30, 39, 104, 0.08)',
+              }
+            : {}),
+        }}
+      >
+        {/* Background-only glass gradient sheen */}
+        <LinearGradient
+          colors={
+            isDark
+              ? ['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)', 'rgba(0, 0, 0, 0.2)']
+              : ['rgba(255, 255, 255, 0.85)', 'rgba(255, 255, 255, 0.55)', 'rgba(240, 246, 255, 0.45)']
+          }
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
 
-        const onPress = () => {
-          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-          if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
-        };
+        {/* Top edge light-reflection line for frosted glass realism */}
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 24,
+            right: 24,
+            height: 1,
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(255, 255, 255, 0.95)',
+          }}
+        />
 
-        if (isFAB) {
-          return (
-            <TouchableOpacity
-              key={route.key}
-              onPress={onPress}
-              style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
-              activeOpacity={0.85}
-            >
-              <LinearGradient
-                colors={['#3B82F6', '#2563EB', '#1E2768']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+        {/* Content Row: tabs, icons, labels, FAB stay completely sharp and unaffected */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingVertical: 7,
+            paddingHorizontal: 8,
+          }}
+        >
+          {state.routes.map((route, idx) => {
+            const cfg = TAB_CONFIG[route.name] || {};
+            const focused = state.index === idx;
+            const isFAB = route.name === SCREENS.LIST_ASSET;
+            const iconName = focused ? cfg.active : cfg.inactive;
+
+            const onPress = () => {
+              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+              if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
+            };
+
+            if (isFAB) {
+              return (
+                <TouchableOpacity
+                  key={route.key}
+                  onPress={onPress}
+                  style={{
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingHorizontal: 4,
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={['#976af0', '#00fbff']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 24,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      shadowColor: '#976af0',
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.38,
+                      shadowRadius: 10,
+                      elevation: 7,
+                      borderWidth: focused ? 2.5 : 0,
+                      borderColor: '#FFFFFF',
+                    }}
+                  >
+                    <Ionicons name="add" size={26} color="#FFFFFF" />
+                  </LinearGradient>
+                </TouchableOpacity>
+              );
+            }
+
+            return (
+              <TouchableOpacity
+                key={route.key}
+                onPress={onPress}
                 style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 24,
+                  flex: 1,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  marginBottom: 4,
-                  shadowColor: '#2563EB',
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.35,
-                  shadowRadius: 10,
-                  elevation: 7,
+                  paddingVertical: 6,
+                  paddingHorizontal: 2,
+                  borderRadius: 20,
+                  backgroundColor: 'transparent',
+                  gap: 3,
+                  position: 'relative',
                 }}
+                activeOpacity={0.75}
               >
-                <Ionicons name="add" size={26} color="#FFFFFF" />
-              </LinearGradient>
-            </TouchableOpacity>
-          );
-        }
-
-        return (
-          <TouchableOpacity
-            key={route.key}
-            onPress={onPress}
-            style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 }}
-            activeOpacity={0.8}
-          >
-            {focused && (
-              <View style={{
-                position: 'absolute',
-                top: -8,
-                width: 28,
-                height: 3,
-                borderRadius: 2,
-                backgroundColor: ACTIVE_TAB,
-              }} />
-            )}
-            <Ionicons
-              name={iconName}
-              size={22}
-              color={focused ? ACTIVE_TAB : INACTIVE_TAB}
-            />
-            <Text style={{
-              fontSize: 10,
-              fontWeight: '700',
-              color: focused ? ACTIVE_TAB : INACTIVE_TAB,
-              letterSpacing: 0.2,
-            }}>
-              {cfg.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+                {focused && (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      top: 2,
+                      width: 14,
+                      height: 2.5,
+                      borderRadius: 2,
+                      backgroundColor: ACTIVE_TAB,
+                    }}
+                  />
+                )}
+                <Ionicons
+                  name={iconName}
+                  size={21}
+                  color={focused ? ACTIVE_TAB : (isDark ? '#94A3B8' : '#64748B')}
+                />
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: focused ? '700' : '600',
+                    color: focused ? ACTIVE_TAB : (isDark ? '#94A3B8' : '#64748B'),
+                    letterSpacing: 0.1,
+                  }}
+                >
+                  {cfg.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
     </View>
   );
 }
@@ -193,8 +279,17 @@ function MainTabs({ isDark }) {
       // unmountOnBlur: true prevents inactive tab screens from rendering on web,
       // which fixes the duplicate floating settings gear icon (Bug #5).
       // On native, React Navigation already suspends inactive tabs visually.
-      screenOptions={{ headerShown: false, unmountOnBlur: true }}
-      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={{
+        headerShown: false,
+        unmountOnBlur: true,
+        tabBarStyle: {
+          position: 'absolute',
+          backgroundColor: 'transparent',
+          borderTopWidth: 0,
+          elevation: 0,
+        },
+      }}
+      tabBar={(props) => <CustomTabBar {...props} isDark={isDark} />}
     >
       <Tab.Screen name={SCREENS.HOME}>
         {(props) => <HomeScreen {...props} isDark={isDark} />}
@@ -217,8 +312,8 @@ function MainTabs({ isDark }) {
 
 // ── Root stack ────────────────────────────────────────────────────────────────
 export default function Navigation() {
-  const [isDark, setIsDark] = useState(false);
-  const { isAuthenticated } = useAuth();
+  const { isDark } = useTheme();
+  const { isAuthenticated, sessionRestored } = useAuth();
 
   // Listen for Supabase password-recovery deep link
   useEffect(() => {
@@ -248,6 +343,14 @@ export default function Navigation() {
       subscription.remove();
     };
   }, []);
+
+  if (!sessionRestored) {
+    return (
+      <View style={{ flex: 1, backgroundColor: isDark ? '#0F172A' : '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color="#2563EB" />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer ref={navigationRef}>

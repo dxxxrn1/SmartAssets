@@ -61,6 +61,34 @@ export const ROYAL = {
   redBg: 'rgba(239, 68, 68, 0.12)',
 };
 
+// ─── New Purple/Violet Glassmorphism Theme (Mockups 2025/2026) ─────────────
+export const PURPLE_THEME = {
+  heroGradient: ['#7C3AED', '#5B36F5', '#2563EB', '#00C2FF'],
+  walletGradient: ['#976af0', '#00fbff'],
+  canvasMesh: [
+    'rgba(216, 214, 253, 1)',
+    '#d5cdffff',
+    '#fae3f4ff',
+    '#fff0e6ff',
+    '#FFF7EF',
+  ],
+  primary: '#976af0',
+  primaryViolet: '#7C3AED',
+  primaryElectric: '#5B36F5',
+  primaryCyan: '#00fbff',
+  primaryLight: '#F5F3FF',
+  primarySubtle: 'rgba(151, 106, 240, 0.08)',
+  textDark: '#0F172A',
+  textMuted: '#64748B',
+  textSubtle: '#94A3B8',
+  cardWhite: '#FFFFFF',
+  cardBorder: 'rgba(226, 232, 240, 0.8)',
+  cardBorderSubtle: 'rgba(241, 245, 249, 0.9)',
+  badgeVerifiedBg: 'rgba(15, 23, 42, 0.65)',
+  badgeGainBg: 'rgba(255, 255, 255, 0.92)',
+  badgeGainGreen: '#10B981',
+};
+
 // Aliased as ALIM for seamless backward-compatibility across all screens
 export const ALIM = {
   ...ROYAL,

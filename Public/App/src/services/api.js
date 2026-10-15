@@ -4,8 +4,13 @@
 import { Platform } from 'react-native';
 
 // ── Base URL — configured via EXPO_PUBLIC_API_BASE_URL in .env ───────────────
-// Team members: update EXPO_PUBLIC_API_BASE_URL in .env with your computer's IP!
-const getBaseUrl = () => {
+// On web, automatically connects to localhost/current host on port 5000.
+// On native devices, uses EXPO_PUBLIC_API_BASE_URL from .env.
+export const getBaseUrl = () => {
+  if (Platform.OS === 'web') {
+    const host = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : 'localhost';
+    return `http://${host}:5000/api`;
+  }
   if (process.env.EXPO_PUBLIC_API_BASE_URL) {
     return process.env.EXPO_PUBLIC_API_BASE_URL;
   }
@@ -15,7 +20,7 @@ const getBaseUrl = () => {
   return 'http://localhost:5000/api';
 };
 
-const API_BASE_URL = getBaseUrl();
+export const API_BASE_URL = getBaseUrl();
 
 // ── Generic request helper ───────────────────────────────────────────────────
 async function apiRequest(endpoint, options = {}, token = null) {
@@ -38,9 +43,13 @@ async function apiRequest(endpoint, options = {}, token = null) {
     }
     return data;
   } catch (error) {
-    if (error.message === 'Network request failed') {
+    if (
+      error.message === 'Network request failed' ||
+      error.message?.includes('NetworkError') ||
+      error.message?.includes('Failed to fetch')
+    ) {
       throw new Error(
-        `Cannot connect to server at ${API_BASE_URL}.\nMake sure the backend is running and your IP in .env is correct.`
+        `Cannot connect to server at ${API_BASE_URL}. Make sure the backend is running at http://localhost:5000.`
       );
     }
     throw error;
@@ -466,4 +475,22 @@ export async function withdrawFundsApi(withdrawData, token) {
  */
 export async function getVaultTransactionsApi(token) {
   return apiRequest('/user/transactions', { method: 'GET' }, token);
+}
+
+/**
+ * Safely resolves an image URI for React Native Image component.
+ * If the URI is a relative path (/uploads/...) or points to an outdated IP,
+ * rewrites it using API_BASE_URL's active server origin.
+ */
+export function resolveImageUrl(imageUri) {
+  if (!imageUri || typeof imageUri !== 'string') return imageUri;
+  if (imageUri.startsWith('data:image/')) return imageUri;
+
+  const uploadsMatch = imageUri.match(/\/uploads\/assets\/[^"'\s?#]+/i);
+  if (uploadsMatch) {
+    const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+    return `${baseOrigin}${uploadsMatch[0]}`;
+  }
+
+  return imageUri;
 }
