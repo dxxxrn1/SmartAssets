@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/main.js",
     "dev": "node --watch src/main.js",
-    "test": "node test/escrowIntegration.test.js"
+    "test": "node test/escrowIntegration.test.js && node test/avatarIntegration.test.js && node test/profileIntegration.test.js && node test/vaultIntegration.test.js"
   },
   "keywords": [],
   "author": "",

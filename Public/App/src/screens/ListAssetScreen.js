@@ -1,5 +1,6 @@
 // ─── ListAssetScreen ──────────────────────────────────────────────────────────
-// List a new asset for sale — with real picture upload & provenance history builder.
+// List a new luxury asset for sale — unified with the Luminous Purple & Cyan Fintech theme.
+// Real photo uploads & provenance history builder with Supabase & blockchain escrow integration.
 
 import React, { useState } from 'react';
 import {
@@ -16,8 +17,8 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
 import { useAuth } from '../context/AuthContext';
 import { createAssetApi } from '../services/api';
@@ -25,14 +26,21 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 
 const STEPS = ['Details', 'Photos', 'History', 'Pricing'];
 
-export default function ListAssetScreen({ navigation, isDark }) {
-  const c = useColors(isDark);
+const CANVAS_MESH = [
+  'rgba(216, 214, 253, 1)',
+  '#d5cdffff',
+  '#fae3f4ff',
+  '#fff0e6ff',
+  '#FFF7EF',
+];
+
+export default function ListAssetScreen({ navigation }) {
   const { token } = useAuth();
 
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
-  // Asset Form State — clean dynamic inputs
+  // Asset Form State
   const [form, setForm] = useState({
     name: '',
     category: 'Luxury Watch',
@@ -40,10 +48,10 @@ export default function ListAssetScreen({ navigation, isDark }) {
     condition: '',
     description: '',
     askingPrice: '',
-    images: [],          // up to 3 photos
+    images: [], // up to 3 photos
   });
 
-  // Provenance History Events State — user creates real events
+  // Provenance History Events State
   const [historyList, setHistoryList] = useState([]);
   const [newYear, setNewYear] = useState('');
   const [newEvent, setNewEvent] = useState('');
@@ -67,7 +75,7 @@ export default function ListAssetScreen({ navigation, isDark }) {
         mediaTypes: 'images',
         allowsMultipleSelection: true,
         selectionLimit: remaining,
-        allowsEditing: remaining === 1, // editing only works for single selection
+        allowsEditing: remaining === 1,
         aspect: [4, 3],
         quality: 0.7,
         base64: true,
@@ -179,7 +187,7 @@ export default function ListAssetScreen({ navigation, isDark }) {
         condition: form.condition.trim() || 'Verified',
         description: form.description.trim(),
         askingPrice: form.askingPrice.trim(),
-        image: form.images[0],           // primary image for listing
+        image: form.images[0],
         history: historyList.map(({ year, event, party }) => ({ year, event, party })),
       };
 
@@ -187,7 +195,7 @@ export default function ListAssetScreen({ navigation, isDark }) {
 
       Alert.alert(
         'Asset Listed! 🎉',
-        'Your luxury asset and provenance history have been saved to the database.',
+        'Your luxury asset and provenance history have been saved to the marketplace.',
         [
           {
             text: 'View in Market',
@@ -210,7 +218,11 @@ export default function ListAssetScreen({ navigation, isDark }) {
       );
     } catch (err) {
       const errMsg = err.message || '';
-      if (errMsg.toLowerCase().includes('ai fraud') || errMsg.toLowerCase().includes('ai-generated') || errMsg.toLowerCase().includes('synthetic')) {
+      if (
+        errMsg.toLowerCase().includes('ai fraud') ||
+        errMsg.toLowerCase().includes('ai-generated') ||
+        errMsg.toLowerCase().includes('synthetic')
+      ) {
         Alert.alert(
           '🚫 AI Fraud Guard Alert',
           `${errMsg}\n\nPlease take or upload an authentic, unedited photograph of your physical collectible to proceed.`,
@@ -238,475 +250,983 @@ export default function ListAssetScreen({ navigation, isDark }) {
   };
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safe, { backgroundColor: c.obsidian }]}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        {/* ── Nav Bar ── */}
-        <View style={styles.navBar}>
-          <TouchableOpacity
-            style={[styles.backBtn, { backgroundColor: c.card, borderColor: c.border }]}
-            onPress={() => (step > 0 ? setStep(step - 1) : navigation.goBack())}
-          >
-            <Feather name="arrow-left" size={18} color={c.warm} />
-          </TouchableOpacity>
-          <Text style={[styles.navTitle, { color: c.warm }]}>List New Luxury Asset</Text>
-          <View style={{ width: 36 }} />
-        </View>
+    <View style={styles.container}>
+      {/* ── Soft Luminous 6-Stop Mesh Background ── */}
+      <LinearGradient
+        colors={CANVAS_MESH}
+        locations={[0, 0.2, 0.5, 0.8, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
 
-        {/* ── Step Indicators ── */}
-        <View style={styles.steps}>
-          {STEPS.map((s, i) => (
-            <TouchableOpacity
-              key={s}
-              style={styles.stepItem}
-              onPress={() => setStep(i)}
-            >
-              <View
-                style={[
-                  styles.stepDot,
-                  {
-                    backgroundColor:
-                      i < step ? c.primary : i === step ? c.primaryLight : c.border,
-                  },
-                ]}
-              >
-                {i < step ? (
-                  <Feather name="check" size={12} color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.stepNum}>{String(i + 1)}</Text>
-                )}
-              </View>
-              <Text
-                style={[
-                  styles.stepLabel,
-                  { color: i <= step ? c.primary : c.muted },
-                ]}
-              >
-                {s}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <ScrollView
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
+        <KeyboardAvoidingView
           style={{ flex: 1 }}
-          contentContainerStyle={[styles.scroll, { flexGrow: 1 }]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          {/* ── Step 0: Asset Details ── */}
-          {step === 0 && (
-            <View style={styles.formSection}>
-              <Text style={[styles.sectionTitle, { color: c.warm }]}>Asset Details</Text>
-              <Text style={[styles.stepDesc, { color: c.muted }]}>
-                Provide accurate information for AI appraisal and verification.
-              </Text>
-
-              <View style={styles.fieldWrap}>
-                <Text style={[styles.fieldLabel, { color: c.muted }]}>ASSET NAME *</Text>
-                <TextInput
-                  value={form.name}
-                  onChangeText={(val) => setForm({ ...form, name: val })}
-                  placeholder="e.g. Patek Philippe Nautilus 5711"
-                  placeholderTextColor={c.muted}
-                  style={[styles.input, { backgroundColor: c.card, borderColor: c.border, color: c.warm }]}
-                />
-              </View>
-
-              <View style={styles.fieldWrap}>
-                <Text style={[styles.fieldLabel, { color: c.muted }]}>CATEGORY</Text>
-                <View style={styles.categoryChips}>
-                  {['Luxury Watch', 'Fine Art', 'Classic Car', 'Fine Wine'].map((cat) => (
-                    <TouchableOpacity
-                      key={cat}
-                      style={[
-                        styles.catChip,
-                        {
-                          backgroundColor: form.category === cat ? c.primary : c.card,
-                          borderColor: form.category === cat ? c.primary : c.border,
-                        },
-                      ]}
-                      onPress={() => setForm({ ...form, category: cat })}
-                    >
-                      <Text style={{ color: form.category === cat ? '#FFFFFF' : c.warm, fontSize: 12, fontWeight: '600' }}>
-                        {cat}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.rowFields}>
-                <View style={[styles.fieldWrap, { flex: 1 }]}>
-                  <Text style={[styles.fieldLabel, { color: c.muted }]}>YEAR</Text>
-                  <TextInput
-                    value={form.year}
-                    onChangeText={(val) => setForm({ ...form, year: val })}
-                    placeholder="2023"
-                    keyboardType="number-pad"
-                    placeholderTextColor={c.muted}
-                    style={[styles.input, { backgroundColor: c.card, borderColor: c.border, color: c.warm }]}
-                  />
-                </View>
-                <View style={[styles.fieldWrap, { flex: 1.5 }]}>
-                  <Text style={[styles.fieldLabel, { color: c.muted }]}>CONDITION</Text>
-                  <TextInput
-                    value={form.condition}
-                    onChangeText={(val) => setForm({ ...form, condition: val })}
-                    placeholder="Mint / Original Box"
-                    placeholderTextColor={c.muted}
-                    style={[styles.input, { backgroundColor: c.card, borderColor: c.border, color: c.warm }]}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.fieldWrap}>
-                <Text style={[styles.fieldLabel, { color: c.muted }]}>DESCRIPTION</Text>
-                <TextInput
-                  value={form.description}
-                  onChangeText={(val) => setForm({ ...form, description: val })}
-                  placeholder="Describe the asset, its features, and documentation…"
-                  placeholderTextColor={c.muted}
-                  multiline
-                  numberOfLines={4}
-                  style={[styles.textarea, { backgroundColor: c.card, borderColor: c.border, color: c.warm }]}
-                />
-              </View>
+          {/* ── Header / Breadcrumb Bar ── */}
+          <View style={styles.navBar}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => (step > 0 ? setStep(step - 1) : navigation.goBack())}
+              activeOpacity={0.8}
+            >
+              <Feather name="arrow-left" size={18} color="#0F172A" />
+            </TouchableOpacity>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={styles.navTitle}>List New Luxury Asset</Text>
+              <Text style={styles.navSubtitle}>TOKENIZE & ESCROW</Text>
             </View>
-          )}
+            <View style={{ width: 40 }} />
+          </View>
 
-          {/* ── Step 1: Upload Photos ── */}
-          {step === 1 && (
-            <View style={styles.formSection}>
-              <Text style={[styles.sectionTitle, { color: c.warm }]}>Upload Asset Photos</Text>
-              <Text style={[styles.stepDesc, { color: c.muted }]}>
-                Add up to 3 high-resolution photos. The first photo will be the primary listing image.
-              </Text>
+          {/* ── Modern Step Progress Pills ── */}
+          <View style={styles.stepsRow}>
+            {STEPS.map((s, i) => {
+              const isCompleted = i < step;
+              const isActive = i === step;
 
-              {/* Photo Grid */}
-              <View style={styles.photoGrid}>
-                {form.images.map((uri, index) => (
-                  <View key={index} style={styles.photoThumb}>
-                    <Image source={{ uri }} style={styles.thumbImage} resizeMode="cover" />
-                    <TouchableOpacity
-                      style={styles.removeThumbBtn}
-                      onPress={() => removeImage(index)}
+              return (
+                <TouchableOpacity
+                  key={s}
+                  style={styles.stepItem}
+                  onPress={() => setStep(i)}
+                  activeOpacity={0.8}
+                >
+                  {isActive ? (
+                    <LinearGradient
+                      colors={['#976af0', '#00fbff']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.stepDotActive}
                     >
-                      <Feather name="x" size={12} color="#FFFFFF" />
-                    </TouchableOpacity>
-                    {index === 0 && (
-                      <View style={[styles.primaryBadge, { backgroundColor: c.primary }]}>
-                        <Text style={styles.primaryBadgeText}>Primary</Text>
-                      </View>
-                    )}
-                  </View>
-                ))}
+                      <Text style={styles.stepNumActive}>{i + 1}</Text>
+                    </LinearGradient>
+                  ) : isCompleted ? (
+                    <View style={styles.stepDotCompleted}>
+                      <Feather name="check" size={13} color="#FFFFFF" />
+                    </View>
+                  ) : (
+                    <View style={styles.stepDotUpcoming}>
+                      <Text style={styles.stepNumUpcoming}>{i + 1}</Text>
+                    </View>
+                  )}
+                  <Text
+                    style={[
+                      styles.stepLabel,
+                      isActive && styles.stepLabelActive,
+                      isCompleted && styles.stepLabelCompleted,
+                      !isActive && !isCompleted && styles.stepLabelUpcoming,
+                    ]}
+                  >
+                    {s}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-                {/* Empty slots */}
-                {form.images.length < 3 && (
-                  <View style={[styles.photoThumb, styles.addPhotoSlot, { borderColor: c.border, backgroundColor: c.card }]}>
-                    <Feather name="plus" size={24} color={c.muted} />
-                    <Text style={[styles.addPhotoSlotText, { color: c.muted }]}>
-                      {form.images.length === 0 ? 'Add Photo' : `${3 - form.images.length} more`}
+          {/* ── Form Body Scroll ── */}
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* ── Main Form White Card Container ── */}
+            <View style={styles.mainCard}>
+              {/* ── Step 0: Asset Details ── */}
+              {step === 0 && (
+                <View style={styles.sectionWrap}>
+                  <View style={styles.stepHeader}>
+                    <View style={styles.stepBadge}>
+                      <Text style={styles.stepBadgeText}>STEP 1 OF 4</Text>
+                    </View>
+                    <Text style={styles.sectionTitle}>Asset Details</Text>
+                    <Text style={styles.stepDesc}>
+                      Provide accurate information for AI appraisal and blockchain verification.
                     </Text>
                   </View>
-                )}
-              </View>
 
-              {/* Upload Buttons */}
-              <View style={styles.uploadBtnRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.pickerBtn,
-                    { backgroundColor: c.card, borderColor: c.border },
-                    form.images.length >= 3 && { opacity: 0.45 },
-                  ]}
-                  onPress={pickImageFromLibrary}
-                  disabled={form.images.length >= 3}
-                >
-                  <Feather name="image" size={18} color={c.primary} />
-                  <Text style={[styles.pickerBtnText, { color: c.warm }]}>Choose from Library</Text>
-                </TouchableOpacity>
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>ASSET NAME *</Text>
+                    <TextInput
+                      value={form.name}
+                      onChangeText={(val) => setForm({ ...form, name: val })}
+                      placeholder="e.g. Rolex Daytona 116500LN"
+                      placeholderTextColor="#94A3B8"
+                      style={styles.input}
+                    />
+                  </View>
 
-                <TouchableOpacity
-                  style={[
-                    styles.pickerBtn,
-                    { backgroundColor: c.card, borderColor: c.border },
-                    form.images.length >= 3 && { opacity: 0.45 },
-                  ]}
-                  onPress={takePhotoWithCamera}
-                  disabled={form.images.length >= 3}
-                >
-                  <Feather name="camera" size={18} color={c.primary} />
-                  <Text style={[styles.pickerBtnText, { color: c.warm }]}>Take Photo</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={[styles.photoHint, { color: c.muted }]}>
-                {form.images.length}/3 photos added
-              </Text>
-            </View>
-          )}
-
-          {/* ── Step 2: Provenance History Builder ── */}
-          {step === 2 && (
-            <View style={styles.formSection}>
-              <Text style={[styles.sectionTitle, { color: c.warm }]}>Provenance History</Text>
-              <Text style={[styles.stepDesc, { color: c.muted }]}>
-                Add chain-of-custody milestones and certificates to prove authenticity on the blockchain.
-              </Text>
-
-              {/* Existing History Events List */}
-              {historyList.map((item, index) => (
-                <View
-                  key={item.id}
-                  style={[styles.historyItemCard, { backgroundColor: c.card, borderColor: c.border }]}
-                >
-                  <View style={styles.historyItemLeft}>
-                    <View style={[styles.historyDot, { backgroundColor: c.primary }]} />
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <Text style={[styles.historyYear, { color: c.primary }]}>{item.year}</Text>
-                      <Text style={[styles.historyEvent, { color: c.warm }]}>{item.event}</Text>
-                      <Text style={[styles.historyParty, { color: c.muted }]}>📍 {item.party}</Text>
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>CATEGORY</Text>
+                    <View style={styles.categoryChips}>
+                      {['Luxury Watch', 'Fine Art', 'Classic Car', 'Fine Wine', 'Real Estate', 'Collectibles'].map((cat) => {
+                        const isSelected = form.category === cat;
+                        return (
+                          <TouchableOpacity
+                            key={cat}
+                            style={[
+                              styles.catChip,
+                              isSelected ? styles.catChipActive : styles.catChipInactive,
+                            ]}
+                            onPress={() => setForm({ ...form, category: cat })}
+                            activeOpacity={0.8}
+                          >
+                            <Text
+                              style={[
+                                styles.catChipText,
+                                isSelected ? styles.catChipTextActive : styles.catChipTextInactive,
+                              ]}
+                            >
+                              {cat}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => removeHistoryItem(item.id)}
-                    style={styles.deleteHistoryBtn}
-                  >
-                    <Feather name="x" size={16} color={c.muted} />
-                  </TouchableOpacity>
-                </View>
-              ))}
 
-              {/* Add New History Event Form */}
-              <View style={[styles.addHistoryBox, { backgroundColor: c.card, borderColor: c.border }]}>
-                <Text style={[styles.fieldLabel, { color: c.primary }]}>+ ADD MILESTONE EVENT</Text>
+                  <View style={styles.rowFields}>
+                    <View style={[styles.fieldWrap, { flex: 1 }]}>
+                      <Text style={styles.fieldLabel}>YEAR</Text>
+                      <TextInput
+                        value={form.year}
+                        onChangeText={(val) => setForm({ ...form, year: val })}
+                        placeholder="2023"
+                        keyboardType="number-pad"
+                        placeholderTextColor="#94A3B8"
+                        style={styles.input}
+                      />
+                    </View>
+                    <View style={[styles.fieldWrap, { flex: 1.5 }]}>
+                      <Text style={styles.fieldLabel}>CONDITION</Text>
+                      <TextInput
+                        value={form.condition}
+                        onChangeText={(val) => setForm({ ...form, condition: val })}
+                        placeholder="Mint / Original Box"
+                        placeholderTextColor="#94A3B8"
+                        style={styles.input}
+                      />
+                    </View>
+                  </View>
 
-                <View style={styles.rowFields}>
-                  <View style={[styles.fieldWrap, { width: 90 }]}>
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>DESCRIPTION</Text>
                     <TextInput
-                      value={newYear}
-                      onChangeText={setNewYear}
-                      placeholder="Year"
-                      keyboardType="number-pad"
-                      placeholderTextColor={c.muted}
-                      style={[styles.input, { backgroundColor: c.cardLight, borderColor: c.border, color: c.warm }]}
+                      value={form.description}
+                      onChangeText={(val) => setForm({ ...form, description: val })}
+                      placeholder="Describe the asset, its provenance, unique features, and documentation…"
+                      placeholderTextColor="#94A3B8"
+                      multiline
+                      numberOfLines={4}
+                      style={styles.textarea}
                     />
                   </View>
-                  <View style={[styles.fieldWrap, { flex: 1 }]}>
-                    <TextInput
-                      value={newParty}
-                      onChangeText={setNewParty}
-                      placeholder="Party / Location / Auction"
-                      placeholderTextColor={c.muted}
-                      style={[styles.input, { backgroundColor: c.cardLight, borderColor: c.border, color: c.warm }]}
-                    />
+                </View>
+              )}
+
+              {/* ── Step 1: Upload Photos ── */}
+              {step === 1 && (
+                <View style={styles.sectionWrap}>
+                  <View style={styles.stepHeader}>
+                    <View style={styles.stepBadge}>
+                      <Text style={styles.stepBadgeText}>STEP 2 OF 4</Text>
+                    </View>
+                    <Text style={styles.sectionTitle}>Upload Asset Photos</Text>
+                    <Text style={styles.stepDesc}>
+                      Add up to 3 high-resolution photos. The first photo will be the primary spotlight image.
+                    </Text>
+                  </View>
+
+                  {/* Photo Grid */}
+                  <View style={styles.photoGrid}>
+                    {form.images.map((uri, index) => (
+                      <View key={index} style={styles.photoThumb}>
+                        <Image source={{ uri }} style={styles.thumbImage} resizeMode="cover" />
+                        <TouchableOpacity
+                          style={styles.removeThumbBtn}
+                          onPress={() => removeImage(index)}
+                          activeOpacity={0.8}
+                        >
+                          <Feather name="x" size={12} color="#FFFFFF" />
+                        </TouchableOpacity>
+                        {index === 0 && (
+                          <LinearGradient
+                            colors={['#976af0', '#00fbff']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={styles.primaryBadge}
+                          >
+                            <Text style={styles.primaryBadgeText}>PRIMARY</Text>
+                          </LinearGradient>
+                        )}
+                      </View>
+                    ))}
+
+                    {/* Empty slot */}
+                    {form.images.length < 3 && (
+                      <TouchableOpacity
+                        style={[styles.photoThumb, styles.addPhotoSlot]}
+                        onPress={pickImageFromLibrary}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.addIconCircle}>
+                          <Feather name="plus" size={18} color="#7C3AED" />
+                        </View>
+                        <Text style={styles.addPhotoSlotText}>
+                          {form.images.length === 0 ? 'Add Photo' : `${3 - form.images.length} more`}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Upload Action Buttons */}
+                  <View style={styles.uploadBtnRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.pickerBtn,
+                        form.images.length >= 3 && { opacity: 0.45 },
+                      ]}
+                      onPress={pickImageFromLibrary}
+                      disabled={form.images.length >= 3}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="image" size={18} color="#7C3AED" />
+                      <Text style={styles.pickerBtnText}>Choose Library</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.pickerBtn,
+                        form.images.length >= 3 && { opacity: 0.45 },
+                      ]}
+                      onPress={takePhotoWithCamera}
+                      disabled={form.images.length >= 3}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="camera" size={18} color="#7C3AED" />
+                      <Text style={styles.pickerBtnText}>Take Photo</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.fraudGuardNote}>
+                    <Ionicons name="shield-checkmark" size={16} color="#7C3AED" style={{ marginTop: 1 }} />
+                    <Text style={styles.fraudGuardText}>
+                      SmartAssets AI Fraud Guard scans all media automatically to protect collectors against deepfakes and synthetic listings.
+                    </Text>
                   </View>
                 </View>
+              )}
 
-                <TextInput
-                  value={newEvent}
-                  onChangeText={setNewEvent}
-                  placeholder="Event description (e.g. Purchased at Sotheby's Auction)"
-                  placeholderTextColor={c.muted}
-                  style={[styles.input, { backgroundColor: c.cardLight, borderColor: c.border, color: c.warm }]}
-                />
+              {/* ── Step 2: Provenance History Builder ── */}
+              {step === 2 && (
+                <View style={styles.sectionWrap}>
+                  <View style={styles.stepHeader}>
+                    <View style={styles.stepBadge}>
+                      <Text style={styles.stepBadgeText}>STEP 3 OF 4</Text>
+                    </View>
+                    <Text style={styles.sectionTitle}>Provenance History</Text>
+                    <Text style={styles.stepDesc}>
+                      Add chain-of-custody milestones and certificates to prove authenticity on the blockchain.
+                    </Text>
+                  </View>
 
-                <TouchableOpacity
-                  style={[styles.addEventBtn, { backgroundColor: c.primaryBg, borderColor: c.primary }]}
-                  onPress={addHistoryItem}
-                >
-                  <Feather name="plus" size={16} color={c.primary} />
-                  <Text style={[styles.addEventBtnText, { color: c.primary }]}>Add Provenance Event</Text>
-                </TouchableOpacity>
-              </View>
+                  {/* Existing History Events List */}
+                  {historyList.map((item) => (
+                    <View key={item.id} style={styles.historyItemCard}>
+                      <View style={styles.historyItemLeft}>
+                        <View style={styles.historyDot} />
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={styles.historyYear}>{item.year}</Text>
+                          <Text style={styles.historyEvent}>{item.event}</Text>
+                          <Text style={styles.historyParty}>📍 {item.party}</Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => removeHistoryItem(item.id)}
+                        style={styles.deleteHistoryBtn}
+                        activeOpacity={0.7}
+                      >
+                        <Feather name="trash-2" size={16} color="#94A3B8" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+
+                  {/* Add New History Event Box */}
+                  <View style={styles.addHistoryBox}>
+                    <Text style={styles.fieldLabel}>+ ADD MILESTONE EVENT</Text>
+
+                    <View style={styles.rowFields}>
+                      <View style={[styles.fieldWrap, { width: 95 }]}>
+                        <TextInput
+                          value={newYear}
+                          onChangeText={setNewYear}
+                          placeholder="Year"
+                          keyboardType="number-pad"
+                          placeholderTextColor="#94A3B8"
+                          style={styles.input}
+                        />
+                      </View>
+                      <View style={[styles.fieldWrap, { flex: 1 }]}>
+                        <TextInput
+                          value={newParty}
+                          onChangeText={setNewParty}
+                          placeholder="Party / Location"
+                          placeholderTextColor="#94A3B8"
+                          style={styles.input}
+                        />
+                      </View>
+                    </View>
+
+                    <TextInput
+                      value={newEvent}
+                      onChangeText={setNewEvent}
+                      placeholder="Event description (e.g. Purchased at Sotheby's Auction)"
+                      placeholderTextColor="#94A3B8"
+                      style={styles.input}
+                    />
+
+                    <TouchableOpacity
+                      style={styles.addEventBtn}
+                      onPress={addHistoryItem}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="plus" size={16} color="#7C3AED" />
+                      <Text style={styles.addEventBtnText}>Add Provenance Event</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* ── Step 3: Pricing & Review ── */}
+              {step === 3 && (
+                <View style={styles.sectionWrap}>
+                  <View style={styles.stepHeader}>
+                    <View style={styles.stepBadge}>
+                      <Text style={styles.stepBadgeText}>STEP 4 OF 4</Text>
+                    </View>
+                    <Text style={styles.sectionTitle}>Set Asking Price</Text>
+                    <Text style={styles.stepDesc}>
+                      Set your valuation in British Pounds (£) or Rand (R). SmartAssets generates an escrow-protected listing.
+                    </Text>
+                  </View>
+
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>ASKING PRICE (£) *</Text>
+                    <View style={styles.priceInputWrap}>
+                      <Text style={styles.priceCurrency}>£</Text>
+                      <TextInput
+                        value={form.askingPrice}
+                        onChangeText={(val) => setForm({ ...form, askingPrice: val })}
+                        placeholder="34500"
+                        keyboardType="decimal-pad"
+                        placeholderTextColor="#94A3B8"
+                        style={styles.priceInput}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Summary Review Card */}
+                  <View style={styles.reviewCard}>
+                    <View style={styles.reviewCardHeader}>
+                      <Text style={styles.reviewHeading}>LISTING SUMMARY</Text>
+                      <View style={styles.reviewVerifiedBadge}>
+                        <Text style={styles.reviewVerifiedBadgeText}>PRE-VERIFIED</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.reviewTitle}>{form.name || 'Untitled Asset'}</Text>
+                    <Text style={styles.reviewSub}>
+                      {form.category} • {form.year} • {historyList.length} History Event{historyList.length !== 1 ? 's' : ''}
+                    </Text>
+                    {form.askingPrice ? (
+                      <Text style={styles.reviewPrice}>
+                        £{Number(form.askingPrice).toLocaleString('en-GB')}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.infoBox}>
+                    <Ionicons name="shield-checkmark" size={18} color="#7C3AED" style={{ marginTop: 2 }} />
+                    <Text style={styles.infoText}>
+                      Once submitted, your asset and provenance history are registered with cryptographic ERC-721 token verification and protected by SmartAssets escrow.
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
-          )}
+          </ScrollView>
 
-          {/* ── Step 3: Pricing & Review ── */}
-          {step === 3 && (
-            <View style={styles.formSection}>
-              <Text style={[styles.sectionTitle, { color: c.warm }]}>Set Asking Price</Text>
-              <Text style={[styles.stepDesc, { color: c.muted }]}>
-                Set your valuation in South African Rand (R). SmartAssets will generate an authenticity certificate.
-              </Text>
-
-              <View style={styles.fieldWrap}>
-                <Text style={[styles.fieldLabel, { color: c.muted }]}>ASKING PRICE (R) *</Text>
-                <TextInput
-                  value={form.askingPrice}
-                  onChangeText={(val) => setForm({ ...form, askingPrice: val })}
-                  placeholder="e.g. 250000"
-                  keyboardType="decimal-pad"
-                  placeholderTextColor={c.muted}
-                  style={[
-                    styles.input,
-                    { backgroundColor: c.card, borderColor: c.border, color: c.warm, fontSize: 20, fontWeight: '700' },
-                  ]}
-                />
-              </View>
-
-              {/* Summary Review Card */}
-              <View style={[styles.reviewCard, { backgroundColor: c.card, borderColor: c.border }]}>
-                <Text style={[styles.fieldLabel, { color: c.primary }]}>LISTING SUMMARY</Text>
-                <Text style={[styles.reviewTitle, { color: c.warm }]}>{form.name || 'Untitled Asset'}</Text>
-                <Text style={[styles.reviewSub, { color: c.muted }]}>
-                  {form.category} • {form.year} • {historyList.length} History Events
-                </Text>
-              </View>
-
-              <View style={[styles.infoBox, { backgroundColor: c.primaryBg, borderColor: c.primary }]}>
-                <Text style={[styles.infoText, { color: c.primary }]}>
-                  ◆ Once submitted, your asset and provenance history are registered in Supabase and verified on the blockchain.
-                </Text>
-              </View>
-            </View>
-          )}
-        </ScrollView>
-
-        {/* ── Bottom CTA ── */}
-        <View style={[styles.cta, { backgroundColor: c.vault, borderTopColor: c.border }]}>
-          <TouchableOpacity
-            style={[
-              styles.nextBtn,
-              { backgroundColor: submitting ? c.primaryDim : c.primary },
-            ]}
-            onPress={step === STEPS.length - 1 ? handleSubmitListing : next}
-            activeOpacity={0.85}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Text style={styles.nextBtnLabel}>
-                {step === STEPS.length - 1 ? 'Submit & Publish Listing' : 'Continue'}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          {/* ── Bottom Action Bar (Signature Gradient CTA) ── */}
+          <View style={styles.cta}>
+            <TouchableOpacity
+              style={styles.nextBtn}
+              onPress={step === STEPS.length - 1 ? handleSubmitListing : next}
+              activeOpacity={0.88}
+              disabled={submitting}
+            >
+              <LinearGradient
+                colors={['#976af0', '#00fbff']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.nextBtnGradient}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <View style={styles.nextBtnContent}>
+                    <Text style={styles.nextBtnLabel}>
+                      {step === STEPS.length - 1 ? 'Submit & Publish Listing' : 'Continue'}
+                    </Text>
+                    <Feather
+                      name={step === STEPS.length - 1 ? 'check-circle' : 'arrow-right'}
+                      size={18}
+                      color="#FFFFFF"
+                    />
+                  </View>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
+  container: {
+    flex: 1,
+    backgroundColor: '#d8d6fd',
+  },
+  safe: {
+    flex: 1,
+  },
   navBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 14,
   },
   backBtn: {
-    width: 36, height: 36, borderRadius: 18, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  navTitle: { fontSize: 16, fontWeight: '700' },
-  steps: {
+  navTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  navSubtitle: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#7C3AED',
+    letterSpacing: 1.2,
+    marginTop: 2,
+  },
+
+  // Steps Progress Pills
+  stepsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 14,
+    paddingBottom: 16,
   },
-  stepItem: { alignItems: 'center', gap: 4 },
-  stepDot: {
-    width: 28, height: 28, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center',
+  stepItem: {
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
   },
-  stepNum: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
-  stepLabel: { fontSize: 10, fontWeight: '600' },
-  scroll: { paddingHorizontal: 20, paddingBottom: 28 },
-  formSection: { gap: 14 },
-  sectionTitle: { fontSize: 20, fontWeight: '700' },
-  stepDesc: { fontSize: 13, lineHeight: 18, marginBottom: 4 },
-  fieldWrap: { gap: 6 },
-  fieldLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.1 },
+  stepDotActive: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#976af0',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  stepDotCompleted: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  stepDotUpcoming: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumActive: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  stepNumUpcoming: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  stepLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  stepLabelActive: {
+    color: '#7C3AED',
+    fontWeight: '800',
+  },
+  stepLabelCompleted: {
+    color: '#10B981',
+    fontWeight: '700',
+  },
+  stepLabelUpcoming: {
+    color: '#94A3B8',
+  },
+
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+  },
+
+  // Main Card Wrapper
+  mainCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.85)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  sectionWrap: {
+    gap: 16,
+  },
+  stepHeader: {
+    marginBottom: 4,
+  },
+  stepBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(151, 106, 240, 0.10)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  stepBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#7C3AED',
+    letterSpacing: 0.8,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.4,
+  },
+  stepDesc: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#64748B',
+    marginTop: 4,
+  },
+
+  fieldWrap: {
+    gap: 6,
+  },
+  fieldLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    color: '#7C3AED',
+  },
   input: {
-    borderRadius: 14, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 12,
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     fontSize: 14,
+    color: '#0F172A',
+    fontWeight: '600',
   },
   textarea: {
-    borderRadius: 14, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 12,
-    fontSize: 14, minHeight: 90, textAlignVertical: 'top',
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#0F172A',
+    minHeight: 90,
+    textAlignVertical: 'top',
+    fontWeight: '600',
   },
-  rowFields: { flexDirection: 'row', gap: 10 },
-  categoryChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  catChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, borderWidth: 1 },
+  rowFields: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  categoryChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  catChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  catChipActive: {
+    backgroundColor: '#F5F3FF',
+    borderColor: '#976af0',
+  },
+  catChipInactive: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+  },
+  catChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  catChipTextActive: {
+    color: '#7C3AED',
+  },
+  catChipTextInactive: {
+    color: '#64748B',
+  },
 
-  // Photo Grid Styles
+  // Photo Grid
   photoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
   },
   photoThumb: {
-    width: 100,
-    height: 100,
-    borderRadius: 14,
+    width: 98,
+    height: 98,
+    borderRadius: 16,
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  thumbImage: { width: '100%', height: '100%' },
+  thumbImage: {
+    width: '100%',
+    height: '100%',
+  },
   removeThumbBtn: {
-    position: 'absolute', top: 5, right: 5,
-    width: 22, height: 22, borderRadius: 11,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    alignItems: 'center', justifyContent: 'center',
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   primaryBadge: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    paddingVertical: 3, alignItems: 'center',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingVertical: 3,
+    alignItems: 'center',
   },
-  primaryBadgeText: { fontSize: 9, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.5 },
+  primaryBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.8,
+  },
   addPhotoSlot: {
-    borderWidth: 1, borderStyle: 'dashed',
-    alignItems: 'center', justifyContent: 'center', gap: 4,
+    backgroundColor: '#F8FAFC',
+    borderColor: 'rgba(151, 106, 240, 0.4)',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
-  addPhotoSlotText: { fontSize: 10, fontWeight: '600' },
-  photoHint: { fontSize: 12, fontWeight: '500', textAlign: 'center', marginTop: 4 },
-  uploadBtnRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  addIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F3FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addPhotoSlotText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  uploadBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
   pickerBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 12, borderRadius: 14, borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
   },
-  pickerBtnText: { fontSize: 12, fontWeight: '600' },
-  presetsRow: { gap: 10, paddingTop: 4 },
-  presetCard: {
-    width: 100, padding: 8, borderRadius: 14, borderWidth: 1, alignItems: 'center', gap: 6,
+  pickerBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
   },
-  presetThumb: { width: 84, height: 60, borderRadius: 8 },
-  presetText: { fontSize: 10, fontWeight: '600' },
+  fraudGuardNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: 'rgba(151, 106, 240, 0.25)',
+    marginTop: 4,
+  },
+  fraudGuardText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#6D28D9',
+    fontWeight: '600',
+    flex: 1,
+  },
 
   // History Styles
   historyItemCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    padding: 12, borderRadius: 14, borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
   },
-  historyItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  historyDot: { width: 10, height: 10, borderRadius: 5 },
-  historyYear: { fontSize: 12, fontWeight: '700' },
-  historyEvent: { fontSize: 13, fontWeight: '600' },
-  historyParty: { fontSize: 11 },
-  deleteHistoryBtn: { padding: 6 },
-  addHistoryBox: { padding: 14, borderRadius: 16, borderWidth: 1, gap: 10, marginTop: 4 },
+  historyItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  historyDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#7C3AED',
+  },
+  historyYear: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#7C3AED',
+  },
+  historyEvent: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  historyParty: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  deleteHistoryBtn: {
+    padding: 6,
+  },
+  addHistoryBox: {
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    gap: 10,
+    marginTop: 4,
+  },
   addEventBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 10, borderRadius: 12, borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1.5,
+    borderColor: 'rgba(151, 106, 240, 0.35)',
   },
-  addEventBtnText: { fontSize: 12, fontWeight: '700' },
+  addEventBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#7C3AED',
+  },
 
   // Review & Pricing Styles
-  reviewCard: { padding: 14, borderRadius: 16, borderWidth: 1, gap: 4 },
-  reviewTitle: { fontSize: 16, fontWeight: '700' },
-  reviewSub: { fontSize: 12 },
-  infoBox: { padding: 12, borderRadius: 14, borderWidth: 1 },
-  infoText: { fontSize: 12, lineHeight: 18 },
-  cta: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, borderTopWidth: 1 },
-  nextBtn: { borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
-  nextBtnLabel: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
+  priceInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderColor: 'rgba(151, 106, 240, 0.45)',
+    borderWidth: 2,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+  },
+  priceCurrency: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#7C3AED',
+    marginRight: 8,
+  },
+  priceInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  reviewCard: {
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1.5,
+    borderColor: 'rgba(151, 106, 240, 0.25)',
+    gap: 6,
+  },
+  reviewCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  reviewHeading: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    color: '#7C3AED',
+  },
+  reviewVerifiedBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  reviewVerifiedBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#10B981',
+  },
+  reviewTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  reviewSub: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  reviewPrice: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#7C3AED',
+    marginTop: 4,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  infoText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#64748B',
+    fontWeight: '600',
+    flex: 1,
+  },
+
+  // Bottom CTA
+  cta: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 96 : 92,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(226, 232, 240, 0.9)',
+  },
+  nextBtn: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#976af0',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  nextBtnGradient: {
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nextBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  nextBtnLabel: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 15,
+    letterSpacing: 0.3,
+  },
 });

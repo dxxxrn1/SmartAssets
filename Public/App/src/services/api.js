@@ -4,8 +4,13 @@
 import { Platform } from 'react-native';
 
 // ── Base URL — configured via EXPO_PUBLIC_API_BASE_URL in .env ───────────────
-// Team members: update EXPO_PUBLIC_API_BASE_URL in .env with your computer's IP!
-const getBaseUrl = () => {
+// On web, automatically connects to localhost/current host on port 5000.
+// On native devices, uses EXPO_PUBLIC_API_BASE_URL from .env.
+export const getBaseUrl = () => {
+  if (Platform.OS === 'web') {
+    const host = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : 'localhost';
+    return `http://${host}:5000/api`;
+  }
   if (process.env.EXPO_PUBLIC_API_BASE_URL) {
     return process.env.EXPO_PUBLIC_API_BASE_URL;
   }
@@ -15,7 +20,7 @@ const getBaseUrl = () => {
   return 'http://localhost:5000/api';
 };
 
-const API_BASE_URL = getBaseUrl();
+export const API_BASE_URL = getBaseUrl();
 
 // ── Generic request helper ───────────────────────────────────────────────────
 async function apiRequest(endpoint, options = {}, token = null) {
@@ -38,9 +43,13 @@ async function apiRequest(endpoint, options = {}, token = null) {
     }
     return data;
   } catch (error) {
-    if (error.message === 'Network request failed') {
+    if (
+      error.message === 'Network request failed' ||
+      error.message?.includes('NetworkError') ||
+      error.message?.includes('Failed to fetch')
+    ) {
       throw new Error(
-        `Cannot connect to server at ${API_BASE_URL}.\nMake sure the backend is running and your IP in .env is correct.`
+        `Cannot connect to server at ${API_BASE_URL}. Make sure the backend is running at http://localhost:5000.`
       );
     }
     throw error;
@@ -82,6 +91,28 @@ export async function loginWithWalletApi(walletAddress) {
   });
 }
 
+/**
+ * Request a password reset email.
+ * @param {{ email: string, redirectTo?: string }} params
+ */
+export async function forgotPasswordApi({ email, redirectTo }) {
+  return apiRequest('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, redirectTo }),
+  });
+}
+
+/**
+ * Complete a password reset using the access_token from the reset email link.
+ * @param {{ accessToken: string, newPassword: string }} params
+ */
+export async function resetPasswordApi({ accessToken, newPassword }) {
+  return apiRequest('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ accessToken, newPassword }),
+  });
+}
+
 // ── User-Isolated Data API ───────────────────────────────────────────────────
 
 /**
@@ -118,17 +149,42 @@ export async function seedUserStarter(token) {
 
 // ── Dynamic Marketplace & Provenance History API ────────────────────────────
 
+// Client-side in-memory cache to prevent draining Supabase egress on repeated visits
+let clientMarketAssetsCache = null;
+let clientMarketAssetsCacheTime = 0;
+const CLIENT_MARKET_CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+
+export function invalidateMarketAssetsCache() {
+  clientMarketAssetsCache = null;
+  clientMarketAssetsCacheTime = 0;
+}
+
 /**
  * Fetch all marketplace assets with optional category or search query.
+ * Uses client-side caching for default queries to eliminate egress overhead.
  * @param {string} [category]
  * @param {string} [searchQuery]
+ * @param {boolean} [forceRefresh]
  */
-export async function getMarketAssets(category = 'All', searchQuery = '') {
+export async function getMarketAssets(category = 'All', searchQuery = '', forceRefresh = false) {
+  const isDefaultQuery = (!category || category === 'All') && (!searchQuery || !searchQuery.trim());
+
+  if (!forceRefresh && isDefaultQuery && clientMarketAssetsCache && (Date.now() - clientMarketAssetsCacheTime < CLIENT_MARKET_CACHE_TTL)) {
+    return { success: true, assets: clientMarketAssetsCache, cached: true };
+  }
+
   const params = new URLSearchParams();
   if (category && category !== 'All') params.append('category', category);
   if (searchQuery && searchQuery.trim()) params.append('q', searchQuery.trim());
   const qs = params.toString() ? `?${params.toString()}` : '';
-  return apiRequest(`/assets${qs}`, { method: 'GET' });
+  const data = await apiRequest(`/assets${qs}`, { method: 'GET' });
+
+  if (isDefaultQuery && data?.assets) {
+    clientMarketAssetsCache = data.assets;
+    clientMarketAssetsCacheTime = Date.now();
+  }
+
+  return data;
 }
 
 /**
@@ -141,10 +197,12 @@ export async function getAssetDetails(assetId) {
 
 /**
  * Create a new asset listing with picture and provenance history.
+ * Automatically invalidates client marketplace cache so the new asset appears immediately.
  * @param {object} assetData - { name, category, askingPrice, year, condition, description, image, history }
  * @param {string} token - User's Supabase JWT access token
  */
 export async function createAssetApi(assetData, token) {
+  invalidateMarketAssetsCache();
   return apiRequest(
     '/assets',
     {
@@ -320,3 +378,119 @@ export async function getMyEscrowOrdersApi(token) {
   return apiRequest('/escrow/my-orders', { method: 'GET' }, token);
 }
 
+// ── User Profile & Account Management API ────────────────────────────────────
+
+/**
+ * Fetch full profile data for authenticated user.
+ */
+/**
+ * Fetch aggregated analytics for authenticated user since joining.
+ */
+export async function getUserAnalyticsApi(token) {
+  return apiRequest('/user/analytics', { method: 'GET' }, token);
+}
+
+export async function getUserProfileApi(token) {
+  return apiRequest('/user/profile', { method: 'GET' }, token);
+}
+
+/**
+ * Update user profile details (fullName, avatarUrl, gender, dob, phone, password).
+ */
+export async function updateUserProfileApi(profileData, token) {
+  return apiRequest(
+    '/user/profile',
+    {
+      method: 'PUT',
+      body: JSON.stringify(profileData),
+    },
+    token
+  );
+}
+
+/**
+ * Permanently delete authenticated user's account and personal holdings.
+ */
+export async function deleteAccountApi(token) {
+  return apiRequest('/user/account', { method: 'DELETE' }, token);
+}
+
+// ── Support Tickets API ──────────────────────────────────────────────────────
+
+/**
+ * Lodge a support ticket or inquiry.
+ */
+export async function lodgeSupportTicketApi(ticketData, token) {
+  return apiRequest(
+    '/user/support',
+    {
+      method: 'POST',
+      body: JSON.stringify(ticketData),
+    },
+    token
+  );
+}
+
+/**
+ * Get ticket history for authenticated user.
+ */
+export async function getUserSupportTicketsApi(token) {
+  return apiRequest('/user/support', { method: 'GET' }, token);
+}
+
+// ── Vault Balance, Deposits & Withdrawals API ────────────────────────────────
+
+/**
+ * Deposit funds into user's vault balance.
+ * @param {{ amount: number, method?: string, reference?: string, notes?: string }} depositData
+ */
+export async function depositFundsApi(depositData, token) {
+  return apiRequest(
+    '/user/deposit',
+    {
+      method: 'POST',
+      body: JSON.stringify(depositData),
+    },
+    token
+  );
+}
+
+/**
+ * Withdraw funds from user's vault balance.
+ * @param {{ amount: number, method?: string, bankDetails?: object, walletAddress?: string, notes?: string }} withdrawData
+ */
+export async function withdrawFundsApi(withdrawData, token) {
+  return apiRequest(
+    '/user/withdraw',
+    {
+      method: 'POST',
+      body: JSON.stringify(withdrawData),
+    },
+    token
+  );
+}
+
+/**
+ * Fetch all transaction records (deposits, withdrawals, payouts) for user.
+ */
+export async function getVaultTransactionsApi(token) {
+  return apiRequest('/user/transactions', { method: 'GET' }, token);
+}
+
+/**
+ * Safely resolves an image URI for React Native Image component.
+ * If the URI is a relative path (/uploads/...) or points to an outdated IP,
+ * rewrites it using API_BASE_URL's active server origin.
+ */
+export function resolveImageUrl(imageUri) {
+  if (!imageUri || typeof imageUri !== 'string') return imageUri;
+  if (imageUri.startsWith('data:image/')) return imageUri;
+
+  const uploadsMatch = imageUri.match(/\/uploads\/assets\/[^"'\s?#]+/i);
+  if (uploadsMatch) {
+    const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+    return `${baseOrigin}${uploadsMatch[0]}`;
+  }
+
+  return imageUri;
+}

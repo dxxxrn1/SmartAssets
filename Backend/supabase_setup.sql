@@ -7,10 +7,14 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   full_name       TEXT NOT NULL,
   email           TEXT NOT NULL,
   wallet_address  TEXT UNIQUE,
+  avatar_url      TEXT,
+  balance         NUMERIC DEFAULT 0,
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS wallet_address TEXT UNIQUE;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS balance NUMERIC DEFAULT 0;
 
 -- 2. User Holdings table (personal vault, isolated per user)
 CREATE TABLE IF NOT EXISTS public.user_holdings (
@@ -75,19 +79,35 @@ CREATE TABLE IF NOT EXISTS public.asset_history (
 
 ALTER TABLE public.asset_history ADD COLUMN IF NOT EXISTS tx_hash TEXT;
 
--- 5. Grant table permissions
+-- 5. Vault Transactions table (Deposits, Withdrawals, Payouts)
+CREATE TABLE IF NOT EXISTS public.vault_transactions (
+  id              TEXT PRIMARY KEY,
+  user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  type            TEXT NOT NULL, -- 'deposit', 'withdraw'
+  amount          NUMERIC NOT NULL,
+  amount_formatted TEXT NOT NULL,
+  method          TEXT DEFAULT 'bank',
+  reference       TEXT,
+  notes           TEXT,
+  status          TEXT DEFAULT 'completed',
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 6. Grant table permissions
 GRANT ALL ON TABLE public.profiles TO postgres, anon, authenticated, service_role;
 GRANT ALL ON TABLE public.user_holdings TO postgres, anon, authenticated, service_role;
 GRANT ALL ON TABLE public.assets TO postgres, anon, authenticated, service_role;
 GRANT ALL ON TABLE public.asset_history TO postgres, anon, authenticated, service_role;
+GRANT ALL ON TABLE public.vault_transactions TO postgres, anon, authenticated, service_role;
 
--- 6. Enable Row Level Security (RLS)
+-- 7. Enable Row Level Security (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_holdings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.asset_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vault_transactions ENABLE ROW LEVEL SECURITY;
 
--- 7. Policies for profiles
+-- 8. Policies for profiles
 DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Service role can insert profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
@@ -122,7 +142,16 @@ CREATE POLICY "Anyone can view asset history" ON public.asset_history FOR SELECT
 CREATE POLICY "Users can insert asset history" ON public.asset_history FOR INSERT WITH CHECK (true);
 CREATE POLICY "Service role full access on asset history" ON public.asset_history FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- 10. Automatic trigger to sync auth.users with profiles
+-- 10. Policies for vault_transactions
+DROP POLICY IF EXISTS "Users can view own transactions" ON public.vault_transactions;
+DROP POLICY IF EXISTS "Users can insert own transactions" ON public.vault_transactions;
+DROP POLICY IF EXISTS "Service role full access on transactions" ON public.vault_transactions;
+
+CREATE POLICY "Users can view own transactions" ON public.vault_transactions FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own transactions" ON public.vault_transactions FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Service role full access on transactions" ON public.vault_transactions FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- 11. Automatic trigger to sync auth.users with profiles
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN

@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   primaryBtnLabel: {
-    color: '#FFFFFF',
+    color: '#004C3C',
     fontWeight: '700',
     fontSize: 15,
   },
