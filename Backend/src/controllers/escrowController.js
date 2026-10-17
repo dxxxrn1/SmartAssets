@@ -77,7 +77,7 @@ async function getEscrowOrder(req, res) {
       return sendError(res, 400, 'Order ID is required.');
     }
 
-    const order = escrowService.getEscrowOrder(orderId);
+    const order = escrowService.getEscrowOrder(orderId, req);
     return res.json({ success: true, order });
   } catch (err) {
     console.error('getEscrowOrder error:', err);
@@ -92,7 +92,7 @@ async function getEscrowOrder(req, res) {
 async function getMyEscrows(req, res) {
   try {
     const userId = req.user.id;
-    const orders = escrowService.getUserEscrowOrders(userId);
+    const orders = escrowService.getUserEscrowOrders(userId, req);
     return res.json({ success: true, orders });
   } catch (err) {
     console.error('getMyEscrows error:', err);

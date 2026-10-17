@@ -4,6 +4,7 @@
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const avatarService = require('../services/avatarService');
+const { normalizeImageUrl } = require('../utils/imageHandler');
 
 // ── GET /api/user/vault ──────────────────────────────────────────────────────
 // Returns ONLY holdings belonging to the authenticated user.
@@ -35,7 +36,10 @@ async function getVault(req, res) {
       });
     }
 
-    const items = holdings || [];
+    const items = (holdings || []).map((item) => ({
+      ...item,
+      image: normalizeImageUrl(item.image, req),
+    }));
     const vaultTxService = require('../services/vaultTransactionService');
     const availableBalanceNum = await vaultTxService.getUserBalance(userId);
     const availableBalanceFormatted = vaultTxService.formatZar(availableBalanceNum);

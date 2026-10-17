@@ -11,6 +11,7 @@ const userRoutes = require('./routes/userRoutes');
 const assetRoutes = require('./routes/assetRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const escrowRoutes = require('./routes/escrowRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -20,8 +21,9 @@ app.use(cors());                   // Allow requests from the Expo dev client
 app.use(express.json({ limit: '50mb' })); // Parse JSON request bodies (allows large base64 image uploads)
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// ── Static Files (Uploaded Avatars & Assets) ─────────────────────────────────
+// ── Static Files (Uploaded Avatars, Assets & Admin Console) ───────────────────
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
+app.use('/admin', express.static(path.resolve(__dirname, '../public/admin')));
 
 // ── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
@@ -29,6 +31,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/escrow', escrowRoutes);
+app.use('/api/admin', adminRoutes);
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -55,7 +58,9 @@ app.use((_req, res) => {
 // ── Start server ─────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n🚀 SmartAssets API running at http://localhost:${PORT}`);
-  console.log(`   Health check: http://localhost:${PORT}/api/health`);
+  console.log(`   Admin Console: http://localhost:${PORT}/admin`);
+  console.log(`   Admin API:     http://localhost:${PORT}/api/admin/overview`);
+  console.log(`   Health check:  http://localhost:${PORT}/api/health`);
   console.log(`   Auth routes:   POST /api/auth/register`);
   console.log(`                  POST /api/auth/login`);
   console.log(`                  POST /api/auth/wallet-login`);
