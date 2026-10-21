@@ -33,6 +33,7 @@ import VerificationScreen from '../screens/VerificationScreen';
 import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
 import ProfileScreen     from '../screens/ProfileScreen';
 import ProfileAnalyticsScreen from '../screens/ProfileAnalyticsScreen';
+import ARScreen          from '../screens/ARScreen';
 
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -97,7 +98,6 @@ function CustomTabBar({ state, navigation, isDark }) {
 
   return (
     <View
-      pointerEvents="box-none"
       style={{
         position: 'absolute',
         left: 0,
@@ -107,10 +107,10 @@ function CustomTabBar({ state, navigation, isDark }) {
         paddingBottom: bottomMargin,
         paddingHorizontal: 16,
         zIndex: 100,
+        pointerEvents: 'box-none',
       }}
     >
       <View
-        pointerEvents="auto"
         style={{
           width: '100%',
           maxWidth: 460,
@@ -144,13 +144,11 @@ function CustomTabBar({ state, navigation, isDark }) {
           ]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0.4, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-          pointerEvents="none"
+          style={[StyleSheet.absoluteFillObject, { pointerEvents: 'none' }]}
         />
 
         {/* Top edge glossy light reflection line */}
         <View
-          pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
@@ -158,6 +156,7 @@ function CustomTabBar({ state, navigation, isDark }) {
             right: 20,
             height: 1,
             backgroundColor: 'rgba(255, 255, 255, 0.35)',
+            pointerEvents: 'none',
           }}
         />
 
@@ -396,6 +395,10 @@ export default function Navigation() {
             <Stack.Screen name={SCREENS.RESET_PASSWORD}>
               {(props) => <ResetPasswordScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.AR_VIEWER}>
+              {(props) => <ARScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
           </>
         ) : (
           <>
@@ -445,6 +448,10 @@ export default function Navigation() {
 
             <Stack.Screen name={SCREENS.PROFILE_ANALYTICS}>
               {(props) => <ProfileAnalyticsScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.AR_VIEWER}>
+              {(props) => <ARScreen {...props} isDark={isDark} />}
             </Stack.Screen>
           </>
         )}

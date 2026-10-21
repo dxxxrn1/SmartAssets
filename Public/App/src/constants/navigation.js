@@ -29,6 +29,7 @@ export const SCREENS = {
   ESCROW_TRACKER: 'EscrowTracker',
   PROFILE: 'Profile',
   PROFILE_ANALYTICS: 'ProfileAnalytics',
+  AR_VIEWER: 'ARViewer',
 };
 
 // Bottom tab config — mirrors BottomNav

@@ -159,8 +159,7 @@ export default function AssetDetailScreen({ navigation, route }) {
         locations={[0, 0.22, 0.52, 0.78, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0.8, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-        pointerEvents="none"
+        style={[StyleSheet.absoluteFillObject, { pointerEvents: "none" }]}
       />
 
       <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
@@ -256,6 +255,16 @@ export default function AssetDetailScreen({ navigation, route }) {
                 <Text style={styles.heroBadgeText}>Limited edition</Text>
               </View>
             </View>
+
+            {/* Top Right "View in AR" Floating Action Pill */}
+            <TouchableOpacity
+              style={styles.heroArFloatingBtn}
+              onPress={() => navigation.navigate(SCREENS.AR_VIEWER, { asset })}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="cube-outline" size={14} color="#00C2FF" style={{ marginRight: 4 }} />
+              <Text style={styles.heroArFloatingText}>View in AR</Text>
+            </TouchableOpacity>
 
             {/* Bottom title & category overlay vignette */}
             <LinearGradient
@@ -739,10 +748,62 @@ export default function AssetDetailScreen({ navigation, route }) {
               liquidity.
             </Text>
           </View>
+
+          {/* ════════════════════════════════════════════════════════════════════
+              5. IN-APP AR EXPERIENCE SPOTLIGHT CARD ("View in your room")
+          ════════════════════════════════════════════════════════════════════ */}
+          <TouchableOpacity
+            style={styles.arSpotlightCard}
+            onPress={() => navigation.navigate(SCREENS.AR_VIEWER, { asset })}
+            activeOpacity={0.9}
+          >
+            <LinearGradient
+              colors={["#0F172A", "#1E1B4B", "#172554"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.arSpotlightGradient}
+            >
+              <View style={styles.arSpotlightTopRow}>
+                <View style={styles.arSpotlightBadge}>
+                  <Ionicons name="scan" size={13} color="#00C2FF" />
+                  <Text style={styles.arSpotlightBadgeText}>IN-APP AR EXPERIENCE</Text>
+                </View>
+                <View style={styles.ar1to1Badge}>
+                  <Text style={styles.ar1to1BadgeText}>1:1 PHYSICAL SCALE</Text>
+                </View>
+              </View>
+
+              <Text style={styles.arSpotlightTitle}>
+                View this collectible in your room
+              </Text>
+              <Text style={styles.arSpotlightSub}>
+                Detects walls and floors with millimeter accuracy. Experience real lighting, soft shadows, and interactive gestures.
+              </Text>
+
+              <View style={styles.arSpotlightActionRow}>
+                <View style={styles.arSpecsPill}>
+                  <Feather name="maximize-2" size={12} color="#CBD5E1" />
+                  <Text style={styles.arSpecsPillText}>True 1:1 Dimensions</Text>
+                </View>
+                <View style={styles.arLaunchBtn}>
+                  <Text style={styles.arLaunchBtnText}>Launch AR</Text>
+                  <Feather name="arrow-right" size={14} color="#00C2FF" style={{ marginLeft: 4 }} />
+                </View>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
         </ScrollView>
 
         {/* ── Bottom Floating Action Bar ── */}
         <View style={styles.bottomBar}>
+          <TouchableOpacity
+            style={styles.bottomArBtn}
+            onPress={() => navigation.navigate(SCREENS.AR_VIEWER, { asset })}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="cube-outline" size={18} color="#00C2FF" />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.healthReportBtn}
             onPress={() => setHealthModalVisible(true)}
@@ -2205,5 +2266,137 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
+  },
+  heroArFloatingBtn: {
+    position: "absolute",
+    top: 14,
+    right: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    borderWidth: 1.2,
+    borderColor: "rgba(0, 194, 255, 0.6)",
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    zIndex: 10,
+    shadowColor: "#00C2FF",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  heroArFloatingText: {
+    color: "#00C2FF",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  arSpotlightCard: {
+    borderRadius: 24,
+    overflow: "hidden",
+    shadowColor: "#00C2FF",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  arSpotlightGradient: {
+    padding: 20,
+    borderRadius: 24,
+    borderWidth: 1.2,
+    borderColor: "rgba(0, 194, 255, 0.3)",
+    gap: 10,
+  },
+  arSpotlightTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  arSpotlightBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0, 194, 255, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(0, 194, 255, 0.35)",
+  },
+  arSpotlightBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#00C2FF",
+    letterSpacing: 0.8,
+  },
+  ar1to1Badge: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  ar1to1BadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#CBD5E1",
+    letterSpacing: 0.6,
+  },
+  arSpotlightTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+  },
+  arSpotlightSub: {
+    fontSize: 12,
+    color: "#94A3B8",
+    lineHeight: 18,
+  },
+  arSpotlightActionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 4,
+  },
+  arSpecsPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  arSpecsPillText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#CBD5E1",
+  },
+  arLaunchBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 194, 255, 0.15)",
+    borderWidth: 1,
+    borderColor: "#00C2FF",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  arLaunchBtnText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#00C2FF",
+  },
+  bottomArBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1.5,
+    borderColor: "rgba(0, 194, 255, 0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#00C2FF",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
   },
 });

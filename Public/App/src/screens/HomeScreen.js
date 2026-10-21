@@ -318,8 +318,7 @@ export default function HomeScreen({ navigation }) {
         locations={[0, 0.22, 0.52, 0.78, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0.8, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-        pointerEvents="none"
+        style={[StyleSheet.absoluteFillObject, { pointerEvents: "none" }]}
       />
 
       <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
@@ -579,6 +578,49 @@ export default function HomeScreen({ navigation }) {
             </LinearGradient>
           </TouchableOpacity>
         </View>
+
+        {/* ── IN-APP AR SHOWROOM SPOTLIGHT BANNER ──────────────────────────────── */}
+        <TouchableOpacity
+          style={styles.arShowroomBanner}
+          onPress={() => navigation.navigate(SCREENS.AR_VIEWER)}
+          activeOpacity={0.92}
+        >
+          <LinearGradient
+            colors={['#0F172A', '#1E1B4B', '#172554']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.arShowroomGradient}
+          >
+            <View style={styles.arShowroomTopRow}>
+              <View style={styles.arShowroomBadge}>
+                <Ionicons name="scan" size={13} color="#00C2FF" />
+                <Text style={styles.arShowroomBadgeText}>NEW • IN-APP AR EXPERIENCE</Text>
+              </View>
+              <View style={styles.arTrueScalePill}>
+                <Text style={styles.arTrueScaleText}>1:1 SCALE</Text>
+              </View>
+            </View>
+
+            <Text style={styles.arShowroomTitle}>
+              Decorate your room with verified luxury
+            </Text>
+            <Text style={styles.arShowroomSubtitle}>
+              Hang paintings on your walls or place iconic furniture on your floor. Live plane tracking & soft shadows.
+            </Text>
+
+            <View style={styles.arShowroomFooter}>
+              <View style={styles.arShowroomItemsPill}>
+                <Ionicons name="cube-outline" size={13} color="#00C2FF" />
+                <Text style={styles.arShowroomItemsText}>5 Showcase Collectibles</Text>
+              </View>
+
+              <View style={styles.arShowroomActionBtn}>
+                <Text style={styles.arShowroomActionText}>Launch AR</Text>
+                <Feather name="arrow-right" size={14} color="#00C2FF" style={{ marginLeft: 4 }} />
+              </View>
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
 
         {/* ── BROWSE CATEGORIES (2x2 VISUAL IMAGE GRID) ───────────────────────── */}
         <View style={styles.dashboardSection}>
@@ -1278,5 +1320,99 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+  arShowroomBanner: {
+    marginHorizontal: 20,
+    marginTop: 14,
+    borderRadius: 24,
+    overflow: "hidden",
+    shadowColor: "#00C2FF",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  arShowroomGradient: {
+    padding: 20,
+    borderRadius: 24,
+    borderWidth: 1.2,
+    borderColor: "rgba(0, 194, 255, 0.35)",
+    gap: 10,
+  },
+  arShowroomTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  arShowroomBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0, 194, 255, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(0, 194, 255, 0.4)",
+  },
+  arShowroomBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#00C2FF",
+    letterSpacing: 0.8,
+  },
+  arTrueScalePill: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  arTrueScaleText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#CBD5E1",
+    letterSpacing: 0.6,
+  },
+  arShowroomTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+  },
+  arShowroomSubtitle: {
+    fontSize: 12,
+    color: "#94A3B8",
+    lineHeight: 18,
+  },
+  arShowroomFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 4,
+  },
+  arShowroomItemsPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  arShowroomItemsText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#CBD5E1",
+  },
+  arShowroomActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 194, 255, 0.15)",
+    borderWidth: 1,
+    borderColor: "#00C2FF",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  arShowroomActionText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#00C2FF",
   },
 });
