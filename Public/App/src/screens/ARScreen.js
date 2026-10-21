@@ -132,13 +132,15 @@ export default function ARScreen({ navigation, route }) {
 
     // Universal Live Camera AR engine (100% compatible with all Android devices, zero Google Play Services required)
     return (
-      <UniversalARCamera
-        item={selectedItem}
-        lighting={lightingLevel}
-        showShadow={shadowsEnabled}
-        onResetScale={() => setScaleFactor(1.0)}
-        onScaleChanged={setScaleFactor}
-      />
+      <View style={[StyleSheet.absoluteFillObject, { zIndex: 1, elevation: 1 }]}>
+        <UniversalARCamera
+          item={selectedItem}
+          lighting={lightingLevel}
+          showShadow={shadowsEnabled}
+          onResetScale={() => setScaleFactor(1.0)}
+          onScaleChanged={setScaleFactor}
+        />
+      </View>
     );
   };
 

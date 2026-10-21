@@ -279,9 +279,20 @@ export default function UniversalARCamera({
             {/* Fine Art Painting on Wall */}
             {isWall && item?.modelType === 'procedural_framed_canvas' ? (
               <View style={styles.ornateFrameWrapper}>
+                {/* Immediate Canvas Backdrop */}
+                <View style={styles.imagePlaceholderBackdrop}>
+                  <Feather name="image" size={28} color="#D4AF37" style={{ marginBottom: 4 }} />
+                  <Text style={styles.imagePlaceholderTitle} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.imagePlaceholderSubtitle}>
+                    {item.artist || '1:1 Museum Edition'}
+                  </Text>
+                </View>
+
                 <Image
                   source={{ uri: item.highResTexture || item.image }}
-                  style={styles.canvasPaintingImage}
+                  style={[StyleSheet.absoluteFillObject, styles.canvasPaintingImage]}
                   resizeMode="cover"
                 />
                 <View style={styles.frameBevelHighlight} />
@@ -295,9 +306,22 @@ export default function UniversalARCamera({
             ) : (
               /* Furniture, Sculpture, or Plinth Stand */
               <View style={styles.sculptureWrapper}>
+                {/* 3D Pedestal Stage Floor */}
+                <View style={styles.pedestalStageFloor} />
+                {/* Immediate Fallback Model Graphic */}
+                <View style={styles.imagePlaceholderBackdrop}>
+                  <Feather name="box" size={32} color="#00C2FF" style={{ marginBottom: 6 }} />
+                  <Text style={styles.imagePlaceholderTitle} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.imagePlaceholderSubtitle}>
+                    {item.dimensions?.displayString || 'True 1:1 Scale'}
+                  </Text>
+                </View>
+
                 <Image
                   source={{ uri: item.image }}
-                  style={styles.sculptureImage}
+                  style={[StyleSheet.absoluteFillObject, styles.sculptureImage]}
                   resizeMode="contain"
                 />
                 <LinearGradient
@@ -434,9 +458,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
   },
   touchArea: {
-    flex: 1,
-    position: 'relative',
-    overflow: 'hidden',
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+    elevation: 10,
   },
   simulatedRoomGrid: {
     position: 'absolute',
@@ -457,11 +481,13 @@ const styles = StyleSheet.create({
   },
   reticleWrap: {
     position: 'absolute',
-    top: '38%',
-    alignSelf: 'center',
+    top: '36%',
+    left: 0,
+    right: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 15,
+    zIndex: 30,
+    elevation: 30,
   },
   reticleRing: {
     width: 76,
@@ -489,11 +515,13 @@ const styles = StyleSheet.create({
   },
   itemAnchorWrap: {
     position: 'absolute',
-    top: '32%',
-    alignSelf: 'center',
+    top: '25%',
+    left: 0,
+    right: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
+    zIndex: 25,
+    elevation: 25,
   },
   groundSoftShadow: {
     position: 'absolute',
@@ -544,9 +572,9 @@ const styles = StyleSheet.create({
     position: 'relative',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.45,
+    shadowOpacity: 0.65,
     shadowRadius: 20,
-    elevation: 10,
+    elevation: 26,
   },
   canvasPaintingImage: {
     width: '100%',
@@ -567,22 +595,55 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    elevation: 26,
   },
   sculptureImage: {
     width: '100%',
     height: '100%',
+  },
+  imagePlaceholderBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+  },
+  imagePlaceholderTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#F8FAFC',
+    textAlign: 'center',
+  },
+  imagePlaceholderSubtitle: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#00C2FF',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  pedestalStageFloor: {
+    position: 'absolute',
+    bottom: -10,
+    width: 170,
+    height: 28,
+    borderRadius: 85,
+    backgroundColor: 'rgba(0, 194, 255, 0.18)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 194, 255, 0.5)',
   },
   metricTapeRuler: {
     position: 'absolute',
     bottom: -32,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
     borderWidth: 1,
-    borderColor: 'rgba(0, 194, 255, 0.4)',
+    borderColor: 'rgba(0, 194, 255, 0.6)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
+    zIndex: 35,
+    elevation: 35,
   },
   metricTapeText: {
     fontSize: 10,
@@ -592,15 +653,16 @@ const styles = StyleSheet.create({
   },
   surfaceSwitchPill: {
     position: 'absolute',
-    top: 110,
+    top: 105,
     alignSelf: 'center',
     flexDirection: 'row',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
     borderRadius: 24,
     padding: 3,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    zIndex: 20,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    zIndex: 40,
+    elevation: 40,
     gap: 4,
   },
   surfaceSwitchBtn: {
@@ -629,7 +691,8 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    zIndex: 20,
+    zIndex: 40,
+    elevation: 40,
     gap: 8,
   },
   snapRoomBtn: {
@@ -643,7 +706,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 40,
   },
   snapRoomBtnActive: {
     backgroundColor: '#059669',
@@ -670,17 +733,18 @@ const styles = StyleSheet.create({
   },
   microControlsRow: {
     position: 'absolute',
-    bottom: 168,
+    bottom: 175,
     alignSelf: 'center',
     flexDirection: 'row',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
     gap: 10,
-    zIndex: 20,
+    zIndex: 40,
+    elevation: 40,
   },
   microCtrlBtn: {
     flexDirection: 'row',
