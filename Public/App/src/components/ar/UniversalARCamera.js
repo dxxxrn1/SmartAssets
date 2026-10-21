@@ -344,30 +344,32 @@ export default function UniversalARCamera({
           </TouchableOpacity>
         </View>
 
-        {/* ── 5b. Camera Room Capture Button (Opens phone's real camera instantly) ── */}
-        <View style={styles.roomCameraBar}>
-          <TouchableOpacity
-            style={[styles.snapRoomBtn, roomPhotoUri && styles.snapRoomBtnActive]}
-            onPress={handleSnapRoomPhoto}
-            activeOpacity={0.85}
-          >
-            <Feather name="camera" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.snapRoomBtnText}>
-              {roomPhotoUri ? 'Retake Room Photo' : 'Open Camera • Snap Your Room'}
-            </Text>
-          </TouchableOpacity>
-
-          {roomPhotoUri && (
+        {/* Camera Room Capture Fallback Button (Only when live stream is inactive) */}
+        {(!cameraAvailable || !hasCameraPermission) && (
+          <View style={styles.roomCameraBar}>
             <TouchableOpacity
-              style={styles.clearRoomBtn}
-              onPress={() => setRoomPhotoUri(null)}
-              activeOpacity={0.8}
+              style={[styles.snapRoomBtn, roomPhotoUri && styles.snapRoomBtnActive]}
+              onPress={handleSnapRoomPhoto}
+              activeOpacity={0.85}
             >
-              <Feather name="rotate-ccw" size={12} color="#94A3B8" style={{ marginRight: 4 }} />
-              <Text style={styles.clearRoomBtnText}>Reset Room</Text>
+              <Feather name="camera" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.snapRoomBtnText}>
+                {roomPhotoUri ? 'Retake Room Photo' : 'Open Camera • Snap Your Room'}
+              </Text>
             </TouchableOpacity>
-          )}
-        </View>
+
+            {roomPhotoUri && (
+              <TouchableOpacity
+                style={styles.clearRoomBtn}
+                onPress={() => setRoomPhotoUri(null)}
+                activeOpacity={0.8}
+              >
+                <Feather name="rotate-ccw" size={12} color="#94A3B8" style={{ marginRight: 4 }} />
+                <Text style={styles.clearRoomBtnText}>Reset Room</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* ── 6. Live Interactive Controls (Rotate & 1:1 Reset) ── */}
         <View style={styles.microControlsRow}>
