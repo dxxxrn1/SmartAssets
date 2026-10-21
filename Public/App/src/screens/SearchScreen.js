@@ -1,7 +1,9 @@
-// ─── SearchScreen ─────────────────────────────────────────────────────────────
-// Marketplace / Discover Assets — 2-column product grid with search & category filters
+// ─── SearchScreen (Marketplace) ───────────────────────────────────────────────
+// SmartAssets Modern Glassmorphism Theme (Mockup 2025/2026)
+// Featuring AI-Powered Discovery Hero with Embedded Search, 4-Category Grid Overview,
+// and Verified Opportunities Marketplace Cards with AI Confidence & Current Valuations.
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -13,24 +15,18 @@ import {
   ActivityIndicator,
   useWindowDimensions,
   RefreshControl,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { useColors, ALIM } from "../constants/theme";
-import { SCREENS } from "../constants/navigation";
-import { getMarketAssets } from "../services/api";
-import { useTheme } from "../context/ThemeContext";
-import { OfflineBanner } from "../context/NetworkContext";
-import { getMarketAssetsCache } from "../services/storage";
-import { Feather, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { Feather, Ionicons } from "@expo/vector-icons";
+import { SCREENS } from "../constants/navigation";
+import { getMarketAssets, resolveImageUrl } from "../services/api";
+import storage, { STORAGE_KEYS } from "../utils/storage";
+import { useAuth } from "../context/AuthContext";
 
-// CARD_WIDTH computed inside component via useWindowDimensions
-// to prevent stale layout values on first render
-const CARD_GAP = 12;
-const CARD_H_PAD = 20;
-
-// Module-level cache to persist across re-mounts and tab switching (0 network egress on return)
+// ── Cache Configuration ───────────────────────────────────────────────────────
 let cachedScreenAssets = [];
 let lastScreenFetchTime = 0;
 const SCREEN_CACHE_TTL = 3 * 60 * 1000; // 3 minutes fresh cache
@@ -40,89 +36,278 @@ export function clearSearchScreenCache() {
   lastScreenFetchTime = 0;
 }
 
-const FILTER_TABS = [
-  { id: "All", label: "All", icon: "grid-outline", color: "#3B82F6" },
-  {
-    id: "Luxury Watch",
-    label: "Watches",
-    icon: "watch-outline",
-    color: "#F59E0B",
-  },
-  {
-    id: "Fine Art",
-    label: "Art",
-    icon: "color-palette-outline",
-    color: "#8B5CF6",
-  },
-  {
-    id: "Classic Car",
-    label: "Cars",
-    icon: "car-sport-outline",
-    color: "#EC4899",
-  },
-  { id: "Fine Wine", label: "Wine", icon: "wine-outline", color: "#EF4444" },
-];
-
-// Accent colour per category for card label
-const CAT_ACCENT = {
-  "Luxury Watch": "#38BDF8",
-  "Fine Art": "#A78BFA",
-  "Classic Car": "#FB923C",
-  "Fine Wine": "#F472B6",
+// ── Format Currency in British Pounds £ ───────────────────────────────────────
+const formatGBP = (val, fallback = "£34,500") => {
+  if (val === undefined || val === null || val === "") return fallback;
+  if (typeof val === "string" && val.startsWith("£")) return val;
+  if (typeof val === "string" && val.startsWith("R")) {
+    return "£" + val.replace(/^R\s?/, "");
+  }
+  const num =
+    typeof val === "number"
+      ? val
+      : parseFloat(String(val).replace(/[^0-9.-]+/g, ""));
+  if (isNaN(num)) return String(val);
+  return "£" + num.toLocaleString("en-GB", { maximumFractionDigits: 0 });
 };
 
-export default function SearchScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme, route }) {
-  const themeContext = useTheme();
-  const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
-  const toggleTheme = propToggleTheme || themeContext.toggleTheme;
+// ── Format Share Price Badge ────────────────────────────────────────────────
+const formatSharePrice = (asset) => {
+  if (asset.sharePrice) {
+    return typeof asset.sharePrice === "number"
+      ? `£${asset.sharePrice}/sh`
+      : String(asset.sharePrice).includes("/sh")
+        ? String(asset.sharePrice)
+        : `${asset.sharePrice}/sh`;
+  }
+  if (asset.share_price) {
+    return String(asset.share_price).includes("/sh")
+      ? String(asset.share_price)
+      : `${asset.share_price}/sh`;
+  }
+  const num =
+    asset.price_num ||
+    parseFloat(String(asset.price || "").replace(/[^0-9.-]+/g, "")) ||
+    0;
+  if (num > 0) {
+    const sp = Math.max(10, Math.round(num / 100));
+    return `£${sp.toLocaleString("en-GB")}/sh`;
+  }
+  return "£100/sh";
+};
+
+// Fallback verified opportunities matching Mockup 3 exactly
+const DEFAULT_OPPORTUNITIES = [
+  {
+    id: "opp-submariner",
+    name: "Authentic Vintage Rolex Submariner",
+    category: "WATCHES",
+    price: "£18,500",
+    confidence: "98% confidence",
+    gain: "+8.5%",
+    isVerified: true,
+    image:
+      "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80",
+  },
+  {
+    id: "opp-1",
+    name: "Rolex Daytona 116500LN",
+    category: "WATCHES",
+    price: "£34,500",
+    confidence: "96% confidence",
+    gain: "+12.4%",
+    isVerified: true,
+    image:
+      "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=600&q=80",
+  },
+  {
+    id: "opp-2",
+    name: "Untitled, 1984",
+    category: "ART",
+    price: "£124,000",
+    confidence: "91% confidence",
+    gain: "+6.8%",
+    isVerified: true,
+    image:
+      "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=600&q=80",
+  },
+  {
+    id: "opp-3",
+    name: "1967 Ferrari 330 GTC",
+    category: "CARS",
+    price: "£890,000",
+    confidence: "94% confidence",
+    gain: "+9.1%",
+    isVerified: true,
+    image:
+      "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=600&q=80",
+  },
+  {
+    id: "opp-4",
+    name: "Patek Philippe Nautilus 5711",
+    category: "WATCHES",
+    price: "£98,000",
+    confidence: "98% confidence",
+    gain: "+15.2%",
+    isVerified: true,
+    image:
+      "https://images.unsplash.com/photo-1547996160-81dfa63595aa?w=600&q=80",
+  },
+  {
+    id: "opp-5",
+    name: "Domaine de la Romanée-Conti 1990",
+    category: "WINE",
+    price: "£28,500",
+    confidence: "95% confidence",
+    gain: "+11.8%",
+    isVerified: true,
+    image:
+      "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&q=80",
+  },
+  {
+    id: "opp-6",
+    name: "1973 Porsche 911 Carrera RS",
+    category: "CARS",
+    price: "£450,000",
+    confidence: "93% confidence",
+    gain: "+8.4%",
+    isVerified: true,
+    image:
+      "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=600&q=80",
+  },
+];
+
+// ── Market Category Cards for Horizontal Carousel ────────────────────────────
+const MARKET_CATEGORY_CARDS = [
+  {
+    id: "all",
+    name: "All Assets",
+    categoryKey: "All",
+    dotColor: "#6C47FF",
+    defaultCount: "2,840 assets",
+    image:
+      "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80",
+  },
+  {
+    id: "watches",
+    name: "Watches",
+    categoryKey: "Watches",
+    dotColor: "#38BDF8",
+    defaultCount: "428 assets",
+    image:
+      "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80",
+  },
+  {
+    id: "art",
+    name: "Fine Art",
+    categoryKey: "Art",
+    dotColor: "#A855F7",
+    defaultCount: "1,204 assets",
+    image:
+      "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=600&auto=format&fit=crop&q=80",
+  },
+  {
+    id: "cars",
+    name: "Classic Cars",
+    categoryKey: "Cars",
+    dotColor: "#FB923C",
+    defaultCount: "316 assets",
+    image:
+      "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=600&auto=format&fit=crop&q=80",
+  },
+  {
+    id: "sneakers",
+    name: "Sneakers",
+    categoryKey: "Sneakers",
+    dotColor: "#10B981",
+    defaultCount: "542 assets",
+    image:
+      "https://images.unsplash.com/photo-1552346154-21d32810aba3?w=600&auto=format&fit=crop&q=80",
+  },
+  {
+    id: "wine",
+    name: "Fine Wine",
+    categoryKey: "Wine",
+    dotColor: "#F472B6",
+    defaultCount: "892 assets",
+    image:
+      "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&auto=format&fit=crop&q=80",
+  },
+  {
+    id: "electronics",
+    name: "Electronics",
+    categoryKey: "Electronics",
+    dotColor: "#6366F1",
+    defaultCount: "215 assets",
+    image:
+      "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=600&auto=format&fit=crop&q=80",
+  },
+];
+
+export default function SearchScreen({ navigation, route }) {
   const { width: screenWidth } = useWindowDimensions();
-  const CARD_WIDTH = (screenWidth - CARD_H_PAD * 2 - CARD_GAP) / 2;
-  const c = useColors(isDark);
-  const initialCat = route?.params?.initialCategory ?? "All";
+  const isDesktop = screenWidth >= 860;
+  const cardWidth = isDesktop
+    ? (screenWidth - 36 - 32) / 3
+    : (screenWidth - 36 - 16) / 2;
+
+  const { user } = useAuth();
+
+  const normalizeCategory = (cat) => {
+    if (!cat) return "All";
+    const low = String(cat).toLowerCase().trim();
+    if (low.includes("watch")) return "Watches";
+    if (low.includes("art")) return "Art";
+    if (low.includes("car") || low.includes("vehicle")) return "Cars";
+    if (low.includes("wine")) return "Wine";
+    if (low.includes("sneaker") || low.includes("shoe")) return "Sneakers";
+    if (
+      low.includes("electronic") ||
+      low.includes("apple") ||
+      low.includes("tech")
+    )
+      return "Electronics";
+    if (low.includes("all")) return "All";
+    return cat;
+  };
+
+  const initialCat = normalizeCategory(
+    route?.params?.category || route?.params?.initialCategory || "All",
+  );
+
   const [query, setQuery] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState(initialCat);
-  const [assets, setAssets] = useState(cachedScreenAssets);
+  const [assets, setAssets] = useState(
+    cachedScreenAssets.length > 0 ? cachedScreenAssets : DEFAULT_OPPORTUNITIES,
+  );
   const [loading, setLoading] = useState(cachedScreenAssets.length === 0);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Immediately hydrate from AsyncStorage cache so user sees market assets while offline
-  useEffect(() => {
-    getMarketAssetsCache().then((cached) => {
-      if (cached && cached.length > 0 && assets.length === 0) {
-        setAssets(cached);
-        cachedScreenAssets = cached;
+  // Fetch Assets from API
+  const fetchAssetsFromNetwork = useCallback(
+    async (isPullToRefresh = false) => {
+      try {
+        if (isPullToRefresh) {
+          setRefreshing(true);
+        } else if (cachedScreenAssets.length === 0) {
+          setLoading(true);
+        }
+        const res = await getMarketAssets("All", "", isPullToRefresh);
+        if (res?.assets && Array.isArray(res.assets) && res.assets.length > 0) {
+          cachedScreenAssets = res.assets;
+          lastScreenFetchTime = Date.now();
+          setAssets(res.assets);
+          await storage.setJSON(STORAGE_KEYS.MARKET_ASSETS, res.assets);
+        } else if (cachedScreenAssets.length === 0) {
+          setAssets(DEFAULT_OPPORTUNITIES);
+        }
+      } catch (err) {
+        console.warn(
+          "[SearchScreen] Using cached / mockup assets:",
+          err.message,
+        );
+        const cached = await storage.getJSON(STORAGE_KEYS.MARKET_ASSETS, []);
+        if (cached && cached.length > 0) {
+          cachedScreenAssets = cached;
+          setAssets(cached);
+        } else {
+          setAssets(DEFAULT_OPPORTUNITIES);
+        }
+      } finally {
         setLoading(false);
+        setRefreshing(false);
       }
-    });
-  }, []);
-
-  const fetchAssetsFromNetwork = useCallback(async (isPullToRefresh = false) => {
-    try {
-      if (isPullToRefresh) {
-        setRefreshing(true);
-      } else if (cachedScreenAssets.length === 0) {
-        setLoading(true);
-      }
-      const res = await getMarketAssets("All", "", isPullToRefresh);
-      if (res?.assets) {
-        const list = Array.isArray(res.assets) ? res.assets : [];
-        cachedScreenAssets = list;
-        lastScreenFetchTime = Date.now();
-        setAssets(list);
-      }
-    } catch (err) {
-      console.error("Failed to fetch market assets:", err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   useFocusEffect(
     useCallback(() => {
-      // Sync initial category from route params (e.g. tapped from Home)
-      if (route?.params?.initialCategory) {
-        setActiveCategory(route.params.initialCategory);
+      const incomingCat =
+        route?.params?.category || route?.params?.initialCategory;
+      if (incomingCat) {
+        setActiveCategory(normalizeCategory(incomingCat));
       }
 
       const now = Date.now();
@@ -130,531 +315,862 @@ export default function SearchScreen({ navigation, isDark: propIsDark, toggleThe
         cachedScreenAssets.length > 0 &&
         now - lastScreenFetchTime < SCREEN_CACHE_TTL;
 
-      // If fresh cached data exists, avoid redundant network downloads
       if (isFresh) {
-        if (assets.length === 0) {
-          setAssets(cachedScreenAssets);
-        }
+        setAssets(cachedScreenAssets);
         setLoading(false);
         return;
       }
 
       fetchAssetsFromNetwork(false);
-    }, [route?.params?.initialCategory, fetchAssetsFromNetwork, assets.length]),
+    }, [
+      route?.params?.category,
+      route?.params?.initialCategory,
+      fetchAssetsFromNetwork,
+    ]),
   );
 
   const onRefresh = useCallback(() => {
     fetchAssetsFromNetwork(true);
   }, [fetchAssetsFromNetwork]);
 
-  const assetList = Array.isArray(assets) ? assets : [];
-  let filtered = assetList;
+  // Compute live item count for category card
+  const getCategoryAssetCount = (categoryKey, defaultCount) => {
+    const source = assets.length > 0 ? assets : DEFAULT_OPPORTUNITIES;
+    if (categoryKey === "All") {
+      return `${source.length} assets`;
+    }
+    const count = source.filter((item) =>
+      matchesCategory(item.category, categoryKey),
+    ).length;
+    if (count > 0) {
+      return count === 1 ? "1 asset" : `${count} assets`;
+    }
+    return defaultCount;
+  };
 
-  if (activeCategory !== "All") {
-    filtered = filtered.filter((a) => a.category === activeCategory);
-  }
-  if (query) {
-    filtered = filtered.filter(
-      (a) =>
-        a.name?.toLowerCase().includes(query.toLowerCase()) ||
-        a.category?.toLowerCase().includes(query.toLowerCase()),
-    );
-  }
+  // Category matching helper
+  const matchesCategory = (catStr, targetTab) => {
+    if (!targetTab || targetTab === "All") return true;
+    const a = String(catStr || "")
+      .toLowerCase()
+      .trim();
+    const t = String(targetTab || "")
+      .toLowerCase()
+      .trim();
+    if (t === "watches") return a.includes("watch");
+    if (t === "art" || t === "fine art") return a.includes("art");
+    if (t === "cars" || t === "classic cars")
+      return a.includes("car") || a.includes("vehicle");
+    if (t === "wine" || t === "fine wine") return a.includes("wine");
+    if (t === "sneakers") return a.includes("sneaker") || a.includes("shoe");
+    if (t === "electronics")
+      return (
+        a.includes("electronic") ||
+        a.includes("tech") ||
+        a.includes("apple") ||
+        a.includes("gadget")
+      );
+    return a === t || a.includes(t) || t.includes(a);
+  };
 
-  const accent = (asset) => CAT_ACCENT[asset.category] ?? "#38BDF8";
+  // Filtered assets list
+  const filteredAssets = useMemo(() => {
+    const source = assets.length > 0 ? assets : DEFAULT_OPPORTUNITIES;
+    return source.filter((item) => {
+      const matchCat = matchesCategory(item.category, activeCategory);
+      if (!matchCat) return false;
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      return (
+        item.name?.toLowerCase().includes(q) ||
+        item.category?.toLowerCase().includes(q)
+      );
+    });
+  }, [assets, activeCategory, query]);
+
+  // User display name & initials
+  const userName =
+    user?.firstName ||
+    user?.fullName?.split(" ")[0] ||
+    user?.email?.split("@")[0] ||
+    "James";
+
+  const userPhoto =
+    user?.avatarUrl ||
+    user?.avatar_url ||
+    user?.avatar ||
+    user?.photoURL ||
+    user?.profileImage;
+
+  const userInitials = (
+    user?.fullName
+      ? user.fullName
+          .split(" ")
+          .map((n) => n[0])
+          .slice(0, 2)
+          .join("")
+      : "JH"
+  ).toUpperCase();
 
   return (
-    <SafeAreaView
-      edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: "#F1EFFB" }]}
-    >
-      <View style={{ flex: 1, backgroundColor: "#F4F6FA" }}>
-        {/* ══ FIXED DARK HEADER (never scrolls) ══ */}
-        <LinearGradient
-          colors={["#0F1A2E", "#1A1248", "#2D0A6B", "#3B0E87"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0.3, y: 1 }}
-          style={styles.heroCard}
-        >
-          {/* Hero tagline — compact & sleek */}
-          <View style={styles.heroTextWrap}>
-            <Text style={styles.heroCaption}>
-              VERIFIED LUXURY ASSETS · CURATED COLLECTION
-            </Text>
-            <Text style={styles.heroTitle}>
-              {"Discover your next asset "}
-              <Text style={styles.heroToday}>TODAY!</Text>
-            </Text>
-          </View>
+    <View style={styles.rootContainer}>
+      {/* ── Background Mesh Gradient (Full Screen Edge-to-Edge) ──────────────── */}
+      <LinearGradient
+        colors={[
+          "#e4e0ffff", // Soft luminous lavender
+          "#e0daffff", // Soft purple aura
+          "#f5dfefff", // Soft lilac-pink
+          "#fff5efff", // Soft peach aura
+          "#ffffffff", // Ambient cream
+        ]}
+        locations={[0, 0.22, 0.52, 0.78, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
 
-          {/* Search bar — always visible */}
-          <View style={styles.searchBarWrap}>
-            <View style={styles.searchBarInner}>
-              <Feather
-                name="search"
-                size={14}
-                color="#64748B"
-                style={{ marginRight: 8 }}
-              />
-              <TextInput
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search here…"
-                placeholderTextColor="#64748B"
-                style={styles.searchInput}
-              />
-              {query.length > 0 ? (
-                <TouchableOpacity onPress={() => setQuery("")}>
-                  <Feather name="x" size={13} color="#64748B" />
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.filterBadge}>
-                  <Text style={styles.filterBadgeText}>Filter</Text>
-                  <Feather name="sliders" size={10} color="#FFFFFF" />
-                </View>
-              )}
-            </View>
-          </View>
-
-          {/* Category filter pills */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}
-          >
-            {FILTER_TABS.map((tab) => {
-              const isActive = activeCategory === tab.id;
-              return (
-                <TouchableOpacity
-                  key={tab.id}
-                  onPress={() => setActiveCategory(tab.id)}
-                  style={[
-                    styles.filterPill,
-                    {
-                      backgroundColor: isActive
-                        ? tab.color
-                        : "rgba(255,255,255,0.12)",
-                      borderColor: isActive
-                        ? tab.color
-                        : "rgba(255,255,255,0.2)",
-                    },
-                  ]}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name={tab.icon}
-                    size={13}
-                    color={isActive ? "#FFFFFF" : "rgba(255,255,255,0.85)"}
-                    style={{ marginRight: 4 }}
-                  />
-                  <Text
-                    style={[
-                      styles.filterPillText,
-                      { color: isActive ? "#FFFFFF" : "rgba(255,255,255,0.85)" },
-                    ]}
-                  >
-                    {tab.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </LinearGradient>
-        {/* ══ END FIXED HEADER ══ */}
-
-        {/* ── SCROLLABLE CONTENT (White Mode) ── */}
+      <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
         <ScrollView
-          style={{ flex: 1, backgroundColor: "transparent" }}
-          contentContainerStyle={styles.grid}
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#38BDF8"
-              colors={["#38BDF8", "#7C3AED"]}
+              tintColor="#976af0"
+              colors={["#976af0", "#00fbff"]}
             />
           }
         >
-          {/* OFFLINE BANNER */}
-          <OfflineBanner
-            isDark={isDark}
-            message="⚡ Offline Mode — Showing saved marketplace assets."
-            style={{ marginHorizontal: 0, marginBottom: 12 }}
-          />
+          {/* ── TOP APP BAR / BRAND HEADER (Matches Home) ─────────────────────────── */}
+          <View style={styles.appBar}>
+            {/* Logo & Brand Name */}
+            <View style={styles.brandGroup}>
+              <LinearGradient
+                colors={["#976af0", "#00fbff"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.logoBadge}
+              >
+                <Ionicons name="diamond" size={17} color="#FFFFFF" />
+              </LinearGradient>
+              <Text style={styles.brandTitle}>SmartAssets</Text>
+            </View>
 
-          {/* Result count */}
-          <View style={styles.resultRow}>
-            <Text style={styles.resultLabel}>
-              {loading
-                ? "LOADING…"
-                : query
-                  ? `${filtered.length} RESULT${filtered.length !== 1 ? "S" : ""}`
-                  : "CURATED COLLECTION"}
-            </Text>
-            <Text style={styles.resultCount}>
-              {!loading &&
-                `${filtered.length} asset${filtered.length !== 1 ? "s" : ""}`}
-            </Text>
+            {/* Right: Profile Avatar Icon (Matches Home) */}
+            <View style={styles.appBarRight}>
+              <TouchableOpacity
+                style={styles.profileAvatarBtn}
+                onPress={() => navigation.navigate(SCREENS.PROFILE)}
+                activeOpacity={0.8}
+              >
+                {userPhoto ? (
+                  <Image
+                    source={{ uri: resolveImageUrl(userPhoto) }}
+                    style={styles.profileAvatarImg}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.profileAvatarFallback}>
+                    <Text style={styles.profileInitialsText}>
+                      {userInitials}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {loading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator size="large" color="#00A86B" />
-              <Text style={styles.loadingText}>Loading verified listings…</Text>
+          {/* ── EXPLORE / BROWSE CATEGORIES SECTION HEADER ─────────────────────── */}
+          <View style={styles.topHeaderRow}>
+            <View style={styles.headerLeftGroup}>
+              {navigation.canGoBack() && (
+                <TouchableOpacity
+                  style={styles.backBtn}
+                  onPress={() => navigation.goBack()}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="chevron-left" size={22} color="#0F172A" />
+                </TouchableOpacity>
+              )}
+              <View style={styles.headerTitleWrap}>
+                <Text style={styles.headerTag}>EXPLORE</Text>
+                <Text style={styles.headerTitle}>Browse Categories</Text>
+              </View>
             </View>
-          ) : filtered.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Feather name="inbox" size={36} color="#94A3B8" />
-              <Text style={styles.emptyText}>No assets found</Text>
-              <Text style={styles.emptySubtext}>
-                Try a different search or category
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.gridInner}>
-              {filtered.map((asset, idx) => {
-                const TRIO = ['#FF2D55', '#9333EA', '#FF9500'];
-                const itemTrioColor = TRIO[idx % TRIO.length];
-                const accentColor = accent(asset);
-                const isVerified = asset.badge === "Verified";
-                const isLeftCol = idx % 2 === 0;
+          </View>
+
+          {/* ── PERMANENTLY VISIBLE SLIM SEARCH INPUT BAR ────────────────────────── */}
+          <View style={styles.slimSearchBar}>
+            <Feather
+              name="search"
+              size={16}
+              color="#6C47FF"
+              style={{ marginRight: 8 }}
+            />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search watches, art, cars, models…"
+              placeholderTextColor="#94A3B8"
+              style={styles.slimSearchInput}
+              returnKeyType="search"
+            />
+            {query.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setQuery("")}
+                style={{ padding: 4 }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="x-circle" size={16} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* ── HORIZONTALLY SCROLLABLE CATEGORY CAROUSEL (LIVE FILTERS) ───────── */}
+          <View style={styles.categoriesCarouselWrap}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoriesCarouselScroll}
+            >
+              {MARKET_CATEGORY_CARDS.map((cat) => {
+                const isActive =
+                  activeCategory.toLowerCase() ===
+                    cat.categoryKey.toLowerCase() ||
+                  (cat.categoryKey === "All" && activeCategory === "All");
+
+                const countText = getCategoryAssetCount(
+                  cat.categoryKey,
+                  cat.defaultCount,
+                );
+
                 return (
                   <TouchableOpacity
-                    key={asset.id}
+                    key={cat.id}
                     style={[
-                      styles.card,
-                      {
-                        width: CARD_WIDTH,
-                        marginRight: isLeftCol ? CARD_GAP : 0,
-                        marginBottom: CARD_GAP,
-                      },
+                      styles.categoryCard,
+                      isActive
+                        ? [
+                            styles.categoryCardActive,
+                            {
+                              borderColor: cat.dotColor || "#6C47FF",
+                              shadowColor: cat.dotColor || "#6C47FF",
+                            },
+                          ]
+                        : styles.categoryCardInactive,
                     ]}
-                    onPress={() =>
-                      navigation.navigate(SCREENS.ASSET_DETAIL, { asset })
-                    }
+                    onPress={() => setActiveCategory(cat.categoryKey)}
                     activeOpacity={0.88}
                   >
-                    {/* ── Image ── */}
-                    <View
-                      style={[
-                        styles.cardImgWrap,
-                        { height: CARD_WIDTH * 0.85 },
-                      ]}
-                    >
-                      {asset.image ? (
-                        <View style={{ flex: 1, position: "relative" }}>
-                          <Image
-                            source={{ uri: asset.image }}
-                            style={styles.cardImg}
-                            resizeMode="cover"
-                          />
-                          <LinearGradient
-                            colors={[
-                              "transparent",
-                              "rgba(255,255,255,0.8)",
-                              "#FFFFFF",
-                            ]}
-                            locations={[0, 0.7, 1]}
-                            style={{
-                              position: "absolute",
-                              bottom: 0,
-                              left: 0,
-                              right: 0,
-                              height: 40,
-                            }}
-                          />
-                        </View>
-                      ) : (
-                        <View style={styles.cardImgPlaceholder}>
-                          <Feather name="box" size={28} color="#94A3B8" />
-                        </View>
-                      )}
-                      {/* Verified badge — top right overlay */}
-                      {isVerified && (
-                        <View style={styles.verifiedBadge}>
-                          <Ionicons
-                            name="checkmark-sharp"
-                            size={9}
-                            color="#059669"
-                          />
-                          <Text style={styles.verifiedText}>VERIFIED</Text>
-                        </View>
-                      )}
-                    </View>
+                    <Image
+                      source={{ uri: cat.image }}
+                      style={StyleSheet.absoluteFillObject}
+                      resizeMode="cover"
+                    />
 
-                    {/* ── Card body ── */}
-                    <View style={styles.cardBody}>
-                      {/* Category label */}
-                      <Text
-                        style={[styles.cardCat, { color: accentColor }]}
-                        numberOfLines={1}
+                    {/* Active highlight badge matching dot color */}
+                    {isActive && (
+                      <View
+                        style={[
+                          styles.activeCategoryBadge,
+                          { backgroundColor: cat.dotColor || "#6C47FF" },
+                        ]}
                       >
-                        {asset.category?.toUpperCase()}
-                      </Text>
-
-                      {/* Asset name */}
-                      <Text style={styles.cardName} numberOfLines={2}>
-                        {asset.name}
-                      </Text>
-
-                      {/* Price + invest button row */}
-                      <View style={styles.cardFooter}>
-                        <View>
-                          <Text style={styles.cardPriceLabel}>VALUE</Text>
-                          <Text style={[styles.cardPrice, { color: itemTrioColor }]}>{asset.price}</Text>
-                        </View>
-                        <TouchableOpacity
-                          style={[
-                            styles.investBtn,
-                            { backgroundColor: "#02ff39ff" },
-                          ]}
-                          onPress={() =>
-                            navigation.navigate(SCREENS.ASSET_DETAIL, { asset })
-                          }
-                          activeOpacity={0.85}
-                        >
-                          <Feather name="plus" size={16} color={ALIM.mintText} />
-                        </TouchableOpacity>
+                        <Ionicons
+                          name="checkmark-sharp"
+                          size={10}
+                          color="#FFFFFF"
+                        />
                       </View>
+                    )}
+
+                    {/* Dark frosted glass bottom overlay */}
+                    <View style={styles.categoryFrostedBar}>
+                      <View style={styles.categoryNameRow}>
+                        <Text style={styles.categoryNameText} numberOfLines={1}>
+                          {cat.name}
+                        </Text>
+                        <View
+                          style={[
+                            styles.categoryDot,
+                            { backgroundColor: cat.dotColor },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.categoryCountText} numberOfLines={1}>
+                        {countText}
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 );
               })}
+            </ScrollView>
+          </View>
+
+          {/* ══════════════════════════════════════════════════════════════════════
+            MARKETPLACE OPPORTUNITIES SECTION
+        ══════════════════════════════════════════════════════════════════════ */}
+          <View style={styles.marketSection}>
+            <View style={styles.marketHeaderRow}>
+              <View>
+                <Text style={styles.marketTag}>MARKETPLACE</Text>
+                <Text style={styles.marketTitle}>
+                  {loading
+                    ? "Loading opportunities…"
+                    : `${filteredAssets.length} verified opportunities`}
+                </Text>
+              </View>
             </View>
-          )}
+
+            {/* Cards Grid */}
+            {loading ? (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="large" color="#6D28D9" />
+                <Text style={styles.loadingText}>Loading marketplace…</Text>
+              </View>
+            ) : filteredAssets.length === 0 ? (
+              <View style={styles.emptyWrap}>
+                <Feather name="inbox" size={36} color="#94A3B8" />
+                <Text style={styles.emptyTitle}>No opportunities found</Text>
+                <Text style={styles.emptySubtitle}>
+                  Try adjusting your search query or category filter.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.gridWrap}>
+                {filteredAssets.map((asset) => {
+                  const formattedPrice = formatGBP(asset.price);
+                  const gain = asset.gain || "+12.4%";
+
+                  return (
+                    <TouchableOpacity
+                      key={asset.id}
+                      style={[styles.marketCard, { width: cardWidth }]}
+                      onPress={() =>
+                        navigation.navigate(SCREENS.ASSET_DETAIL, { asset })
+                      }
+                      activeOpacity={0.88}
+                    >
+                      {/* Card Image with Frosted Badges */}
+                      <View style={styles.cardImgWrap}>
+                        <Image
+                          source={{ uri: resolveImageUrl(asset.image) }}
+                          style={styles.cardImg}
+                          resizeMode="cover"
+                        />
+                        {/* Verified Badge */}
+                        <View style={styles.verifiedBadge}>
+                          <Ionicons
+                            name="checkmark-sharp"
+                            size={11}
+                            color="#FFFFFF"
+                            style={{ marginRight: 3 }}
+                          />
+                          <Text style={styles.verifiedText}>Verified</Text>
+                        </View>
+
+                        {/* Gain Badge: remove +0.0% so the top of image isn't cluttered */}
+                        {gain &&
+                          !gain.includes("0.0%") &&
+                          !gain.includes("+0%") &&
+                          gain !== "0%" && (
+                            <View style={styles.gainBadge}>
+                              <Text style={styles.gainText}>{gain}</Text>
+                            </View>
+                          )}
+                      </View>
+
+                      {/* Card Body: vertical stack, padding 12, overflow hidden */}
+                      <View style={styles.cardBody}>
+                        {/* Line 1: Category label only (small uppercase, no confidence text) */}
+                        <Text style={styles.cardCategory} numberOfLines={1}>
+                          {String(
+                            asset.category || "COLLECTIBLE",
+                          ).toUpperCase()}
+                        </Text>
+
+                        {/* Line 2: Item Title (1 line max with numberOfLines={1} and ellipsis) */}
+                        <Text
+                          style={styles.cardTitle}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          {asset.name}
+                        </Text>
+
+                        {/* Line 3: Full-width Price on left + Muted share price badge on right */}
+                        <View style={styles.cardPriceRow}>
+                          <Text style={styles.cardPriceValue} numberOfLines={1}>
+                            {formattedPrice}
+                          </Text>
+                          <View style={styles.sharePriceBadge}>
+                            <Text
+                              style={styles.sharePriceText}
+                              numberOfLines={1}
+                            >
+                              {formatSharePrice(asset)}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+
+          {/* Safe bottom spacer for floating navigation bar */}
+          <View style={{ height: 110 }} />
         </ScrollView>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F1EFFB" },
-
-  // ══ Hero Card (Purple/Violet Theme) ══
-  heroCard: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 24,
-    paddingTop: 16,
-    paddingBottom: 20,
-    shadowColor: "#6B21A8",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 12,
-    zIndex: 10,
+  rootContainer: {
+    flex: 1,
+    backgroundColor: "#F3EEFF",
   },
-
-  heroTextWrap: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 10 },
-  heroCaption: {
-    fontSize: 9.5,
-    fontWeight: "600",
-    color: "rgba(255,255,255,0.45)",
-    letterSpacing: 0.3,
-    marginBottom: 2,
-  },
-  heroTitle: {
-    fontSize: 23,
-    fontWeight: "900",
-    color: "#FFFFFF",
-    letterSpacing: -0.8,
-    lineHeight: 28,
-  },
-  heroTitleAccent: { color: "#FDE047" },
-  heroToday: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#FDE047",
-    letterSpacing: -0.8,
-    lineHeight: 26,
-  },
-
-  searchBarWrap: { paddingHorizontal: 20, paddingBottom: 20 },
-  searchBarInner: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.95)",
-    borderWidth: 0,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  searchInput: { flex: 1, fontSize: 12.5, color: "#1A202C" },
-  filterBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#F59E0B",
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 9,
-  },
-  filterBadgeText: { fontSize: 11, fontWeight: "900", color: "#FFFFFF" },
-
-  filterRow: {
-    paddingHorizontal: 20,
-    paddingBottom: 2,
-    gap: 8,
-    flexDirection: "row",
-  },
-  filterPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "flex-start",
-    height: 32,
-    paddingHorizontal: 13,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  filterPillText: {
-    fontSize: 12.5,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-    color: "#64748B",
-  },
-    // ── Result header ──
-  resultRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 8,
-  },
-  resultLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.2,
-    color: "#64748B",
-  },
-  resultCount: { fontSize: 11, fontWeight: "500", color: "#0F172A" },
-
-  // ── Grid ──
-  grid: {
-    paddingBottom: 28,
+  safeArea: {
+    flex: 1,
     backgroundColor: "transparent",
   },
-  gridInner: {
+  scrollContent: {
+    paddingHorizontal: 18,
+    paddingTop: 12,
+  },
+
+  // ── Brand Header ────────────────────────────────────────────────────────────
+  appBar: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    paddingHorizontal: CARD_H_PAD,
-  },
-  loadingWrap: {
-    paddingTop: 60,
     alignItems: "center",
-    gap: 12,
+    justifyContent: "space-between",
+    marginBottom: 20,
+    marginTop: 4,
   },
-  loadingText: { color: "#2E4A6B", fontSize: 13 },
-  emptyWrap: {
-    paddingTop: 60,
+  brandGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  logoBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+    shadowColor: "#6D28D9",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  brandTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.4,
+  },
+  appBarRight: {
+    flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#2E4A6B",
-    marginTop: 12,
+  profileAvatarBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "#7C3AED",
+    backgroundColor: "#EDE9FE",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  emptySubtext: { fontSize: 13, color: "#1A3055" },
+  profileAvatarImg: {
+    width: "100%",
+    height: "100%",
+  },
+  profileAvatarFallback: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EDE9FE",
+  },
+  profileInitialsText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#6D28D9",
+  },
 
-  // ── Product card (Light luxury mode) ──
-  card: {
-    backgroundColor: "#161E36",
+  // ── Explore / Categories Section Header (Moved down below AppBar) ───────────
+  topHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+    marginTop: 2,
+  },
+  headerLeftGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.85)",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  headerTitleWrap: {
+    justifyContent: "center",
+  },
+  headerTag: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#7C3AED",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.4,
+  },
+  headerRightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  searchToggleBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.85)",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  searchToggleBtnActive: {
+    backgroundColor: "#F5F3FF",
+    borderColor: "#6C47FF",
+  },
+  addAssetBtnCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#6D28D9",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#6D28D9",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+
+  // ── Slim Search Input Bar ───────────────────────────────────────────────────
+  slimSearchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.96)",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    height: 40,
+    marginBottom: 14,
+    borderWidth: 1.5,
+    borderColor: "#6C47FF",
+    shadowColor: "#6C47FF",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  slimSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: "#0F172A",
+    fontWeight: "600",
+    paddingVertical: 0,
+  },
+
+  // ── Horizontal Categories Carousel ──────────────────────────────────────────
+  categoriesCarouselWrap: {
+    marginBottom: 20,
+    marginHorizontal: -18,
+  },
+  categoriesCarouselScroll: {
+    paddingHorizontal: 18,
+    paddingBottom: 4,
+    paddingTop: 20,
+  },
+  categoryCard: {
+    width: 145,
+    height: 95,
+    borderRadius: 16,
+    marginRight: 12,
+    overflow: "hidden",
+    backgroundColor: "#1E293B",
+    position: "relative",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  categoryCardActive: {
+    borderWidth: 2.5,
+    borderColor: "#6C47FF",
+    shadowColor: "#6C47FF",
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  categoryCardInactive: {
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.65)",
+  },
+  activeCategoryBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    backgroundColor: "#6C47FF",
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 3,
+    zIndex: 2,
+  },
+  categoryFrostedBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(15, 23, 42, 0.72)",
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.12)",
+    ...(Platform.OS === "web"
+      ? {
+          backdropFilter: "blur(10px)",
+          WebkitBackdropFilter: "blur(10px)",
+        }
+      : {}),
+  },
+  categoryNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  categoryNameText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+    flex: 1,
+    marginRight: 4,
+  },
+  categoryDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  categoryCountText: {
+    color: "rgba(255, 255, 255, 0.75)",
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 1,
+  },
+
+  // ── Marketplace Section ─────────────────────────────────────────────────────
+  marketSection: {
+    marginTop: 2,
+  },
+  marketHeaderRow: {
+    marginBottom: 14,
+  },
+  marketTag: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#7C3AED",
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  marketTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.4,
+  },
+
+  // Cards Grid
+  gridWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 14,
+  },
+  marketCard: {
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#F1F5F9",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
+    borderColor: "rgba(226, 232, 240, 0.8)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowRadius: 16,
+    elevation: 4,
   },
   cardImgWrap: {
+    height: 180,
     width: "100%",
-    backgroundColor: "#F1F5F9",
     position: "relative",
+    backgroundColor: "#F1F5F9",
   },
   cardImg: {
     width: "100%",
     height: "100%",
   },
-  cardImgPlaceholder: {
-    width: "100%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F8FAFC",
-  },
   verifiedBadge: {
     position: "absolute",
-    top: 8,
-    right: 8,
+    top: 10,
+    left: 10,
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
-    backgroundColor: "rgba(16, 185, 129, 0.18)",
-    borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.4)",
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 999,
   },
   verifiedText: {
-    fontSize: 8,
-    fontWeight: "800",
-    color: "#10B981",
-    letterSpacing: 0.5,
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
+  gainBadge: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  gainText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#10B981",
+  },
+
+  // Card Body
   cardBody: {
     padding: 12,
-    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
   },
-  cardCat: {
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 1,
-    marginBottom: 3,
+  cardCategory: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#7C3AED",
+    letterSpacing: 0.8,
+    marginBottom: 4,
+    textTransform: "uppercase",
   },
-  cardName: {
-    fontSize: 13,
+  cardTitle: {
+    fontSize: 14,
     fontWeight: "700",
     color: "#0F172A",
-    lineHeight: 17,
-    marginBottom: 10,
-    letterSpacing: -0.2,
+    marginBottom: 8,
+    lineHeight: 18,
   },
-  cardFooter: {
+  cardPriceRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-  },
-  cardPriceLabel: {
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 0.8,
-    color: "#94A3B8",
-    marginBottom: 2,
-  },
-  cardPrice: {
-    fontSize: 16,
-    fontWeight: "900",
-    letterSpacing: -0.3,
-  },
-  investBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(241, 245, 249, 0.9)",
+  },
+  cardPriceValue: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#0F172A",
+    flexShrink: 1,
+  },
+  sharePriceBadge: {
+    backgroundColor: "#F1F5F9",
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    borderRadius: 6,
+    marginLeft: 6,
+  },
+  sharePriceText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+
+  // State wrappers
+  loadingWrap: {
+    paddingVertical: 40,
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 13,
+    color: "#64748B",
+  },
+  emptyWrap: {
+    paddingVertical: 48,
+    alignItems: "center",
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginTop: 12,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: "#64748B",
+    marginTop: 4,
   },
 });

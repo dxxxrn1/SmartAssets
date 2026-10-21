@@ -60,10 +60,10 @@ function persistStorage() {
 initStorage();
 
 /**
- * Format currency amount into South African Rand string
+ * Format currency amount into GBP (£) string
  */
 function formatZar(num) {
-  return 'R' + Number(num || 0).toLocaleString('en-ZA', {
+  return '£' + Number(num || 0).toLocaleString('en-GB', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });

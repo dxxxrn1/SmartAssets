@@ -20,16 +20,14 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useNetwork, OfflineBanner } from '../context/NetworkContext';
+import { API_BASE_URL, forgotPasswordApi } from '../services/api';
+import { isOnlineSync, checkInternetConnection } from '../utils/network';
 
 const DEFAULT_DEMO_WALLET =
   '0x71C8360f3a14672D62372c388657B43933c039A4';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
-
-export default function LoginScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme }) {
-  const themeContext = useTheme();
-  const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
-  const toggleTheme = propToggleTheme || themeContext.toggleTheme;
+export default function LoginScreen({ navigation, isDark: propIsDark }) {
+  const { isDark, toggleTheme } = useTheme();
   const c = useColors(isDark);
   const { login, loginWithWallet } = useAuth();
   const { isConnected, isOffline, checkConnection } = useNetwork();
@@ -73,8 +71,8 @@ export default function LoginScreen({ navigation, isDark: propIsDark, toggleThem
   const handleSignIn = async () => {
     setError('');
 
-    const isOnline = await verifyOnline();
-    if (!isOnline) {
+    if (!isOnlineSync()) {
+      setError('No internet connection. Please connect to the internet to sign in.');
       return;
     }
 
@@ -85,13 +83,28 @@ export default function LoginScreen({ navigation, isDark: propIsDark, toggleThem
 
     setLoading(true);
 
+    const isConnected = await checkInternetConnection();
+    if (!isConnected) {
+      setLoading(false);
+      setError('No internet connection. Please connect to the internet to sign in.');
+      return;
+    }
+
     try {
       await login(email.trim().toLowerCase(), password);
     } catch (err) {
-      setError(
-        err?.message ||
-          'Login failed. Please verify your email and password.'
-      );
+      if (
+        err?.message?.includes('Network') ||
+        err?.message?.includes('Failed to fetch') ||
+        err?.message?.includes('Cannot connect')
+      ) {
+        setError('No internet connection. Please connect to the internet to sign in.');
+      } else {
+        setError(
+          err?.message ||
+            'Login failed. Please verify your email and password.'
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -104,9 +117,8 @@ export default function LoginScreen({ navigation, isDark: propIsDark, toggleThem
   const handleForgotPassword = async () => {
     setForgotError('');
 
-    const isOnline = await verifyOnline();
-    if (!isOnline) {
-      setForgotError('No internet connection. Please connect to the internet to request a reset link.');
+    if (!isOnlineSync()) {
+      setForgotError('No internet connection. Please connect to the internet to reset your password.');
       return;
     }
 
@@ -135,23 +147,12 @@ export default function LoginScreen({ navigation, isDark: propIsDark, toggleThem
     setForgotLoading(true);
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/auth/forgot-password`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: cleanEmail,
-            redirectTo,
-          }),
-        }
-      );
+      const data = await forgotPasswordApi({
+        email: cleanEmail,
+        redirectTo,
+      });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
+      if (!data.success) {
         throw new Error(
           data.message ||
             'Could not send the reset link. Please try again.'
@@ -239,21 +240,39 @@ export default function LoginScreen({ navigation, isDark: propIsDark, toggleThem
   const handleDemoWalletLogin = async () => {
     setError('');
 
-    const isOnline = await verifyOnline();
-    if (!isOnline) {
+    if (!isOnlineSync()) {
+      setError('No internet connection. Please connect to the internet to sign in.');
+      setWalletModalVisible(false);
       return;
     }
 
     setConnectingWallet(true);
     setWalletStatus('Connecting demo wallet...');
 
+    const isConnected = await checkInternetConnection();
+    if (!isConnected) {
+      setConnectingWallet(false);
+      setWalletStatus('');
+      setWalletModalVisible(false);
+      setError('No internet connection. Please connect to the internet to sign in.');
+      return;
+    }
+
     try {
       await loginWithWallet(DEFAULT_DEMO_WALLET);
     } catch (err) {
-      setError(
-        err?.message ||
-          'Demo wallet login failed.'
-      );
+      if (
+        err?.message?.includes('Network') ||
+        err?.message?.includes('Failed to fetch') ||
+        err?.message?.includes('Cannot connect')
+      ) {
+        setError('No internet connection. Please connect to the internet to sign in.');
+      } else {
+        setError(
+          err?.message ||
+            'Demo wallet login failed.'
+        );
+      }
     } finally {
       setConnectingWallet(false);
       setWalletStatus('');
@@ -264,8 +283,9 @@ export default function LoginScreen({ navigation, isDark: propIsDark, toggleThem
   const handleCustomWalletLogin = async () => {
     setError('');
 
-    const isOnline = await verifyOnline();
-    if (!isOnline) {
+    if (!isOnlineSync()) {
+      setError('No internet connection. Please connect to the internet to sign in.');
+      setWalletModalVisible(false);
       return;
     }
 
@@ -279,13 +299,30 @@ export default function LoginScreen({ navigation, isDark: propIsDark, toggleThem
     setConnectingWallet(true);
     setWalletStatus('Authenticating wallet...');
 
+    const isConnected = await checkInternetConnection();
+    if (!isConnected) {
+      setConnectingWallet(false);
+      setWalletStatus('');
+      setWalletModalVisible(false);
+      setError('No internet connection. Please connect to the internet to sign in.');
+      return;
+    }
+
     try {
       await loginWithWallet(cleanWallet);
     } catch (err) {
-      setError(
-        err?.message ||
-          'Wallet login failed.'
-      );
+      if (
+        err?.message?.includes('Network') ||
+        err?.message?.includes('Failed to fetch') ||
+        err?.message?.includes('Cannot connect')
+      ) {
+        setError('No internet connection. Please connect to the internet to sign in.');
+      } else {
+        setError(
+          err?.message ||
+            'Wallet login failed.'
+        );
+      }
     } finally {
       setConnectingWallet(false);
       setWalletStatus('');
@@ -332,37 +369,40 @@ export default function LoginScreen({ navigation, isDark: propIsDark, toggleThem
         >
           {/* HEADER */}
           <View style={styles.header}>
-            {/* Quick theme toggle */}
-            <TouchableOpacity
-              onPress={toggleTheme}
-              style={[
-                styles.themeToggleBtn,
-                {
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
-                  borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
-                },
-              ]}
-              activeOpacity={0.7}
-              accessibilityLabel="Toggle theme"
-            >
-              <Feather
-                name={isDark ? 'sun' : 'moon'}
-                size={18}
-                color={isDark ? '#FBBF24' : '#4B5563'}
-              />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 16 }}>
+              <View
+                style={[
+                  styles.logoBox,
+                  { backgroundColor: c.primary, marginBottom: 0 },
+                ]}
+              >
+                <Feather
+                  name="shield"
+                  size={26}
+                  color="#FFFFFF"
+                />
+              </View>
 
-            <View
-              style={[
-                styles.logoBox,
-                { backgroundColor: c.primary },
-              ]}
-            >
-              <Feather
-                name="shield"
-                size={26}
-                color="#FFFFFF"
-              />
+              <TouchableOpacity
+                onPress={toggleTheme}
+                activeOpacity={0.7}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  paddingHorizontal: 12,
+                  paddingVertical: 7,
+                  borderRadius: 20,
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)',
+                  borderWidth: 1,
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.08)',
+                }}
+              >
+                <Feather name={isDark ? 'sun' : 'moon'} size={15} color={isDark ? '#F59E0B' : '#334155'} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#F1F5F9' : '#334155' }}>
+                  {isDark ? 'Dark Mode' : 'Light Mode'}
+                </Text>
+              </TouchableOpacity>
             </View>
 
             <Text
@@ -382,6 +422,28 @@ export default function LoginScreen({ navigation, isDark: propIsDark, toggleThem
             >
               Smart finance. Smarter future.
             </Text>
+
+            {!isOnlineSync() && (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginTop: 10,
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 16,
+                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(239, 68, 68, 0.25)',
+                }}
+              >
+                <Feather name="wifi-off" size={13} color="#EF4444" />
+                <Text style={{ fontSize: 11.5, fontWeight: '600', color: '#EF4444' }}>
+                  Offline — Connect to the internet to sign in
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* OFFLINE BANNER */}

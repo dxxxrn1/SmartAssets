@@ -1,10 +1,9 @@
 // ─── Authentication Context ──────────────────────────────────────────────────
-// Provides global authentication state, user session persistence via AsyncStorage,
-// and auth actions. Prevents users from being kicked out on browser refresh or reload.
+// Provides global authentication state, user session persistence via AsyncStorage, and auth actions.
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loginUser, registerUser, loginWithWalletApi } from '../services/api';
-import { saveAuthSession, getAuthSession, clearAuthSession } from '../services/storage';
+import { loginUser, registerUser, loginWithWalletApi, getUserProfileApi } from '../services/api';
+import storage, { STORAGE_KEYS } from '../utils/storage';
 
 const AuthContext = createContext(null);
 
@@ -12,44 +11,58 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [sessionRestored, setSessionRestored] = useState(false);
 
-  // Restore authenticated session from AsyncStorage on startup / page refresh
+  // Restore authenticated session from AsyncStorage on app boot / page refresh
   useEffect(() => {
-    let isMounted = true;
     async function restoreSession() {
       try {
-        const { user: savedUser, token: savedToken } = await getAuthSession();
-        if (isMounted && savedUser && savedToken) {
-          setUser(savedUser);
-          setToken(savedToken);
+        const savedSession = await storage.getJSON(STORAGE_KEYS.SESSION);
+        if (savedSession && savedSession.user && savedSession.token) {
+          try {
+            await getUserProfileApi(savedSession.token);
+            setUser(savedSession.user);
+            setToken(savedSession.token);
+          } catch (valErr) {
+            const msg = valErr?.message || '';
+            if (
+              msg.includes('Unauthorized') ||
+              msg.includes('Session expired') ||
+              msg.includes('invalid token')
+            ) {
+              console.warn('[AuthContext] Stored session expired or invalid. Prompting login.');
+              await storage.removeItem(STORAGE_KEYS.SESSION);
+              setUser(null);
+              setToken(null);
+            } else {
+              // Retain session if offline / temporary network issue
+              setUser(savedSession.user);
+              setToken(savedSession.token);
+            }
+          }
         }
       } catch (err) {
-        console.warn('[AuthContext] Failed to restore session from AsyncStorage:', err);
+        console.warn('[AuthContext] Error restoring session:', err.message);
       } finally {
-        if (isMounted) {
-          setIsInitializing(false);
-        }
+        setSessionRestored(true);
       }
     }
 
     restoreSession();
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
   const login = async (email, password) => {
     setLoading(true);
     try {
       const response = await loginUser({ email, password });
-      const loggedUser = response.user;
-      const accessToken = response.session?.access_token || response.token;
+      const nextUser = response.user;
+      const nextToken = response.session?.access_token || response.token;
 
-      setUser(loggedUser);
-      setToken(accessToken);
-      await saveAuthSession(loggedUser, accessToken);
+      setUser(nextUser);
+      setToken(nextToken);
 
+      // Persist session to AsyncStorage
+      await storage.setJSON(STORAGE_KEYS.SESSION, { user: nextUser, token: nextToken });
       return response;
     } finally {
       setLoading(false);
@@ -60,13 +73,14 @@ export function AuthProvider({ children }) {
     setLoading(true);
     try {
       const response = await loginWithWalletApi(walletAddress);
-      const loggedUser = response.user;
-      const accessToken = response.session?.access_token || response.token;
+      const nextUser = response.user;
+      const nextToken = response.session?.access_token || response.token;
 
-      setUser(loggedUser);
-      setToken(accessToken);
-      await saveAuthSession(loggedUser, accessToken);
+      setUser(nextUser);
+      setToken(nextToken);
 
+      // Persist session to AsyncStorage
+      await storage.setJSON(STORAGE_KEYS.SESSION, { user: nextUser, token: nextToken });
       return response;
     } finally {
       setLoading(false);
@@ -77,11 +91,12 @@ export function AuthProvider({ children }) {
     setLoading(true);
     try {
       const response = await registerUser({ email, password, fullName });
-      // If register returns session immediately, persist it
       if (response?.user && response?.session?.access_token) {
-        setUser(response.user);
-        setToken(response.session.access_token);
-        await saveAuthSession(response.user, response.session.access_token);
+        const nextUser = response.user;
+        const nextToken = response.session.access_token;
+        setUser(nextUser);
+        setToken(nextToken);
+        await storage.setJSON(STORAGE_KEYS.SESSION, { user: nextUser, token: nextToken });
       }
       return response;
     } finally {
@@ -93,19 +108,17 @@ export function AuthProvider({ children }) {
     setUser(null);
     setToken(null);
     try {
-      await clearAuthSession();
-    } catch (err) {
-      console.warn('[AuthContext] Failed to clear session:', err);
+      await storage.removeItem(STORAGE_KEYS.SESSION);
+    } catch (e) {
+      console.warn('[AuthContext] Error clearing session from storage:', e.message);
     }
   };
 
-  const updateUser = (updates) => {
+  const updateUser = async (updates) => {
     setUser((prev) => {
-      const updated = prev ? { ...prev, ...updates } : updates;
-      if (token) {
-        saveAuthSession(updated, token).catch(() => {});
-      }
-      return updated;
+      const next = prev ? { ...prev, ...updates } : updates;
+      storage.setJSON(STORAGE_KEYS.SESSION, { user: next, token });
+      return next;
     });
   };
 
@@ -116,7 +129,7 @@ export function AuthProvider({ children }) {
         token,
         isAuthenticated: !!user,
         loading,
-        isInitializing,
+        sessionRestored,
         login,
         loginWithWallet,
         register,

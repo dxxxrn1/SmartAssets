@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const web3Service = require('./web3Service');
+const { saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
 
 const DATA_DIR = path.resolve(__dirname, '../data');
 const ESCROW_FILE = path.join(DATA_DIR, 'escrowOrders.json');
@@ -86,6 +87,9 @@ async function createEscrowOrder({
   const etherscanUrl = onChainLock.etherscanUrl || `https://sepolia.etherscan.io/tx/${txHash}`;
   const now = new Date().toISOString();
 
+  // Ensure base64 image is converted to static on-disk file to prevent JSON store bloat
+  const cleanImage = saveBase64Image(assetImage, `ord_${finalOrderId}`) || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
+
   const escrowOrder = {
     orderId: finalOrderId,
     buyerId: buyerId || 'anonymous-buyer',
@@ -93,7 +97,7 @@ async function createEscrowOrder({
     assetId: assetId || null,
     assetName: assetName || 'Luxury Collectible',
     assetCategory: assetCategory || 'Luxury Asset',
-    assetImage: assetImage || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
+    assetImage: cleanImage,
     amountZar: zarVal,
     amountGbp: zarVal,
     amountEth: ethVal,
@@ -148,7 +152,7 @@ async function createEscrowOrder({
 /**
  * Fetch an escrow order by ID.
  */
-function getEscrowOrder(orderId) {
+function getEscrowOrder(orderId, req = null) {
   let order = ordersMap.get(orderId);
   if (!order) {
     // Generate default verified demo order if requested for a mock ID
@@ -207,20 +211,40 @@ function getEscrowOrder(orderId) {
     ordersMap.set(orderId, order);
     persistOrders();
   }
-  return order;
+  return {
+    ...order,
+    assetImage: normalizeImageUrl(order.assetImage, req),
+  };
 }
 
 /**
  * Retrieve all orders for a specific buyer.
  */
-function getUserEscrowOrders(userId) {
+function getUserEscrowOrders(userId, req = null) {
   const result = [];
   for (const order of ordersMap.values()) {
     if (order.buyerId === userId) {
-      result.push(order);
+      result.push({
+        ...order,
+        assetImage: normalizeImageUrl(order.assetImage, req),
+      });
     }
   }
   return result;
+}
+
+/**
+ * Retrieve all orders in the system (Admin & Dispute console).
+ */
+function getAllEscrowOrders(req = null) {
+  const result = [];
+  for (const order of ordersMap.values()) {
+    result.push({
+      ...order,
+      assetImage: normalizeImageUrl(order.assetImage, req),
+    });
+  }
+  return result.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 }
 
 /**
@@ -347,6 +371,7 @@ module.exports = {
   createEscrowOrder,
   getEscrowOrder,
   getUserEscrowOrders,
+  getAllEscrowOrders,
   progressEscrowStep,
   releaseEscrow,
   refundEscrow,

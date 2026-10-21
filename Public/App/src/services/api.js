@@ -12,8 +12,13 @@ import {
 } from './storage';
 
 // ── Base URL — configured via EXPO_PUBLIC_API_BASE_URL in .env ───────────────
-// Team members: update EXPO_PUBLIC_API_BASE_URL in .env with your computer's IP!
-const getBaseUrl = () => {
+// On web, automatically connects to localhost/current host on port 5000.
+// On native devices, uses EXPO_PUBLIC_API_BASE_URL from .env.
+export const getBaseUrl = () => {
+  if (Platform.OS === 'web') {
+    const host = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : 'localhost';
+    return `http://${host}:5000/api`;
+  }
   if (process.env.EXPO_PUBLIC_API_BASE_URL) {
     return process.env.EXPO_PUBLIC_API_BASE_URL;
   }
@@ -23,7 +28,7 @@ const getBaseUrl = () => {
   return 'http://localhost:5000/api';
 };
 
-const API_BASE_URL = getBaseUrl();
+export const API_BASE_URL = getBaseUrl();
 
 // ── Generic request helper ───────────────────────────────────────────────────
 async function apiRequest(endpoint, options = {}, token = null) {
@@ -50,15 +55,13 @@ async function apiRequest(endpoint, options = {}, token = null) {
     }
     return data;
   } catch (error) {
-    const msg = error.message || '';
     if (
-      msg === 'Network request failed' ||
-      msg.includes('Failed to fetch') ||
-      msg.includes('NetworkError') ||
-      msg.includes('fetch failed')
+      error.message === 'Network request failed' ||
+      error.message?.includes('NetworkError') ||
+      error.message?.includes('Failed to fetch')
     ) {
       throw new Error(
-        'No internet connection or cannot connect to server. Please check your internet connection.'
+        `Cannot connect to server at ${API_BASE_URL}. Make sure the backend is running at http://localhost:5000.`
       );
     }
     throw error;
@@ -263,6 +266,25 @@ export async function createAssetApi(assetData, token) {
     {
       method: 'POST',
       body: JSON.stringify(assetData),
+    },
+    token
+  );
+}
+
+/**
+ * Run mandatory 3-step asset upload verification pipeline:
+ * Step 1: AI Vision Gatekeeper inspection & feature extraction.
+ * Step 2: Live Market Oracle pricing comps & 30-day demand lookup.
+ * Step 3: Valuation analysis against asking price.
+ * @param {object} payload - { image, name?, category?, askingPrice?, condition?, description? }
+ * @param {string} token - User's Supabase JWT access token
+ */
+export async function verifyAssetUploadApi(payload, token) {
+  return apiRequest(
+    '/assets/verify-upload',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
     },
     token
   );
@@ -542,4 +564,37 @@ export async function withdrawFundsApi(withdrawData, token) {
  */
 export async function getVaultTransactionsApi(token) {
   return apiRequest('/user/transactions', { method: 'GET' }, token);
+}
+
+/**
+ * Safely resolves an image URI for React Native Image component.
+ * If the URI is a relative path (/uploads/...) or points to an outdated IP,
+ * rewrites it using API_BASE_URL's active server origin.
+ */
+export function resolveImageUrl(
+  imageUri,
+  fallback = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800'
+) {
+  if (!imageUri || typeof imageUri !== 'string' || !imageUri.trim()) {
+    return fallback;
+  }
+  // Clean replacement for corrupted red bundler error screenshot
+  if (imageUri.includes('asset_6f80eb') || imageUri.includes('b1tmz')) {
+    return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
+  }
+  if (imageUri.startsWith('data:image/')) return imageUri;
+
+  const uploadsMatch = imageUri.match(/\/uploads\/assets\/[^"'\s?#]+/i);
+  if (uploadsMatch) {
+    const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+    return `${baseOrigin}${uploadsMatch[0]}`;
+  }
+
+  // Also catch and rewrite any stale LAN IP URLs (e.g. 10.250.x.x:5000)
+  if (imageUri.includes(':5000/uploads/')) {
+    const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+    return imageUri.replace(/^https?:\/\/[^/]+(:5000)?/, baseOrigin);
+  }
+
+  return imageUri;
 }

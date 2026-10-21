@@ -4,13 +4,14 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middlewares/authMiddleware');
-const { getAssets, getAssetById, createAsset } = require('../controllers/assetController');
+const { getAssets, getAssetById, createAsset, verifyAssetUpload } = require('../controllers/assetController');
 
 // Public routes
 router.get('/', getAssets);
 router.get('/:id', getAssetById);
 
 // Protected routes (requires registered user login)
+router.post('/verify-upload', requireAuth, verifyAssetUpload);
 router.post('/', requireAuth, createAsset);
 
 module.exports = router;

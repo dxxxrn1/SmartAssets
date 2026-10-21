@@ -355,12 +355,10 @@ async function processPayment(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: isFractional ? 'Investment confirmed and shares added to your vault!' : 'Payment completed and asset added to your vault!',
       message: isFractional ? 'Investment confirmed and shares added to your vault!' : 'Payment completed and secured in escrow!',
       receipt: {
         orderId,
         paymentMethod,
-        paymentRail: stripeReceipt?.paymentRail || (paymentMethod === 'wallet' ? 'Ethereum Sepolia Web3' : paymentMethod),
         paymentRail: escrowOrder.paymentRail,
         stripePaymentIntentId: stripeReceipt?.paymentIntentId,
         stripeChargeId: stripeReceipt?.chargeId,

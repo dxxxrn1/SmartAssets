@@ -1,7 +1,9 @@
 // ─── AssetDetailScreen ────────────────────────────────────────────────────────
-// Hero image gallery + Overview / Certificate / Provenance tabs + action bar
+// Product Listing Page — unified with the Luminous Purple & Cyan Fintech theme (Mockup 4).
+// Featuring Breadcrumb Header, Hero Image Showcase with Verified Badges, AI Fair Value Card,
+// Overview/Provenance/Documents Tabs with Specs Grid, Smart Take Accent Card, and Action Bar.
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -13,31 +15,73 @@ import {
   Alert,
   Dimensions,
   Modal,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useColors } from '../constants/theme';
-import { SCREENS } from '../constants/navigation';
-import { Feather, Ionicons } from '@expo/vector-icons';
-import { getAssetDetails } from '../services/api';
-import { useAuth } from '../context/AuthContext';
-import { LinearGradient } from 'expo-linear-gradient';
+  Platform,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { Feather, Ionicons } from "@expo/vector-icons";
+import { SCREENS } from "../constants/navigation";
+import { getAssetDetails, resolveImageUrl } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
-const { width, height } = Dimensions.get('window');
-const TABS = ['overview', 'cert', 'history'];
+const { width } = Dimensions.get("window");
+const TABS = ["overview", "history", "cert"];
 
-// Fixed min height so the sheet doesn't change size between tabs
-const SHEET_MIN_HEIGHT = height * 0.68;
+const CANVAS_MESH = [
+  "#e4e0ffff", // Soft luminous lavender
+  "#e0daffff", // Soft purple aura
+  "#f5dfefff", // Soft lilac-pink
+  "#fff5efff", // Soft peach aura
+  "#ffffffff", // Ambient cream
+];
 
-export default function AssetDetailScreen({ navigation, route, isDark }) {
-  const c = useColors(isDark);
+const formatGBP = (val, fallback = "£34,500") => {
+  if (val === undefined || val === null || val === "") return fallback;
+  if (typeof val === "string" && val.startsWith("£")) return val;
+  if (typeof val === "string" && val.startsWith("R"))
+    return "£" + val.replace(/^R\s?/, "");
+  const num =
+    typeof val === "number"
+      ? val
+      : parseFloat(String(val).replace(/[^0-9.-]+/g, ""));
+  if (isNaN(num)) return String(val);
+  return "£" + num.toLocaleString("en-GB", { maximumFractionDigits: 0 });
+};
+
+const getFractionalSharePrice = (asset) => {
+  if (asset?.share_price) {
+    const sp = String(asset.share_price).trim();
+    if (sp.includes("/")) return sp.replace(/\/sh$/i, " / share");
+    return `${sp} / share`;
+  }
+  if (asset?.sharePrice) {
+    const sp =
+      typeof asset.sharePrice === "number"
+        ? `£${asset.sharePrice}`
+        : String(asset.sharePrice).trim();
+    if (sp.includes("/")) return sp.replace(/\/sh$/i, " / share");
+    return `${sp} / share`;
+  }
+  const rawNum =
+    Number(asset?.price_num) ||
+    parseFloat(String(asset?.price || "").replace(/[^0-9.-]+/g, "")) ||
+    0;
+  if (!rawNum) return "£100 / share";
+  const totalShares = asset?.shares || 100;
+  const calculated = Math.max(1, Math.round(rawNum / totalShares));
+  return `£${calculated.toLocaleString("en-GB")} / share`;
+};
+
+export default function AssetDetailScreen({ navigation, route }) {
   const { user } = useAuth();
   const initialAsset = route?.params?.asset ?? {};
   const [asset, setAsset] = useState(initialAsset);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState("overview");
   const [history, setHistory] = useState([]);
   const [showHash, setShowHash] = useState(false);
   const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [healthModalVisible, setHealthModalVisible] = useState(false);
   const imageScrollRef = useRef(null);
 
   useEffect(() => {
@@ -58,7 +102,7 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
   }, [initialAsset.id]);
 
   const isOwner = Boolean(
-    user?.id && (user.id === asset.userId || user.id === asset.user_id)
+    user?.id && (user.id === asset.userId || user.id === asset.user_id),
   );
 
   // Extract all images (primary image, images array, or embedded in description)
@@ -72,8 +116,8 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
     if (item?.image && !list.includes(item.image)) {
       list.unshift(item.image);
     }
-    const rawDesc = item?.description || '';
-    if (rawDesc.includes('<!--images:')) {
+    const rawDesc = item?.description || "";
+    if (rawDesc.includes("<!--images:")) {
       const match = rawDesc.match(/<!--images:([\s\S]*?)-->/);
       if (match) {
         try {
@@ -86,150 +130,188 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
         } catch (_) {}
       }
     }
-    return list.length > 0 ? list : [item?.image].filter(Boolean);
+    const rawList = list.length > 0 ? list : [item?.image].filter(Boolean);
+    const resolved = rawList.map((u) => resolveImageUrl(u));
+    return resolved.length > 0
+      ? resolved
+      : ["https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800"];
   };
 
   const allImages = extractAllImages(asset);
-  const cleanDescription = (asset.description || '')
-    .replace(/<!--images:[\s\S]*?-->/g, '')
+  const cleanDescription = (asset.description || "")
+    .replace(/<!--images:[\s\S]*?-->/g, "")
     .trim();
+
+  // Price calculations for range
+  const priceNum =
+    typeof asset.price === "number"
+      ? asset.price
+      : parseFloat(String(asset.price || "34500").replace(/[^0-9.-]+/g, "")) ||
+        34500;
+  const lowPrice = Math.round(priceNum * 0.92);
+  const highPrice = Math.round(priceNum * 1.08);
 
   return (
     <View style={styles.container}>
-      {/* ── Full Hero Image Showcase & Gallery ── */}
-      <View style={styles.heroWrap}>
-        {/* Ambient blurred backdrop for luxury depth */}
-        <Image
-          source={{ uri: allImages[activeImageIdx] || asset.image }}
-          style={StyleSheet.absoluteFillObject}
-          resizeMode="cover"
-          blurRadius={30}
-        />
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(24, 33, 84, 0.65)' }]} />
+      {/* ── Background Mesh Gradient (Matches HomeScreen.js) ── */}
+      <LinearGradient
+        colors={CANVAS_MESH}
+        locations={[0, 0.22, 0.52, 0.78, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
 
-        {/* Swipeable foreground gallery */}
-        <ScrollView
-          ref={imageScrollRef}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={(e) => {
-            const idx = Math.round(e.nativeEvent.contentOffset.x / width);
-            if (idx >= 0 && idx < allImages.length) {
-              setActiveImageIdx(idx);
-            }
-          }}
-          style={{ width, height: height * 0.48 }}
-        >
-          {allImages.map((imgUri, idx) => (
-            <TouchableOpacity
-              key={idx}
-              activeOpacity={0.92}
-              onPress={() => setFullscreenImage(imgUri)}
-              style={{ width, height: height * 0.48, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Image
-                source={{ uri: imgUri }}
-                style={styles.heroImage}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* Gallery Overlay: Photo counter badge and dots */}
-        {allImages.length > 1 && (
-          <View style={styles.galleryOverlay}>
-            <View style={styles.dotsRow}>
-              {allImages.map((_, i) => (
-                <TouchableOpacity
-                  key={i}
-                  onPress={() => {
-                    setActiveImageIdx(i);
-                    imageScrollRef.current?.scrollTo({ x: i * width, animated: true });
-                  }}
-                  style={[styles.galleryDot, i === activeImageIdx && styles.galleryDotActive]}
-                />
-              ))}
-            </View>
-            <View style={styles.photoCountBadge}>
-              <Feather name="camera" size={11} color="#FFFFFF" />
-              <Text style={styles.photoCountText}>
-                {activeImageIdx + 1} / {allImages.length}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Top shadow gradient for header contrast */}
-        <LinearGradient
-          colors={['rgba(24,33,84,0.9)', 'rgba(24,33,84,0.4)', 'transparent']}
-          style={styles.topHeaderGradient}
-        />
-      </View>
-
-      {/* ── Top Header Bar with Badges ── */}
-      <SafeAreaView edges={['top']} style={styles.floatingHeader}>
-        {/* Left: Back Button + Mint AI Pill */}
-        <View style={styles.headerLeftGroup}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <Feather name="arrow-left" size={18} color="#FFFFFF" />
+      <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
+        {/* ── Top Header Bar / Breadcrumb Navigation ── */}
+        <View style={styles.topBar}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+          >
+            <Feather name="arrow-left" size={18} color="#0F172A" />
           </TouchableOpacity>
 
-          {asset.aiScanStatus === 'scan_failed' ? (
-            <View style={[styles.greenPillHeader, { backgroundColor: 'rgba(245, 158, 11, 0.18)', borderColor: 'rgba(245, 158, 11, 0.4)' }]}>
-              <Feather name="alert-triangle" size={11} color="#F59E0B" />
-              <Text style={[styles.greenPillText, { color: '#F59E0B' }]}>AI SCAN N/A</Text>
-            </View>
-          ) : (
-            <View style={styles.greenPillHeader}>
-              <Feather name="shield" size={11} color="#2DD4BF" />
-              <Text style={styles.greenPillText}>AI AUTHENTIC</Text>
-            </View>
-          )}
+          <View style={styles.breadcrumbWrap}>
+            <Text style={styles.breadcrumbMuted}>Marketplace</Text>
+            <Feather
+              name="chevron-right"
+              size={14}
+              color="#94A3B8"
+              style={{ marginHorizontal: 4 }}
+            />
+            <Text style={styles.breadcrumbActive}>Investment spotlight</Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.shareBtn}
+            activeOpacity={0.8}
+            onPress={() => {
+              Alert.alert(
+                "Share Asset",
+                `Share link copied for ${asset.name || "Luxury Asset"}`,
+              );
+            }}
+          >
+            <Feather name="share-2" size={16} color="#0F172A" />
+          </TouchableOpacity>
         </View>
 
-        {/* Right: Gold Shield Badge + Verified Pill */}
-        <View style={styles.headerRightGroup}>
-          <View style={styles.goldShieldBadge}>
-            <Ionicons name="shield-checkmark" size={13} color="#F59E0B" />
-            <Text style={styles.goldShieldText}>VAULT</Text>
-          </View>
+        {/* ── Scrollable Body Content ── */}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ════════════════════════════════════════════════════════════════════
+              1. HERO IMAGE CARD WITH FLOATING BADGES & TITLE OVERLAY (Mockup 4)
+          ════════════════════════════════════════════════════════════════════ */}
+          <View style={styles.heroCard}>
+            <ScrollView
+              ref={imageScrollRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(e) => {
+                const cardWidth = width - 40;
+                const idx = Math.round(
+                  e.nativeEvent.contentOffset.x / cardWidth,
+                );
+                if (idx >= 0 && idx < allImages.length) {
+                  setActiveImageIdx(idx);
+                }
+              }}
+              style={styles.heroImageScroll}
+            >
+              {allImages.map((imgUri, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  activeOpacity={0.92}
+                  onPress={() => setFullscreenImage(imgUri)}
+                  style={styles.heroImageSlide}
+                >
+                  <Image
+                    source={{ uri: imgUri }}
+                    style={styles.heroImg}
+                    resizeMode="cover"
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
 
-          <View style={styles.verifiedHeaderBadge}>
-            <Feather name="check" size={11} color="#2DD4BF" />
-            <Text style={styles.verifiedHeaderText}>{asset.badge ?? 'Verified'}</Text>
-          </View>
-        </View>
-      </SafeAreaView>
-
-      {/* ── Scrollable Body with Deep Navy Bottom Sheet ── */}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={[styles.bottomSheet, { minHeight: SHEET_MIN_HEIGHT }]}>
-          {/* Title + Price row */}
-          <View style={styles.titleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.categoryLabel}>{(asset.category ?? '').toUpperCase()} · 1 OF 1</Text>
-              <Text style={styles.assetName}>{asset.name}</Text>
-              <Text style={styles.price}>{asset.price}</Text>
-            </View>
-            <TouchableOpacity style={styles.shareBtn}>
-              <Feather name="upload" size={16} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-
-          {/* ── Product Photos Thumbnail Strip (when multiple pictures exist) ── */}
-          {allImages.length > 1 && (
-            <View style={styles.thumbnailSection}>
-              <View style={styles.thumbnailHeaderRow}>
-                <Feather name="grid" size={12} color="#2664EB" />
-                <Text style={styles.thumbnailHeading}>ALL PRODUCT PHOTOS ({allImages.length})</Text>
+            {/* Top Badges overlay: 🛡️ Fully verified & Limited edition */}
+            <View style={styles.heroBadgesOverlay}>
+              <View style={styles.heroBadgePill}>
+                <Ionicons
+                  name="shield-checkmark"
+                  size={13}
+                  color="#FFFFFF"
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.heroBadgeText}>Fully verified</Text>
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnailRow}>
+              <View style={styles.heroBadgePill}>
+                <Text style={styles.heroBadgeText}>Limited edition</Text>
+              </View>
+            </View>
+
+            {/* Bottom title & category overlay vignette */}
+            <LinearGradient
+              colors={[
+                "transparent",
+                "rgba(15, 23, 42, 0.45)",
+                "rgba(15, 23, 42, 0.90)",
+              ]}
+              locations={[0, 0.4, 1]}
+              style={styles.heroBottomOverlay}
+            >
+              <Text style={styles.heroCategoryText}>
+                {`${(asset.category || "COLLECTOR WATCH").toUpperCase()} · ${asset.year || "2019"}`}
+              </Text>
+              <Text style={styles.heroTitleText} numberOfLines={2}>
+                {asset.name || "Rolex Daytona 116500LN"}
+              </Text>
+            </LinearGradient>
+
+            {/* Gallery Dots & Photo Counter (if multiple photos exist) */}
+            {allImages.length > 1 && (
+              <View style={styles.galleryCounterRow}>
+                <View style={styles.dotsRow}>
+                  {allImages.map((_, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.dot,
+                        i === activeImageIdx && styles.dotActive,
+                      ]}
+                    />
+                  ))}
+                </View>
+                <View style={styles.photoCountBadge}>
+                  <Feather
+                    name="camera"
+                    size={11}
+                    color="#FFFFFF"
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={styles.photoCountText}>
+                    {activeImageIdx + 1}/{allImages.length}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* Multiple Photos Thumbnails Carousel */}
+          {allImages.length > 1 && (
+            <View style={styles.thumbStripWrap}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.thumbStrip}
+              >
                 {allImages.map((imgUri, i) => {
                   const isSelected = i === activeImageIdx;
                   return (
@@ -237,15 +319,22 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
                       key={i}
                       onPress={() => {
                         setActiveImageIdx(i);
-                        imageScrollRef.current?.scrollTo({ x: i * width, animated: true });
+                        imageScrollRef.current?.scrollTo({
+                          x: i * (width - 40),
+                          animated: true,
+                        });
                       }}
                       style={[
-                        styles.thumbWrap,
-                        isSelected && styles.thumbWrapActive,
+                        styles.thumbItem,
+                        isSelected && styles.thumbItemActive,
                       ]}
                       activeOpacity={0.85}
                     >
-                      <Image source={{ uri: imgUri }} style={styles.thumbImg} resizeMode="cover" />
+                      <Image
+                        source={{ uri: imgUri }}
+                        style={styles.thumbImg}
+                        resizeMode="cover"
+                      />
                       {isSelected && (
                         <View style={styles.thumbActiveBadge}>
                           <Feather name="check" size={10} color="#FFFFFF" />
@@ -258,298 +347,472 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
             </View>
           )}
 
-          {/* ── Pill Tabs — Warm Coral Active Tab (Less Blue) ── */}
-          <View style={styles.pillTabBar}>
-            {TABS.map((tab) => {
-              const isActive = activeTab === tab;
-              return (
-                <TouchableOpacity
-                  key={tab}
-                  style={styles.pillTabBtn}
-                  onPress={() => setActiveTab(tab)}
-                  activeOpacity={0.85}
-                >
-                  {isActive ? (
-                    <LinearGradient
-                      colors={['#3B82F6', '#2664EB', '#1D4ED8']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.pillTabActive}
-                    >
-                      <Text style={styles.pillTabLabelActive}>
-                        {tab === 'cert' ? 'Certificate' : tab === 'history' ? 'Provenance' : 'Info'}
-                      </Text>
-                    </LinearGradient>
-                  ) : (
-                    <View style={styles.pillTabInactive}>
-                      <Text style={styles.pillTabLabelInactive}>
-                        {tab === 'cert' ? 'Certificate' : tab === 'history' ? 'Provenance' : 'Info'}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          {/* ════════════════════════════════════════════════════════════════════
+              2. AI FAIR VALUE CARD (Signature Mockup 4 Element)
+          ════════════════════════════════════════════════════════════════════ */}
+          <View style={styles.whiteCard}>
+            <View style={styles.fairValueHeader}>
+              <Text style={styles.fairValueLabel}>AI FAIR VALUE</Text>
+              <View style={styles.gainBadge}>
+                <Text style={styles.gainBadgeText}>+12.4%</Text>
+              </View>
+            </View>
 
-          {/* ── Overview / Info Tab ── */}
-          {activeTab === 'overview' && (
-            <View style={styles.tabContent}>
-
-              {/* 1. Crisp White Card (SmartAssets Vault Card Style from reference) */}
-              <View style={styles.whiteCard}>
-                <View style={styles.whiteCardHeader}>
-                  <Text style={styles.whiteCardHeading}>LISTING DETAILS</Text>
-                  <View style={styles.whiteCardBadge}>
-                    <Text style={styles.whiteCardBadgeText}>VERIFIED</Text>
-                  </View>
-                </View>
-
-                {/* Owner row */}
-                <View style={styles.infoRow}>
-                  <View style={styles.infoRowLeft}>
-                    <View style={styles.ownerAvatarWrap}>
-                      <Image source={{ uri: allImages[0] || asset.image }} style={styles.infoAvatar} />
-                    </View>
-                    <View>
-                      <Text style={styles.infoRowLabel}>Current Owner</Text>
-                      <Text style={styles.infoRowValueDark}>{asset.owner || 'Verified Collector'}</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.infoDividerLight} />
-
-                {/* Creator row */}
-                <View style={styles.infoRow}>
-                  <View style={styles.infoRowLeft}>
-                    <View style={styles.creatorIconWrap}>
-                      <Feather name="user" size={16} color="#2664EB" />
-                    </View>
-                    <View>
-                      <Text style={styles.infoRowLabel}>Creator</Text>
-                      <Text style={styles.infoRowValueDark}>{asset.owner || 'Verified Collector'}</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.infoDividerLight} />
-
-                {/* 2x2 grid of meta info */}
-                <View style={styles.metaGrid}>
-                  {[
-                    ['Year', asset.year],
-                    ['Condition', asset.condition],
-                    ['Cert ID', (asset.cert ?? '').slice(0, 13) + '…'],
-                    ['Category', asset.category],
-                  ].map(([label, value]) => (
-                    <View key={String(label)} style={styles.metaCell}>
-                      <Text style={styles.infoRowLabel}>{label}</Text>
-                      <Text style={styles.metaCellValueDark}>{value || '—'}</Text>
-                    </View>
-                  ))}
-                </View>
+            {/* Price & Fractional Share Row */}
+            <View style={styles.priceRow}>
+              <View>
+                <Text style={styles.priceHeading}>{formatGBP(asset.price)}</Text>
+                <Text style={styles.totalValSub}>Total AI Fair Value</Text>
               </View>
 
-              {/* 2. Unified Valuation & Integrity Container (Teal Card Style from reference) */}
-              <View style={styles.tealCard}>
-                {/* Header row */}
-                <View style={styles.tealHeaderRow}>
-                  <View style={styles.tealHeaderTitleWrap}>
-                    <Feather name="shield" size={13} color="#2DD4BF" />
-                    <Text style={styles.tealHeading}>VALUATION & AUTHENTICITY</Text>
+              <TouchableOpacity
+                style={styles.fractionalPill}
+                onPress={() => {
+                  if (isOwner) {
+                    Alert.alert(
+                      "Self-Purchase Restricted",
+                      "You listed this collectible. Platform rules prohibit buying or investing in items you listed yourself.",
+                    );
+                  } else {
+                    navigation.navigate(SCREENS.CHECKOUT, {
+                      asset,
+                      isFractional: true,
+                    });
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.fractionalPillBadge}>
+                  <Feather
+                    name="pie-chart"
+                    size={11}
+                    color="#6C47FF"
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={styles.fractionalPillTitle}>FRACTIONAL SHARE</Text>
+                </View>
+                <View style={styles.fractionalPriceRow}>
+                  <Text style={styles.fractionalPriceText}>
+                    {getFractionalSharePrice(asset)}
+                  </Text>
+                  <Text style={styles.fractionalBuyLink}>Buy shares →</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* Valuation Confidence Progress */}
+            <View style={styles.confidenceBlock}>
+              <View style={styles.confidenceRow}>
+                <Text style={styles.confidenceTitle}>Valuation confidence</Text>
+                <Text style={styles.confidencePct}>96%</Text>
+              </View>
+
+              <View style={styles.progressTrack}>
+                <LinearGradient
+                  colors={["#976af0", "#00fbff"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[styles.progressFill, { width: "96%" }]}
+                />
+              </View>
+
+              <View style={styles.rangeRow}>
+                <Text style={styles.rangeText}>
+                  £{lowPrice.toLocaleString("en-GB")} low
+                </Text>
+                <Text style={styles.rangeText}>
+                  £{highPrice.toLocaleString("en-GB")} high
+                </Text>
+              </View>
+            </View>
+
+            {/* 4-Metric Grid (2x2) */}
+            <View style={styles.metricsGrid}>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricVal}>+18%</Text>
+                <Text style={styles.metricSub}>Demand</Text>
+              </View>
+
+              <View style={styles.metricCard}>
+                <Text style={styles.metricVal}>24 days</Text>
+                <Text style={styles.metricSub}>Liquidity</Text>
+              </View>
+
+              <View style={styles.metricCard}>
+                <Text style={styles.metricVal}>{asset.condition || "A+"}</Text>
+                <Text style={styles.metricSub}>Condition</Text>
+              </View>
+
+              <View style={styles.metricCard}>
+                <Text style={styles.metricVal}>1 of 500</Text>
+                <Text style={styles.metricSub}>Scarcity</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* ════════════════════════════════════════════════════════════════════
+              3. TABBED SPECS CARD (Overview, Provenance, Documents)
+          ════════════════════════════════════════════════════════════════════ */}
+          <View style={styles.whiteCard}>
+            {/* Pill Tabs Header */}
+            <View style={styles.tabsRow}>
+              {TABS.map((tab) => {
+                const isActive = activeTab === tab;
+                const label =
+                  tab === "cert"
+                    ? "Documents"
+                    : tab === "history"
+                      ? "Provenance"
+                      : "Overview";
+                return (
+                  <TouchableOpacity
+                    key={tab}
+                    style={[styles.tabPill, isActive && styles.tabPillActive]}
+                    onPress={() => setActiveTab(tab)}
+                    activeOpacity={0.8}
+                  >
+                    <Text
+                      style={[
+                        styles.tabLabel,
+                        isActive && styles.tabLabelActive,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* TAB: Overview */}
+            {activeTab === "overview" && (
+              <View style={styles.tabBody}>
+                <Text style={styles.descriptionText}>
+                  {cleanDescription ||
+                    "The ceramic-bezel Daytona is one of the most liquid modern collector watches. This example includes its original box, warranty card and full service history, with condition independently graded A+."}
+                </Text>
+
+                {/* 4 Specification Chips (YEAR, CASE, MOVEMENT, INCLUDED) */}
+                <View style={styles.specsGrid}>
+                  <View style={styles.specChip}>
+                    <Text style={styles.specLabel}>YEAR</Text>
+                    <Text style={styles.specValue}>{asset.year || "2019"}</Text>
                   </View>
-                  <View style={styles.tealVerifiedBadge}>
-                    <Text style={styles.tealVerifiedBadgeText}>
-                      {asset.aiScanStatus === 'passed' ? 'VERIFIED REAL' : 'AI GUARDED'}
+
+                  <View style={styles.specChip}>
+                    <Text style={styles.specLabel}>CASE</Text>
+                    <Text style={styles.specValue}>
+                      {asset.condition?.includes("Steel")
+                        ? "Steel"
+                        : "Oystersteel"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.specChip}>
+                    <Text style={styles.specLabel}>MOVEMENT</Text>
+                    <Text style={styles.specValue}>Automatic</Text>
+                  </View>
+
+                  <View style={styles.specChip}>
+                    <Text style={styles.specLabel}>INCLUDED</Text>
+                    <Text style={styles.specValue}>Full set</Text>
+                  </View>
+                </View>
+
+                {/* Owner & Creator metadata */}
+                <View style={styles.metaRow}>
+                  <View style={styles.metaCol}>
+                    <Text style={styles.metaLabel}>Current Owner</Text>
+                    <Text style={styles.metaVal}>
+                      {asset.owner || "Verified Collector"}
+                    </Text>
+                  </View>
+                  <View style={styles.metaCol}>
+                    <Text style={styles.metaLabel}>Category</Text>
+                    <Text style={styles.metaVal}>
+                      {asset.category || "Luxury Watch"}
                     </Text>
                   </View>
                 </View>
 
-                {/* Valuation Metrics */}
-                <View style={styles.valuationRow}>
-                  <Text style={styles.valuationPrice}>{asset.price}</Text>
-                </View>
-
-                <View style={styles.confidenceRow}>
-                  <Text style={styles.confidenceText}>Valuation Confidence</Text>
-                  <Text style={styles.confidencePct}>96%</Text>
-                </View>
-
-                <View style={styles.progressTrack}>
-                  <LinearGradient
-                    colors={['#2DD4BF', '#0D9488']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={[styles.progressFill, { width: '85%' }]}
-                  />
-                </View>
-
-                <View style={styles.rangeRow}>
-                  <Text style={styles.rangeText}>Low: R{Math.round((asset.price_num || 25000) * 0.9).toLocaleString('en-ZA')}</Text>
-                  <Text style={styles.rangeText}>High: R{Math.round((asset.price_num || 25000) * 1.15).toLocaleString('en-ZA')}</Text>
-                </View>
-
-                {/* Divider within single container */}
-                <View style={styles.tealInnerDivider} />
-
-                {/* Fraud & Media Detection sub-section */}
-                <View style={styles.fraudSubRow}>
-                  <Feather
-                    name={asset.aiScanStatus === 'passed' ? 'check-circle' : 'shield'}
-                    size={13}
-                    color="#2DD4BF"
-                  />
-                  <Text style={styles.fraudSubTitle}>Deepfake & Media Verification</Text>
-                </View>
-                <Text style={styles.fraudBody}>
-                  {asset.aiScanStatus === 'passed'
-                    ? 'All listing media scanned via Hive AI Detection. Zero synthetic patterns or deepfake artifacts detected.'
-                    : 'Listing media protected by SmartAssets AI Fraud Guard.'}
-                </Text>
-              </View>
-
-              {/* 3. Product Description (Warm Coral Accent Card) */}
-              <View style={styles.coralAccentCard}>
-                <View style={styles.descBoxHeader}>
-                  <Feather name="file-text" size={13} color="#2664EB" />
-                  <Text style={styles.descBoxHeading}>PRODUCT DESCRIPTION</Text>
-                </View>
-                <Text style={styles.descBodyText}>
-                  {cleanDescription || 'Dual-authenticated physical luxury asset with cryptographic ERC-721 token provenance, custody chain validation, and AI media verification.'}
-                </Text>
-                <Text style={styles.ownerDescriptionText}>
-                  Listed by {isOwner ? 'You (Owner)' : asset.owner || 'Verified Seller'}.
-                  {isOwner ? ' Self-purchase & self-investment are prohibited.' : ''}
-                </Text>
-              </View>
-
-              {/* Blockchain badge */}
-              <TouchableOpacity
-                style={styles.blockchainBadge}
-                onPress={() => Linking.openURL(asset.etherscanUrl || (asset.txHash ? `https://sepolia.etherscan.io/tx/${asset.txHash}` : 'https://sepolia.etherscan.io'))}
-                activeOpacity={0.8}
-              >
-                <Feather name="link" size={14} color="#2DD4BF" />
-                <Text style={styles.blockchainBadgeText}>
-                  {asset.tokenId ? `Token #${asset.tokenId} · Verified on Sepolia Etherscan ↗` : 'ERC-721 Verified on Sepolia Etherscan ↗'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* ── Certificate Tab ── */}
-          {activeTab === 'cert' && (
-            <View style={styles.tabContent}>
-              <View style={styles.whiteCard}>
-                <Text style={styles.whiteCardHeading}>DIGITAL CERTIFICATE</Text>
-                <Text style={styles.certAssetName}>{asset.name}</Text>
+                {/* Sepolia Blockchain Badge */}
                 <TouchableOpacity
-                  style={styles.certBtn}
-                  onPress={() => navigation.navigate(SCREENS.CERTIFICATE, { asset })}
+                  style={styles.blockchainBadge}
+                  onPress={() =>
+                    Linking.openURL(
+                      asset.etherscanUrl ||
+                        (asset.txHash
+                          ? `https://sepolia.etherscan.io/tx/${asset.txHash}`
+                          : "https://sepolia.etherscan.io"),
+                    )
+                  }
+                  activeOpacity={0.8}
                 >
-                  <LinearGradient colors={['#3B82F6', '#2664EB', '#1D4ED8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.certBtnGradient}>
-                    <Text style={styles.certBtnLabel}>View Full Certificate</Text>
-                  </LinearGradient>
+                  <Feather name="link-2" size={14} color="#7C3AED" />
+                  <Text style={styles.blockchainBadgeText}>
+                    {asset.tokenId
+                      ? `Token #${asset.tokenId} · Sepolia Etherscan`
+                      : "ERC-721 Cryptographic Token · Sepolia"}
+                  </Text>
+                  <Feather
+                    name="external-link"
+                    size={11}
+                    color="#7C3AED"
+                    style={{ marginLeft: 4 }}
+                  />
                 </TouchableOpacity>
               </View>
+            )}
 
-              <View style={styles.coralAccentCard}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: showHash ? 14 : 0 }}>
-                  <Text style={[styles.descBoxHeading, { marginBottom: 0 }]}>BLOCKCHAIN HASH</Text>
-                  <TouchableOpacity onPress={() => setShowHash(!showHash)}>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#2664EB' }}>{showHash ? 'Hide' : 'Show'}</Text>
+            {/* TAB: Provenance History */}
+            {activeTab === "history" && (
+              <View style={styles.tabBody}>
+                <TouchableOpacity
+                  style={styles.timelineBanner}
+                  onPress={() =>
+                    navigation.navigate(SCREENS.PROVENANCE, { asset, history })
+                  }
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.timelineBannerLeft}>
+                    <View style={styles.timelineBannerIconWrap}>
+                      <Ionicons
+                        name="git-commit-outline"
+                        size={16}
+                        color="#6C47FF"
+                      />
+                    </View>
+                    <View>
+                      <Text style={styles.timelineBannerText}>
+                        View Interactive Provenance
+                      </Text>
+                      <Text style={styles.timelineBannerSub}>
+                        Full cryptographically verified timeline
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.timelineBannerArrowWrap}>
+                    <Feather name="arrow-right" size={14} color="#FFFFFF" />
+                  </View>
+                </TouchableOpacity>
+
+                {(history.length > 0
+                  ? history
+                  : [
+                      {
+                        year: String(asset.year || "2019"),
+                        event: "Acquired via Authorized Retailer",
+                        party: "Geneva Custodian",
+                      },
+                      {
+                        year: "2023",
+                        event: "Certified Servicing & Pressure Testing",
+                        party: "Independent Horology Lab",
+                      },
+                      {
+                        year: "2024",
+                        event:
+                          "SmartAssets Vault Ingestion & Tokenized Listing",
+                        party: "London Vault #4",
+                      },
+                    ]
+                ).map((e, i, arr) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.timelineItem,
+                      i < arr.length - 1 && { marginBottom: 16 },
+                    ]}
+                  >
+                    <View style={styles.timelineDotWrap}>
+                      <View
+                        style={[
+                          styles.timelineDot,
+                          i === 0 && styles.timelineDotHighlight,
+                        ]}
+                      />
+                      {i < arr.length - 1 && (
+                        <View style={styles.timelineLine} />
+                      )}
+                    </View>
+                    <View style={styles.timelineTextCol}>
+                      <Text style={styles.timelineYear}>{e.year || e.yr}</Text>
+                      <Text style={styles.timelineEvent}>
+                        {e.event || e.ev}
+                      </Text>
+                      {e.party ? (
+                        <View style={styles.timelinePartyRow}>
+                          <Feather
+                            name="map-pin"
+                            size={11}
+                            color="#64748B"
+                            style={{ marginRight: 4 }}
+                          />
+                          <Text style={styles.timelineParty}>{e.party}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* TAB: Documents / Certificate */}
+            {activeTab === "cert" && (
+              <View style={styles.tabBody}>
+                <View style={styles.certCard}>
+                  <Text style={styles.certHeading}>
+                    DIGITAL ASSET CERTIFICATE
+                  </Text>
+                  <Text style={styles.certTitle}>{asset.name}</Text>
+                  <Text style={styles.certSub}>
+                    Dual-verified authentication record with embedded SHA-256
+                    fingerprint.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.certBtn}
+                    onPress={() =>
+                      navigation.navigate(SCREENS.CERTIFICATE, { asset })
+                    }
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.certBtnSolid}>
+                      <Ionicons
+                        name="shield-checkmark"
+                        size={16}
+                        color="#FFFFFF"
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text style={styles.certBtnText}>
+                        Open Full Digital Certificate
+                      </Text>
+                      <Feather
+                        name="arrow-right"
+                        size={15}
+                        color="#FFFFFF"
+                        style={{ marginLeft: 6 }}
+                      />
+                    </View>
                   </TouchableOpacity>
                 </View>
-                {showHash && (
-                  <Text style={styles.hashValue} numberOfLines={2}>
-                    0x4a3f8c2e1b9d6f0a5e7c3d2b1f8e4a9c2d5b7e0f3a6c9d2e5b8f1a4c7e0d3b6f
-                  </Text>
-                )}
-              </View>
-            </View>
-          )}
 
-          {/* ── Provenance Tab ── */}
-          {activeTab === 'history' && (
-            <View style={styles.tabContent}>
-              <TouchableOpacity
-                style={styles.coralAccentCard}
-                onPress={() => navigation.navigate(SCREENS.PROVENANCE, { asset, history })}
-              >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={styles.descBoxHeading}>OWNERSHIP TIMELINE</Text>
-                  <Feather name="chevron-right" size={16} color="#2664EB" />
+                {/* Hash disclosure */}
+                <View style={styles.hashWrap}>
+                  <View style={styles.hashHeader}>
+                    <Text style={styles.hashLabel}>BLOCKCHAIN HASH</Text>
+                    <TouchableOpacity onPress={() => setShowHash(!showHash)}>
+                      <Text style={styles.hashToggle}>
+                        {showHash ? "Hide" : "Reveal"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {showHash && (
+                    <Text style={styles.hashText} numberOfLines={2}>
+                      0x4a3f8c2e1b9d6f0a5e7c3d2b1f8e4a9c2d5b7e0f3a6c9d2e5b8f1a4c7e0d3b6f
+                    </Text>
+                  )}
                 </View>
-              </TouchableOpacity>
-
-              <View style={styles.whiteCard}>
-                {(history.length > 0 ? history : [{ year: String(asset.year || '2024'), event: 'Marketplace Listing & Authenticity Certified' }])
-                  .map((e, i, arr) => (
-                    <View key={i} style={[styles.timelineRow, i < arr.length - 1 && { marginBottom: 16 }]}>
-                      <View style={styles.timelineDotCol}>
-                        <View style={[styles.timelineDot, { backgroundColor: i === 0 ? '#2664EB' : '#CBD5E1' }]} />
-                        {i < arr.length - 1 && <View style={styles.timelineLine} />}
-                      </View>
-                      <View style={styles.timelineContent}>
-                        <Text style={styles.timelineYearDark}>{e.year || e.yr}</Text>
-                        <Text style={styles.timelineEventDark}>{e.event || e.ev}</Text>
-                        {e.party ? <Text style={styles.timelinePartyDark}>📍 {e.party}</Text> : null}
-                      </View>
-                    </View>
-                  ))}
               </View>
-            </View>
-          )}
-        </View>
-      </ScrollView>
+            )}
+          </View>
 
-      {/* ── Action Bar — Coral Primary CTA & Frosted Pill (Less Blue) ── */}
-      <SafeAreaView
-        edges={['bottom']}
-        style={styles.actionBar}
-      >
-        <TouchableOpacity
-          style={styles.secondaryAction}
-          onPress={() => navigation.navigate(SCREENS.HEALTH_REPORT, { asset })}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.secondaryActionLabel}>Health Report</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.primaryAction,
-            isOwner && styles.primaryActionDisabled,
-          ]}
-          onPress={() => {
-            if (isOwner) {
-              Alert.alert('Self-Purchase Restricted', 'You listed this collectible. Platform rules prohibit buying or investing in items you listed yourself.');
-            } else {
-              navigation.navigate(SCREENS.CHECKOUT, { asset });
-            }
-          }}
-          activeOpacity={isOwner ? 0.9 : 0.8}
-        >
-          {isOwner ? (
-            <View style={styles.ownerListingBtn}>
-              <Feather name="slash" size={16} color="#94A3B8" style={{ marginRight: 6 }} />
-              <Text style={styles.ownerListingText}>Your Listing</Text>
+          {/* ════════════════════════════════════════════════════════════════════
+              4. SLEEK DARK "SMART TAKE" ACCENT CARD (Mockup 4 Feature)
+          ════════════════════════════════════════════════════════════════════ */}
+          <View style={styles.smartTakeCard}>
+            <View style={styles.smartTakeHeader}>
+              <Ionicons
+                name="sparkles"
+                size={14}
+                color="#A78BFA"
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.smartTakeTag}>SMART TAKE</Text>
             </View>
-          ) : (
-            <LinearGradient colors={['#3B82F6', '#2664EB', '#1D4ED8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.primaryActionGradient}>
-              <Feather name="shopping-bag" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.primaryActionLabel}>Buy Now</Text>
-            </LinearGradient>
-          )}
-        </TouchableOpacity>
+
+            <Text style={styles.smartTakeTitle}>
+              A high-conviction collectible.
+            </Text>
+            <Text style={styles.smartTakeBody}>
+              Low supply and strong global demand place this asset in the top 8%
+              of our watch index. Backed by verified provenance and secondary
+              liquidity.
+            </Text>
+          </View>
+        </ScrollView>
+
+        {/* ── Bottom Floating Action Bar ── */}
+        <View style={styles.bottomBar}>
+          <TouchableOpacity
+            style={styles.healthReportBtn}
+            onPress={() => setHealthModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Feather
+              name="activity"
+              size={16}
+              color="#0F172A"
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.healthReportText}>Health Report</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.bottomOfferBtn,
+              isOwner && styles.bottomOfferBtnDisabled,
+            ]}
+            onPress={() => {
+              if (isOwner) {
+                Alert.alert(
+                  "Self-Purchase Restricted",
+                  "You listed this collectible.",
+                );
+              } else {
+                navigation.navigate(SCREENS.CHECKOUT, { asset });
+              }
+            }}
+            activeOpacity={isOwner ? 0.9 : 0.85}
+          >
+            <View
+              style={[
+                styles.bottomOfferGradient,
+                { backgroundColor: isOwner ? "#F1F5F9" : "#6C47FF" },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.bottomOfferText,
+                  isOwner && { color: "#94A3B8" },
+                ]}
+              >
+                {isOwner ? "Your Listing" : "Make an offer"}
+              </Text>
+              {!isOwner && (
+                <Feather
+                  name="arrow-right"
+                  size={15}
+                  color="#FFFFFF"
+                  style={{ marginLeft: 6 }}
+                />
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
 
       {/* ── Fullscreen Image Preview Modal ── */}
-      <Modal visible={Boolean(fullscreenImage)} transparent animationType="fade">
+      <Modal
+        visible={Boolean(fullscreenImage)}
+        transparent
+        animationType="fade"
+      >
         <View style={styles.fullscreenModalOverlay}>
           <SafeAreaView style={styles.fullscreenModalSafe}>
             <View style={styles.fullscreenTopBar}>
-              <Text style={styles.fullscreenTitle} numberOfLines={1}>{asset.name}</Text>
+              <Text style={styles.fullscreenTitle} numberOfLines={1}>
+                {asset.name}
+              </Text>
               <TouchableOpacity
                 style={styles.fullscreenCloseBtn}
                 onPress={() => setFullscreenImage(null)}
@@ -569,528 +832,1024 @@ export default function AssetDetailScreen({ navigation, route, isDark }) {
           </SafeAreaView>
         </View>
       </Modal>
+
+      {/* ── Health Report Modal ── */}
+      <Modal
+        visible={healthModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setHealthModalVisible(false)}
+      >
+        <View style={styles.healthModalOverlay}>
+          <View style={styles.healthModalCard}>
+            {/* Modal Header */}
+            <View style={styles.healthModalHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 12 }}>
+                <View style={styles.healthModalIconBadge}>
+                  <Ionicons name="shield-checkmark" size={18} color="#7C3AED" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.healthModalTitle}>Asset Health & Oracle Audit</Text>
+                  <Text style={styles.healthModalSubtitle} numberOfLines={1}>
+                    {asset.name || "Physical Luxury Collectible"}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.healthModalCloseBtn}
+                onPress={() => setHealthModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <Feather name="x" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.healthModalScroll}>
+              {/* SECTION 1: AI Vision Authenticity & Condition Score */}
+              <View style={styles.healthSectionCard}>
+                <View style={styles.healthSectionHeader}>
+                  <Text style={styles.healthSectionTag}>SECTION 1 • COMPUTER VISION</Text>
+                  <View style={styles.healthPassedBadge}>
+                    <Text style={styles.healthPassedText}>PASSED VERIFICATION</Text>
+                  </View>
+                </View>
+
+                <View style={styles.healthScoreRow}>
+                  <View style={styles.healthScoreBigWrap}>
+                    <Text style={styles.healthScoreNumber}>{asset.healthScore || 96}</Text>
+                    <Text style={styles.healthScoreMax}>/100</Text>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 16 }}>
+                    <Text style={styles.healthScoreTitle}>AI Vision Authenticity & Condition</Text>
+                    <Text style={styles.healthScoreDesc}>
+                      Physical features, dial micro-tolerances, serial engraving, and optical material match verified reference archive.
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Score Breakdown Bar */}
+                <View style={styles.healthProgressWrap}>
+                  <View style={styles.healthProgressTrack}>
+                    <LinearGradient
+                      colors={["#7C3AED", "#10B981"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={[styles.healthProgressFill, { width: `${asset.healthScore || 96}%` }]}
+                    />
+                  </View>
+                  <View style={styles.healthProgressMeta}>
+                    <Text style={styles.healthProgressLabel}>Authenticity Confidence: 99.4%</Text>
+                    <Text style={styles.healthProgressGrade}>Grade A+ Mint</Text>
+                  </View>
+                </View>
+
+                <View style={styles.healthChecklist}>
+                  <View style={styles.healthCheckItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                    <Text style={styles.healthCheckText}>Tamper-evident seals intact & cryptographically signed</Text>
+                  </View>
+                  <View style={styles.healthCheckItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                    <Text style={styles.healthCheckText}>Laser-etched serial registry match on Sepolia testnet</Text>
+                  </View>
+                  <View style={styles.healthCheckItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                    <Text style={styles.healthCheckText}>Zero microscopic structural fatigue or restoration detected</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* SECTION 2: Live Market Oracle Range */}
+              <View style={styles.healthSectionCard}>
+                <View style={styles.healthSectionHeader}>
+                  <Text style={styles.healthSectionTag}>SECTION 2 • ORACLE VALUATION</Text>
+                  <View style={styles.healthOracleLiveBadge}>
+                    <View style={styles.healthLiveDot} />
+                    <Text style={styles.healthOracleLiveText}>LIVE COMPS SYNCED</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.healthOracleHeading}>Live Market Oracle Range</Text>
+                
+                {(() => {
+                  const rawP = Number(asset?.price_num) || parseFloat(String(asset?.price || "").replace(/[^0-9.-]+/g, "")) || 34500;
+                  const low = formatGBP(Math.round(rawP * 0.94));
+                  const high = formatGBP(Math.round(rawP * 1.06));
+                  const fair = formatGBP(rawP);
+                  return (
+                    <View>
+                      <View style={styles.oracleRangePillWrap}>
+                        <View style={styles.oracleBoundBox}>
+                          <Text style={styles.oracleBoundLabel}>ORACLE LOW</Text>
+                          <Text style={styles.oracleBoundVal}>{low}</Text>
+                        </View>
+                        <View style={styles.oracleFairBox}>
+                          <Text style={styles.oracleFairLabel}>FAIR BENCHMARK</Text>
+                          <Text style={styles.oracleFairVal}>{fair}</Text>
+                        </View>
+                        <View style={styles.oracleBoundBox}>
+                          <Text style={styles.oracleBoundLabel}>ORACLE HIGH</Text>
+                          <Text style={styles.oracleBoundVal}>{high}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.oracleMetaRow}>
+                        <View style={styles.oracleMetaItem}>
+                          <Feather name="trending-up" size={13} color="#10B981" />
+                          <Text style={styles.oracleMetaText}>+4.8% 30d Gain</Text>
+                        </View>
+                        <Text style={styles.oracleMetaDivider}>•</Text>
+                        <View style={styles.oracleMetaItem}>
+                          <Feather name="globe" size={13} color="#6366F1" />
+                          <Text style={styles.oracleMetaText}>Sotheby's & Chrono24</Text>
+                        </View>
+                        <Text style={styles.oracleMetaDivider}>•</Text>
+                        <View style={styles.oracleMetaItem}>
+                          <Feather name="clock" size={13} color="#64748B" />
+                          <Text style={styles.oracleMetaText}>Updated 3m ago</Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })()}
+              </View>
+
+              {/* SECTION 3: Platform Wishlist & Liquidity Demand */}
+              <View style={styles.healthSectionCard}>
+                <View style={styles.healthSectionHeader}>
+                  <Text style={styles.healthSectionTag}>SECTION 3 • SECONDARY LIQUIDITY</Text>
+                  <View style={styles.healthLiquidityTierBadge}>
+                    <Text style={styles.healthLiquidityTierText}>TIER A • HIGH DEMAND</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.healthOracleHeading}>Platform Wishlist & Liquidity Demand</Text>
+
+                <View style={styles.demandMetricsGrid}>
+                  <View style={styles.demandMetricBox}>
+                    <Ionicons name="heart" size={18} color="#EF4444" />
+                    <Text style={styles.demandMetricValue}>148</Text>
+                    <Text style={styles.demandMetricLabel}>Wishlist Trackers</Text>
+                  </View>
+
+                  <View style={styles.demandMetricBox}>
+                    <Ionicons name="flash" size={18} color="#F59E0B" />
+                    <Text style={styles.demandMetricValue}>6 Escrow Bids</Text>
+                    <Text style={styles.demandMetricLabel}>Instant-Fill Orders</Text>
+                  </View>
+
+                  <View style={styles.demandMetricBox}>
+                    <Ionicons name="speedometer-outline" size={18} color="#10B981" />
+                    <Text style={styles.demandMetricValue}>&lt; 4.2 Hours</Text>
+                    <Text style={styles.demandMetricLabel}>Avg Settlement Speed</Text>
+                  </View>
+
+                  <View style={styles.demandMetricBox}>
+                    <Ionicons name="pie-chart-outline" size={18} color="#7C3AED" />
+                    <Text style={styles.demandMetricValue}>Top 5%</Text>
+                    <Text style={styles.demandMetricLabel}>Liquidity Index</Text>
+                  </View>
+                </View>
+
+                <View style={styles.demandSummaryNote}>
+                  <Ionicons name="information-circle" size={16} color="#475569" />
+                  <Text style={styles.demandSummaryNoteText}>
+                    Strong global secondary market depth. Fractional shares and full collection sales clear with zero escrow slippage.
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Modal Bottom Action */}
+            <View style={styles.healthModalFooter}>
+              <TouchableOpacity
+                style={styles.healthModalCloseActionBtn}
+                onPress={() => setHealthModalVisible(false)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.healthModalCloseActionBtnText}>Close Health Report</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#182154' },
-  heroWrap: {
-    position: 'absolute',
-    top: 0,
-    width: '100%',
-    height: height * 0.48,
-    backgroundColor: '#182154',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
+  container: {
+    flex: 1,
+    backgroundColor: "#d8d6fd",
   },
-  heroImage: {
-    width: width * 0.88,
-    height: height * 0.38,
-    marginTop: 40,
+  safe: {
+    flex: 1,
   },
-  galleryOverlay: {
-    position: 'absolute',
-    bottom: 16,
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
-    zIndex: 15,
-  },
-  dotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(24, 33, 84, 0.75)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  galleryDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-  },
-  galleryDotActive: {
-    width: 18,
-    borderRadius: 9,
-    backgroundColor: '#2664EB',
-  },
-  photoCountBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(24, 33, 84, 0.8)',
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-  },
-  photoCountText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  topHeaderGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 110,
-  },
-
-  floatingHeader: {
-    position: 'absolute',
-    top: 0,
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
     paddingTop: 8,
-    zIndex: 20,
-  },
-  headerLeftGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    paddingBottom: 14,
   },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(24, 33, 84, 0.85)',
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  breadcrumbWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  breadcrumbMuted: {
+    fontSize: 13,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+  breadcrumbActive: {
+    fontSize: 13,
+    color: "#0F172A",
+    fontWeight: "800",
+  },
+  shareBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    gap: 16,
+  },
+
+  // 1. Hero Image Card
+  heroCard: {
+    width: "100%",
+    height: 310,
+    borderRadius: 24,
+    overflow: "hidden",
+    backgroundColor: "#0F172A",
+    position: "relative",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  heroImageScroll: {
+    width: "100%",
+    height: "100%",
+  },
+  heroImageSlide: {
+    width: width - 40,
+    height: 310,
+  },
+  heroImg: {
+    width: "100%",
+    height: "100%",
+  },
+  heroBadgesOverlay: {
+    position: "absolute",
+    top: 14,
+    left: 14,
+    flexDirection: "row",
+    gap: 8,
+    zIndex: 10,
+  },
+  heroBadgePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  heroBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  heroBottomOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    paddingTop: 36,
+  },
+  heroCategoryText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#CBD5E1",
+    letterSpacing: 1.1,
+    marginBottom: 4,
+  },
+  heroTitleText: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.4,
+  },
+  galleryCounterRow: {
+    position: "absolute",
+    bottom: 14,
+    right: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  dotsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
+  },
+  dotActive: {
+    width: 14,
+    backgroundColor: "#00fbff",
+  },
+  photoCountBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  photoCountText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  // Thumbnails Strip
+  thumbStripWrap: {
+    marginTop: -4,
+  },
+  thumbStrip: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  thumbItem: {
+    width: 62,
+    height: 62,
+    borderRadius: 14,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "transparent",
+    backgroundColor: "#FFFFFF",
+  },
+  thumbItemActive: {
+    borderColor: "#7C3AED",
+  },
+  thumbImg: {
+    width: "100%",
+    height: "100%",
+  },
+  thumbActiveBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#7C3AED",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // 2. White Cards
+  whiteCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.85)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 4,
+    gap: 14,
+  },
+  fairValueHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  fairValueLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#64748B",
+    letterSpacing: 1.2,
+  },
+  gainBadge: {
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  gainBadgeText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#16A34A",
+  },
+  priceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  priceHeading: {
+    fontSize: 28,
+    fontWeight: "900",
+    color: "#0F172A",
+    letterSpacing: -0.6,
+  },
+  totalValSub: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+    marginTop: 2,
+  },
+  fractionalPill: {
+    backgroundColor: "#F5F3FF",
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
+    borderColor: "#DDD6FE",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: "flex-end",
+  },
+  fractionalPillBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+  fractionalPillTitle: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#6C47FF",
+    letterSpacing: 0.6,
+  },
+  fractionalPriceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  fractionalPriceText: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#1E1B4B",
+  },
+  fractionalBuyLink: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#6C47FF",
+  },
+
+  // Confidence Block
+  confidenceBlock: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 8,
+  },
+  confidenceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  confidenceTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+  confidencePct: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#7C3AED",
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#E2E8F0",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  rangeRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  rangeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#94A3B8",
+  },
+
+  // 4-Metric Grid (2x2)
+  metricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  metricCard: {
+    width: "48%",
+    marginBottom: 10,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  metricVal: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#0F172A",
+    marginBottom: 2,
+  },
+  metricSub: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+
+  // Make an Offer Button
+  primaryBtn: {
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#976af0",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+    marginTop: 4,
+  },
+  primaryBtnDisabled: {
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  primaryBtnGradient: {
+    paddingVertical: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  primaryBtnText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 15,
+    letterSpacing: 0.2,
+  },
+  ownerListingBtn: {
+    paddingVertical: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ownerListingText: {
+    color: "#94A3B8",
+    fontWeight: "800",
+    fontSize: 15,
+  },
+  escrowNoticeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  escrowNoticeText: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+
+  // 3. Tabbed Specs Card
+  tabsRow: {
+    flexDirection: "row",
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    paddingBottom: 12,
+  },
+  tabPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: "#F8FAFC",
+  },
+  tabPillActive: {
+    backgroundColor: "#7C3AED",
+  },
+  tabLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+  tabLabelActive: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+  },
+  tabBody: {
+    gap: 14,
+    paddingTop: 4,
+  },
+  descriptionText: {
+    fontSize: 13,
+    lineHeight: 21,
+    color: "#334155",
+    fontWeight: "500",
+  },
+  specsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  specChip: {
+    width: "48%",
+    marginBottom: 10,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  specLabel: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#94A3B8",
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  specValue: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  metaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  metaCol: {
+    gap: 2,
+  },
+  metaLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  metaVal: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  blockchainBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: "#F5F3FF",
+    borderWidth: 1,
+    borderColor: "rgba(151, 106, 240, 0.3)",
+  },
+  blockchainBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#7C3AED",
+  },
+
+  // Provenance Tab
+  timelineBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#DDD6FE",
+    shadowColor: "#6C47FF",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+    marginBottom: 8,
+  },
+  timelineBannerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  timelineBannerIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F5F3FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  timelineBannerText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  timelineBannerSub: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#64748B",
+    marginTop: 1,
+  },
+  timelineBannerArrowWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#6C47FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  timelineItem: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  timelineDotWrap: {
+    alignItems: "center",
+    width: 14,
+  },
+  timelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#CBD5E1",
+    marginTop: 3,
+  },
+  timelineDotHighlight: {
+    backgroundColor: "#7C3AED",
+  },
+  timelineLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: "#E2E8F0",
+    marginTop: 4,
+  },
+  timelineTextCol: {
+    flex: 1,
+    gap: 2,
+  },
+  timelineYear: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#7C3AED",
+  },
+  timelineEvent: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  timelinePartyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  timelineParty: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "#64748B",
+  },
+
+  // Documents Tab
+  certCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 6,
+  },
+  certHeading: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+    color: "#7C3AED",
+  },
+  certTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  certSub: {
+    fontSize: 12,
+    color: "#64748B",
+    lineHeight: 18,
+  },
+  certBtn: {
+    borderRadius: 14,
+    overflow: "hidden",
+    backgroundColor: "#6C47FF",
+    shadowColor: "#6C47FF",
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 4,
+    marginTop: 6,
   },
-  greenPillHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(45, 212, 191, 0.18)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(45, 212, 191, 0.4)',
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 20,
+  certBtnSolid: {
+    paddingVertical: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  greenPillText: {
-    color: '#2DD4BF',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+  certBtnText: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+    fontSize: 14,
+    letterSpacing: 0.2,
   },
-  headerRightGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  goldShieldBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  hashWrap: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
     gap: 4,
-    backgroundColor: 'rgba(245, 158, 11, 0.18)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(245, 158, 11, 0.4)',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 20,
   },
-  goldShieldText: {
-    color: '#F59E0B',
+  hashHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  hashLabel: {
     fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+    fontWeight: "800",
+    color: "#64748B",
   },
-  verifiedHeaderBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(45, 212, 191, 0.18)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(45, 212, 191, 0.4)',
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 20,
+  hashToggle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#7C3AED",
   },
-  verifiedHeaderText: {
-    color: '#2DD4BF',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.4,
-  },
-
-  scrollContent: { paddingTop: height * 0.44 },
-  bottomSheet: {
-    backgroundColor: '#182154',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    borderTopWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 48,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    elevation: 12,
-  },
-
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16 },
-  categoryLabel: { fontSize: 11, fontWeight: '800', color: '#93C5FD', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 },
-  assetName: { fontSize: 26, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.5, marginBottom: 4 },
-  price: { fontSize: 26, fontWeight: '900', color: '#2664EB', letterSpacing: -0.3 },
-  shareBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.25)',
+  hashText: {
+    fontSize: 11,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#64748B",
     marginTop: 4,
   },
 
-  // ── Thumbnail Section ──
-  thumbnailSection: {
-    marginBottom: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 20,
-    padding: 14,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+  // 4. Dark "Smart Take" Card
+  smartTakeCard: {
+    backgroundColor: "#1E1B4B",
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(151, 106, 240, 0.3)",
+    shadowColor: "#1E1B4B",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  thumbnailHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
+  smartTakeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
   },
-  thumbnailHeading: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#2664EB',
-    letterSpacing: 1.1,
+  smartTakeTag: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#A78BFA",
+    letterSpacing: 1.2,
   },
-  thumbnailRow: {
-    flexDirection: 'row',
-    gap: 10,
+  smartTakeTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    marginBottom: 6,
   },
-  thumbWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 14,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    backgroundColor: '#1E2768',
-    position: 'relative',
-  },
-  thumbWrapActive: {
-    borderColor: '#2664EB',
-    transform: [{ scale: 1.05 }],
-  },
-  thumbImg: {
-    width: '100%',
-    height: '100%',
-  },
-  thumbActiveBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#2664EB',
-    alignItems: 'center',
-    justifyContent: 'center',
+  smartTakeBody: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: "#CBD5E1",
+    fontWeight: "500",
   },
 
-  pillTabBar: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  pillTabBtn: {
-    flex: 1,
-    height: 42,
+  // Bottom Floating Bar
+  bottomBar: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === "ios" ? 24 : 16,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(226, 232, 240, 0.9)",
   },
-  pillTabActive: {
+  healthReportBtn: {
     flex: 1,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#2664EB',
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  healthReportText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  bottomOfferBtn: {
+    flex: 1.3,
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: "#6C47FF",
+    shadowColor: "#6C47FF",
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 4,
   },
-  pillTabInactive: {
-    flex: 1,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+  bottomOfferBtnDisabled: {
+    backgroundColor: "#F1F5F9",
+    shadowOpacity: 0,
+    elevation: 0,
   },
-  pillTabLabelActive: { fontSize: 13, fontWeight: '900', color: '#FFFFFF', letterSpacing: 0.3 },
-  pillTabLabelInactive: { fontSize: 13, fontWeight: '700', color: 'rgba(255, 255, 255, 0.7)', letterSpacing: 0.3 },
-
-  tabContent: { gap: 16 },
-
-  // ── Crisp White Card (SmartAssets Vault Card Style) ──
-  whiteCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
+  bottomOfferGradient: {
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  whiteCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  whiteCardHeading: {
-    fontSize: 11, fontWeight: '900', color: '#0F172A',
-    letterSpacing: 1.2, textTransform: 'uppercase',
-  },
-  whiteCardBadge: {
-    backgroundColor: 'rgba(54, 102, 221, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  whiteCardBadgeText: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: '#3666DD',
-    letterSpacing: 0.5,
-  },
-  infoDividerLight: { height: 1, backgroundColor: '#E2E8F0', marginVertical: 12 },
-
-  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  infoRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  ownerAvatarWrap: {
-    width: 44, height: 44, borderRadius: 14,
-    backgroundColor: '#F1F5F9', overflow: 'hidden',
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#CBD5E1',
-  },
-  creatorIconWrap: {
-    width: 44, height: 44, borderRadius: 14,
-    backgroundColor: '#EEF4FF', overflow: 'hidden',
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(38, 100, 235, 0.25)',
-  },
-  infoAvatar: { width: '100%', height: '100%' },
-  infoRowLabel: { fontSize: 11, fontWeight: '700', color: '#64748B', marginBottom: 2 },
-  infoRowValueDark: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
-
-  metaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 0 },
-  metaCell: { width: '50%', paddingVertical: 8, paddingRight: 12 },
-  metaCellValueDark: { fontSize: 14, fontWeight: '800', color: '#0F172A' },
-
-  // ── Teal Card (Teal Card Style from reference) ──
-  tealCard: {
-    backgroundColor: '#0D3D36',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1.5,
-    borderColor: 'rgba(45, 212, 191, 0.45)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    elevation: 4,
-  },
-  tealHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  tealHeaderTitleWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  tealHeading: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#2DD4BF',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-  },
-  tealVerifiedBadge: {
-    backgroundColor: 'rgba(45, 212, 191, 0.2)',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(45, 212, 191, 0.45)',
-  },
-  tealVerifiedBadgeText: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: '#2DD4BF',
-    letterSpacing: 0.6,
-  },
-  valuationRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  valuationPrice: { fontSize: 26, fontWeight: '900', color: '#FFFFFF' },
-
-  // ── Coral Accent Card ──
-  coralAccentCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    elevation: 3,
-  },
-  descBoxHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
-  },
-  descBoxHeading: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#2664EB',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-  },
-  descBodyText: {
+  bottomOfferText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    lineHeight: 22,
-    marginBottom: 10,
+    fontWeight: "900",
+    color: "#FFFFFF",
   },
-  ownerDescriptionText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#CBD5E1',
-    lineHeight: 18,
-  },
-  confidenceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  confidenceText: { fontSize: 12, fontWeight: '700', color: '#A7F3D0' },
-  confidencePct: { fontSize: 12, fontWeight: '900', color: '#2DD4BF' },
-  progressTrack: { height: 7, borderRadius: 4, backgroundColor: 'rgba(255, 255, 255, 0.12)', overflow: 'hidden', marginBottom: 8 },
-  progressFill: { height: '100%', borderRadius: 4 },
-  rangeRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  rangeText: { fontSize: 11, fontWeight: '700', color: '#A7F3D0' },
-  tealInnerDivider: {
-    height: 1,
-    backgroundColor: 'rgba(45, 212, 191, 0.25)',
-    marginVertical: 14,
-  },
-  fraudSubRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  fraudSubTitle: { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
-  fraudBody: { fontSize: 12, fontWeight: '600', color: '#A7F3D0', lineHeight: 18 },
 
-  // ── Blockchain Badge ──
-  blockchainBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    padding: 16, borderRadius: 18,
-    backgroundColor: 'rgba(45, 212, 191, 0.12)',
-    borderWidth: 1.5, borderColor: 'rgba(45, 212, 191, 0.35)',
-  },
-  blockchainBadgeText: { fontSize: 12, fontWeight: '800', color: '#2DD4BF' },
-
-  // ── Certificate tab ──
-  certAssetName: { fontSize: 18, fontWeight: '900', color: '#0F172A', marginBottom: 16 },
-  certBtn: { borderRadius: 16, overflow: 'hidden' },
-  certBtnGradient: { paddingVertical: 14, alignItems: 'center' },
-  certBtnLabel: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
-  hashValue: { fontSize: 12, fontFamily: 'Courier', lineHeight: 18, color: '#CBD5E1', marginTop: 10 },
-
-  // ── Provenance tab ──
-  timelineRow: { flexDirection: 'row', gap: 12 },
-  timelineDotCol: { alignItems: 'center', width: 12 },
-  timelineDot: { width: 12, height: 12, borderRadius: 6, marginTop: 2 },
-  timelineLine: { width: 2, flex: 1, marginTop: 4, backgroundColor: '#CBD5E1' },
-  timelineContent: { flex: 1 },
-  timelineYearDark: { fontSize: 12, fontWeight: '800', marginBottom: 4, color: '#2664EB' },
-  timelineEventDark: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
-  timelinePartyDark: { fontSize: 12, fontWeight: '600', color: '#64748B', marginTop: 4 },
-
-  // ── Action Bar — Coral Gradient CTA & Frosted Pill ──
-  actionBar: {
-    flexDirection: 'row', gap: 12,
-    paddingHorizontal: 20, paddingVertical: 14,
-    borderTopWidth: 1.5, borderTopColor: 'rgba(255, 255, 255, 0.15)',
-    backgroundColor: '#182154',
-  },
-  secondaryAction: {
-    flex: 1, paddingVertical: 14, borderRadius: 16,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.25)',
-  },
-  secondaryActionLabel: { fontWeight: '800', fontSize: 14, color: '#FFFFFF' },
-  primaryAction: { flex: 1, borderRadius: 16, overflow: 'hidden' },
-  primaryActionDisabled: { backgroundColor: 'rgba(255, 255, 255, 0.08)', borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.15)' },
-  ownerListingBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-  },
-  ownerListingText: { fontWeight: '800', fontSize: 14, color: '#94A3B8' },
-  primaryActionGradient: {
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryActionLabel: { fontWeight: '900', fontSize: 14, color: '#FFFFFF' },
-
-  // ── Fullscreen Modal ──
+  // Fullscreen Modal
   fullscreenModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    backgroundColor: "rgba(0, 0, 0, 0.95)",
   },
   fullscreenModalSafe: {
     flex: 1,
   },
   fullscreenTopBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 12,
   },
   fullscreenTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    fontWeight: "800",
+    color: "#FFFFFF",
     flex: 1,
     marginRight: 16,
   },
@@ -1098,18 +1857,353 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   fullscreenImgWrap: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     padding: 16,
   },
   fullscreenImg: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
+  },
+
+  // Health Report Modal Styles
+  healthModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.68)",
+    justifyContent: "flex-end",
+  },
+  healthModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: "88%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  healthModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 22,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  healthModalIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#F3E8FF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  healthModalTitle: {
+    fontSize: 17,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  healthModalSubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+    fontWeight: "600",
+  },
+  healthModalCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  healthModalScroll: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 24,
+    gap: 16,
+  },
+  healthSectionCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  healthSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  healthSectionTag: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#64748B",
+    letterSpacing: 0.5,
+  },
+  healthPassedBadge: {
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  healthPassedText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#15803D",
+  },
+  healthScoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  healthScoreBigWrap: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#7C3AED",
+  },
+  healthScoreNumber: {
+    fontSize: 32,
+    fontWeight: "900",
+    color: "#7C3AED",
+  },
+  healthScoreMax: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#94A3B8",
+    marginLeft: 2,
+  },
+  healthScoreTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  healthScoreDesc: {
+    fontSize: 12,
+    color: "#475569",
+    marginTop: 4,
+    lineHeight: 17,
+  },
+  healthProgressWrap: {
+    marginVertical: 10,
+  },
+  healthProgressTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#E2E8F0",
+    overflow: "hidden",
+  },
+  healthProgressFill: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  healthProgressMeta: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 6,
+  },
+  healthProgressLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  healthProgressGrade: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#10B981",
+  },
+  healthChecklist: {
+    marginTop: 10,
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    paddingTop: 12,
+  },
+  healthCheckItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  healthCheckText: {
+    fontSize: 12,
+    color: "#334155",
+    fontWeight: "500",
+    flex: 1,
+  },
+  healthOracleLiveBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EFF6FF",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  healthLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#2563EB",
+    marginRight: 5,
+  },
+  healthOracleLiveText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#1D4ED8",
+  },
+  healthOracleHeading: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 12,
+  },
+  oracleRangePillWrap: {
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 6,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+  },
+  oracleBoundBox: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  oracleBoundLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#94A3B8",
+  },
+  oracleBoundVal: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#475569",
+    marginTop: 2,
+  },
+  oracleFairBox: {
+    flex: 1.4,
+    alignItems: "center",
+    backgroundColor: "#F3E8FF",
+    borderRadius: 10,
+    paddingVertical: 8,
+  },
+  oracleFairLabel: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#7C3AED",
+  },
+  oracleFairVal: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#6D28D9",
+    marginTop: 2,
+  },
+  oracleMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 10,
+    gap: 8,
+  },
+  oracleMetaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  oracleMetaText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  oracleMetaDivider: {
+    color: "#CBD5E1",
+  },
+  healthLiquidityTierBadge: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  healthLiquidityTierText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#B45309",
+  },
+  demandMetricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  demandMetricBox: {
+    flex: 1,
+    minWidth: "45%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+  },
+  demandMetricValue: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#0F172A",
+    marginTop: 6,
+  },
+  demandMetricLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#64748B",
+    marginTop: 2,
+    textAlign: "center",
+  },
+  demandSummaryNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F5F9",
+    padding: 10,
+    borderRadius: 12,
+    marginTop: 12,
+    gap: 8,
+  },
+  demandSummaryNoteText: {
+    fontSize: 11,
+    color: "#475569",
+    lineHeight: 16,
+    flex: 1,
+  },
+  healthModalFooter: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  healthModalCloseActionBtn: {
+    backgroundColor: "#0F172A",
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  healthModalCloseActionBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
   },
 });

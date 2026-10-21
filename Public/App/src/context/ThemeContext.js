@@ -1,50 +1,48 @@
-// ─── Theme Context ────────────────────────────────────────────────────────
-// Manages global dark/light theme state, persisting to AsyncStorage so the user's
-// theme preference is preserved across reloads and offline sessions.
+// ─── Theme Context ────────────────────────────────────────────────────────────
+// Persists Dark/Light mode preferences across sessions and offline state using AsyncStorage.
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import storage, { STORAGE_KEYS } from '../utils/storage';
 import { useColors } from '../constants/theme';
-import { getTheme, saveTheme } from '../services/storage';
 
 const ThemeContext = createContext({
   isDark: false,
-  toggleTheme: () => {},
   setIsDark: () => {},
+  toggleTheme: () => {},
   colors: {},
-  themeLoaded: false,
 });
 
 export function ThemeProvider({ children }) {
   const [isDark, setIsDarkState] = useState(false);
   const [themeLoaded, setThemeLoaded] = useState(false);
 
-  // Restore saved theme on startup
+  // Load persisted theme preference on app start
   useEffect(() => {
-    let isMounted = true;
-    getTheme(false).then((savedTheme) => {
-      if (isMounted) {
-        setIsDarkState(Boolean(savedTheme));
+    async function loadSavedTheme() {
+      try {
+        const savedTheme = await storage.getItem(STORAGE_KEYS.THEME);
+        if (savedTheme !== null) {
+          setIsDarkState(savedTheme === 'true' || savedTheme === true);
+        }
+      } catch (err) {
+        console.warn('[ThemeContext] Error loading saved theme:', err.message);
+      } finally {
         setThemeLoaded(true);
       }
-    });
-    return () => {
-      isMounted = false;
-    };
+    }
+    loadSavedTheme();
   }, []);
 
-  const setIsDark = useCallback((value) => {
-    const nextVal = typeof value === 'function' ? value(isDark) : Boolean(value);
-    setIsDarkState(nextVal);
-    saveTheme(nextVal);
-  }, [isDark]);
+  const setIsDark = async (value) => {
+    setIsDarkState(value);
+    await storage.setItem(STORAGE_KEYS.THEME, String(value));
+  };
 
-  const toggleTheme = useCallback(() => {
-    setIsDarkState((prev) => {
-      const next = !prev;
-      saveTheme(next);
-      return next;
-    });
-  }, []);
+  const toggleTheme = async () => {
+    const next = !isDark;
+    setIsDarkState(next);
+    await storage.setItem(STORAGE_KEYS.THEME, String(next));
+  };
 
   const colors = useColors(isDark);
 

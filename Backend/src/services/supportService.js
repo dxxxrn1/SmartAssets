@@ -91,6 +91,31 @@ function getUserTickets(userId) {
 }
 
 /**
+ * Retrieves all tickets in the system (Admin support console).
+ */
+function getAllTickets() {
+  const list = Array.from(ticketsMap.values());
+  return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+/**
+ * Updates a support ticket's status and logs resolution note.
+ */
+function updateTicketStatus(ticketId, status, resolutionNote = null) {
+  const ticket = ticketsMap.get(ticketId);
+  if (!ticket) return null;
+
+  ticket.status = status; // 'Open' | 'In Review' | 'Resolved'
+  ticket.updatedAt = new Date().toISOString();
+  if (resolutionNote) {
+    ticket.resolutionNote = resolutionNote;
+  }
+  ticketsMap.set(ticketId, ticket);
+  persistTickets();
+  return ticket;
+}
+
+/**
  * Retrieves a specific ticket by ID.
  */
 function getTicketById(ticketId) {
@@ -101,5 +126,7 @@ module.exports = {
   createTicket,
   getUserTickets,
   getTicketById,
+  getAllTickets,
+  updateTicketStatus,
 };
 
