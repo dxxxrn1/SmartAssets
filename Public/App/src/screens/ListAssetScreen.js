@@ -21,7 +21,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { SCREENS } from "../constants/navigation";
 import { useAuth } from "../context/AuthContext";
-import { createAssetApi, verifyAssetUploadApi } from "../services/api";
+import { createAssetApi, verifyAssetUploadApi, addUserHolding } from "../services/api";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import storage, { STORAGE_KEYS } from "../utils/storage";
 
@@ -56,6 +56,7 @@ export default function ListAssetScreen({ navigation }) {
     year: String(new Date().getFullYear()),
     condition: "",
     description: "",
+    initialPrice: "",
     askingPrice: "",
     images: [], // up to 3 photos
   });
@@ -82,7 +83,7 @@ export default function ListAssetScreen({ navigation }) {
           condition: form.condition,
           description: form.description,
         },
-        token
+        token,
       );
 
       if (res && res.verified) {
@@ -99,13 +100,18 @@ export default function ListAssetScreen({ navigation }) {
           year: res.asset.year ? String(res.asset.year) : prev.year,
         }));
       } else {
-        throw new Error(res?.rejectionReason || "Image verification rejected by AI Gatekeeper.");
+        throw new Error(
+          res?.rejectionReason ||
+            "Image verification rejected by AI Gatekeeper.",
+        );
       }
     } catch (err) {
       setAiVerified(false);
       setVerifiedAsset(null);
       setMarketData(null);
-      const errMsg = err.message || "Photo could not be verified as a physical luxury collectible.";
+      const errMsg =
+        err.message ||
+        "Photo could not be verified as a physical luxury collectible.";
       setVerificationError(errMsg);
       // Remove invalid image to block publication
       setForm((prev) => ({
@@ -114,7 +120,7 @@ export default function ListAssetScreen({ navigation }) {
       }));
       Alert.alert(
         "AI Vision Gatekeeper Rejection",
-        `${errMsg}\n\nPlease take or upload a clear, authentic photograph of your physical collectible to proceed.`
+        `${errMsg}\n\nPlease take or upload a clear, authentic photograph of your physical collectible to proceed.`,
       );
     } finally {
       setVerifyingImage(false);
@@ -271,8 +277,22 @@ export default function ListAssetScreen({ navigation }) {
       setStep(0);
       return;
     }
-    const priceNum = parseFloat(String(form.askingPrice || "").replace(/[^0-9.]/g, "")) || 120;
-    const fallbackImg = form.images?.[0] || "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&q=80";
+    const initialNum =
+      parseFloat(String(form.initialPrice || "").replace(/[^0-9.]/g, "")) ||
+      parseFloat(String(form.askingPrice || "").replace(/[^0-9.]/g, "")) ||
+      120;
+    const priceNum =
+      parseFloat(String(form.askingPrice || "").replace(/[^0-9.]/g, "")) ||
+      initialNum;
+    const diff = priceNum - initialNum;
+    const pct = initialNum > 0 ? ((diff / initialNum) * 100).toFixed(1) : "0.0";
+    const badgeType = diff < 0 ? "negative" : "positive";
+    const badgeText =
+      diff < 0 ? `${pct}% Tech Depreciation` : `+${pct}% Market Gain`;
+
+    const fallbackImg =
+      form.images?.[0] ||
+      "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&q=80";
 
     setSubmitting(true);
     try {
@@ -281,33 +301,89 @@ export default function ListAssetScreen({ navigation }) {
         name: form.name.trim(),
         category: form.category || "Luxury Item",
         image: fallbackImg,
-        initialValue: priceNum,
-        initialValueFormatted: `£${priceNum.toLocaleString("en-GB")}`,
+        initialValue: initialNum,
+        initialValueFormatted: `£${initialNum.toLocaleString("en-GB")}`,
         liveMarketValue: priceNum,
         liveMarketValueFormatted: `£${priceNum.toLocaleString("en-GB")}`,
-        badgeText: "+0.0% Vault Genesis",
-        badgeType: "positive",
+        badgeText,
+        badgeType,
         ownership: "100% Owned",
         certId: `ERC-721 #${Math.floor(4000 + Math.random() * 1000)}`,
         condition: form.condition.trim() || "Mint Condition",
         year: form.year || String(new Date().getFullYear()),
         description: form.description || "",
         history: historyList,
+        price: `£${priceNum.toLocaleString("en-GB")}`,
+        price_num: priceNum,
+        gain: badgeText,
+        gain_pct: pct,
+        positive: badgeType === "positive",
+        asset_type: "personal",
       };
 
-      const existingPersonal = await storage.getJSON(STORAGE_KEYS.PERSONAL_COLLECTION, []);
-      const updatedPersonal = [newAsset, ...(Array.isArray(existingPersonal) ? existingPersonal : [])];
+      // 1. Sync to Supabase user_holdings table via backend userController
+      if (token) {
+        try {
+          await addUserHolding(token, newAsset);
+        } catch (apiErr) {
+          console.warn("[ListAsset] Cloud holding sync error:", apiErr.message);
+        }
+      }
+
+      // 2. Append to local STORAGE_KEYS.PERSONAL_COLLECTION
+      const existingPersonal = await storage.getJSON(
+        STORAGE_KEYS.PERSONAL_COLLECTION,
+        [],
+      );
+      const updatedPersonal = [
+        newAsset,
+        ...(Array.isArray(existingPersonal) ? existingPersonal : []),
+      ];
       await storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, updatedPersonal);
+
+      // 3. Append to STORAGE_KEYS.VAULT_ACTIVITY_LOG
+      const activityEntry = {
+        id: "act-" + Date.now(),
+        type: "certificate",
+        title: "ERC-721 Sepolia Certificate Mint",
+        assetName: newAsset.name,
+        hash:
+          "0x" +
+          Array.from({ length: 40 }, () =>
+            Math.floor(Math.random() * 16).toString(16),
+          ).join(""),
+        hashDisplay:
+          "0x" +
+          Math.random().toString(16).substring(2, 6) +
+          "..." +
+          Math.random().toString(16).substring(2, 4),
+        timestamp: "Just now",
+        status: "Verified & Minted",
+        network: "Sepolia Testnet",
+        icon: "diamond-outline",
+        badgeColor: "#7C3AED",
+      };
+      const existingLogs = await storage.getJSON(
+        STORAGE_KEYS.VAULT_ACTIVITY_LOG,
+        [],
+      );
+      const updatedLogs = [
+        activityEntry,
+        ...(Array.isArray(existingLogs) && existingLogs.length > 0
+          ? existingLogs
+          : []),
+      ];
+      await storage.setJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG, updatedLogs);
 
       Alert.alert(
         "Saved to Personal Collection",
-        `"${newAsset.name}" has been securely recorded in your private Vault under 'My Collection'.`,
+        `"${newAsset.name}" has been recorded in your private Vault under 'My Collection' with ${badgeText}.`,
         [
           {
             text: "View in Vault",
             onPress: () => navigation.navigate(SCREENS.VAULT),
           },
-        ]
+        ],
       );
     } catch (_) {
       Alert.alert("Asset Saved", "Saved to your private Vault collection.");
@@ -351,22 +427,33 @@ export default function ListAssetScreen({ navigation }) {
               runAiVerification(form.images[0]);
             },
           },
-        ]
+        ],
       );
       return;
     }
 
     // Step 3 Check: Price inflation alert (>50% above market high)
     const priceNum = parseFloat(form.askingPrice.replace(/[^0-9.]/g, "")) || 0;
-    if (marketData && marketData.highPrice > 0 && priceNum > (marketData.highPrice * 1.5) && !forceConfirm) {
-      const inflationPct = Math.round(((priceNum - marketData.fairValue) / marketData.fairValue) * 100);
+    if (
+      marketData &&
+      marketData.highPrice > 0 &&
+      priceNum > marketData.highPrice * 1.5 &&
+      !forceConfirm
+    ) {
+      const inflationPct = Math.round(
+        ((priceNum - marketData.fairValue) / marketData.fairValue) * 100,
+      );
       Alert.alert(
         "High Asking Price Notice",
         `Your asking price of £${priceNum.toLocaleString()} is ${inflationPct}% above the AI Market Oracle fair value comps (${marketData.formattedRange}).\n\nAssets priced over 50% above market comps may experience delayed escrow liquidity. Do you wish to proceed?`,
         [
           {
             text: `Adjust to Fair Value (${marketData.formattedFairValue})`,
-            onPress: () => setForm((prev) => ({ ...prev, askingPrice: String(marketData.fairValue) })),
+            onPress: () =>
+              setForm((prev) => ({
+                ...prev,
+                askingPrice: String(marketData.fairValue),
+              })),
             style: "default",
           },
           {
@@ -374,7 +461,7 @@ export default function ListAssetScreen({ navigation }) {
             onPress: () => handleSubmitListing(true),
             style: "destructive",
           },
-        ]
+        ],
       );
       return;
     }
@@ -385,7 +472,8 @@ export default function ListAssetScreen({ navigation }) {
         name: form.name.trim(),
         category: form.category.trim(),
         year: parseInt(form.year, 10) || new Date().getFullYear(),
-        condition: form.condition.trim() || (verifiedAsset?.conditionGrade || "Verified"),
+        condition:
+          form.condition.trim() || verifiedAsset?.conditionGrade || "Verified",
         description: form.description.trim(),
         askingPrice: form.askingPrice.trim(),
         image: form.images[0],
@@ -458,7 +546,10 @@ export default function ListAssetScreen({ navigation }) {
     }
     if (step === 1) {
       if (!form.images.length) {
-        Alert.alert("Photo Required", "Please upload at least one photo of the physical collectible.");
+        Alert.alert(
+          "Photo Required",
+          "Please upload at least one photo of the physical collectible.",
+        );
         return;
       }
       if (!aiVerified) {
@@ -470,7 +561,7 @@ export default function ListAssetScreen({ navigation }) {
               text: "Run AI Check",
               onPress: () => runAiVerification(form.images[0]),
             },
-          ]
+          ],
         );
         return;
       }
@@ -781,7 +872,8 @@ export default function ListAssetScreen({ navigation }) {
                           AI VISION GATEKEEPER & ORACLE ACTIVE
                         </Text>
                         <Text style={styles.verifyingSub}>
-                          Validating physical collectible hallmarks & querying live market comps…
+                          Validating physical collectible hallmarks & querying
+                          live market comps…
                         </Text>
                       </View>
                     </LinearGradient>
@@ -789,12 +881,23 @@ export default function ListAssetScreen({ navigation }) {
 
                   {verificationError && !verifyingImage && (
                     <View style={styles.rejectionBox}>
-                      <Ionicons name="alert-circle" size={20} color="#EF4444" style={{ marginTop: 2 }} />
+                      <Ionicons
+                        name="alert-circle"
+                        size={20}
+                        color="#EF4444"
+                        style={{ marginTop: 2 }}
+                      />
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.rejectionTitle}>AI GATEKEEPER REJECTION</Text>
-                        <Text style={styles.rejectionDesc}>{verificationError}</Text>
+                        <Text style={styles.rejectionTitle}>
+                          AI GATEKEEPER REJECTION
+                        </Text>
+                        <Text style={styles.rejectionDesc}>
+                          {verificationError}
+                        </Text>
                         <Text style={styles.rejectionHint}>
-                          Only authentic physical luxury assets are permitted. Please choose an original photo of your physical collectible.
+                          Only authentic physical luxury assets are permitted.
+                          Please choose an original photo of your physical
+                          collectible.
                         </Text>
                       </View>
                     </View>
@@ -804,27 +907,48 @@ export default function ListAssetScreen({ navigation }) {
                     <View style={styles.verifiedCard}>
                       <View style={styles.verifiedCardHeader}>
                         <View style={styles.verifiedPill}>
-                          <Ionicons name="checkmark-circle" size={13} color="#10B981" />
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={13}
+                            color="#10B981"
+                          />
                           <Text style={styles.verifiedPillText}>
-                            AI VERIFIED AUTHENTIC ({(verifiedAsset.authenticityConfidence * 100).toFixed(1)}%)
+                            AI VERIFIED AUTHENTIC (
+                            {(
+                              verifiedAsset.authenticityConfidence * 100
+                            ).toFixed(1)}
+                            %)
                           </Text>
                         </View>
                       </View>
-                      <Text style={styles.verifiedQuality}>{verifiedAsset.qualityVerdict}</Text>
+                      <Text style={styles.verifiedQuality}>
+                        {verifiedAsset.qualityVerdict}
+                      </Text>
 
-                      <Text style={styles.verifiedTitle}>{verifiedAsset.canonicalName}</Text>
-                      <Text style={styles.verifiedGrade}>Visual Condition: {verifiedAsset.conditionGrade}</Text>
+                      <Text style={styles.verifiedTitle}>
+                        {verifiedAsset.canonicalName}
+                      </Text>
+                      <Text style={styles.verifiedGrade}>
+                        Visual Condition: {verifiedAsset.conditionGrade}
+                      </Text>
 
-                      {Array.isArray(verifiedAsset.keyFeatures) && verifiedAsset.keyFeatures.length > 0 && (
-                        <View style={styles.featuresList}>
-                          {verifiedAsset.keyFeatures.slice(0, 3).map((feat, idx) => (
-                            <View key={idx} style={styles.featureRow}>
-                              <Feather name="check" size={12} color="#7C3AED" />
-                              <Text style={styles.featureText}>{feat}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      )}
+                      {Array.isArray(verifiedAsset.keyFeatures) &&
+                        verifiedAsset.keyFeatures.length > 0 && (
+                          <View style={styles.featuresList}>
+                            {verifiedAsset.keyFeatures
+                              .slice(0, 3)
+                              .map((feat, idx) => (
+                                <View key={idx} style={styles.featureRow}>
+                                  <Feather
+                                    name="check"
+                                    size={12}
+                                    color="#7C3AED"
+                                  />
+                                  <Text style={styles.featureText}>{feat}</Text>
+                                </View>
+                              ))}
+                          </View>
+                        )}
                     </View>
                   )}
 
@@ -836,37 +960,64 @@ export default function ListAssetScreen({ navigation }) {
                       style={styles.oracleCard}
                     >
                       <View style={styles.oracleHeader}>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          <Ionicons name="analytics" size={15} color="#38BDF8" />
-                          <Text style={styles.oracleTag}>LIVE MARKET ORACLE (STEP 2)</Text>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
+                          <Ionicons
+                            name="analytics"
+                            size={15}
+                            color="#38BDF8"
+                          />
+                          <Text style={styles.oracleTag}>
+                            LIVE MARKET ORACLE (STEP 2)
+                          </Text>
                         </View>
                         <View style={styles.demandBadge}>
-                          <Text style={styles.demandText}>{marketData.demandIndex}</Text>
+                          <Text style={styles.demandText}>
+                            {marketData.demandIndex}
+                          </Text>
                         </View>
                       </View>
 
                       <View style={styles.oraclePricesRow}>
                         <View>
-                          <Text style={styles.oraclePriceLabel}>FAIR MARKET VALUE</Text>
-                          <Text style={styles.oraclePriceVal}>{marketData.formattedFairValue}</Text>
+                          <Text style={styles.oraclePriceLabel}>
+                            FAIR MARKET VALUE
+                          </Text>
+                          <Text style={styles.oraclePriceVal}>
+                            {marketData.formattedFairValue}
+                          </Text>
                         </View>
                         <View style={{ alignItems: "flex-end" }}>
-                          <Text style={styles.oraclePriceLabel}>30-DAY COMPS RANGE</Text>
-                          <Text style={styles.oracleRangeVal}>{marketData.formattedRange}</Text>
-                          <Text style={styles.oracleRoiText}>{marketData.thirtyDayRoi} 30d Trend</Text>
+                          <Text style={styles.oraclePriceLabel}>
+                            30-DAY COMPS RANGE
+                          </Text>
+                          <Text style={styles.oracleRangeVal}>
+                            {marketData.formattedRange}
+                          </Text>
+                          <Text style={styles.oracleRoiText}>
+                            {marketData.thirtyDayRoi} 30d Trend
+                          </Text>
                         </View>
                       </View>
 
-                      {Array.isArray(marketData.comps) && marketData.comps.length > 0 && (
-                        <View style={styles.compsRow}>
-                          {marketData.comps.slice(0, 2).map((c, i) => (
-                            <View key={i} style={styles.compPill}>
-                              <Text style={styles.compPlatform}>{c.platform}</Text>
-                              <Text style={styles.compPrice}>{c.price}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      )}
+                      {Array.isArray(marketData.comps) &&
+                        marketData.comps.length > 0 && (
+                          <View style={styles.compsRow}>
+                            {marketData.comps.slice(0, 2).map((c, i) => (
+                              <View key={i} style={styles.compPill}>
+                                <Text style={styles.compPlatform}>
+                                  {c.platform}
+                                </Text>
+                                <Text style={styles.compPrice}>{c.price}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
 
                       <TouchableOpacity
                         style={styles.applyPriceBtn}
@@ -877,13 +1028,14 @@ export default function ListAssetScreen({ navigation }) {
                           }));
                           Alert.alert(
                             "Valuation Applied",
-                            `Asking price auto-populated with ${marketData.formattedFairValue} based on live comps.`
+                            `Asking price auto-populated with ${marketData.formattedFairValue} based on live comps.`,
                           );
                         }}
                         activeOpacity={0.8}
                       >
                         <Text style={styles.applyPriceText}>
-                          ⚡ Apply Fair Market Valuation ({marketData.formattedFairValue})
+                          ⚡ Apply Fair Market Valuation (
+                          {marketData.formattedFairValue})
                         </Text>
                       </TouchableOpacity>
                     </LinearGradient>
@@ -898,7 +1050,9 @@ export default function ListAssetScreen({ navigation }) {
                         style={{ marginTop: 1 }}
                       />
                       <Text style={styles.fraudGuardText}>
-                        Mandatory Step 1: AI Vision Gatekeeper automatically scans your photo upon selection to verify physical authenticity and extract live market pricing comps.
+                        Mandatory Step 1: AI Vision Gatekeeper automatically
+                        scans your photo upon selection to verify physical
+                        authenticity and extract live market pricing comps.
                       </Text>
                     </View>
                   )}
@@ -940,7 +1094,9 @@ export default function ListAssetScreen({ navigation }) {
                               color="#64748B"
                               style={{ marginRight: 4 }}
                             />
-                            <Text style={styles.historyParty}>{item.party}</Text>
+                            <Text style={styles.historyParty}>
+                              {item.party}
+                            </Text>
                           </View>
                         </View>
                       </View>
@@ -1017,15 +1173,15 @@ export default function ListAssetScreen({ navigation }) {
                   </View>
 
                   <View style={styles.fieldWrap}>
-                    <Text style={styles.fieldLabel}>ASKING PRICE (£) *</Text>
+                    <Text style={styles.fieldLabel}>INITIAL COST / PURCHASE PRICE (£) *</Text>
                     <View style={styles.priceInputWrap}>
                       <Text style={styles.priceCurrency}>£</Text>
                       <TextInput
-                        value={form.askingPrice}
+                        value={form.initialPrice}
                         onChangeText={(val) =>
-                          setForm({ ...form, askingPrice: val })
+                          setForm({ ...form, initialPrice: val })
                         }
-                        placeholder="34500"
+                        placeholder="e.g. 150"
                         keyboardType="decimal-pad"
                         placeholderTextColor="#94A3B8"
                         style={styles.priceInput}
@@ -1033,46 +1189,222 @@ export default function ListAssetScreen({ navigation }) {
                     </View>
                   </View>
 
-                  {/* Step 3: Real-Time Market Valuation & Inflation Check */}
-                  {marketData && (() => {
-                    const priceNum = parseFloat(String(form.askingPrice || "").replace(/[^0-9.]/g, "")) || 0;
-                    const isInflated = marketData.highPrice > 0 && priceNum > (marketData.highPrice * 1.5);
-                    const inflationPct = marketData.fairValue > 0
-                      ? Math.round(((priceNum - marketData.fairValue) / marketData.fairValue) * 100)
-                      : 0;
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>LIVE MARKET ORACLE VALUE (£) *</Text>
+                    <View style={styles.priceInputWrap}>
+                      <Text style={styles.priceCurrency}>£</Text>
+                      <TextInput
+                        value={form.askingPrice}
+                        onChangeText={(val) =>
+                          setForm({ ...form, askingPrice: val })
+                        }
+                        placeholder="e.g. 132"
+                        keyboardType="decimal-pad"
+                        placeholderTextColor="#94A3B8"
+                        style={styles.priceInput}
+                      />
+                    </View>
+                  </View>
 
-                    if (isInflated) {
+                  {/* Real-Time Cost Basis vs Live Market Valuation Calculator Preview */}
+                  {(() => {
+                    const initNum =
+                      parseFloat(String(form.initialPrice || "").replace(/[^0-9.]/g, "")) || 0;
+                    const liveNum =
+                      parseFloat(String(form.askingPrice || "").replace(/[^0-9.]/g, "")) || 0;
+
+                    if (initNum > 0 && liveNum > 0) {
+                      const diff = liveNum - initNum;
+                      const pct = ((diff / initNum) * 100).toFixed(1);
+                      const isDeprec = diff < 0;
+                      const badgeText = isDeprec
+                        ? `${pct}% Tech Depreciation`
+                        : `+${pct}% Market Gain`;
+
                       return (
-                        <View style={styles.priceAlertCard}>
-                          <Ionicons name="warning" size={20} color="#D97706" style={{ marginTop: 2 }} />
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.priceAlertTitle}>PRICE INFLATION WARNING (+{inflationPct}%)</Text>
-                            <Text style={styles.priceAlertDesc}>
-                              Your asking price of £{priceNum.toLocaleString()} is {inflationPct}% above fair market value ({marketData.formattedFairValue}). Collectibles priced over 50% above market comps may face lower buyer demand.
-                            </Text>
-                            <TouchableOpacity
-                              style={styles.quickAdjustBtn}
-                              onPress={() => setForm((prev) => ({ ...prev, askingPrice: String(marketData.fairValue) }))}
-                              activeOpacity={0.8}
+                        <View
+                          style={{
+                            backgroundColor: isDeprec ? "#FEF2F2" : "#F0FDF4",
+                            borderColor: isDeprec ? "#FECACA" : "#BBF7D0",
+                            borderWidth: 1,
+                            borderRadius: 14,
+                            padding: 14,
+                            marginBottom: 16,
+                          }}
+                        >
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              marginBottom: 8,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 11,
+                                fontWeight: "700",
+                                color: isDeprec ? "#DC2626" : "#16A34A",
+                                letterSpacing: 0.5,
+                              }}
                             >
-                              <Text style={styles.quickAdjustText}>
-                                Adjust to Fair Value ({marketData.formattedFairValue})
+                              REAL-TIME VALUE PROJECTION
+                            </Text>
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                paddingHorizontal: 8,
+                                paddingVertical: 3,
+                                borderRadius: 20,
+                                backgroundColor: isDeprec ? "#FEE2E2" : "#DCFCE7",
+                              }}
+                            >
+                              <Feather
+                                name={isDeprec ? "trending-down" : "trending-up"}
+                                size={12}
+                                color={isDeprec ? "#DC2626" : "#15803D"}
+                                style={{ marginRight: 4 }}
+                              />
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: "800",
+                                  color: isDeprec ? "#DC2626" : "#15803D",
+                                }}
+                              >
+                                {badgeText}
                               </Text>
-                            </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                            }}
+                          >
+                            <View>
+                              <Text style={{ fontSize: 11, color: "#64748B" }}>
+                                Initial Cost Basis
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: 16,
+                                  fontWeight: "700",
+                                  color: "#0F172A",
+                                }}
+                              >
+                                £{initNum.toLocaleString("en-GB")}
+                              </Text>
+                            </View>
+
+                            <Feather name="arrow-right" size={16} color="#94A3B8" />
+
+                            <View style={{ alignItems: "flex-end" }}>
+                              <Text style={{ fontSize: 11, color: "#64748B" }}>
+                                Live Market Oracle
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: 16,
+                                  fontWeight: "700",
+                                  color: isDeprec ? "#DC2626" : "#16A34A",
+                                }}
+                              >
+                                £{liveNum.toLocaleString("en-GB")}
+                              </Text>
+                            </View>
                           </View>
                         </View>
                       );
                     }
-
-                    return (
-                      <View style={styles.oraclePillMini}>
-                        <Ionicons name="trending-up" size={14} color="#7C3AED" />
-                        <Text style={styles.oraclePillMiniText}>
-                          Market Oracle Fair Value: <Text style={{ fontWeight: "800", color: "#7C3AED" }}>{marketData.formattedFairValue}</Text> (Comps: {marketData.formattedRange})
-                        </Text>
-                      </View>
-                    );
+                    return null;
                   })()}
+
+                  {/* Step 3: Real-Time Market Valuation & Inflation Check */}
+                  {marketData &&
+                    (() => {
+                      const priceNum =
+                        parseFloat(
+                          String(form.askingPrice || "").replace(
+                            /[^0-9.]/g,
+                            "",
+                          ),
+                        ) || 0;
+                      const isInflated =
+                        marketData.highPrice > 0 &&
+                        priceNum > marketData.highPrice * 1.5;
+                      const inflationPct =
+                        marketData.fairValue > 0
+                          ? Math.round(
+                              ((priceNum - marketData.fairValue) /
+                                marketData.fairValue) *
+                                100,
+                            )
+                          : 0;
+
+                      if (isInflated) {
+                        return (
+                          <View style={styles.priceAlertCard}>
+                            <Ionicons
+                              name="warning"
+                              size={20}
+                              color="#D97706"
+                              style={{ marginTop: 2 }}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.priceAlertTitle}>
+                                PRICE INFLATION WARNING (+{inflationPct}%)
+                              </Text>
+                              <Text style={styles.priceAlertDesc}>
+                                Your asking price of £
+                                {priceNum.toLocaleString()} is {inflationPct}%
+                                above fair market value (
+                                {marketData.formattedFairValue}). Collectibles
+                                priced over 50% above market comps may face
+                                lower buyer demand.
+                              </Text>
+                              <TouchableOpacity
+                                style={styles.quickAdjustBtn}
+                                onPress={() =>
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    askingPrice: String(marketData.fairValue),
+                                  }))
+                                }
+                                activeOpacity={0.8}
+                              >
+                                <Text style={styles.quickAdjustText}>
+                                  Adjust to Fair Value (
+                                  {marketData.formattedFairValue})
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      }
+
+                      return (
+                        <View style={styles.oraclePillMini}>
+                          <Ionicons
+                            name="trending-up"
+                            size={14}
+                            color="#7C3AED"
+                          />
+                          <Text style={styles.oraclePillMiniText}>
+                            Market Oracle Fair Value:{" "}
+                            <Text
+                              style={{ fontWeight: "800", color: "#7C3AED" }}
+                            >
+                              {marketData.formattedFairValue}
+                            </Text>{" "}
+                            (Comps: {marketData.formattedRange})
+                          </Text>
+                        </View>
+                      );
+                    })()}
 
                   {/* Summary Review Card */}
                   <View style={styles.reviewCard}>
@@ -1098,14 +1430,15 @@ export default function ListAssetScreen({ navigation }) {
                     ) : null}
                   </View>
 
-                  {/* Clean UI Toggle: [🔒 Save to Personal Collection (Private)] vs [🌐 List & Fractionalize on Marketplace] */}
+                  {/* Clean UI Toggle: [🔒 Save to Personal Collection (100% Owned Wealth Tracker)] vs [🌐 List for Fractional Investment (Public Marketplace)] */}
                   <View style={styles.destinationToggleWrap}>
                     <Text style={styles.fieldLabel}>LISTING DESTINATION</Text>
                     <View style={styles.destinationToggleRow}>
                       <TouchableOpacity
                         style={[
                           styles.destinationToggleBtn,
-                          destinationMode === "personal" && styles.destinationToggleBtnActive,
+                          destinationMode === "personal" &&
+                            styles.destinationToggleBtnActive,
                         ]}
                         onPress={() => setDestinationMode("personal")}
                         activeOpacity={0.8}
@@ -1113,23 +1446,29 @@ export default function ListAssetScreen({ navigation }) {
                         <Ionicons
                           name="lock-closed"
                           size={14}
-                          color={destinationMode === "personal" ? "#FFFFFF" : "#64748B"}
+                          color={
+                            destinationMode === "personal"
+                              ? "#FFFFFF"
+                              : "#64748B"
+                          }
                           style={{ marginRight: 6 }}
                         />
                         <Text
                           style={[
                             styles.destinationToggleText,
-                            destinationMode === "personal" && styles.destinationToggleTextActive,
+                            destinationMode === "personal" &&
+                              styles.destinationToggleTextActive,
                           ]}
                         >
-                          [🔒 Save to Personal Collection (Private)]
+                          [🔒 Save to Personal Collection (100% Owned Wealth Tracker)]
                         </Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
                         style={[
                           styles.destinationToggleBtn,
-                          destinationMode === "marketplace" && styles.destinationToggleBtnActive,
+                          destinationMode === "marketplace" &&
+                            styles.destinationToggleBtnActive,
                         ]}
                         onPress={() => setDestinationMode("marketplace")}
                         activeOpacity={0.8}
@@ -1137,32 +1476,49 @@ export default function ListAssetScreen({ navigation }) {
                         <Ionicons
                           name="globe-outline"
                           size={14}
-                          color={destinationMode === "marketplace" ? "#FFFFFF" : "#64748B"}
+                          color={
+                            destinationMode === "marketplace"
+                              ? "#FFFFFF"
+                              : "#64748B"
+                          }
                           style={{ marginRight: 6 }}
                         />
                         <Text
                           style={[
                             styles.destinationToggleText,
-                            destinationMode === "marketplace" && styles.destinationToggleTextActive,
+                            destinationMode === "marketplace" &&
+                              styles.destinationToggleTextActive,
                           ]}
                         >
-                          [🌐 List & Fractionalize on Marketplace]
+                          [🌐 List for Fractional Investment (Public Marketplace)]
                         </Text>
                       </TouchableOpacity>
                     </View>
 
                     {destinationMode === "personal" ? (
                       <View style={styles.destinationInfoPill}>
-                        <Ionicons name="shield-checkmark" size={15} color="#7C3AED" />
+                        <Ionicons
+                          name="shield-checkmark"
+                          size={15}
+                          color="#7C3AED"
+                        />
                         <Text style={styles.destinationInfoText}>
-                          Private Vault: Secured in 'My Collection' with an ERC-721 Sepolia provenance certificate. 0% public market listing fees.
+                          Private Vault: Secured in 'My Collection' with an
+                          ERC-721 Sepolia provenance certificate. 0% public
+                          market listing fees.
                         </Text>
                       </View>
                     ) : (
                       <View style={styles.destinationInfoPill}>
-                        <Ionicons name="trending-up" size={15} color="#2563EB" />
+                        <Ionicons
+                          name="trending-up"
+                          size={15}
+                          color="#2563EB"
+                        />
                         <Text style={styles.destinationInfoText}>
-                          Marketplace Fractionalization: Generates an escrow-backed fractional offering on the public exchange with investor liquidity.
+                          Marketplace Fractionalization: Generates an
+                          escrow-backed fractional offering on the public
+                          exchange with investor liquidity.
                         </Text>
                       </View>
                     )}
@@ -1213,8 +1569,8 @@ export default function ListAssetScreen({ navigation }) {
                     <Text style={styles.nextBtnLabel}>
                       {step === STEPS.length - 1
                         ? destinationMode === "personal"
-                          ? "🔒 Save to Personal Collection"
-                          : "🌐 List & Fractionalize on Marketplace"
+                          ? "🔒 Save to Personal Collection (100% Owned Wealth Tracker)"
+                          : "🌐 List for Fractional Investment (Public Marketplace)"
                         : "Continue"}
                     </Text>
                     <Feather
@@ -2101,4 +2457,3 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
-

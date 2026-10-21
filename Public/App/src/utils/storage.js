@@ -13,6 +13,7 @@ export const STORAGE_KEYS = {
   PERSONAL_COLLECTION: '@smartassets_personal_collection',
   CO_OWNED_ASSETS: '@smartassets_co_owned_assets',
   ESCROW_CASH: '@smartassets_escrow_cash',
+  VAULT_ACTIVITY_LOG: '@smartassets_vault_activity_log',
 };
 
 const storage = {

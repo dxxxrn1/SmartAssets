@@ -513,6 +513,61 @@ export default function InvestScreen({ navigation }) {
               )
             );
 
+            // Decrement Co-Owned Assets in storage
+            try {
+              const fractions = (await storage.getJSON(STORAGE_KEYS.CO_OWNED_ASSETS)) || [];
+              const foundIdx = fractions.findIndex(
+                (f) =>
+                  f.id === offering.id ||
+                  (f.name &&
+                    offering.name &&
+                    f.name.toLowerCase().includes(offering.name.toLowerCase()))
+              );
+              if (foundIdx >= 0) {
+                const updated = [...fractions];
+                const prevF = updated[foundIdx];
+                const newShares = Math.max(0, (prevF.sharesOwned || 1) - 1);
+                const newStake = Math.max(0, (prevF.myStake || sharePriceNum) - sharePriceNum);
+                if (newShares === 0) {
+                  updated.splice(foundIdx, 1);
+                } else {
+                  updated[foundIdx] = {
+                    ...prevF,
+                    sharesOwned: newShares,
+                    myStake: newStake,
+                    myStakeFormatted: `£${newStake.toLocaleString("en-GB")}`,
+                  };
+                }
+                await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, updated);
+              }
+
+              // Append liquidation log to activity log
+              const existingLogs = (await storage.getJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG)) || [];
+              const newLog = {
+                id: "act-sell-" + Date.now(),
+                type: "fractional_escrow",
+                title: "Fractional Share Liquidation",
+                assetName: `1 Share • ${offering.name}`,
+                hash:
+                  "0x" +
+                  Array.from({ length: 40 }, () =>
+                    Math.floor(Math.random() * 16).toString(16)
+                  ).join(""),
+                hashDisplay:
+                  "0x" +
+                  Math.random().toString(16).substring(2, 6) +
+                  "..." +
+                  Math.random().toString(16).substring(2, 4),
+                amount: `+£${sharePriceNum}`,
+                timestamp: "Just now",
+                status: "Liquidated to Escrow",
+                network: "Sepolia Testnet",
+                icon: "cash-outline",
+                badgeColor: "#10B981",
+              };
+              await storage.setJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG, [newLog, ...existingLogs]);
+            } catch (_) {}
+
             Alert.alert(
               "Shares Liquidated",
               `Sold 1 share of ${offering.name}. £${sharePriceNum} credited to your Escrow Wallet (New balance: £${newCash.toLocaleString()}).`

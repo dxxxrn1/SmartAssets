@@ -36,10 +36,45 @@ async function getVault(req, res) {
       });
     }
 
-    const items = (holdings || []).map((item) => ({
-      ...item,
-      image: normalizeImageUrl(item.image, req),
-    }));
+    const items = (holdings || []).map((item) => {
+      let initialValue = Number(item.price_num) || 0;
+      let liveMarketValue = Number(item.price_num) || 0;
+      let badgeText = item.gain || '+0.0% Market Gain';
+      let badgeType = item.positive ? 'positive' : 'negative';
+      let sharesOwned = 1;
+      let myStake = Number(item.price_num) || 0;
+
+      if (item.gain && item.gain.includes('<!--meta:')) {
+        const match = item.gain.match(/<!--meta:([\s\S]*?)-->/);
+        if (match) {
+          try {
+            const meta = JSON.parse(match[1]);
+            if (meta.initialValue !== undefined) initialValue = Number(meta.initialValue);
+            if (meta.liveMarketValue !== undefined) liveMarketValue = Number(meta.liveMarketValue);
+            if (meta.badgeText) badgeText = meta.badgeText;
+            if (meta.badgeType) badgeType = meta.badgeType;
+            if (meta.sharesOwned) sharesOwned = meta.sharesOwned;
+            if (meta.myStake) myStake = Number(meta.myStake);
+          } catch (_) {}
+        }
+      }
+
+      const cleanGain = badgeText.replace(/<!--[\s\S]*?-->/g, '').trim();
+
+      return {
+        ...item,
+        image: normalizeImageUrl(item.image, req),
+        initialValue,
+        initialValueFormatted: `£${initialValue.toLocaleString('en-GB')}`,
+        liveMarketValue,
+        liveMarketValueFormatted: `£${liveMarketValue.toLocaleString('en-GB')}`,
+        badgeText: cleanGain,
+        badgeType,
+        sharesOwned,
+        myStake,
+        myStakeFormatted: `£${myStake.toLocaleString('en-GB')}`,
+      };
+    });
     const vaultTxService = require('../services/vaultTransactionService');
     const availableBalanceNum = await vaultTxService.getUserBalance(userId);
     const availableBalanceFormatted = vaultTxService.formatZar(availableBalanceNum);
@@ -84,10 +119,35 @@ async function getVault(req, res) {
 async function addHolding(req, res) {
   try {
     const userId = req.user.id;
-    const { name, category, price, priceNum, gain, gainPct, positive, image, assetType } = req.body;
+    const {
+      name,
+      category,
+      price,
+      priceNum,
+      gain,
+      gainPct,
+      positive,
+      image,
+      assetType,
+      initialValue,
+      liveMarketValue,
+      badgeText,
+    } = req.body;
 
-    if (!name || !category || priceNum === undefined) {
+    if (!name || !category || (priceNum === undefined && initialValue === undefined)) {
       return sendError(res, 400, 'Please provide asset name, category, and price.');
+    }
+
+    const effectivePriceNum = Number(priceNum !== undefined ? priceNum : (liveMarketValue || initialValue || 0));
+    let gainVal = gain || badgeText || '+0.0%';
+    if (initialValue !== undefined || liveMarketValue !== undefined || badgeText !== undefined) {
+      const meta = {
+        initialValue: Number(initialValue || effectivePriceNum),
+        liveMarketValue: Number(liveMarketValue || effectivePriceNum),
+        badgeText: badgeText || gainVal,
+        badgeType: positive !== undefined ? (positive ? 'positive' : 'negative') : 'positive',
+      };
+      gainVal = `${badgeText || gainVal}<!--meta:${JSON.stringify(meta)}-->`;
     }
 
     const { data, error } = await supabase
@@ -96,13 +156,13 @@ async function addHolding(req, res) {
         user_id: userId,
         name: name.trim(),
         category: category.trim(),
-        price: price || `R${Number(priceNum).toLocaleString('en-ZA')}`,
-        price_num: Number(priceNum),
-        gain: gain || '+0.0%',
+        price: price || `£${effectivePriceNum.toLocaleString('en-GB')}`,
+        price_num: effectivePriceNum,
+        gain: gainVal,
         gain_pct: gainPct || '0%',
         positive: positive !== undefined ? positive : true,
         image: image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
-        asset_type: assetType || 'whole',
+        asset_type: assetType || 'personal',
       })
       .select()
       .single();
