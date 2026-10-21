@@ -172,33 +172,67 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingVault, setLoadingVault] = useState(true);
   const [vaultSummary, setVaultSummary] = useState({
-    totalValueFormatted: "£1,296,700",
-    portfolioValueFormatted: "£1,296,700",
-    portfolioValueNum: 1296700,
-    totalCount: 12,
+    totalValueFormatted: "£1,077",
+    portfolioValueFormatted: "£1,077",
+    portfolioValueNum: 1077,
+    totalCount: 5,
     categoriesCount: 4,
     verifiedPct: 96,
-    annualGainFormatted: "£100,320 this year",
-    gainPct: "↑ 8.4%",
+    annualGainFormatted: "+12.4% overall gain",
+    gainPct: "↑ 12.4%",
   });
   const [vaultHoldings, setVaultHoldings] = useState([]);
 
-  // Fetch Vault Data
+  // Fetch Vault Data with unified dynamic formula: personalTotal + fractionalTotal + escrowCash
   const loadVaultData = useCallback(async () => {
-    // 1. Immediately restore cached data
+    // 1. Immediately compute from local storage for instant real-time sync with VaultScreen
     try {
-      const cached = await storage.getJSON(STORAGE_KEYS.VAULT);
-      if (cached?.summary) {
-        setVaultSummary((prev) => ({
-          ...prev,
-          portfolioValueFormatted:
-            formatGBP(cached.summary.portfolioValueFormatted) ||
-            prev.portfolioValueFormatted,
-          totalCount: cached.summary.totalCount || prev.totalCount,
-        }));
-      }
-      if (cached?.holdings && Array.isArray(cached.holdings)) {
-        setVaultHoldings(cached.holdings);
+      const [cachedPersonal, cachedFractions, cachedCash, cachedVault] =
+        await Promise.all([
+          storage.getJSON(STORAGE_KEYS.PERSONAL_COLLECTION),
+          storage.getJSON(STORAGE_KEYS.CO_OWNED_ASSETS),
+          storage.getJSON(STORAGE_KEYS.ESCROW_CASH),
+          storage.getJSON(STORAGE_KEYS.VAULT),
+        ]);
+
+      const personalList =
+        Array.isArray(cachedPersonal) && cachedPersonal.length > 0
+          ? cachedPersonal
+          : [
+              { initialValue: 150, liveMarketValue: 132 },
+              { initialValue: 120, liveMarketValue: 137 },
+              { initialValue: 65, liveMarketValue: 58 },
+            ];
+
+      const fractionalList =
+        Array.isArray(cachedFractions) && cachedFractions.length > 0
+          ? cachedFractions
+          : [{ myStake: 200 }, { myStake: 200 }];
+
+      const cashNum = typeof cachedCash === "number" ? cachedCash : 250;
+
+      const pTotal = personalList.reduce(
+        (sum, it) =>
+          sum + (Number(it.liveMarketValue) || Number(it.initialValue) || 0),
+        0
+      );
+      const fTotal = fractionalList.reduce(
+        (sum, it) => sum + (Number(it.myStake) || 0),
+        0
+      );
+      const combinedTotalNum = pTotal + fTotal + cashNum;
+      const combinedCount = personalList.length + fractionalList.length;
+
+      setVaultSummary((prev) => ({
+        ...prev,
+        portfolioValueFormatted: formatGBP(combinedTotalNum),
+        portfolioValueNum: combinedTotalNum,
+        totalValueFormatted: formatGBP(combinedTotalNum),
+        totalCount: combinedCount,
+      }));
+
+      if (cachedVault?.holdings && Array.isArray(cachedVault.holdings)) {
+        setVaultHoldings(cachedVault.holdings);
       }
     } catch (_) {}
 
@@ -211,22 +245,15 @@ export default function HomeScreen({ navigation }) {
     try {
       setLoadingVault(true);
       const res = await getUserVault(token);
-      if (res?.summary) {
-        setVaultSummary((prev) => ({
-          ...prev,
-          portfolioValueFormatted:
-            formatGBP(res.summary.portfolioValueFormatted) ||
-            prev.portfolioValueFormatted,
-          totalCount: res.summary.totalCount || prev.totalCount,
-        }));
-      }
       if (res?.holdings && Array.isArray(res.holdings)) {
         setVaultHoldings(res.holdings);
       }
-      await storage.setJSON(STORAGE_KEYS.VAULT, {
-        summary: res?.summary,
-        holdings: res?.holdings,
-      });
+      if (res?.summary) {
+        await storage.setJSON(STORAGE_KEYS.VAULT, {
+          summary: res.summary,
+          holdings: res?.holdings,
+        });
+      }
     } catch (err) {
       console.warn("[HomeScreen] Vault load fallback:", err.message);
       if (
