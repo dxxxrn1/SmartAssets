@@ -213,6 +213,25 @@ export async function createAssetApi(assetData, token) {
   );
 }
 
+/**
+ * Run mandatory 3-step asset upload verification pipeline:
+ * Step 1: AI Vision Gatekeeper inspection & feature extraction.
+ * Step 2: Live Market Oracle pricing comps & 30-day demand lookup.
+ * Step 3: Valuation analysis against asking price.
+ * @param {object} payload - { image, name?, category?, askingPrice?, condition?, description? }
+ * @param {string} token - User's Supabase JWT access token
+ */
+export async function verifyAssetUploadApi(payload, token) {
+  return apiRequest(
+    '/assets/verify-upload',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
 // ── Multi-Rail Payment Gateway API ──────────────────────────────────────────
 
 /**
@@ -482,14 +501,29 @@ export async function getVaultTransactionsApi(token) {
  * If the URI is a relative path (/uploads/...) or points to an outdated IP,
  * rewrites it using API_BASE_URL's active server origin.
  */
-export function resolveImageUrl(imageUri) {
-  if (!imageUri || typeof imageUri !== 'string') return imageUri;
+export function resolveImageUrl(
+  imageUri,
+  fallback = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800'
+) {
+  if (!imageUri || typeof imageUri !== 'string' || !imageUri.trim()) {
+    return fallback;
+  }
+  // Clean replacement for corrupted red bundler error screenshot
+  if (imageUri.includes('asset_6f80eb') || imageUri.includes('b1tmz')) {
+    return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
+  }
   if (imageUri.startsWith('data:image/')) return imageUri;
 
   const uploadsMatch = imageUri.match(/\/uploads\/assets\/[^"'\s?#]+/i);
   if (uploadsMatch) {
     const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
     return `${baseOrigin}${uploadsMatch[0]}`;
+  }
+
+  // Also catch and rewrite any stale LAN IP URLs (e.g. 10.250.x.x:5000)
+  if (imageUri.includes(':5000/uploads/')) {
+    const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+    return imageUri.replace(/^https?:\/\/[^/]+(:5000)?/, baseOrigin);
   }
 
   return imageUri;

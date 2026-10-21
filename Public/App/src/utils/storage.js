@@ -10,6 +10,9 @@ export const STORAGE_KEYS = {
   MARKET_ASSETS: '@smartassets_cached_assets',
   VAULT: '@smartassets_cached_vault',
   USER_PROFILE: '@smartassets_cached_profile',
+  PERSONAL_COLLECTION: '@smartassets_personal_collection',
+  CO_OWNED_ASSETS: '@smartassets_co_owned_assets',
+  ESCROW_CASH: '@smartassets_escrow_cash',
 };
 
 const storage = {

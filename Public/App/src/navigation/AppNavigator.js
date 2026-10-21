@@ -2,7 +2,7 @@
 // Wires all screens together using React Navigation
 
 import React, { useState, useEffect, useRef } from 'react';
-import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, TouchableOpacity, Platform, Linking, StyleSheet } from 'react-native';
@@ -74,16 +74,17 @@ function extractResetToken(url) {
 }
 
 // ── Modern Floating Tab Bar Palette ──────────────────────────────────────────
-// Selection color matches the user's signature purple (#976af0)
-const ACTIVE_TAB = '#976af0';          // Brand Purple
-const INACTIVE_TAB = '#94A3B8';        // Muted Slate
+// Selection color matches the signature cyan/blue from the Home top container gradient:
+// ['#7C3AED', '#5B36F5', '#2563EB', '#00C2FF']
+const ACTIVE_TAB = '#00C2FF';          // Luminous Cyan / Electric Blue
+const INACTIVE_TAB = 'rgba(255, 255, 255, 0.65)'; // Translucent White
 
 const TAB_CONFIG = {
-  [SCREENS.HOME]:       { active: 'home',             inactive: 'home-outline',           label: 'Home'    },
-  [SCREENS.SEARCH]:     { active: 'grid',             inactive: 'grid-outline',           label: 'Market'  },
-  [SCREENS.LIST_ASSET]: { active: 'add',               inactive: 'add',                    label: ''        },
-  [SCREENS.INVEST]:     { active: 'trending-up',       inactive: 'trending-up-outline',    label: 'Invest'  },
-  [SCREENS.VAULT]:      { active: 'shield-checkmark',  inactive: 'shield-outline',         label: 'Vault'   },
+  [SCREENS.HOME]:       { active: 'home',             inactive: 'home-outline',           color: '#00C2FF', label: 'Home'    },
+  [SCREENS.SEARCH]:     { active: 'grid',             inactive: 'grid-outline',           color: '#00C2FF', label: 'Market'  },
+  [SCREENS.LIST_ASSET]: { active: 'add',              inactive: 'add',                    color: '#FFFFFF', label: ''        },
+  [SCREENS.INVEST]:     { active: 'trending-up',      inactive: 'trending-up-outline',    color: '#00C2FF', label: 'Invest'  },
+  [SCREENS.VAULT]:      { active: 'shield-checkmark', inactive: 'shield-outline',         color: '#00C2FF', label: 'Vault'   },
 };
 
 const TAB_ORDER = [SCREENS.HOME, SCREENS.SEARCH, SCREENS.LIST_ASSET, SCREENS.INVEST, SCREENS.VAULT];
@@ -114,60 +115,59 @@ function CustomTabBar({ state, navigation, isDark }) {
           width: '100%',
           maxWidth: 460,
           borderRadius: 32,
-          borderWidth: 1,
-          borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.75)',
-          shadowColor: isDark ? '#000000' : '#1E2768',
-          shadowOffset: { width: 0, height: 10 },
-          shadowOpacity: isDark ? 0.45 : 0.14,
-          shadowRadius: 24,
-          elevation: 12,
+          borderWidth: 1.2,
+          borderColor: 'rgba(255, 255, 255, 0.22)', // Translucent subtle glass border
+          shadowColor: '#0f45c4ff',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.2,
+          shadowRadius: 20,
+          elevation: 8,
           overflow: 'hidden',
           position: 'relative',
-          backgroundColor: isDark ? 'rgba(21, 29, 66, 0.72)' : 'rgba(255, 255, 255, 0.75)',
+          backgroundColor: 'rgba(15, 21, 45, 0.22)', // Highly transparent sheer glass (see-through)
           ...(Platform.OS === 'web'
             ? {
-                backdropFilter: 'blur(20px) saturate(180%)',
-                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-                boxShadow: isDark
-                  ? '0 16px 36px -4px rgba(0, 0, 0, 0.55), 0 8px 16px -6px rgba(0, 0, 0, 0.35)'
-                  : '0 16px 36px -4px rgba(30, 39, 104, 0.16), 0 8px 16px -6px rgba(30, 39, 104, 0.08)',
+                backdropFilter: 'blur(16px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                boxShadow:
+                  '0 8px 32px 0 rgba(0, 0, 0, 0.2), inset 0 1px 1px 0 rgba(255, 255, 255, 0.25)',
               }
             : {}),
         }}
       >
-        {/* Background-only glass gradient sheen */}
+        {/* Very Subtle Sheer Glass Gradient Overlay */}
         <LinearGradient
-          colors={
-            isDark
-              ? ['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)', 'rgba(0, 0, 0, 0.2)']
-              : ['rgba(255, 255, 255, 0.85)', 'rgba(255, 255, 255, 0.55)', 'rgba(240, 246, 255, 0.45)']
-          }
+          colors={[
+            'rgba(255, 255, 255, 0.14)',
+            'rgba(20, 30, 60, 0.12)',
+            'rgba(10, 16, 35, 0.25)',
+          ]}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+          end={{ x: 0.4, y: 1 }}
           style={StyleSheet.absoluteFillObject}
           pointerEvents="none"
         />
 
-        {/* Top edge light-reflection line for frosted glass realism */}
+        {/* Top edge glossy light reflection line */}
         <View
           pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
-            left: 24,
-            right: 24,
+            left: 20,
+            right: 20,
             height: 1,
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(255, 255, 255, 0.95)',
+            backgroundColor: 'rgba(255, 255, 255, 0.35)',
           }}
         />
 
-        {/* Content Row: tabs, icons, labels, FAB stay completely sharp and unaffected */}
+        {/* Content Row */}
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
-            paddingVertical: 7,
+            paddingVertical: 8,
             paddingHorizontal: 8,
           }}
         >
@@ -176,6 +176,7 @@ function CustomTabBar({ state, navigation, isDark }) {
             const focused = state.index === idx;
             const isFAB = route.name === SCREENS.LIST_ASSET;
             const iconName = focused ? cfg.active : cfg.inactive;
+            const tabColor = cfg.color || '#1D4ED8'; // Deep blue / configured color
 
             const onPress = () => {
               const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
@@ -195,25 +196,25 @@ function CustomTabBar({ state, navigation, isDark }) {
                   activeOpacity={0.85}
                 >
                   <LinearGradient
-                    colors={['#976af0', '#00fbff']}
+                    colors={['#38BDF8', '#1D4ED8']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 24,
+                      width: 50,
+                      height: 50,
+                      borderRadius: 25,
                       alignItems: 'center',
                       justifyContent: 'center',
-                      shadowColor: '#976af0',
+                      shadowColor: '#1D4ED8',
                       shadowOffset: { width: 0, height: 4 },
-                      shadowOpacity: 0.38,
+                      shadowOpacity: 0.4,
                       shadowRadius: 10,
-                      elevation: 7,
-                      borderWidth: focused ? 2.5 : 0,
-                      borderColor: '#FFFFFF',
+                      elevation: 8,
+                      borderWidth: focused ? 2.5 : 1.5,
+                      borderColor: 'rgba(255, 255, 255, 0.9)',
                     }}
                   >
-                    <Ionicons name="add" size={26} color="#FFFFFF" />
+                    <Ionicons name="add" size={28} color="#FFFFFF" />
                   </LinearGradient>
                 </TouchableOpacity>
               );
@@ -236,28 +237,34 @@ function CustomTabBar({ state, navigation, isDark }) {
                 }}
                 activeOpacity={0.75}
               >
+                {/* Active Pill Indicator Bar above icon */}
                 {focused && (
                   <View
                     style={{
                       position: 'absolute',
-                      top: 2,
-                      width: 14,
-                      height: 2.5,
+                      top: 1,
+                      width: 18,
+                      height: 3,
                       borderRadius: 2,
-                      backgroundColor: ACTIVE_TAB,
+                      backgroundColor: tabColor,
+                      shadowColor: tabColor,
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.6,
+                      shadowRadius: 3,
+                      elevation: 3,
                     }}
                   />
                 )}
                 <Ionicons
                   name={iconName}
                   size={21}
-                  color={focused ? ACTIVE_TAB : (isDark ? '#94A3B8' : '#64748B')}
+                  color={focused ? tabColor : 'rgba(255, 255, 255, 0.6)'}
                 />
                 <Text
                   style={{
                     fontSize: 10,
                     fontWeight: focused ? '700' : '600',
-                    color: focused ? ACTIVE_TAB : (isDark ? '#94A3B8' : '#64748B'),
+                    color: focused ? tabColor : 'rgba(255, 255, 255, 0.6)',
                     letterSpacing: 0.1,
                   }}
                 >
@@ -272,16 +279,15 @@ function CustomTabBar({ state, navigation, isDark }) {
   );
 }
 
-// ── Main tab navigator ─────────────────────────────────────────────────────────
 function MainTabs({ isDark }) {
   return (
     <Tab.Navigator
       // unmountOnBlur: true prevents inactive tab screens from rendering on web,
-      // which fixes the duplicate floating settings gear icon (Bug #5).
-      // On native, React Navigation already suspends inactive tabs visually.
+      // which fixes duplicate floating elements.
       screenOptions={{
         headerShown: false,
         unmountOnBlur: true,
+        sceneStyle: { backgroundColor: 'transparent' },
         tabBarStyle: {
           position: 'absolute',
           backgroundColor: 'transparent',
@@ -352,12 +358,21 @@ export default function Navigation() {
     );
   }
 
+  const navTheme = {
+    ...DefaultTheme,
+    colors: {
+      ...DefaultTheme.colors,
+      background: isDark ? '#0F172A' : '#F3EEFF',
+    },
+  };
+
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} theme={navTheme}>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
+          contentStyle: { backgroundColor: isDark ? '#0F172A' : '#F3EEFF' },
         }}
       >
         {!isAuthenticated ? (
@@ -386,6 +401,14 @@ export default function Navigation() {
           <>
             <Stack.Screen name={SCREENS.MAIN_TABS}>
               {() => <MainTabs isDark={isDark} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.SEARCH}>
+              {(props) => <SearchScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.LIST_ASSET}>
+              {(props) => <ListAssetScreen {...props} isDark={isDark} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.ASSET_DETAIL}>

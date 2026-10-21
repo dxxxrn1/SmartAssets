@@ -31,7 +31,7 @@ export const SCREENS = {
   PROFILE_ANALYTICS: 'ProfileAnalytics',
 };
 
-// Bottom tab config — mirrors BottomNav in prototype
+// Bottom tab config — mirrors BottomNav
 export const TABS = [
   { name: SCREENS.HOME,       label: 'Home',    icon: 'home' },
   { name: SCREENS.SEARCH,     label: 'Market',  icon: 'grid' },

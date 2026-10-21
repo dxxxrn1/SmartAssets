@@ -2,7 +2,7 @@
 // Provides global authentication state, user session persistence via AsyncStorage, and auth actions.
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loginUser, registerUser, loginWithWalletApi } from '../services/api';
+import { loginUser, registerUser, loginWithWalletApi, getUserProfileApi } from '../services/api';
 import storage, { STORAGE_KEYS } from '../utils/storage';
 
 const AuthContext = createContext(null);
@@ -19,8 +19,27 @@ export function AuthProvider({ children }) {
       try {
         const savedSession = await storage.getJSON(STORAGE_KEYS.SESSION);
         if (savedSession && savedSession.user && savedSession.token) {
-          setUser(savedSession.user);
-          setToken(savedSession.token);
+          try {
+            await getUserProfileApi(savedSession.token);
+            setUser(savedSession.user);
+            setToken(savedSession.token);
+          } catch (valErr) {
+            const msg = valErr?.message || '';
+            if (
+              msg.includes('Unauthorized') ||
+              msg.includes('Session expired') ||
+              msg.includes('invalid token')
+            ) {
+              console.warn('[AuthContext] Stored session expired or invalid. Prompting login.');
+              await storage.removeItem(STORAGE_KEYS.SESSION);
+              setUser(null);
+              setToken(null);
+            } else {
+              // Retain session if offline / temporary network issue
+              setUser(savedSession.user);
+              setToken(savedSession.token);
+            }
+          }
         }
       } catch (err) {
         console.warn('[AuthContext] Error restoring session:', err.message);

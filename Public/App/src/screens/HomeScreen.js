@@ -22,7 +22,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
-import { getUserVault } from "../services/api";
+import { getUserVault, resolveImageUrl } from "../services/api";
 import { SCREENS } from "../constants/navigation";
 import storage, { STORAGE_KEYS } from "../utils/storage";
 
@@ -40,6 +40,38 @@ const formatGBP = (val, fallback = "£1,296,700") => {
   if (isNaN(num)) return String(val);
   return "£" + num.toLocaleString("en-GB", { maximumFractionDigits: 0 });
 };
+
+// ── Browse Categories Data ───────────────────────────────────────────────────
+const CATEGORY_CARDS = [
+  {
+    id: "watches",
+    name: "Watches",
+    categoryKey: "Watches",
+    dotColor: "#38BDF8", // Cyan dot
+    image: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=600&fit=crop&q=80",
+  },
+  {
+    id: "art",
+    name: "Fine Art",
+    categoryKey: "Art",
+    dotColor: "#A855F7", // Purple dot
+    image: "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=600&fit=crop&q=80",
+  },
+  {
+    id: "cars",
+    name: "Classic Cars",
+    categoryKey: "Cars",
+    dotColor: "#FB923C", // Orange dot
+    image: "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=600&fit=crop&q=80",
+  },
+  {
+    id: "wine",
+    name: "Fine Wine",
+    categoryKey: "Wine",
+    dotColor: "#F472B6", // Pink dot
+    image: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&fit=crop&q=80",
+  },
+];
 
 // ── Curated "Assets worth watching" Mockup Data ──────────────────────────────
 const CURATED_ASSETS = [
@@ -93,14 +125,6 @@ const CURATED_ASSETS = [
   },
 ];
 
-const FILTER_PILLS = [
-  { id: "all", label: "All assets" },
-  { id: "watches", label: "Watches" },
-  { id: "art", label: "Art" },
-  { id: "cars", label: "Cars" },
-  { id: "wine", label: "Wine" },
-];
-
 // ── Smooth Sine-Wave Line Component (Web SVG or Native line segments) ────────
 const PortfolioWaveGraph = () => {
   if (Platform.OS === "web") {
@@ -143,9 +167,8 @@ const PortfolioWaveGraph = () => {
 export default function HomeScreen({ navigation }) {
   const { width: screenWidth } = useWindowDimensions();
   const isDesktop = screenWidth >= 840;
-  const { user, token } = useAuth();
+  const { user, token, logout } = useAuth();
 
-  const [activeFilter, setActiveFilter] = useState("all");
   const [refreshing, setRefreshing] = useState(false);
   const [loadingVault, setLoadingVault] = useState(true);
   const [vaultSummary, setVaultSummary] = useState({
@@ -206,6 +229,13 @@ export default function HomeScreen({ navigation }) {
       });
     } catch (err) {
       console.warn("[HomeScreen] Vault load fallback:", err.message);
+      if (
+        err.message?.includes("Unauthorized") ||
+        err.message?.includes("Session expired") ||
+        err.message?.includes("invalid token")
+      ) {
+        logout();
+      }
     } finally {
       setLoadingVault(false);
       setRefreshing(false);
@@ -223,12 +253,19 @@ export default function HomeScreen({ navigation }) {
     loadVaultData();
   };
 
-  // Derive user display name
+  // Derive user display name & photo
   const userName =
     user?.firstName ||
     user?.fullName?.split(" ")[0] ||
     user?.email?.split("@")[0] ||
     "James";
+
+  const userPhoto =
+    user?.avatarUrl ||
+    user?.avatar_url ||
+    user?.avatar ||
+    user?.photoURL ||
+    user?.profileImage;
 
   const userInitials = (
     user?.fullName
@@ -240,30 +277,25 @@ export default function HomeScreen({ navigation }) {
       : "JH"
   ).toUpperCase();
 
-  // Combine curated mockup assets with live user assets if filtered
-  const filteredCurated = CURATED_ASSETS.filter((item) => {
-    if (activeFilter === "all") return true;
-    return item.filterId === activeFilter;
-  });
-
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
-      {/* ── Background Mesh Gradient ─────────────────────────────────────────── */}
-      <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-        <LinearGradient
-          colors={[
-            "hsla(244, 100%, 94%, 1.00)",
-            "#d5cdffff",
-            "#fae3f4ff",
-            "#fff0e6ff",
-            "#FFF7EF",
-          ]}
-          locations={[0, 0.2, 0.5, 0.8, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-      </View>
+    <View style={styles.rootContainer}>
+      {/* ── Background Mesh Gradient (Full Screen Edge-to-Edge) ──────────────── */}
+      <LinearGradient
+        colors={[
+          "#e4e0ffff", // Soft luminous lavender
+          "#e0daffff", // Soft purple aura
+          "#f5dfefff", // Soft lilac-pink
+          "#fff5efff", // Soft peach aura
+          "#ffffffff", // Ambient cream
+        ]}
+        locations={[0, 0.22, 0.52, 0.78, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
+
+      <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -292,224 +324,301 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.brandTitle}>SmartAssets</Text>
           </View>
 
-          {/* Right: User Pill + Add Asset Button */}
+          {/* Right: Profile Avatar Icon (Add asset removed) */}
           <View style={styles.appBarRight}>
             <TouchableOpacity
-              style={styles.userPill}
+              style={styles.profileAvatarBtn}
               onPress={() => navigation.navigate(SCREENS.PROFILE)}
               activeOpacity={0.8}
             >
-              <View style={styles.initialsCircle}>
-                <Text style={styles.initialsText}>{userInitials}</Text>
-              </View>
-              <Text style={styles.userPillName} numberOfLines={1}>
-                {userName}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.addAssetBtn}
-              onPress={() => navigation.navigate(SCREENS.LIST_ASSET)}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="add" size={16} color="#FFFFFF" style={{ marginRight: 2 }} />
-              <Text style={styles.addAssetBtnText}>Add asset</Text>
+              {userPhoto ? (
+                <Image
+                  source={{ uri: resolveImageUrl(userPhoto) }}
+                  style={styles.profileAvatarImg}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.profileAvatarFallback}>
+                  <Text style={styles.profileInitialsText}>{userInitials}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── GREETING & INSIGHTS BAR ─────────────────────────────────────────── */}
+        {/* ── GREETING & ACTIVITY BAR ─────────────────────────────────────────── */}
         <View style={styles.greetingRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.greetingTitle}>Good morning, {userName}.</Text>
-            <Text style={styles.greetingSubtitle}>
-              Your collection gained £1,240 while you were away.
+          <View style={styles.greetingTextCol}>
+            <Text style={styles.greetingHelloText}>Good morning,</Text>
+            <Text style={styles.greetingUserNameText} numberOfLines={1}>
+              {userName}
+            </Text>
+            <Text style={styles.greetingSubtitle} numberOfLines={1}>
+              Your collection gained £185 while you were away.
             </Text>
           </View>
 
           <TouchableOpacity
-            style={styles.insightsPillBtn}
-            onPress={() =>
-              Alert.alert(
-                "Market Insights",
-                "• Watch collection is outperforming benchmark by +18%\n• Contemporary Art demand rising in London\n• Vault security verification is 96% optimal",
-              )
-            }
+            style={styles.activityPillBtn}
+            onPress={() => navigation.navigate(SCREENS.VAULT)}
             activeOpacity={0.8}
           >
             <Ionicons
               name="notifications-outline"
-              size={15}
+              size={16}
               color="#0F172A"
               style={{ marginRight: 6 }}
             />
-            <Text style={styles.insightsPillText}>3 insights</Text>
+            <Text style={styles.activityPillText}>Activity</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── MAIN SHOWCASE ROW (Portfolio Value + Smart Insight) ──────────────── */}
-        <View style={[styles.mainCardsRow, isDesktop && styles.mainCardsRowDesktop]}>
-          {/* ══════════════════════════════════════════════════════════════════════
-              CARD 1: PORTFOLIO VALUE (Signature Purple-to-Cyan Wallet Gradient)
-          ══════════════════════════════════════════════════════════════════════ */}
+        {/* ── PORTFOLIO VALUE CARD ────────────────────────────────────────────── */}
+        <TouchableOpacity
+          style={styles.portfolioCard}
+          activeOpacity={0.92}
+          onPress={() => navigation.navigate(SCREENS.VAULT)}
+        >
+          <LinearGradient
+            colors={["#7C3AED", "#5B36F5", "#2563EB", "#00C2FF"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0.85 }}
+            style={styles.portfolioCardGradient}
+          >
+            <View style={styles.portfolioHeader}>
+              <Text style={styles.portfolioLabel}>PORTFOLIO VALUE</Text>
+              <View style={styles.barChartBadge}>
+                <Feather name="bar-chart-2" size={16} color="#FFFFFF" />
+              </View>
+            </View>
+
+            <Text style={styles.portfolioValueNumber}>
+              {vaultSummary.portfolioValueFormatted || "£1,296,700"}
+            </Text>
+
+            <View style={styles.gainRow}>
+              <View
+                style={[
+                  styles.growthPill,
+                  { flexDirection: "row", alignItems: "center" },
+                ]}
+              >
+                <Feather
+                  name="trending-up"
+                  size={12}
+                  color="#FFFFFF"
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.growthPillText}>8.4%</Text>
+              </View>
+              <Text style={styles.yearlyGainText}>+£185 this month</Text>
+            </View>
+
+            <PortfolioWaveGraph />
+
+            <View style={styles.portfolioStatsRow}>
+              <View style={styles.portfolioStatCol}>
+                <Text style={styles.statNumber}>
+                  {vaultSummary.totalCount || 12}
+                </Text>
+                <Text style={styles.statLabel}>Assets</Text>
+              </View>
+
+              <View style={styles.statDivider} />
+
+              <View style={styles.portfolioStatCol}>
+                <Text style={styles.statNumber}>
+                  {vaultSummary.categoriesCount || 4}
+                </Text>
+                <Text style={styles.statLabel}>Categories</Text>
+              </View>
+
+              <View style={styles.statDivider} />
+
+              <View style={styles.portfolioStatCol}>
+                <Text style={styles.statNumber}>
+                  {vaultSummary.verifiedPct || 96}%
+                </Text>
+                <Text style={styles.statLabel}>Verified</Text>
+              </View>
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        {/* ── SLIM SMART INSIGHT BANNER ───────────────────────────────────────── */}
+        <TouchableOpacity
+          style={styles.slimInsightBanner}
+          onPress={() => navigation.navigate(SCREENS.SEARCH)}
+          activeOpacity={0.88}
+        >
+          <View style={styles.slimInsightLeft}>
+            <View style={styles.slimSparkleWrap}>
+              <Ionicons name="sparkles" size={14} color="#7C3AED" />
+            </View>
+            <View style={styles.slimTextCol}>
+              <Text style={styles.slimTagText}>SMART INSIGHT</Text>
+              <Text style={styles.slimHeadlineText} numberOfLines={1}>
+                Watch demand is up 18%
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.slimExploreLink}>
+            <Text style={styles.slimExploreLabel}>Explore</Text>
+            <Feather
+              name="arrow-right"
+              size={13}
+              color="#7C3AED"
+              style={{ marginLeft: 3 }}
+            />
+          </View>
+        </TouchableOpacity>
+
+        {/* ── 2-COLUMN QUICK FINANCIAL STATUS BUBBLES ─────────────────────────── */}
+        <View style={styles.quickStatusRow}>
+          {/* Left Bubble: Available Cash (Lilac/Periwinkle Gradient) */}
           <TouchableOpacity
-            style={[styles.portfolioCard, isDesktop && styles.portfolioCardDesktop]}
-            activeOpacity={0.92}
-            onPress={() => navigation.navigate(SCREENS.VAULT)}
+            style={styles.bubbleCardWrapper}
+            activeOpacity={0.88}
+            onPress={() =>
+              Alert.alert(
+                "Top Up Cash",
+                "Select an amount to deposit into your SmartAssets secure wallet balance.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Add £500",
+                    onPress: () =>
+                      Alert.alert("Success", "£500 deposited via Apple Pay."),
+                  },
+                ]
+              )
+            }
           >
             <LinearGradient
-              colors={["#7C3AED", "#5B36F5", "#2563EB", "#00C2FF"]}
+              colors={["#9E7BFA", "#7353EA"]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0.85 }}
-              style={styles.portfolioCardGradient}
+              end={{ x: 0.2, y: 1 }}
+              style={styles.bubbleGradient}
             >
-              {/* Header: Label + Bar Chart Icon */}
-              <View style={styles.portfolioHeader}>
-                <Text style={styles.portfolioLabel}>PORTFOLIO VALUE</Text>
-                <View style={styles.barChartBadge}>
-                  <Feather name="bar-chart-2" size={16} color="#FFFFFF" />
-                </View>
+              <View style={styles.bubbleIconCircle}>
+                <Feather name="chevron-down" size={24} color="#7353EA" />
               </View>
-
-              {/* Big Portfolio Value */}
-              <Text style={styles.portfolioValueNumber}>
-                {vaultSummary.portfolioValueFormatted || "£1,296,700"}
-              </Text>
-
-              {/* Growth Pill & Yearly Gain */}
-              <View style={styles.gainRow}>
-                <View style={styles.growthPill}>
-                  <Text style={styles.growthPillText}>↑ 8.4%</Text>
-                </View>
-                <Text style={styles.yearlyGainText}>£100,320 this year</Text>
-              </View>
-
-              {/* Sine Wave Curve */}
-              <PortfolioWaveGraph />
-
-              {/* Bottom 3-Col Stats */}
-              <View style={styles.portfolioStatsRow}>
-                <View style={styles.portfolioStatCol}>
-                  <Text style={styles.statNumber}>{vaultSummary.totalCount || 12}</Text>
-                  <Text style={styles.statLabel}>Assets</Text>
-                </View>
-
-                <View style={styles.statDivider} />
-
-                <View style={styles.portfolioStatCol}>
-                  <Text style={styles.statNumber}>
-                    {vaultSummary.categoriesCount || 4}
-                  </Text>
-                  <Text style={styles.statLabel}>Categories</Text>
-                </View>
-
-                <View style={styles.statDivider} />
-
-                <View style={styles.portfolioStatCol}>
-                  <Text style={styles.statNumber}>
-                    {vaultSummary.verifiedPct || 96}%
-                  </Text>
-                  <Text style={styles.statLabel}>Verified</Text>
-                </View>
+              <Text style={styles.bubbleLabel}>AVAILABLE CASH</Text>
+              <Text style={styles.bubbleValue}>£250</Text>
+              <View style={styles.bubbleFooterRow}>
+                <Feather
+                  name="plus-circle"
+                  size={12}
+                  color="#FFFFFF"
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.bubbleSubText}>Top Up funds</Text>
               </View>
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* ══════════════════════════════════════════════════════════════════════
-              CARD 2: SMART INSIGHT (Pure White Card with Violet Highlights)
-          ══════════════════════════════════════════════════════════════════════ */}
-          <View style={[styles.smartInsightCard, isDesktop && styles.smartInsightCardDesktop]}>
-            {/* Tag + Timestamp */}
-            <View style={styles.smartInsightHeader}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Ionicons
-                  name="sparkles"
-                  size={14}
-                  color="#7C3AED"
-                  style={{ marginRight: 5 }}
-                />
-                <Text style={styles.smartInsightTag}>SMART INSIGHT</Text>
-              </View>
-              <Text style={styles.smartInsightTime}>Today</Text>
-            </View>
-
-            {/* Headline */}
-            <Text style={styles.smartInsightHeadline}>
-              Your watch collection is outperforming the market.
-            </Text>
-
-            {/* Body */}
-            <Text style={styles.smartInsightBody}>
-              Collector demand is up 18% this quarter. It may be a strong moment
-              to rebalance into fine art.
-            </Text>
-
-            {/* CTA Button */}
-            <TouchableOpacity
-              style={styles.exploreCtaBtn}
-              onPress={() => navigation.navigate(SCREENS.SEARCH)}
-              activeOpacity={0.8}
+          {/* Right Bubble: AI Risk Score (Magenta/Pink Gradient) */}
+          <TouchableOpacity
+            style={styles.bubbleCardWrapper}
+            activeOpacity={0.88}
+            onPress={() =>
+              Alert.alert(
+                "AI Risk Score: Low (96%)",
+                "Your portfolio volatility is 96% optimal. Protected by Horological & Fine Art benchmark models."
+              )
+            }
+          >
+            <LinearGradient
+              colors={["#B83DAE", "#DE4580"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0.2, y: 1 }}
+              style={styles.bubbleGradient}
             >
-              <Text style={styles.exploreCtaText}>Explore opportunity</Text>
-              <Feather
-                name="arrow-right"
-                size={14}
-                color="#6D28D9"
-                style={{ marginLeft: 6 }}
-              />
+              <View style={styles.bubbleIconCircle}>
+                <Feather name="chevron-up" size={24} color="#DE4580" />
+              </View>
+              <Text style={styles.bubbleLabel}>AI RISK SCORE</Text>
+              <Text style={styles.bubbleValue}>Low (96%)</Text>
+              <View style={styles.bubbleFooterRow}>
+                <Ionicons
+                  name="shield-checkmark"
+                  size={12}
+                  color="#FFFFFF"
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.bubbleSubText}>Verified • Safe</Text>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── BROWSE CATEGORIES (2x2 VISUAL IMAGE GRID) ───────────────────────── */}
+        <View style={styles.dashboardSection}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={styles.sectionTag}>MARKETPLACE</Text>
+              <Text style={styles.sectionTitle}>Explore Categories</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => navigation.navigate(SCREENS.SEARCH, { category: 'All' })}
+              activeOpacity={0.7}
+              style={styles.seeAllBtn}
+            >
+              <Text style={styles.seeAllText}>View all</Text>
+              <Feather name="chevron-right" size={14} color="#7C3AED" />
             </TouchableOpacity>
+          </View>
+
+          <View style={styles.categoriesGrid}>
+            {CATEGORY_CARDS.map((cat) => (
+              <TouchableOpacity
+                key={cat.id}
+                style={styles.categoryCard}
+                activeOpacity={0.88}
+                onPress={() => navigation.navigate(SCREENS.SEARCH, { category: cat.categoryKey })}
+              >
+                <Image
+                  source={{ uri: cat.image }}
+                  style={StyleSheet.absoluteFillObject}
+                  resizeMode="cover"
+                />
+                {/* Subtle dark frosted glass bar over bottom of each category image */}
+                <View style={styles.categoryFrostedBar}>
+                  <Text style={styles.categoryNameText} numberOfLines={1}>
+                    {cat.name}
+                  </Text>
+                  <View style={[styles.categoryDot, { backgroundColor: cat.dotColor }]} />
+                </View>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
-        {/* ── CURATED FOR YOU / ASSETS WORTH WATCHING ─────────────────────────── */}
-        <View style={styles.curatedSection}>
-          <View style={styles.curatedHeaderRow}>
+        {/* ── TOP MOVERS TODAY (SINGLE HORIZONTAL CAROUSEL) ────────────────────── */}
+        <View style={styles.dashboardSection}>
+          <View style={styles.sectionHeaderRow}>
             <View>
-              <Text style={styles.curatedTag}>CURATED FOR YOU</Text>
-              <Text style={styles.curatedTitle}>Assets worth watching</Text>
+              <Text style={styles.sectionTag}>MARKET MOMENTUM</Text>
+              <Text style={styles.sectionTitle}>Top Movers Today</Text>
             </View>
-
-            {/* Filter Pills */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filterPillsContainer}
+            <TouchableOpacity
+              onPress={() => navigation.navigate(SCREENS.SEARCH)}
+              activeOpacity={0.7}
+              style={styles.seeAllBtn}
             >
-              {FILTER_PILLS.map((pill) => {
-                const isActive = activeFilter === pill.id;
-                return (
-                  <TouchableOpacity
-                    key={pill.id}
-                    style={[
-                      styles.filterPill,
-                      isActive ? styles.filterPillActive : styles.filterPillInactive,
-                    ]}
-                    onPress={() => setActiveFilter(pill.id)}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={[
-                        styles.filterPillText,
-                        isActive
-                          ? styles.filterPillTextActive
-                          : styles.filterPillTextInactive,
-                      ]}
-                    >
-                      {pill.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+              <Text style={styles.seeAllText}>Explore</Text>
+              <Feather name="arrow-right" size={13} color="#7C3AED" />
+            </TouchableOpacity>
           </View>
 
-          {/* Curated Asset Cards (Horizontal Scroll or Grid) */}
+          {/* Curated Asset Cards (Horizontal Scroll) */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.curatedCardsScroll}
           >
-            {filteredCurated.map((item) => (
+            {CURATED_ASSETS.map((item) => (
               <TouchableOpacity
                 key={item.id}
                 style={styles.curatedCard}
@@ -521,7 +630,7 @@ export default function HomeScreen({ navigation }) {
                 {/* Image Wrap with Frosted Badges */}
                 <View style={styles.curatedImgWrap}>
                   <Image
-                    source={{ uri: item.image }}
+                    source={{ uri: resolveImageUrl(item.image) }}
                     style={styles.curatedImg}
                     resizeMode="cover"
                   />
@@ -563,13 +672,18 @@ export default function HomeScreen({ navigation }) {
         <View style={{ height: 100 }} />
       </ScrollView>
     </SafeAreaView>
+  </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    backgroundColor: "#F3EEFF",
+  },
   safeArea: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "transparent",
   },
   scrollContent: {
     paddingHorizontal: 18,
@@ -612,90 +726,87 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  userPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.85)",
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.8)",
-  },
-  initialsCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+  profileAvatarBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "#7C3AED",
     backgroundColor: "#EDE9FE",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 6,
-  },
-  initialsText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#6D28D9",
-  },
-  userPillName: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#0F172A",
-  },
-  addAssetBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#6D28D9",
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    shadowColor: "#6D28D9",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
     elevation: 3,
   },
-  addAssetBtnText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#FFFFFF",
+  profileAvatarImg: {
+    width: "100%",
+    height: "100%",
+  },
+  profileAvatarFallback: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EDE9FE",
+  },
+  profileInitialsText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#6D28D9",
   },
 
-  // ── Greeting & Insights Row ─────────────────────────────────────────────────
+  // ── Greeting Bar ────────────────────────────────────────────────────────────
   greetingRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     marginBottom: 20,
   },
-  greetingTitle: {
-    fontSize: 26,
+  greetingTextCol: {
+    flex: 1,
+    marginRight: 10,
+  },
+  greetingHelloText: {
+    fontSize: 22,
     fontWeight: "800",
     color: "#0F172A",
-    letterSpacing: -0.6,
+    letterSpacing: -0.4,
+    lineHeight: 28,
+  },
+  greetingUserNameText: {
+    fontSize: 26,
+    fontWeight: "900",
+    color: "#F59E0B", // Warm vibrant golden-yellow
+    letterSpacing: -0.5,
+    lineHeight: 32,
+    marginBottom: 3,
   },
   greetingSubtitle: {
     fontSize: 13,
     color: "#64748B",
-    marginTop: 3,
+    marginTop: 1,
   },
-  insightsPillBtn: {
+  activityPillBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
     paddingVertical: 7,
     paddingHorizontal: 12,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "rgba(226, 232, 240, 0.9)",
-    shadowColor: "#000",
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 2,
+    marginTop: 4,
   },
-  insightsPillText: {
+  activityPillText: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#0F172A",
   },
 
@@ -840,123 +951,161 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
   },
 
-  // ── Smart Insight Card ──────────────────────────────────────────────────────
-  smartInsightCard: {
+  // ── Slim Smart Insight Banner ───────────────────────────────────────────────
+  slimInsightBanner: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 22,
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 12,
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.8)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    justifyContent: "space-between",
-  },
-  smartInsightCardDesktop: {
-    flex: 0.85,
-  },
-  smartInsightHeader: {
+    borderColor: "rgba(226, 232, 240, 0.9)",
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  smartInsightTag: {
-    fontSize: 11,
-    fontWeight: "700",
+  slimInsightLeft: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: 10 },
+  slimSparkleWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#F5F3FF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: "rgba(124, 58, 237, 0.18)",
+  },
+  slimTextCol: { flex: 1 },
+  slimHeaderLine: { flexDirection: "row", alignItems: "center" },
+  slimTagText: {
+    fontSize: 9,
+    fontWeight: "800",
     color: "#7C3AED",
     letterSpacing: 0.8,
+    textTransform: "uppercase",
+    marginBottom: 2,
   },
-  smartInsightTime: {
-    fontSize: 12,
-    color: "#94A3B8",
-    fontWeight: "500",
-  },
-  smartInsightHeadline: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#0F172A",
-    lineHeight: 24,
-    marginBottom: 8,
-  },
-  smartInsightBody: {
-    fontSize: 13,
-    color: "#64748B",
-    lineHeight: 20,
-  },
-  exploreCtaBtn: {
+  slimDotSeparator: { fontSize: 10, color: "#94A3B8", marginHorizontal: 5 },
+  slimHeadlineText: { fontSize: 13, fontWeight: "700", color: "#0F172A" },
+  slimSubText: { fontSize: 11, color: "#64748B", marginTop: 1 },
+  slimExploreLink: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F5F3FF",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 999,
-    alignSelf: "flex-start",
-    marginTop: 18,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(124, 58, 237, 0.15)",
   },
-  exploreCtaText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#6D28D9",
+  slimExploreLabel: { fontSize: 11, fontWeight: "700", color: "#7C3AED" },
+
+  // ── 2-Column Quick Financial Status Bubbles ─────────────────────────────────
+  quickStatusRow: {
+    flexDirection: "row",
+    gap: 14,
+    marginTop: 14,
+    marginBottom: 24,
+  },
+  bubbleCardWrapper: {
+    flex: 1,
+    borderRadius: 26,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  bubbleGradient: {
+    borderRadius: 26,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    minHeight: 165,
+    justifyContent: "space-between",
+  },
+  bubbleIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  bubbleLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "rgba(255, 255, 255, 0.88)",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  bubbleValue: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.5,
+    marginBottom: 6,
+  },
+  bubbleFooterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  bubbleSubText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.95)",
   },
 
-  // ── Curated Section ─────────────────────────────────────────────────────────
-  curatedSection: {
-    marginTop: 6,
+  // ── Dashboard Sections & Activity Feed ──────────────────────────────────────
+  dashboardSection: {
+    marginBottom: 22,
   },
-  curatedHeaderRow: {
-    marginBottom: 16,
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    marginBottom: 12,
   },
-  curatedTag: {
-    fontSize: 11,
-    fontWeight: "700",
+  sectionTag: {
+    fontSize: 10,
+    fontWeight: "800",
     color: "#7C3AED",
-    letterSpacing: 1,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
     marginBottom: 2,
   },
-  curatedTitle: {
-    fontSize: 22,
+  sectionTitle: {
+    fontSize: 20,
     fontWeight: "800",
     color: "#0F172A",
     letterSpacing: -0.4,
   },
-  filterPillsContainer: {
+  seeAllBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginTop: 12,
-    paddingBottom: 4,
+    gap: 3,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
   },
-  filterPill: {
-    paddingVertical: 7,
-    paddingHorizontal: 16,
-    borderRadius: 999,
+  seeAllText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#7C3AED",
   },
-  filterPillActive: {
-    backgroundColor: "#5835F5",
-    shadowColor: "#5835F5",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  filterPillInactive: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.9)",
-  },
-  filterPillText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  filterPillTextActive: {
-    color: "#FFFFFF",
-  },
-  filterPillTextInactive: {
-    color: "#64748B",
-  },
+
 
   // Curated Cards
   curatedCardsScroll: {
@@ -1048,5 +1197,59 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
     color: "#0F172A",
+  },
+
+  // ── Browse Categories Styles ────────────────────────────────────────────────
+  categoriesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  categoryCard: {
+    width: "48%",
+    height: 145,
+    borderRadius: 24,
+    overflow: "hidden",
+    marginBottom: 14,
+    backgroundColor: "#1E293B",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+    position: "relative",
+  },
+  categoryFrostedBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.12)",
+    ...(Platform.OS === "web"
+      ? {
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+        }
+      : {}),
+  },
+  categoryNameText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  categoryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
 });

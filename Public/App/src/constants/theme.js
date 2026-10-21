@@ -66,11 +66,11 @@ export const PURPLE_THEME = {
   heroGradient: ['#7C3AED', '#5B36F5', '#2563EB', '#00C2FF'],
   walletGradient: ['#976af0', '#00fbff'],
   canvasMesh: [
-    'rgba(216, 214, 253, 1)',
-    '#d5cdffff',
-    '#fae3f4ff',
-    '#fff0e6ff',
-    '#FFF7EF',
+    '#e4e0ffff', // Soft luminous lavender
+    '#e0daffff', // Soft purple aura
+    '#f5dfefff', // Soft lilac-pink
+    '#fff5efff', // Soft peach aura
+    '#ffffffff', // Ambient cream
   ],
   primary: '#976af0',
   primaryViolet: '#7C3AED',
