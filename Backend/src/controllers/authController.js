@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const avatarService = require('../services/avatarService');
+const { revokeToken } = require('../middlewares/authMiddleware');
 
 // Deterministic password generator for Web3 wallet accounts in Supabase
 function getDeterministicPassword(walletAddress) {
@@ -480,10 +481,72 @@ async function resetPassword(req, res) {
   }
 }
 
+// ── POST /api/auth/logout ────────────────────────────────────────────────────
+// Terminates the session, revokes the JWT token, and invalidates Supabase session.
+async function logout(req, res) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      if (token) {
+        revokeToken(token);
+        try {
+          await supabase.auth.admin.signOut(token);
+        } catch (_) {
+          // Best-effort signout from Supabase
+        }
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged out successfully. Session revoked.',
+    });
+  } catch (err) {
+    console.error('Logout error:', err);
+    return res.status(200).json({
+      success: true,
+      message: 'Logged out successfully.',
+    });
+  }
+}
+
+// ── GET /api/auth/session ────────────────────────────────────────────────────
+// Validates whether the caller's session token is active and unexpired.
+async function verifySession(req, res) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return sendError(res, 401, 'No session token provided.', 'NO_TOKEN');
+    }
+
+    const token = authHeader.split(' ')[1];
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      return sendError(res, 401, 'Session has expired or is invalid.', 'SESSION_EXPIRED');
+    }
+
+    return res.status(200).json({
+      success: true,
+      valid: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.user_metadata?.full_name || '',
+      },
+    });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to verify session.');
+  }
+}
+
 module.exports = {
   register,
   login,
   walletLogin,
   forgotPassword,
   resetPassword,
+  logout,
+  verifySession,
 };

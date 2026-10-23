@@ -102,7 +102,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       } else {
         setError(
           err?.message ||
-            'Login failed. Please verify your email and password.'
+          'Login failed. Please verify your email and password.'
         );
       }
     } finally {
@@ -155,7 +155,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       if (!data.success) {
         throw new Error(
           data.message ||
-            'Could not send the reset link. Please try again.'
+          'Could not send the reset link. Please try again.'
         );
       }
 
@@ -163,7 +163,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     } catch (err) {
       setForgotError(
         err?.message ||
-          'Could not send the reset link. Please try again.'
+        'Could not send the reset link. Please try again.'
       );
     } finally {
       setForgotLoading(false);
@@ -223,7 +223,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       } catch (err) {
         setError(
           err?.message ||
-            'MetaMask connection was cancelled.'
+          'MetaMask connection was cancelled.'
         );
       } finally {
         setConnectingWallet(false);
@@ -270,7 +270,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       } else {
         setError(
           err?.message ||
-            'Demo wallet login failed.'
+          'Demo wallet login failed.'
         );
       }
     } finally {
@@ -320,7 +320,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       } else {
         setError(
           err?.message ||
-            'Wallet login failed.'
+          'Wallet login failed.'
         );
       }
     } finally {

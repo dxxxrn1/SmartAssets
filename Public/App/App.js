@@ -11,6 +11,7 @@ import AppNavigator from "./src/navigation/AppNavigator";
 import { AuthProvider } from "./src/context/AuthContext";
 import { ThemeProvider } from "./src/context/ThemeContext";
 import { NetworkProvider } from "./src/context/NetworkContext";
+import InactivityWatcher from "./src/components/InactivityWatcher";
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -25,7 +26,9 @@ export default function App() {
       <ThemeProvider>
         <NetworkProvider>
         <AuthProvider>
-          <AppNavigator />
+          <InactivityWatcher>
+            <AppNavigator />
+          </InactivityWatcher>
         </AuthProvider>
         </NetworkProvider>
       </ThemeProvider>

@@ -58,6 +58,12 @@ function getFallbackBaseUrls() {
   return [...new Set(candidates)];
 }
 
+let onUnauthorizedCallback = null;
+
+export function setUnauthorizedHandler(callback) {
+  onUnauthorizedCallback = callback;
+}
+
 // ── Generic request helper with automatic LAN host failover ──────────────────
 async function apiRequest(endpoint, options = {}, token = null) {
   if (Platform.OS === 'web' && typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -82,8 +88,21 @@ async function apiRequest(endpoint, options = {}, token = null) {
       });
       const data = await response.json();
       if (!response.ok) {
+        // Trigger global 401 session expiration handler if not a standard login failure
+        if (
+          response.status === 401 &&
+          endpoint !== '/auth/login' &&
+          endpoint !== '/auth/register' &&
+          endpoint !== '/auth/wallet-login' &&
+          typeof onUnauthorizedCallback === 'function'
+        ) {
+          onUnauthorizedCallback(data.error || 'Your session has expired. Please log in again.');
+        }
+
         const httpErr = new Error(data.rejectionReason || data.error || data.message || 'Something went wrong');
         httpErr.isHttpResponse = true;
+        httpErr.status = response.status;
+        httpErr.code = data.code;
         throw httpErr;
       }
       // Lock onto the working base URL for subsequent requests
@@ -168,6 +187,27 @@ export async function resetPasswordApi({ accessToken, newPassword }) {
     method: 'POST',
     body: JSON.stringify({ accessToken, newPassword }),
   });
+}
+
+/**
+ * Revoke the user session and log out from the backend.
+ * @param {string} token
+ */
+export async function logoutUserApi(token) {
+  try {
+    return await apiRequest('/auth/logout', { method: 'POST' }, token);
+  } catch (err) {
+    console.warn('[api] Backend logout warning:', err.message);
+    return { success: true };
+  }
+}
+
+/**
+ * Verify whether an access token is active and unexpired.
+ * @param {string} token
+ */
+export async function verifySessionApi(token) {
+  return apiRequest('/auth/session', { method: 'GET' }, token);
 }
 
 // ── User-Isolated Data API ───────────────────────────────────────────────────

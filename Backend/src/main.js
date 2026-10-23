@@ -14,14 +14,20 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const escrowRoutes = require('./routes/escrowRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const modelRoutes = require('./routes/modelRoutes');
+const { securityHeaders, sqlInjectionProtection } = require('./middlewares/securityMiddleware');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// ── Financial-Grade Security & Hardening ─────────────────────────────────────
+app.disable('x-powered-by');
+app.use(securityHeaders);
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors());                   // Allow requests from the Expo dev client
 app.use(express.json({ limit: '50mb' })); // Parse JSON request bodies (allows large base64 image uploads)
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(sqlInjectionProtection);   // Intercept & block SQL injection attempts across query, params, body
 
 // ── Static Files (Uploaded Avatars, Assets & Admin Console) ───────────────────
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
