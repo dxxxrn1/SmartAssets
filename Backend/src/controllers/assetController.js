@@ -27,7 +27,22 @@ function invalidateAssetsCache() {
  */
 function extractImagesAndCleanDescription(description, primaryImage) {
   let images = primaryImage ? [primaryImage] : [];
+  let smartTakeTitle = null;
+  let smartTakeBody = null;
   let cleanDesc = description || '';
+
+  if (cleanDesc.includes('<!--smartTake:')) {
+    const match = cleanDesc.match(/<!--smartTake:([\s\S]*?)-->/);
+    if (match) {
+      try {
+        const extra = JSON.parse(match[1]);
+        if (extra?.smartTakeTitle) smartTakeTitle = extra.smartTakeTitle;
+        if (extra?.smartTakeBody) smartTakeBody = extra.smartTakeBody;
+      } catch (_) {}
+    }
+    cleanDesc = cleanDesc.replace(/<!--smartTake:[\s\S]*?-->/g, '').trim();
+  }
+
   if (cleanDesc.includes('<!--images:')) {
     const match = cleanDesc.match(/<!--images:([\s\S]*?)-->/);
     if (match) {
@@ -42,9 +57,8 @@ function extractImagesAndCleanDescription(description, primaryImage) {
     }
     cleanDesc = cleanDesc.replace(/<!--images:[\s\S]*?-->/g, '').trim();
   }
-  return { images, cleanDescription: cleanDesc };
+  return { images, cleanDescription: cleanDesc, smartTakeTitle, smartTakeBody };
 }
-
 
 /**
  * GET /api/assets?category=...&q=...
@@ -96,12 +110,12 @@ async function getAssets(req, res) {
       let rawPrimaryImage = row.image;
       if (
         (row.name && row.name.toLowerCase().includes('rolex submariner')) ||
-        (row.image && (row.image.includes('asset_6f80eb') || row.image.includes('b1tmz')))
+        (row.image && (row.image.includes('asset_6f80eb') || imgIncludesB1tmz(row.image)))
       ) {
         rawPrimaryImage = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
       }
       const normalizedPrimaryImage = normalizeImageUrl(rawPrimaryImage, req);
-      const { images: rawImages, cleanDescription } = extractImagesAndCleanDescription(row.description, normalizedPrimaryImage);
+      const { images: rawImages, cleanDescription, smartTakeTitle, smartTakeBody } = extractImagesAndCleanDescription(row.description, normalizedPrimaryImage);
       const normalizedImages = rawImages.map((img) => {
         if (img && (img.includes('asset_6f80eb') || img.includes('b1tmz'))) {
           return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
@@ -118,6 +132,8 @@ async function getAssets(req, res) {
         year: row.year,
         condition: row.condition,
         description: cleanDescription,
+        smartTakeTitle: row.smart_take_title || smartTakeTitle || null,
+        smartTakeBody: row.smart_take_body || smartTakeBody || null,
         image: normalizedPrimaryImage,
         images: normalizedImages,
         badge: row.badge || 'Verified',
@@ -150,6 +166,10 @@ async function getAssets(req, res) {
     console.error('getAssets error:', err);
     return sendError(res, 500, 'Internal server error fetching assets.');
   }
+}
+
+function imgIncludesB1tmz(str) {
+  return typeof str === 'string' && str.includes('b1tmz');
 }
 
 /**
@@ -199,6 +219,18 @@ async function getAssetById(req, res) {
           };
           historyTargetId = matchingAsset.id;
         } else {
+          let metaCertId = null;
+          let metaHash = null;
+          if (typeof holding.gain === 'string' && holding.gain.includes('<!--meta:')) {
+            const m = holding.gain.match(/<!--meta:([\s\S]*?)-->/);
+            if (m) {
+              try {
+                const parsed = JSON.parse(m[1]);
+                if (parsed.certId) metaCertId = parsed.certId;
+                if (parsed.hashDisplay || parsed.txHash) metaHash = parsed.hashDisplay || parsed.txHash;
+              } catch (_) {}
+            }
+          }
           asset = {
             id: holding.id,
             name: holding.name,
@@ -210,7 +242,8 @@ async function getAssetById(req, res) {
             description: 'Stored in SmartAssets High-Security Vault Facility.',
             image: holding.image,
             badge: 'Vault Secured',
-            cert: 'SA-VLT-' + holding.id.substring(0, 8).toUpperCase(),
+            cert: metaCertId || ('SA-VLT-' + String(holding.id).substring(0, 8).toUpperCase()),
+            tx_hash: metaHash || null,
             shares: holding.asset_type === 'fractional' ? 100 : 1,
             shares_sold: holding.asset_type === 'fractional' ? 45 : 1,
             share_price: holding.price_num,
@@ -221,11 +254,35 @@ async function getAssetById(req, res) {
       }
     }
 
+    // 3. Third attempt: check built-in Vault seed items (e.g. personal-keyboard, fraction-rolex)
+    if (!asset && Array.isArray(aiVisionGatekeeper.BUILTIN_VAULT_ASSETS)) {
+      const builtin = aiVisionGatekeeper.BUILTIN_VAULT_ASSETS.find((b) => b.id === id);
+      if (builtin) {
+        asset = {
+          id: builtin.id,
+          name: builtin.name,
+          category: builtin.category,
+          price: builtin.price,
+          price_num: builtin.price_num,
+          year: 2023,
+          condition: 'Mint / Vault Custody',
+          description: 'Authenticated physical asset registered in SmartAssets Vault with ERC-721 Sepolia provenance certificate.',
+          image: builtin.image,
+          badge: 'Verified On-Chain',
+          cert: builtin.certId,
+          tx_hash: builtin.txHash,
+          shares: builtin.source === 'CO_OWNED_ASSETS' ? 100 : 1,
+          shares_sold: builtin.source === 'CO_OWNED_ASSETS' ? 77 : 1,
+          share_price: Math.max(100, Math.round((builtin.price_num || 1000) / 100)),
+        };
+      }
+    }
+
     if (!asset) {
       return sendError(res, 404, 'Asset not found.');
     }
 
-    // 3. Fetch provenance history events
+    // 4. Fetch provenance history events
     let history = [];
     if (historyTargetId) {
       const { data: histData } = await supabase
@@ -274,7 +331,7 @@ async function getAssetById(req, res) {
       rawPrimaryImage = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
     }
     const normalizedPrimaryImage = normalizeImageUrl(rawPrimaryImage, req);
-    const { images: rawImages, cleanDescription } = extractImagesAndCleanDescription(asset.description, normalizedPrimaryImage);
+    const { images: rawImages, cleanDescription, smartTakeTitle, smartTakeBody } = extractImagesAndCleanDescription(asset.description, normalizedPrimaryImage);
     const normalizedImages = rawImages.map((img) => {
       if (img && (img.includes('asset_6f80eb') || img.includes('b1tmz'))) {
         return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
@@ -293,6 +350,8 @@ async function getAssetById(req, res) {
         year: asset.year,
         condition: asset.condition,
         description: cleanDescription,
+        smartTakeTitle: asset.smart_take_title || smartTakeTitle || null,
+        smartTakeBody: asset.smart_take_body || smartTakeBody || null,
         image: normalizedPrimaryImage,
         images: normalizedImages,
         badge: asset.badge || 'Verified',
@@ -362,17 +421,21 @@ async function verifyAssetUpload(req, res) {
       return res.status(422).json({
         success: false,
         verified: false,
+        error: visionResult.rejectionReason,
         rejectionReason: visionResult.rejectionReason,
         code: visionResult.code || 'VISION_REJECTED',
       });
     }
 
     // Step 2: Live Market Oracle Comps & ROI Lookup
-    console.log(`📈 [Market Oracle] Querying live market comps for "${visionResult.canonicalName}"...`);
+    const lookupQuery = visionResult.detectedObjectName || visionResult.canonicalName;
+    const effectiveCondition = condition || req.body.condition || visionResult.conditionGrade || 'mint';
+    console.log(`📈 [Market Oracle] Querying live market comps for "${lookupQuery}" (condition: ${effectiveCondition})...`);
     const marketData = await marketOracleService.fetchMarketComps(
-      visionResult.canonicalName,
+      lookupQuery,
       visionResult.category,
-      'GBP'
+      'ZAR',
+      effectiveCondition
     );
 
     // Step 3: Valuation Comparison vs Asking Price
@@ -392,7 +455,7 @@ async function verifyAssetUpload(req, res) {
         const diffPct = Math.round(((priceNum - marketData.fairValue) / marketData.fairValue) * 100);
         valuation.isInflated = true;
         valuation.inflationPct = diffPct;
-        valuation.warning = `Your asking price (${marketOracleService.formatCurrency(priceNum, 'GBP')}) is ${diffPct}% above market fair value (${marketData.formattedFairValue}).`;
+        valuation.warning = `Your asking price (${marketOracleService.formatCurrency(priceNum, 'ZAR')}) is ${diffPct}% above market fair value (${marketData.formattedFairValue}).`;
       }
     }
 
@@ -401,12 +464,15 @@ async function verifyAssetUpload(req, res) {
       verified: true,
       asset: {
         canonicalName: visionResult.canonicalName,
+        detectedObjectName: visionResult.detectedObjectName || visionResult.canonicalName,
         category: visionResult.category,
         conditionGrade: visionResult.conditionGrade,
         authenticityConfidence: visionResult.confidence,
         keyFeatures: visionResult.keyFeatures,
         qualityVerdict: visionResult.qualityVerdict,
         year: visionResult.year,
+        smartTakeTitle: visionResult.smartTakeTitle || null,
+        smartTakeBody: visionResult.smartTakeBody || null,
       },
       market: marketData,
       valuation,
@@ -454,10 +520,13 @@ async function createAsset(req, res) {
     }
 
     // Step 2: Live Market Oracle Check
+    const lookupQuery = visionCheck.detectedObjectName || visionCheck.canonicalName || name;
+    const effectiveCondition = condition || visionCheck.conditionGrade || 'mint';
     const marketComps = await marketOracleService.fetchMarketComps(
-      visionCheck.canonicalName || name,
+      lookupQuery,
       category || visionCheck.category,
-      'GBP'
+      'ZAR',
+      effectiveCondition
     );
 
     // Step 3: Market Valuation Check (>50% above market high requires explicit confirmation)
@@ -468,8 +537,8 @@ async function createAsset(req, res) {
         fairValue: marketComps.fairValue,
         highPrice: marketComps.highPrice,
         formattedFairValue: marketComps.formattedFairValue,
-        formattedHighPrice: marketOracleService.formatCurrency(marketComps.highPrice, 'GBP'),
-        error: `Price Alert: Your asking price of £${priceNum.toLocaleString()} is over 50% above market comps (${marketComps.formattedRange}). Please confirm to proceed.`,
+        formattedHighPrice: marketOracleService.formatCurrency(marketComps.highPrice, 'ZAR'),
+        error: `Price Alert: Your asking price of R${priceNum.toLocaleString()} is over 50% above market comps (${marketComps.formattedRange}). Please confirm to proceed.`,
       });
     }
 
@@ -493,7 +562,10 @@ async function createAsset(req, res) {
     // Convert bulky base64 image into a lightweight static upload URL to prevent draining Supabase egress
     const savedImageUrl = saveBase64Image(image, 'asset', req) || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
 
-    // Handle extra images if provided
+    // Handle extra images and smartTake metadata if provided
+    const smartTakeTitle = req.body.smartTakeTitle || visionCheck.smartTakeTitle || null;
+    const smartTakeBody = req.body.smartTakeBody || visionCheck.smartTakeBody || null;
+
     let finalDescription = description || '';
     if (Array.isArray(req.body.images) && req.body.images.length > 0) {
       const savedExtraImages = req.body.images
@@ -502,6 +574,9 @@ async function createAsset(req, res) {
       if (savedExtraImages.length > 0) {
         finalDescription = `${finalDescription}\n<!--images:${JSON.stringify(savedExtraImages)}-->`;
       }
+    }
+    if (smartTakeTitle && smartTakeBody) {
+      finalDescription = `${finalDescription}\n<!--smartTake:${JSON.stringify({ smartTakeTitle, smartTakeBody })}-->`;
     }
 
     // Mint ERC-721 Certificate of Authenticity on Ethereum Sepolia
@@ -598,7 +673,16 @@ async function createAsset(req, res) {
       }
     }
 
-    // Also add the asset to the creator's personal vault (user_holdings)
+    // Also add the asset to the creator's personal vault (user_holdings) with cert metadata
+    const holdingMeta = {
+      initialValue: priceNum,
+      liveMarketValue: priceNum,
+      badgeText: '+0.0% Market Gain',
+      badgeType: 'positive',
+      certId: `ERC-721 #${mintRes.tokenId || '4811'}`,
+      hashDisplay: mintRes.txHash ? `${String(mintRes.txHash).slice(0, 5)}...${String(mintRes.txHash).slice(-2)}` : '0x71c...9a',
+      txHash: mintRes.txHash || null,
+    };
     await supabase.from('user_holdings').insert({
       user_id: userId,
       name,
@@ -607,7 +691,7 @@ async function createAsset(req, res) {
       price_num: priceNum,
       image: newAsset.image,
       asset_type: 'whole',
-      gain: '+0.0%',
+      gain: `+0.0%<!--meta:${JSON.stringify(holdingMeta)}-->`,
       gain_pct: '0%',
       positive: true,
     });
@@ -619,6 +703,8 @@ async function createAsset(req, res) {
       message: 'Asset listed and NFT Certificate minted on Ethereum Sepolia!',
       asset: {
         ...newAsset,
+        smartTakeTitle: newAsset.smart_take_title || smartTakeTitle || null,
+        smartTakeBody: newAsset.smart_take_body || smartTakeBody || null,
         tokenId: mintRes.tokenId,
         txHash: mintRes.txHash,
         etherscanUrl: mintRes.etherscanUrl,
@@ -634,11 +720,99 @@ async function createAsset(req, res) {
   }
 }
 
+/**
+ * POST /api/assets/scan-and-know
+ * Unified Scan & Know pipeline:
+ * 1) Gemini Vision (`gemini-3-flash-preview`) identification + physical authenticity red flags
+ * 2) Live ZAR Market Oracle via SerpApi (never Pounds £)
+ * 3) Vault / Sepolia ERC-721 certificate match (without touching Supabase table schema)
+ */
+async function scanAndKnow(req, res) {
+  try {
+    const { image, vaultItems } = req.body || {};
+    const userId = req.user?.id || null;
+
+    if (!image) {
+      return res.status(400).json({
+        success: false,
+        error: 'No photograph provided. Capture or upload an image to Scan & Know.',
+        code: 'MISSING_IMAGE',
+      });
+    }
+
+    console.log('🔍 [Scan & Know] Running unified Gemini + ZAR Oracle + Sepolia Certificate pipeline...');
+    const unified = await aiVisionGatekeeper.runUnifiedScanAndKnow(image, {
+      userId,
+      vaultItems,
+      supabaseClient: supabase,
+    });
+
+    if (!unified.passed) {
+      return res.status(422).json({
+        success: false,
+        error: unified.rejectionReason,
+        rejectionReason: unified.rejectionReason,
+        code: unified.code || 'VISION_REJECTED',
+      });
+    }
+
+    return res.status(200).json(unified);
+  } catch (err) {
+    console.error('scanAndKnow error:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Scan & Know failed. Please try another photo.',
+    });
+  }
+}
+
+/**
+ * GET /api/assets/market-oracle?name=...&category=...&condition=...
+ * Query live SerpApi market comps & fair value for an asset name & condition.
+ */
+async function getMarketOracle(req, res) {
+  try {
+    const { name, category, condition } = req.query;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Name parameter is required.' });
+    }
+
+    const effectiveCondition = condition || 'mint';
+    const effectiveCategory = category || 'Collectibles';
+
+    console.log(`📈 [Market Oracle Endpoint] Live comps requested for "${name.trim()}" (${effectiveCategory}, condition: ${effectiveCondition})...`);
+
+    const marketData = await marketOracleService.fetchMarketComps(
+      name.trim(),
+      effectiveCategory,
+      'ZAR',
+      effectiveCondition
+    );
+
+    return res.status(200).json({
+      success: true,
+      fairMarketValue: marketData.fairValue,
+      fairValue: marketData.fairValue,
+      lowPrice: marketData.lowPrice,
+      highPrice: marketData.highPrice,
+      formattedFairValue: marketData.formattedFairValue,
+      formattedRange: marketData.formattedRange,
+      source: marketData.source,
+      comps: marketData.comps,
+      market: marketData,
+    });
+  } catch (err) {
+    console.error('getMarketOracle error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
 module.exports = {
   getAssets,
   getAssetById,
   createAsset,
   verifyAssetUpload,
+  getMarketOracle,
+  scanAndKnow,
   invalidateAssetsCache,
 };
-

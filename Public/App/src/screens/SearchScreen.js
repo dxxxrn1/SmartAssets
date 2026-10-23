@@ -36,34 +36,33 @@ export function clearSearchScreenCache() {
   lastScreenFetchTime = 0;
 }
 
-// ── Format Currency in British Pounds £ ───────────────────────────────────────
-const formatGBP = (val, fallback = "£34,500") => {
+// ── Format Currency in South African Rands R ─────────────────────────────────
+const formatZAR = (val, fallback = "R34,500") => {
   if (val === undefined || val === null || val === "") return fallback;
-  if (typeof val === "string" && val.startsWith("£")) return val;
-  if (typeof val === "string" && val.startsWith("R")) {
-    return "£" + val.replace(/^R\s?/, "");
+  if (typeof val === "string" && val.startsWith("R")) return val;
+  if (typeof val === "string" && val.startsWith("£")) {
+    return "R" + val.replace(/^£\s?/, "");
   }
   const num =
     typeof val === "number"
       ? val
       : parseFloat(String(val).replace(/[^0-9.-]+/g, ""));
   if (isNaN(num)) return String(val);
-  return "£" + num.toLocaleString("en-GB", { maximumFractionDigits: 0 });
+  return "R" + num.toLocaleString("en-ZA", { maximumFractionDigits: 0 });
 };
+const formatGBP = formatZAR;
 
 // ── Format Share Price Badge ────────────────────────────────────────────────
 const formatSharePrice = (asset) => {
   if (asset.sharePrice) {
-    return typeof asset.sharePrice === "number"
-      ? `£${asset.sharePrice}/sh`
-      : String(asset.sharePrice).includes("/sh")
-        ? String(asset.sharePrice)
-        : `${asset.sharePrice}/sh`;
+    const sp = typeof asset.sharePrice === "number"
+      ? `R${asset.sharePrice}/sh`
+      : String(asset.sharePrice).replace(/^£\s?/, "R");
+    return sp.includes("/sh") ? sp : `${sp}/sh`;
   }
   if (asset.share_price) {
-    return String(asset.share_price).includes("/sh")
-      ? String(asset.share_price)
-      : `${asset.share_price}/sh`;
+    const sp = String(asset.share_price).replace(/^£\s?/, "R");
+    return sp.includes("/sh") ? sp : `${sp}/sh`;
   }
   const num =
     asset.price_num ||
@@ -71,9 +70,9 @@ const formatSharePrice = (asset) => {
     0;
   if (num > 0) {
     const sp = Math.max(10, Math.round(num / 100));
-    return `£${sp.toLocaleString("en-GB")}/sh`;
+    return `R${sp.toLocaleString("en-ZA")}/sh`;
   }
-  return "£100/sh";
+  return "R100/sh";
 };
 
 // Fallback verified opportunities matching Mockup 3 exactly
@@ -82,7 +81,7 @@ const DEFAULT_OPPORTUNITIES = [
     id: "opp-submariner",
     name: "Authentic Vintage Rolex Submariner",
     category: "WATCHES",
-    price: "£18,500",
+    price: "R18,500",
     confidence: "98% confidence",
     gain: "+8.5%",
     isVerified: true,
@@ -93,7 +92,7 @@ const DEFAULT_OPPORTUNITIES = [
     id: "opp-1",
     name: "Rolex Daytona 116500LN",
     category: "WATCHES",
-    price: "£34,500",
+    price: "R34,500",
     confidence: "96% confidence",
     gain: "+12.4%",
     isVerified: true,
@@ -104,7 +103,7 @@ const DEFAULT_OPPORTUNITIES = [
     id: "opp-2",
     name: "Untitled, 1984",
     category: "ART",
-    price: "£124,000",
+    price: "R124,000",
     confidence: "91% confidence",
     gain: "+6.8%",
     isVerified: true,
@@ -115,7 +114,7 @@ const DEFAULT_OPPORTUNITIES = [
     id: "opp-3",
     name: "1967 Ferrari 330 GTC",
     category: "CARS",
-    price: "£890,000",
+    price: "R890,000",
     confidence: "94% confidence",
     gain: "+9.1%",
     isVerified: true,
@@ -126,7 +125,7 @@ const DEFAULT_OPPORTUNITIES = [
     id: "opp-4",
     name: "Patek Philippe Nautilus 5711",
     category: "WATCHES",
-    price: "£98,000",
+    price: "R98,000",
     confidence: "98% confidence",
     gain: "+15.2%",
     isVerified: true,
@@ -137,7 +136,7 @@ const DEFAULT_OPPORTUNITIES = [
     id: "opp-5",
     name: "Domaine de la Romanée-Conti 1990",
     category: "WINE",
-    price: "£28,500",
+    price: "R28,500",
     confidence: "95% confidence",
     gain: "+11.8%",
     isVerified: true,
@@ -148,7 +147,7 @@ const DEFAULT_OPPORTUNITIES = [
     id: "opp-6",
     name: "1973 Porsche 911 Carrera RS",
     category: "CARS",
-    price: "£450,000",
+    price: "R450,000",
     confidence: "93% confidence",
     gain: "+8.4%",
     isVerified: true,
@@ -526,6 +525,14 @@ export default function SearchScreen({ navigation, route }) {
                 <Feather name="x-circle" size={16} color="#94A3B8" />
               </TouchableOpacity>
             )}
+            <TouchableOpacity
+              onPress={() => navigation.navigate(SCREENS.SCAN_AND_KNOW)}
+              style={styles.scanKnowSearchBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.8}
+            >
+              <Feather name="camera" size={15} color="#6C47FF" />
+            </TouchableOpacity>
           </View>
 
           {/* ── HORIZONTALLY SCROLLABLE CATEGORY CAROUSEL (LIVE FILTERS) ───────── */}
@@ -910,6 +917,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 3,
+  },
+  scanKnowSearchBtn: {
+    marginLeft: 6,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "#F5F3FF",
+    alignItems: "center",
+    justifyContent: "center",
   },
   slimSearchInput: {
     flex: 1,

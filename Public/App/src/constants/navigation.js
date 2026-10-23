@@ -20,6 +20,7 @@ export const SCREENS = {
   VAULT: 'Vault',
 
   // Detail screens (pushed on top of tabs)
+  SCAN_AND_KNOW: 'ScanAndKnow',
   ASSET_DETAIL: 'AssetDetail',
   CERTIFICATE: 'Certificate',
   PROVENANCE: 'Provenance',
