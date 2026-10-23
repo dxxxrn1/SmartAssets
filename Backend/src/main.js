@@ -4,6 +4,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const authRoutes = require('./routes/authRoutes');
@@ -12,14 +13,21 @@ const assetRoutes = require('./routes/assetRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const escrowRoutes = require('./routes/escrowRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const modelRoutes = require('./routes/modelRoutes');
+const { securityHeaders, sqlInjectionProtection } = require('./middlewares/securityMiddleware');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// ── Financial-Grade Security & Hardening ─────────────────────────────────────
+app.disable('x-powered-by');
+app.use(securityHeaders);
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors());                   // Allow requests from the Expo dev client
 app.use(express.json({ limit: '50mb' })); // Parse JSON request bodies (allows large base64 image uploads)
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(sqlInjectionProtection);   // Intercept & block SQL injection attempts across query, params, body
 
 // ── Static Files (Uploaded Avatars, Assets & Admin Console) ───────────────────
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
@@ -32,6 +40,7 @@ app.use('/api/assets', assetRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/escrow', escrowRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/models', modelRoutes);
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -56,7 +65,7 @@ app.use((_req, res) => {
 });
 
 // ── Start server ─────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 SmartAssets API running at http://localhost:${PORT}`);
   console.log(`   Admin Console: http://localhost:${PORT}/admin`);
   console.log(`   Admin API:     http://localhost:${PORT}/api/admin/overview`);

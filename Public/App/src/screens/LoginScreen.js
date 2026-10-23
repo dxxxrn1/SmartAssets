@@ -19,6 +19,7 @@ import { SCREENS } from '../constants/navigation';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useNetwork, OfflineBanner } from '../context/NetworkContext';
 import { API_BASE_URL, forgotPasswordApi } from '../services/api';
 import { isOnlineSync, checkInternetConnection } from '../utils/network';
 
@@ -29,6 +30,19 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
   const { isDark, toggleTheme } = useTheme();
   const c = useColors(isDark);
   const { login, loginWithWallet } = useAuth();
+  const { isConnected, isOffline, checkConnection } = useNetwork();
+
+  // Network check helper before auth actions
+  const verifyOnline = async () => {
+    const online = await checkConnection();
+    if (!online || isOffline || !isConnected) {
+      const msg = 'No internet connection. Please connect to the internet to sign in.';
+      setError(msg);
+      Alert.alert('No Internet Connection', msg);
+      return false;
+    }
+    return true;
+  };
 
   // Normal login
   const [email, setEmail] = useState('');
@@ -88,7 +102,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       } else {
         setError(
           err?.message ||
-            'Login failed. Please verify your email and password.'
+          'Login failed. Please verify your email and password.'
         );
       }
     } finally {
@@ -141,7 +155,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       if (!data.success) {
         throw new Error(
           data.message ||
-            'Could not send the reset link. Please try again.'
+          'Could not send the reset link. Please try again.'
         );
       }
 
@@ -149,7 +163,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     } catch (err) {
       setForgotError(
         err?.message ||
-          'Could not send the reset link. Please try again.'
+        'Could not send the reset link. Please try again.'
       );
     } finally {
       setForgotLoading(false);
@@ -178,6 +192,11 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
   const handleWalletConnectPress = async () => {
     setError('');
 
+    const isOnline = await verifyOnline();
+    if (!isOnline) {
+      return;
+    }
+
     // Web browser with MetaMask installed
     if (
       Platform.OS === 'web' &&
@@ -204,7 +223,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       } catch (err) {
         setError(
           err?.message ||
-            'MetaMask connection was cancelled.'
+          'MetaMask connection was cancelled.'
         );
       } finally {
         setConnectingWallet(false);
@@ -251,7 +270,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       } else {
         setError(
           err?.message ||
-            'Demo wallet login failed.'
+          'Demo wallet login failed.'
         );
       }
     } finally {
@@ -301,7 +320,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       } else {
         setError(
           err?.message ||
-            'Wallet login failed.'
+          'Wallet login failed.'
         );
       }
     } finally {
@@ -332,7 +351,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     <SafeAreaView
       style={[
         styles.safeArea,
-        { backgroundColor: c.background },
+        { backgroundColor: c.canvas || (isDark ? '#0F172A' : '#FFFFFF') },
       ]}
     >
       <KeyboardAvoidingView
@@ -426,6 +445,13 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
               </View>
             )}
           </View>
+
+          {/* OFFLINE BANNER */}
+          <OfflineBanner
+            isDark={isDark}
+            message="You are currently offline. Please connect to the internet to sign in."
+            style={{ maxWidth: 480, alignSelf: 'center', width: '100%', marginBottom: 16 }}
+          />
 
           {/* LOGIN CARD */}
           <View
@@ -1162,6 +1188,21 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 28,
+    position: 'relative',
+    width: '100%',
+  },
+
+  themeToggleBtn: {
+    position: 'absolute',
+    top: 0,
+    right: 4,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
   },
 
   logoBox: {

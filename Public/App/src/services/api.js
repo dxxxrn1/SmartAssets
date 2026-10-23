@@ -1,30 +1,74 @@
 // ─── SmartAssets API Service ──────────────────────────────────────────────────
 // Handles all HTTP communication between the React Native app and the backend.
 
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
+import {
+  saveVaultCache,
+  getVaultCache,
+  saveMarketAssetsCache,
+  getMarketAssetsCache,
+  saveUserProfile,
+  getUserProfile,
+} from './storage';
 
-// ── Base URL — configured via EXPO_PUBLIC_API_BASE_URL in .env ───────────────
-// On web, automatically connects to localhost/current host on port 5000.
-// On native devices, uses EXPO_PUBLIC_API_BASE_URL from .env.
+// Extract the live LAN IP that Metro Bundler is serving from on physical mobile devices
+function getMetroLanBaseUrl() {
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL;
+    if (scriptURL && typeof scriptURL === 'string') {
+      const match = scriptURL.match(/^https?:\/\/([^/:]+)(?::\d+)?\//i);
+      if (match && match[1] && match[1] !== 'localhost' && match[1] !== '127.0.0.1') {
+        return `http://${match[1]}:5000/api`;
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+// ── Base URL — auto-detects live Metro LAN IP on physical mobile devices ──────
 export const getBaseUrl = () => {
   if (Platform.OS === 'web') {
     const host = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : 'localhost';
     return `http://${host}:5000/api`;
   }
+  // Prefer live Metro bundler LAN host on physical Android/iOS devices so Wi-Fi IP changes never break fetch
+  const metroBase = getMetroLanBaseUrl();
+  if (metroBase) {
+    return metroBase;
+  }
   if (process.env.EXPO_PUBLIC_API_BASE_URL) {
-    return process.env.EXPO_PUBLIC_API_BASE_URL;
+    return process.env.EXPO_PUBLIC_API_BASE_URL.replace('10.10.0.18', '10.10.0.23');
   }
   if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000/api';
+    return 'http://10.10.0.23:5000/api';
   }
   return 'http://localhost:5000/api';
 };
 
-export const API_BASE_URL = getBaseUrl();
+export let API_BASE_URL = getBaseUrl();
 
-// ── Generic request helper ───────────────────────────────────────────────────
+function getFallbackBaseUrls() {
+  const candidates = [
+    API_BASE_URL,
+    getMetroLanBaseUrl(),
+    'http://10.10.0.23:5000/api',
+    process.env.EXPO_PUBLIC_API_BASE_URL,
+    Platform.OS === 'android' ? 'http://10.0.2.2:5000/api' : 'http://localhost:5000/api',
+  ].filter(Boolean);
+  return [...new Set(candidates)];
+}
+
+let onUnauthorizedCallback = null;
+
+export function setUnauthorizedHandler(callback) {
+  onUnauthorizedCallback = callback;
+}
+
+// ── Generic request helper with automatic LAN host failover ──────────────────
 async function apiRequest(endpoint, options = {}, token = null) {
-  const url = `${API_BASE_URL}${endpoint}`;
+  if (Platform.OS === 'web' && typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw new Error('No internet connection. Please connect to the internet to continue.');
+  }
 
   const headers = {
     'Content-Type': 'application/json',
@@ -32,28 +76,60 @@ async function apiRequest(endpoint, options = {}, token = null) {
     ...options.headers,
   };
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || 'Something went wrong');
+  const candidates = getFallbackBaseUrls();
+  let lastError = null;
+
+  for (const base of candidates) {
+    const url = `${base}${endpoint}`;
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers,
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        // Trigger global 401 session expiration handler if not a standard login failure
+        if (
+          response.status === 401 &&
+          endpoint !== '/auth/login' &&
+          endpoint !== '/auth/register' &&
+          endpoint !== '/auth/wallet-login' &&
+          typeof onUnauthorizedCallback === 'function'
+        ) {
+          onUnauthorizedCallback(data.error || 'Your session has expired. Please log in again.');
+        }
+
+        const httpErr = new Error(data.rejectionReason || data.error || data.message || 'Something went wrong');
+        httpErr.isHttpResponse = true;
+        httpErr.status = response.status;
+        httpErr.code = data.code;
+        throw httpErr;
+      }
+      // Lock onto the working base URL for subsequent requests
+      if (API_BASE_URL !== base) {
+        API_BASE_URL = base;
+      }
+      return data;
+    } catch (error) {
+      if (error.isHttpResponse) {
+        throw error;
+      }
+      lastError = error;
     }
-    return data;
-  } catch (error) {
-    if (
-      error.message === 'Network request failed' ||
-      error.message?.includes('NetworkError') ||
-      error.message?.includes('Failed to fetch')
-    ) {
-      throw new Error(
-        `Cannot connect to server at ${API_BASE_URL}. Make sure the backend is running at http://localhost:5000.`
-      );
-    }
-    throw error;
   }
+
+  if (
+    lastError?.message === 'Network request failed' ||
+    lastError?.message?.includes('NetworkError') ||
+    lastError?.message?.includes('Failed to fetch') ||
+    lastError?.message?.includes('Host unreachable') ||
+    lastError?.message?.includes('NoRouteToHostException')
+  ) {
+    throw new Error(
+      `Cannot connect to server at ${API_BASE_URL}. Make sure the backend is running on port 5000.`
+    );
+  }
+  throw lastError || new Error('Network error');
 }
 
 // ── Auth API ─────────────────────────────────────────────────────────────────
@@ -113,6 +189,27 @@ export async function resetPasswordApi({ accessToken, newPassword }) {
   });
 }
 
+/**
+ * Revoke the user session and log out from the backend.
+ * @param {string} token
+ */
+export async function logoutUserApi(token) {
+  try {
+    return await apiRequest('/auth/logout', { method: 'POST' }, token);
+  } catch (err) {
+    console.warn('[api] Backend logout warning:', err.message);
+    return { success: true };
+  }
+}
+
+/**
+ * Verify whether an access token is active and unexpired.
+ * @param {string} token
+ */
+export async function verifySessionApi(token) {
+  return apiRequest('/auth/session', { method: 'GET' }, token);
+}
+
 // ── User-Isolated Data API ───────────────────────────────────────────────────
 
 /**
@@ -120,7 +217,30 @@ export async function resetPasswordApi({ accessToken, newPassword }) {
  * @param {string} token - User's Supabase JWT access token
  */
 export async function getUserVault(token) {
-  return apiRequest('/user/vault', { method: 'GET' }, token);
+  try {
+    const data = await apiRequest('/user/vault', { method: 'GET' }, token);
+    if (data?.success) {
+      saveVaultCache({
+        summary: data.summary,
+        holdings: data.holdings,
+        transactions: data.transactions,
+      }).catch(() => {});
+    }
+    return data;
+  } catch (err) {
+    const cached = await getVaultCache();
+    if (cached) {
+      return {
+        success: true,
+        summary: cached.summary,
+        holdings: cached.holdings || [],
+        transactions: cached.transactions || [],
+        isOffline: true,
+        cachedAt: cached.cachedAt,
+      };
+    }
+    throw err;
+  }
 }
 
 /**
@@ -173,18 +293,41 @@ export async function getMarketAssets(category = 'All', searchQuery = '', forceR
     return { success: true, assets: clientMarketAssetsCache, cached: true };
   }
 
-  const params = new URLSearchParams();
-  if (category && category !== 'All') params.append('category', category);
-  if (searchQuery && searchQuery.trim()) params.append('q', searchQuery.trim());
-  const qs = params.toString() ? `?${params.toString()}` : '';
-  const data = await apiRequest(`/assets${qs}`, { method: 'GET' });
+  try {
+    const params = new URLSearchParams();
+    if (category && category !== 'All') params.append('category', category);
+    if (searchQuery && searchQuery.trim()) params.append('q', searchQuery.trim());
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const data = await apiRequest(`/assets${qs}`, { method: 'GET' });
 
-  if (isDefaultQuery && data?.assets) {
-    clientMarketAssetsCache = data.assets;
-    clientMarketAssetsCacheTime = Date.now();
+    if (isDefaultQuery && data?.assets) {
+      clientMarketAssetsCache = data.assets;
+      clientMarketAssetsCacheTime = Date.now();
+      saveMarketAssetsCache(data.assets).catch(() => {});
+    }
+
+    return data;
+  } catch (err) {
+    const cachedAssets = await getMarketAssetsCache();
+    if (cachedAssets && cachedAssets.length > 0) {
+      let filtered = cachedAssets;
+      if (category && category !== 'All') {
+        filtered = filtered.filter((a) => a.category === category);
+      }
+      if (searchQuery && searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        filtered = filtered.filter(
+          (a) => a.name?.toLowerCase().includes(q) || a.category?.toLowerCase().includes(q)
+        );
+      }
+      return {
+        success: true,
+        assets: filtered,
+        isOffline: true,
+      };
+    }
+    throw err;
   }
-
-  return data;
 }
 
 /**
@@ -224,6 +367,36 @@ export async function createAssetApi(assetData, token) {
 export async function verifyAssetUploadApi(payload, token) {
   return apiRequest(
     '/assets/verify-upload',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+/**
+ * Query live SerpApi Market Oracle for real-time South African valuation comps.
+ * @param {{ name: string, category?: string, condition?: string }} params
+ * @param {string} [token]
+ */
+export async function getMarketOracleApi({ name, category, condition }, token = null) {
+  const query = new URLSearchParams({
+    name: name || '',
+    category: category || '',
+    condition: condition || '',
+  }).toString();
+  return apiRequest(`/assets/market-oracle?${query}`, { method: 'GET' }, token);
+}
+
+/**
+ * Unified Scan & Know: Gemini Vision + live ZAR Market Oracle + Vault ERC-721 match.
+ * @param {{ image: string, vaultItems?: object[] }} payload
+ * @param {string} token
+ */
+export async function scanAndKnowApi(payload, token) {
+  return apiRequest(
+    '/assets/scan-and-know',
     {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -410,7 +583,19 @@ export async function getUserAnalyticsApi(token) {
 }
 
 export async function getUserProfileApi(token) {
-  return apiRequest('/user/profile', { method: 'GET' }, token);
+  try {
+    const data = await apiRequest('/user/profile', { method: 'GET' }, token);
+    if (data?.success && data?.profile) {
+      saveUserProfile(data.profile).catch(() => {});
+    }
+    return data;
+  } catch (err) {
+    const cached = await getUserProfile();
+    if (cached) {
+      return { success: true, profile: cached, isOffline: true };
+    }
+    throw err;
+  }
 }
 
 /**

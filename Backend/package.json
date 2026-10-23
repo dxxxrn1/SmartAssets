@@ -6,13 +6,16 @@
   "scripts": {
     "start": "node src/main.js",
     "dev": "node --watch src/main.js",
-    "test": "node test/escrowIntegration.test.js && node test/avatarIntegration.test.js && node test/profileIntegration.test.js && node test/vaultIntegration.test.js && node test/adminAndImageIntegration.test.js"
+    "test": "node test/escrowIntegration.test.js && node test/avatarIntegration.test.js && node test/profileIntegration.test.js && node test/vaultIntegration.test.js && node test/adminAndImageIntegration.test.js && node test/modelIntegration.test.js && node test/security.test.js",
+    "test:tripo": "node scripts/testTripo.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
     "@supabase/supabase-js": "^2.49.1",
     "axios": "^1.20.0",
     "cors": "^2.8.5",
@@ -20,6 +23,7 @@
     "ethers": "^6.17.0",
     "express": "^4.21.2",
     "form-data": "^4.0.6",
+    "meshoptimizer": "^1.3.0",
     "nodemon": "^3.1.14",
     "stripe": "^22.6.2",
     "ws": "^8.21.3"

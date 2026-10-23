@@ -18,6 +18,7 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { OfflineBanner } from "../context/NetworkContext";
 import {
   getUserProfileApi,
   updateUserProfileApi,
@@ -26,7 +27,11 @@ import {
   getUserSupportTicketsApi,
 } from "../services/api";
 
-export default function ProfileScreen({ navigation }) {
+export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme }) {
+  const themeContext = useTheme();
+  // const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
+  // const toggleTheme = propToggleTheme || themeContext.toggleTheme;
+  const setIsDark = themeContext.setIsDark;
   const { user, token, logout, updateUser } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
@@ -490,8 +495,6 @@ export default function ProfileScreen({ navigation }) {
         >
           <Feather name="chevron-left" size={24} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView
@@ -518,6 +521,57 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
           <Text style={styles.userName}>{displayName}</Text>
           <Text style={styles.userEmail}>{displayEmail}</Text>
+        </View>
+
+        {/* ── OFFLINE BANNER ── */}
+        <OfflineBanner
+          isDark={isDark}
+          message="⚡ Offline Mode — Showing saved profile data."
+          style={{ marginBottom: 16 }}
+        />
+
+        {/* ── Theme & Appearance Toggle Card ── */}
+        <View
+          style={{
+            backgroundColor: isDark ? "#131A2F" : "#FFFFFF",
+            borderRadius: 14,
+            padding: 16,
+            marginBottom: 16,
+            borderWidth: 1,
+            borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <View
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                backgroundColor: isDark ? "rgba(251, 191, 36, 0.15)" : "rgba(30, 41, 59, 0.08)",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Feather name={isDark ? "moon" : "sun"} size={19} color={isDark ? "#FBBF24" : "#1E293B"} />
+            </View>
+            <View>
+              <Text style={{ fontSize: 15, fontWeight: "700", color: isDark ? "#F8FAFC" : "#0F172A" }}>
+                Dark Mode
+              </Text>
+              <Text style={{ fontSize: 12, color: isDark ? "#94A3B8" : "#64748B" }}>
+                {isDark ? "Dark theme active" : "Light theme active"}
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={isDark}
+            onValueChange={(val) => setIsDark(val)}
+            trackColor={{ false: "#CBD5E1", true: "#3B82F6" }}
+            thumbColor={isDark ? "#FFFFFF" : "#F8FAFC"}
+          />
         </View>
 
         {/* ── Menu List ── */}

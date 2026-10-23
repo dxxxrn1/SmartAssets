@@ -20,9 +20,15 @@ import { useColors } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
 import { Feather } from "@expo/vector-icons";
 import { registerUser } from "../services/api";
+import { useTheme } from "../context/ThemeContext";
+import { useNetwork, OfflineBanner } from "../context/NetworkContext";
 
-export default function RegisterScreen({ navigation, isDark }) {
+export default function RegisterScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme }) {
+  const themeContext = useTheme();
+  const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
+  const toggleTheme = propToggleTheme || themeContext.toggleTheme;
   const c = useColors(isDark);
+  const { isConnected, isOffline, checkConnection } = useNetwork();
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -111,6 +117,13 @@ export default function RegisterScreen({ navigation, isDark }) {
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
         >
+          {/* OFFLINE BANNER */}
+          <OfflineBanner
+            isDark={isDark}
+            message="You are currently offline. Connect to the internet to register."
+            style={{ marginHorizontal: 0, marginBottom: 14 }}
+          />
+
           {/* ── Heading ── */}
           <Text style={[styles.heading, { color: c.warm }]}>
             Create Account

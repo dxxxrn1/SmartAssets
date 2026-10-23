@@ -7,11 +7,15 @@
  * @param {number} statusCode  HTTP status (400, 401, 409, 500, …)
  * @param {string} message     Human-readable error message
  */
-function sendError(res, statusCode, message) {
-  return res.status(statusCode).json({
+function sendError(res, statusCode, message, code = null) {
+  const payload = {
     success: false,
     error: message,
-  });
+  };
+  if (code) {
+    payload.code = code;
+  }
+  return res.status(statusCode).json(payload);
 }
 
 module.exports = { sendError };

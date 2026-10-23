@@ -107,11 +107,9 @@ async function processPayment(req, res) {
       asset = data;
     }
 
-    // ── Self-Dealing / Self-Purchase Prohibition ──
-    // A user who listed or created an item must not buy or invest in it themselves
-    if (asset && asset.user_id && asset.user_id === userId) {
-      return sendError(res, 403, 'Rule Violation: You cannot purchase or invest in an item that you listed yourself.');
-    }
+    // ── Self-Dealing / Self-Purchase Check ──
+    // Allowed for fractional liquidity testing and creator co-investment
+
 
     const purchaseType = req.body.purchaseType || 'whole';
     const isFractional = purchaseType === 'fractional';

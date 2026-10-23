@@ -26,20 +26,21 @@ import { getUserVault, resolveImageUrl } from "../services/api";
 import { SCREENS } from "../constants/navigation";
 import storage, { STORAGE_KEYS } from "../utils/storage";
 
-// ── Currency Formatter (British Pounds £ as in design mockups) ────────────────
-const formatGBP = (val, fallback = "£1,296,700") => {
+// ── Currency Formatter (South African Rand R as in design mockups) ────────────────
+const formatZAR = (val, fallback = "R1,296,700") => {
   if (val === undefined || val === null || val === "") return fallback;
-  if (typeof val === "string" && val.startsWith("£")) return val;
-  if (typeof val === "string" && val.startsWith("R")) {
-    return "£" + val.replace(/^R\s?/, "");
+  if (typeof val === "string" && val.startsWith("R")) return val;
+  if (typeof val === "string" && val.startsWith("£")) {
+    return "R" + val.replace(/^£\s?/, "");
   }
   const num =
     typeof val === "number"
       ? val
       : parseFloat(String(val).replace(/[^0-9.-]+/g, ""));
   if (isNaN(num)) return String(val);
-  return "£" + num.toLocaleString("en-GB", { maximumFractionDigits: 0 });
+  return "R" + num.toLocaleString("en-ZA", { maximumFractionDigits: 0 });
 };
+const formatGBP = formatZAR;
 
 // ── Browse Categories Data ───────────────────────────────────────────────────
 const CATEGORY_CARDS = [
@@ -80,7 +81,7 @@ const CURATED_ASSETS = [
     category: "WATCHES",
     filterId: "watches",
     name: "Rolex Daytona 116500LN",
-    price: "£34,500",
+    price: "R34,500",
     gain: "+12.4%",
     isVerified: true,
     image:
@@ -92,7 +93,7 @@ const CURATED_ASSETS = [
     category: "ART",
     filterId: "art",
     name: "Untitled, 1984",
-    price: "£124,000",
+    price: "R124,000",
     gain: "+6.8%",
     isVerified: true,
     image:
@@ -104,7 +105,7 @@ const CURATED_ASSETS = [
     category: "CARS",
     filterId: "cars",
     name: "1967 Ferrari 330 GTC",
-    price: "£890,000",
+    price: "R890,000",
     gain: "+9.1%",
     isVerified: true,
     image:
@@ -116,7 +117,7 @@ const CURATED_ASSETS = [
     category: "WINE",
     filterId: "wine",
     name: "Romanée-Conti Grand Cru 1990",
-    price: "£28,900",
+    price: "R28,900",
     gain: "+14.2%",
     isVerified: true,
     image:
@@ -172,8 +173,8 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingVault, setLoadingVault] = useState(true);
   const [vaultSummary, setVaultSummary] = useState({
-    totalValueFormatted: "£1,077",
-    portfolioValueFormatted: "£1,077",
+    totalValueFormatted: "R1,077",
+    portfolioValueFormatted: "R1,077",
     portfolioValueNum: 1077,
     totalCount: 5,
     categoriesCount: 4,
@@ -318,8 +319,7 @@ export default function HomeScreen({ navigation }) {
         locations={[0, 0.22, 0.52, 0.78, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0.8, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-        pointerEvents="none"
+        style={[StyleSheet.absoluteFillObject, { pointerEvents: "none" }]}
       />
 
       <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
@@ -381,7 +381,7 @@ export default function HomeScreen({ navigation }) {
               {userName}
             </Text>
             <Text style={styles.greetingSubtitle} numberOfLines={1}>
-              Your collection gained £185 while you were away.
+              Your collection gained R185 while you were away.
             </Text>
           </View>
 
@@ -420,7 +420,7 @@ export default function HomeScreen({ navigation }) {
             </View>
 
             <Text style={styles.portfolioValueNumber}>
-              {vaultSummary.portfolioValueFormatted || "£1,296,700"}
+              {vaultSummary.portfolioValueFormatted || "R1,296,700"}
             </Text>
 
             <View style={styles.gainRow}>
@@ -438,7 +438,7 @@ export default function HomeScreen({ navigation }) {
                 />
                 <Text style={styles.growthPillText}>8.4%</Text>
               </View>
-              <Text style={styles.yearlyGainText}>+£185 this month</Text>
+              <Text style={styles.yearlyGainText}>+R185 this month</Text>
             </View>
 
             <PortfolioWaveGraph />
@@ -469,6 +469,32 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.statLabel}>Verified</Text>
               </View>
             </View>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        {/* ── SCAN & KNOW CAMERA CTA ──────────────────────────────────────────── */}
+        <TouchableOpacity
+          style={styles.scanKnowCard}
+          onPress={() => navigation.navigate(SCREENS.SCAN_AND_KNOW)}
+          activeOpacity={0.9}
+        >
+          <LinearGradient
+            colors={["#0F172A", "#1E1B4B", "#312E81"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.scanKnowGradient}
+          >
+            <View style={styles.scanKnowIconWrap}>
+              <Ionicons name="scan" size={22} color="#00C2FF" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.scanKnowKicker}>GEMINI VISION • ZAR ORACLE</Text>
+              <Text style={styles.scanKnowTitle}>Scan & Know</Text>
+              <Text style={styles.scanKnowSub} numberOfLines={1}>
+                Identify, value in Rands, and match Sepolia certificates
+              </Text>
+            </View>
+            <Feather name="camera" size={18} color="#FFFFFF" />
           </LinearGradient>
         </TouchableOpacity>
 
@@ -514,9 +540,9 @@ export default function HomeScreen({ navigation }) {
                 [
                   { text: "Cancel", style: "cancel" },
                   {
-                    text: "Add £500",
+                    text: "Add R500",
                     onPress: () =>
-                      Alert.alert("Success", "£500 deposited via Apple Pay."),
+                      Alert.alert("Success", "R500 deposited via Apple Pay."),
                   },
                 ]
               )
@@ -532,7 +558,7 @@ export default function HomeScreen({ navigation }) {
                 <Feather name="chevron-down" size={24} color="#7353EA" />
               </View>
               <Text style={styles.bubbleLabel}>AVAILABLE CASH</Text>
-              <Text style={styles.bubbleValue}>£250</Text>
+              <Text style={styles.bubbleValue}>R250</Text>
               <View style={styles.bubbleFooterRow}>
                 <Feather
                   name="plus-circle"
@@ -579,6 +605,61 @@ export default function HomeScreen({ navigation }) {
             </LinearGradient>
           </TouchableOpacity>
         </View>
+
+        {/* ── IN-APP AR SHOWROOM SPOTLIGHT BANNER ──────────────────────────────── */}
+        <TouchableOpacity
+          style={styles.arShowroomBanner}
+          onPress={() =>
+            navigation.navigate(SCREENS.LIVE_ROOM_PREVIEW, {
+              imageUri: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80',
+              title: 'Velvet Lounge Chair',
+              listingId: 'showcase-chair-3d',
+              glbUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/SheenChair/glTF-Binary/SheenChair.glb',
+              source: 'ai_generated',
+              placement: 'floor',
+              widthCm: 75,
+              heightCm: 85,
+              depthCm: 80,
+            })
+          }
+          activeOpacity={0.92}
+        >
+          <LinearGradient
+            colors={['#0F172A', '#1E1B4B', '#172554']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.arShowroomGradient}
+          >
+            <View style={styles.arShowroomTopRow}>
+              <View style={styles.arShowroomBadge}>
+                <Ionicons name="scan" size={13} color="#00C2FF" />
+                <Text style={styles.arShowroomBadgeText}>NEW • IN-APP AR EXPERIENCE</Text>
+              </View>
+              <View style={styles.arTrueScalePill}>
+                <Text style={styles.arTrueScaleText}>1:1 SCALE</Text>
+              </View>
+            </View>
+
+            <Text style={styles.arShowroomTitle}>
+              Decorate your room with verified luxury
+            </Text>
+            <Text style={styles.arShowroomSubtitle}>
+              Hang paintings on your walls or place iconic furniture on your floor. Live plane tracking & soft shadows.
+            </Text>
+
+            <View style={styles.arShowroomFooter}>
+              <View style={styles.arShowroomItemsPill}>
+                <Ionicons name="cube-outline" size={13} color="#00C2FF" />
+                <Text style={styles.arShowroomItemsText}>5 Showcase Collectibles</Text>
+              </View>
+
+              <View style={styles.arShowroomActionBtn}>
+                <Text style={styles.arShowroomActionText}>Launch AR</Text>
+                <Feather name="arrow-right" size={14} color="#00C2FF" style={{ marginLeft: 4 }} />
+              </View>
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
 
         {/* ── BROWSE CATEGORIES (2x2 VISUAL IMAGE GRID) ───────────────────────── */}
         <View style={styles.dashboardSection}>
@@ -978,6 +1059,52 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
   },
 
+  scanKnowCard: {
+    marginTop: 4,
+    marginBottom: 12,
+    borderRadius: 20,
+    overflow: "hidden",
+    shadowColor: "#312E81",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  scanKnowGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    gap: 12,
+  },
+  scanKnowIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "rgba(0,194,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(0,194,255,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scanKnowKicker: {
+    color: "#67E8F9",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  scanKnowTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
+    marginTop: 1,
+  },
+  scanKnowSub: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 11,
+    marginTop: 2,
+  },
+
   // ── Slim Smart Insight Banner ───────────────────────────────────────────────
   slimInsightBanner: {
     backgroundColor: "#FFFFFF",
@@ -1278,5 +1405,99 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+  arShowroomBanner: {
+    marginHorizontal: 20,
+    marginTop: 14,
+    borderRadius: 24,
+    overflow: "hidden",
+    shadowColor: "#00C2FF",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  arShowroomGradient: {
+    padding: 20,
+    borderRadius: 24,
+    borderWidth: 1.2,
+    borderColor: "rgba(0, 194, 255, 0.35)",
+    gap: 10,
+  },
+  arShowroomTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  arShowroomBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0, 194, 255, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(0, 194, 255, 0.4)",
+  },
+  arShowroomBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#00C2FF",
+    letterSpacing: 0.8,
+  },
+  arTrueScalePill: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  arTrueScaleText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#CBD5E1",
+    letterSpacing: 0.6,
+  },
+  arShowroomTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+  },
+  arShowroomSubtitle: {
+    fontSize: 12,
+    color: "#94A3B8",
+    lineHeight: 18,
+  },
+  arShowroomFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 4,
+  },
+  arShowroomItemsPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  arShowroomItemsText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#CBD5E1",
+  },
+  arShowroomActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 194, 255, 0.15)",
+    borderWidth: 1,
+    borderColor: "#00C2FF",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  arShowroomActionText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#00C2FF",
   },
 });

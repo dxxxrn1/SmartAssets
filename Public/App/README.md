@@ -27,6 +27,7 @@ Native implementation skeleton ported from the **SmartAssets Figma prototype** (
 | Asset Detail | `AssetDetailScreen.js` | `AssetDetail` |
 | Certificate of Authenticity | `CertificateScreen.js` | `Certificate` |
 | Provenance Timeline | `ProvenanceScreen.js` | `Provenance` |
+| Live Room Preview | `src/components/liveRoomPreview/LiveRoomPreview.js` | `LiveRoomPreview` |
 | Asset Health Report | `HealthReportScreen.js` | `HealthReport` |
 | Checkout | `CheckoutScreen.js` | `Checkout` |
 | Verification Status | `VerificationScreen.js` | `Verification` |
@@ -47,6 +48,33 @@ npm start
 
 # Then press 'a' for Android, 'i' for iOS, or 'w' for web
 ```
+
+### Live Room Preview
+
+The Live Room Preview uses the Expo Go camera preview with a 2D artwork overlay. It does not use ARCore, ARKit, Viro, or native AR. From `Public/App`, install the SDK-matched packages:
+
+```bash
+npx expo install expo-camera expo-sensors expo-screen-orientation react-native-gesture-handler react-native-reanimated
+```
+
+Then start the app with `npx expo start` and open it on a physical Android or iOS device. `CameraView` is device-only; simulators do not provide a useful live camera feed. `app.json` already contains the camera and motion permission descriptions, and the application root is wrapped in `GestureHandlerRootView`.
+
+Register `LiveRoomPreview` from any existing screen using the route constant and listing data:
+
+```js
+import { SCREENS } from '../constants/navigation';
+
+navigation.navigate(SCREENS.LIVE_ROOM_PREVIEW, {
+  imageUri: 'https://example.com/listing-artwork.jpg',
+  widthCm: 60,
+  heightCm: 80,
+  title: 'Abstract Study, 1987',
+  listingId: 'listing-123',
+  onBid: (listingId) => navigation.navigate(SCREENS.CHECKOUT, { listingId }),
+});
+```
+
+The screen asks for camera access, calibrates against an A4 sheet, and supports a clearly marked approximate-size skip. Drag, pinch, and rotate the overlay over the uninterrupted live feed. Device motion gently offsets the image when available; unsupported sensors leave manual placement available. Camera and motion updates pause when the app is backgrounded or the route loses focus. For bids, prefer a serializable listing action in your app rather than passing callbacks in route params if your navigation setup enforces serializable state.
 
 ## TODO
 

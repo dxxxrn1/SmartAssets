@@ -33,6 +33,9 @@ import VerificationScreen from '../screens/VerificationScreen';
 import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
 import ProfileScreen     from '../screens/ProfileScreen';
 import ProfileAnalyticsScreen from '../screens/ProfileAnalyticsScreen';
+import ARScreen          from '../screens/ARScreen';
+import LiveRoomPreview from '../components/liveRoomPreview/LiveRoomPreview';
+import ScanAndKnowScreen from '../screens/ScanAndKnowScreen';
 
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -97,7 +100,6 @@ function CustomTabBar({ state, navigation, isDark }) {
 
   return (
     <View
-      pointerEvents="box-none"
       style={{
         position: 'absolute',
         left: 0,
@@ -107,10 +109,10 @@ function CustomTabBar({ state, navigation, isDark }) {
         paddingBottom: bottomMargin,
         paddingHorizontal: 16,
         zIndex: 100,
+        pointerEvents: 'box-none',
       }}
     >
       <View
-        pointerEvents="auto"
         style={{
           width: '100%',
           maxWidth: 460,
@@ -144,13 +146,11 @@ function CustomTabBar({ state, navigation, isDark }) {
           ]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0.4, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-          pointerEvents="none"
+          style={[StyleSheet.absoluteFillObject, { pointerEvents: 'none' }]}
         />
 
         {/* Top edge glossy light reflection line */}
         <View
-          pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
@@ -158,6 +158,7 @@ function CustomTabBar({ state, navigation, isDark }) {
             right: 20,
             height: 1,
             backgroundColor: 'rgba(255, 255, 255, 0.35)',
+            pointerEvents: 'none',
           }}
         />
 
@@ -279,7 +280,7 @@ function CustomTabBar({ state, navigation, isDark }) {
   );
 }
 
-function MainTabs({ isDark }) {
+function MainTabs({ isDark, toggleTheme }) {
   return (
     <Tab.Navigator
       // unmountOnBlur: true prevents inactive tab screens from rendering on web,
@@ -298,19 +299,19 @@ function MainTabs({ isDark }) {
       tabBar={(props) => <CustomTabBar {...props} isDark={isDark} />}
     >
       <Tab.Screen name={SCREENS.HOME}>
-        {(props) => <HomeScreen {...props} isDark={isDark} />}
+        {(props) => <HomeScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
       </Tab.Screen>
       <Tab.Screen name={SCREENS.SEARCH}>
-        {(props) => <SearchScreen {...props} isDark={isDark} />}
+        {(props) => <SearchScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
       </Tab.Screen>
       <Tab.Screen name={SCREENS.LIST_ASSET}>
-        {(props) => <ListAssetScreen {...props} isDark={isDark} />}
+        {(props) => <ListAssetScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
       </Tab.Screen>
       <Tab.Screen name={SCREENS.INVEST}>
-        {(props) => <InvestScreen {...props} isDark={isDark} />}
+        {(props) => <InvestScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
       </Tab.Screen>
       <Tab.Screen name={SCREENS.VAULT}>
-        {(props) => <VaultScreen {...props} isDark={isDark} />}
+        {(props) => <VaultScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
       </Tab.Screen>
     </Tab.Navigator>
   );
@@ -318,7 +319,7 @@ function MainTabs({ isDark }) {
 
 // ── Root stack ────────────────────────────────────────────────────────────────
 export default function Navigation() {
-  const { isDark } = useTheme();
+  const { isDark, toggleTheme } = useTheme();
   const { isAuthenticated, sessionRestored } = useAuth();
 
   // Listen for Supabase password-recovery deep link
@@ -378,29 +379,36 @@ export default function Navigation() {
         {!isAuthenticated ? (
           <>
             <Stack.Screen name={SCREENS.SPLASH}>
-              {(props) => <SplashScreen {...props} isDark={isDark} />}
+              {(props) => <SplashScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.ONBOARDING}>
-              {(props) => <OnboardingScreen {...props} isDark={isDark} />}
+              {(props) => <OnboardingScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.LOGIN}>
-              {(props) => <LoginScreen {...props} isDark={isDark} />}
+              {(props) => <LoginScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.REGISTER}>
-              {(props) => <RegisterScreen {...props} isDark={isDark} />}
+              {(props) => <RegisterScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.RESET_PASSWORD}>
-              {(props) => <ResetPasswordScreen {...props} isDark={isDark} />}
+              {(props) => <ResetPasswordScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.AR_VIEWER} options={{ headerShown: false }}>
+              {(props) => <LiveRoomPreview {...props} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.LIVE_ROOM_PREVIEW} options={{ headerShown: false }}>
+              {(props) => <LiveRoomPreview {...props} />}
             </Stack.Screen>
           </>
         ) : (
           <>
             <Stack.Screen name={SCREENS.MAIN_TABS}>
-              {() => <MainTabs isDark={isDark} />}
+              {() => <MainTabs isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.SEARCH}>
@@ -409,6 +417,10 @@ export default function Navigation() {
 
             <Stack.Screen name={SCREENS.LIST_ASSET}>
               {(props) => <ListAssetScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.SCAN_AND_KNOW}>
+              {(props) => <ScanAndKnowScreen {...props} isDark={isDark} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.ASSET_DETAIL}>
@@ -440,11 +452,18 @@ export default function Navigation() {
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.PROFILE}>
-              {(props) => <ProfileScreen {...props} isDark={isDark} />}
+              {(props) => <ProfileScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.PROFILE_ANALYTICS}>
-              {(props) => <ProfileAnalyticsScreen {...props} isDark={isDark} />}
+              {(props) => <ProfileAnalyticsScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.AR_VIEWER} options={{ headerShown: false }}>
+              {(props) => <LiveRoomPreview {...props} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.LIVE_ROOM_PREVIEW} options={{ headerShown: false }}>
+              {(props) => <LiveRoomPreview {...props} />}
             </Stack.Screen>
           </>
         )}

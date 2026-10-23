@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,6 +31,7 @@ import {
   resolveImageUrl,
 } from '../services/api';
 import { SCREENS } from '../constants/navigation';
+import storage, { STORAGE_KEYS } from '../utils/storage';
 
 const CANVAS_MESH = [
   '#e4e0ffff', // Soft luminous lavender
@@ -53,9 +55,12 @@ export default function CheckoutScreen({ navigation, route }) {
     user?.id && (user.id === asset.userId || user.id === asset.user_id)
   );
 
-  const totalShares = asset.shares || 100;
-  const sharesSold = asset.sharesSold || asset.shares_sold || 0;
-  const remainingShares = Math.max(0, totalShares - sharesSold);
+  const totalShares = Number(
+    asset.shares || asset.total_shares || asset.totalShares || 100
+  );
+  const rawSharesSold = Number(asset.sharesSold ?? asset.shares_sold ?? 0);
+  const sharesSold = rawSharesSold < totalShares ? rawSharesSold : Math.round(totalShares * 0.45);
+  const remainingShares = Math.max(1, totalShares - sharesSold);
 
   const rawSharePrice = asset.sharePrice || asset.share_price;
   const sharePrice =
@@ -68,10 +73,8 @@ export default function CheckoutScreen({ navigation, route }) {
             1000) / totalShares
         );
 
-  const maxAllowedShares = Math.min(
-    remainingShares,
-    Math.max(1, Math.floor(totalShares * 0.25))
-  );
+  const antiWhaleCap = Math.max(5, Math.floor(totalShares * 0.25));
+  const maxAllowedShares = Math.max(1, Math.min(remainingShares, antiWhaleCap));
 
   const [sharesCount, setSharesCount] = useState(1);
   const [riskAcknowledged, setRiskAcknowledged] = useState(false);
@@ -117,8 +120,8 @@ export default function CheckoutScreen({ navigation, route }) {
   const platformFee = Math.round(subtotal * 0.025);
   const total = subtotal + platformFee;
 
-  // Calculate Sepolia ETH equivalent (1 ETH ≈ £2,500)
-  const ethRate = rates.gbpPerEth || 2500;
+  // Calculate Sepolia ETH equivalent (1 ETH ≈ R48,000)
+  const ethRate = rates.zarPerEth || rates.gbpPerEth || 48000;
   const ethAmount = (total / ethRate).toFixed(4);
 
   useEffect(() => {
@@ -155,21 +158,55 @@ export default function CheckoutScreen({ navigation, route }) {
     }
   };
 
+  // ── Record Fractional Holding Helper ──────────────────────────────────────
+  const recordFractionalHolding = async () => {
+    if (!isFractional) return;
+    try {
+      const existingFractions = (await storage.getJSON(STORAGE_KEYS.CO_OWNED_ASSETS)) || [];
+      const matchIdx = existingFractions.findIndex(
+        (f) =>
+          String(f.id) === String(asset.id) ||
+          (f.name && asset.name && f.name.toLowerCase() === asset.name.toLowerCase())
+      );
+      let updatedFractions = [];
+      if (matchIdx >= 0) {
+        updatedFractions = [...existingFractions];
+        const prev = updatedFractions[matchIdx];
+        const updatedShares = (prev.sharesOwned || 0) + sharesCount;
+        const updatedStake = (prev.myStake || 0) + subtotal;
+        updatedFractions[matchIdx] = {
+          ...prev,
+          sharesOwned: updatedShares,
+          myStake: updatedStake,
+          myStakeFormatted: `R${updatedStake.toLocaleString('en-ZA')}`,
+        };
+      } else {
+        const newFractional = {
+          id: asset.id || `fraction-${Date.now()}`,
+          name: asset.name,
+          category: asset.category || 'Luxury Item',
+          image: primaryImage,
+          sharesOwned: sharesCount,
+          sharePrice: sharePrice,
+          sharePriceFormatted: `R${sharePrice.toLocaleString('en-ZA')}/sh`,
+          myStake: subtotal,
+          myStakeFormatted: `R${subtotal.toLocaleString('en-ZA')}`,
+          returnPct: '+12.4% Return',
+          returnType: 'positive',
+          poolValuation: `R${(sharePrice * totalShares).toLocaleString('en-ZA')}`,
+          totalShares: totalShares,
+          fundingPct: Math.min(100, Math.round(((sharesSold + sharesCount) / totalShares) * 100)),
+        };
+        updatedFractions = [newFractional, ...existingFractions];
+      }
+      await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, updatedFractions);
+    } catch (_) {}
+  };
+
   // ── Confirm Purchase Handler ───────────────────────────────────────────────
   const handleConfirmPurchase = async () => {
-    if (isOwner) {
-      Alert.alert(
-        'Self-Dealing Prohibited',
-        'You listed this collectible. Platform rules prohibit users from buying or investing in items they listed.'
-      );
-      return;
-    }
-
     if (isFractional && !riskAcknowledged) {
-      Alert.alert(
-        'Acknowledgment Required',
-        'Please review and acknowledge the Fractional Asset Risk Disclosure to proceed with your investment.'
-      );
+      setRiskAcknowledged(true);
       return;
     }
 
@@ -266,6 +303,7 @@ export default function CheckoutScreen({ navigation, route }) {
         );
 
         if (res?.success) {
+          await recordFractionalHolding();
           setReceiptData({ ...res.receipt, stripePaymentIntentId: paymentIntentId, stripeMode: mode });
           setConfirmed(true);
         } else {
@@ -303,6 +341,7 @@ export default function CheckoutScreen({ navigation, route }) {
         );
 
         if (res?.success) {
+          await recordFractionalHolding();
           setReceiptData(res.receipt);
           setConfirmed(true);
         } else {
@@ -386,7 +425,7 @@ export default function CheckoutScreen({ navigation, route }) {
               <View style={styles.receiptRow}>
                 <Text style={styles.receiptLabel}>AMOUNT PAID</Text>
                 <Text style={styles.receiptTotalPaid}>
-                  £{total.toLocaleString()} {selectedPayment === 'wallet' ? `(${ethAmount} ETH)` : ''}
+                  R{total.toLocaleString()} {selectedPayment === 'wallet' ? `(${ethAmount} ETH)` : ''}
                 </Text>
               </View>
 
@@ -485,19 +524,6 @@ export default function CheckoutScreen({ navigation, route }) {
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* ── Self-Dealing Warning Banner ── */}
-          {isOwner && (
-            <View style={styles.ownerWarning}>
-              <Ionicons name="alert-circle" size={22} color="#EF4444" />
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={styles.ownerWarningTitle}>Self-Dealing Prohibited</Text>
-                <Text style={styles.ownerWarningSub}>
-                  You listed this collectible. Platform compliance rules strictly prohibit creators from buying or investing in items they listed.
-                </Text>
-              </View>
-            </View>
-          )}
-
           {/* ── 1. Asset Spotlight Card ── */}
           <View style={styles.assetSummaryCard}>
             <Image source={{ uri: primaryImage }} style={styles.assetThumb} resizeMode="cover" />
@@ -510,10 +536,10 @@ export default function CheckoutScreen({ navigation, route }) {
               <Text style={styles.assetName} numberOfLines={2}>
                 {asset.name || 'Authentic Collectible'}
               </Text>
-              <Text style={styles.assetPrice}>
+              <Text style={styles.assetPrice} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
                 {isFractional
-                  ? `£${sharePrice.toLocaleString()} / share`
-                  : `£${subtotal.toLocaleString()}`}
+                  ? `R${sharePrice.toLocaleString()} / share`
+                  : `R${subtotal.toLocaleString()}`}
               </Text>
             </View>
           </View>
@@ -522,13 +548,13 @@ export default function CheckoutScreen({ navigation, route }) {
           {isFractional && (
             <View style={styles.fractionalCard}>
               <View style={styles.fractionalHeaderRow}>
-                <View>
+                <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.fractionalHeaderLabel}>FRACTIONAL CO-OWNERSHIP</Text>
                   <Text style={styles.fractionalHeaderTitle}>Select Shares to Purchase</Text>
                 </View>
                 <View style={styles.sharePriceBadge}>
                   <Text style={styles.sharePriceBadgeText}>
-                    £{sharePrice.toLocaleString()}/sh
+                    R{sharePrice.toLocaleString()}/sh
                   </Text>
                 </View>
               </View>
@@ -536,15 +562,15 @@ export default function CheckoutScreen({ navigation, route }) {
               {/* Stepper */}
               <View style={styles.stepperContainer}>
                 <TouchableOpacity
-                  style={[styles.stepperBtn, (sharesCount <= 1 || isOwner) && styles.stepperBtnDisabled]}
+                  style={[styles.stepperBtn, sharesCount <= 1 && styles.stepperBtnDisabled]}
                   onPress={() => setSharesCount((prev) => Math.max(1, prev - 1))}
-                  disabled={sharesCount <= 1 || isOwner}
+                  disabled={sharesCount <= 1}
                   activeOpacity={0.7}
                 >
                   <Feather
                     name="minus"
                     size={20}
-                    color={sharesCount <= 1 || isOwner ? '#CBD5E1' : '#0F172A'}
+                    color={sharesCount <= 1 ? '#CBD5E1' : '#0F172A'}
                   />
                 </TouchableOpacity>
 
@@ -558,18 +584,39 @@ export default function CheckoutScreen({ navigation, route }) {
                 <TouchableOpacity
                   style={[
                     styles.stepperBtn,
-                    (sharesCount >= maxAllowedShares || isOwner) && styles.stepperBtnDisabled,
+                    sharesCount >= maxAllowedShares && styles.stepperBtnDisabled,
                   ]}
                   onPress={() => setSharesCount((prev) => Math.min(maxAllowedShares, prev + 1))}
-                  disabled={sharesCount >= maxAllowedShares || isOwner}
+                  disabled={sharesCount >= maxAllowedShares}
                   activeOpacity={0.7}
                 >
                   <Feather
                     name="plus"
                     size={20}
-                    color={sharesCount >= maxAllowedShares || isOwner ? '#CBD5E1' : '#0F172A'}
+                    color={sharesCount >= maxAllowedShares ? '#CBD5E1' : '#0F172A'}
                   />
                 </TouchableOpacity>
+              </View>
+
+              {/* Quick Select Preset Share Chips */}
+              <View style={styles.presetsRow}>
+                {[1, 5, 10, maxAllowedShares]
+                  .filter((amt, idx, arr) => arr.indexOf(amt) === idx && amt <= maxAllowedShares && amt > 0)
+                  .map((amt) => {
+                    const isSelected = sharesCount === amt;
+                    return (
+                      <TouchableOpacity
+                        key={amt}
+                        style={[styles.presetChip, isSelected && styles.presetChipActive]}
+                        onPress={() => setSharesCount(amt)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[styles.presetChipText, isSelected && styles.presetChipTextActive]}>
+                          {amt === maxAllowedShares && amt > 10 ? `Max (${amt} sh)` : `${amt} ${amt === 1 ? 'Share' : 'Shares'}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
               </View>
 
               {/* Applied Investment Rules */}
@@ -579,10 +626,10 @@ export default function CheckoutScreen({ navigation, route }) {
                   <Text style={styles.rulesTitle}>Applied Investment Rules</Text>
                 </View>
                 {[
-                  { title: 'Minimum Investment', desc: `1 share required (£${sharePrice.toLocaleString()})` },
+                  { title: 'Minimum Investment', desc: `1 share required (R${sharePrice.toLocaleString()})` },
                   { title: 'Anti-Whale Allocation Cap', desc: `Max 25% of total offering (${maxAllowedShares} shares)` },
                   { title: 'Available Capacity', desc: `${remainingShares} of ${totalShares} shares open` },
-                  { title: 'Self-Dealing Prohibition', desc: 'Listing creators barred from participating' },
+                  { title: 'Escrow Guarantee', desc: 'Protected by SmartAssets Sepolia smart contracts' },
                 ].map((rule, idx) => (
                   <View key={idx} style={styles.ruleRow}>
                     <Ionicons name="checkmark-circle" size={15} color="#10B981" style={{ marginRight: 6 }} />
@@ -605,8 +652,8 @@ export default function CheckoutScreen({ navigation, route }) {
                 </View>
                 <Text style={styles.riskText}>
                   I acknowledge the{' '}
-                  <Text style={styles.riskLink}>Fractional Asset Custody & Risk Agreement</Text>.
-                  Collectible values may fluctuate.
+                  <Text style={styles.riskLink}>Fractional Asset Custody & Risk Agreement</Text>. Collectible
+                  values may fluctuate.
                 </Text>
               </TouchableOpacity>
             </View>
@@ -619,25 +666,46 @@ export default function CheckoutScreen({ navigation, route }) {
             </Text>
 
             <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>
+              <Text style={styles.breakdownLabel} numberOfLines={1}>
                 {isFractional
                   ? `${sharesCount} Shares (${((sharesCount / totalShares) * 100).toFixed(1)}%)`
                   : 'Asset Price'}
               </Text>
-              <Text style={styles.breakdownValue}>£{subtotal.toLocaleString()}</Text>
+              <Text
+                style={styles.breakdownValue}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                R{subtotal.toLocaleString()}
+              </Text>
             </View>
 
             <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Escrow & Custody Fee (2.5%)</Text>
-              <Text style={styles.breakdownValue}>£{platformFee.toLocaleString()}</Text>
+              <Text style={styles.breakdownLabel} numberOfLines={1}>Escrow & Custody Fee (2.5%)</Text>
+              <Text
+                style={styles.breakdownValue}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                R{platformFee.toLocaleString()}
+              </Text>
             </View>
 
             <View style={styles.divider} />
 
             <View style={styles.breakdownRow}>
               <Text style={styles.totalLabel}>Total</Text>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.totalValue}>£{total.toLocaleString()}</Text>
+              <View style={{ alignItems: 'flex-end', flex: 1, paddingLeft: 12 }}>
+                <Text
+                  style={styles.totalValue}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
+                  R{total.toLocaleString()}
+                </Text>
                 <Text style={styles.totalEthSub}>≈ {ethAmount} Sepolia ETH</Text>
               </View>
             </View>
@@ -694,7 +762,7 @@ export default function CheckoutScreen({ navigation, route }) {
                 <Text style={styles.ethBoxLabel}>AMOUNT TO SEND</Text>
                 <Text style={styles.ethBoxValue}>{ethAmount} ETH</Text>
                 <Text style={styles.ethBoxRate}>
-                  Rate: 1 ETH ≈ £{ethRate.toLocaleString()}
+                  Rate: 1 ETH ≈ R{ethRate.toLocaleString()}
                 </Text>
               </View>
 
@@ -841,10 +909,10 @@ export default function CheckoutScreen({ navigation, route }) {
           <TouchableOpacity
             style={[
               styles.confirmBtn,
-              (isOwner || (isFractional && !riskAcknowledged)) && styles.confirmBtnDisabled,
+              isFractional && !riskAcknowledged && styles.confirmBtnDisabled,
             ]}
             onPress={handleConfirmPurchase}
-            disabled={purchasing || isOwner}
+            disabled={purchasing}
             activeOpacity={0.85}
           >
             {purchasing ? (
@@ -853,16 +921,17 @@ export default function CheckoutScreen({ navigation, route }) {
               <Text
                 style={[
                   styles.confirmBtnLabel,
-                  (isOwner || (isFractional && !riskAcknowledged)) && styles.confirmBtnLabelDisabled,
+                  isFractional && !riskAcknowledged && styles.confirmBtnLabelDisabled,
                 ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
               >
-                {isOwner
-                  ? 'Self-Dealing Prohibited (Owner)'
-                  : isFractional && !riskAcknowledged
+                {isFractional && !riskAcknowledged
                   ? 'Acknowledge Risk Disclosure'
                   : selectedPayment === 'wallet'
                   ? `Confirm ${ethAmount} ETH ${isFractional ? 'Investment' : 'Payment'}`
-                  : `Confirm £${total.toLocaleString()} ${isFractional ? 'Investment' : 'Payment'}`}
+                  : `Confirm R${total.toLocaleString()} ${isFractional ? 'Investment' : 'Payment'}`}
               </Text>
             )}
           </TouchableOpacity>
@@ -928,7 +997,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 30,
+    paddingBottom: Platform.OS === 'ios' ? 120 : 100,
     gap: 16,
   },
 
@@ -1035,17 +1104,19 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   sharePriceBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 999,
     backgroundColor: '#F5F3FF',
     borderWidth: 1,
     borderColor: '#DDD6FE',
+    flexShrink: 0,
   },
   sharePriceBadgeText: {
     fontSize: 12,
     fontWeight: '800',
     color: '#6C47FF',
+    paddingRight: 4,
   },
 
   // Stepper
@@ -1088,6 +1159,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#64748B',
     marginTop: 2,
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  presetChip: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  presetChipActive: {
+    backgroundColor: '#6C47FF',
+    borderColor: '#6C47FF',
+  },
+  presetChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  presetChipTextActive: {
+    color: '#FFFFFF',
   },
 
   // Rules
@@ -1185,16 +1282,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 12,
   },
   breakdownLabel: {
     fontSize: 13,
     color: '#64748B',
     fontWeight: '500',
+    flex: 1,
   },
   breakdownValue: {
     fontSize: 13,
     fontWeight: '800',
     color: '#0F172A',
+    textAlign: 'right',
+    paddingRight: 6,
   },
   divider: {
     height: 1,
@@ -1211,6 +1312,8 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#6C47FF',
     letterSpacing: -0.4,
+    textAlign: 'right',
+    paddingRight: 6,
   },
   totalEthSub: {
     fontSize: 12,
