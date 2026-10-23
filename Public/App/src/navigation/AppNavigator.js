@@ -34,6 +34,7 @@ import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
 import ProfileScreen     from '../screens/ProfileScreen';
 import ProfileAnalyticsScreen from '../screens/ProfileAnalyticsScreen';
 import ARScreen          from '../screens/ARScreen';
+import LiveRoomPreview from '../components/liveRoomPreview/LiveRoomPreview';
 
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -396,8 +397,11 @@ export default function Navigation() {
               {(props) => <ResetPasswordScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.AR_VIEWER}>
-              {(props) => <ARScreen {...props} isDark={isDark} />}
+            <Stack.Screen name={SCREENS.AR_VIEWER} options={{ headerShown: false }}>
+              {(props) => <LiveRoomPreview {...props} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.LIVE_ROOM_PREVIEW} options={{ headerShown: false }}>
+              {(props) => <LiveRoomPreview {...props} />}
             </Stack.Screen>
           </>
         ) : (
@@ -450,8 +454,11 @@ export default function Navigation() {
               {(props) => <ProfileAnalyticsScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
-            <Stack.Screen name={SCREENS.AR_VIEWER}>
-              {(props) => <ARScreen {...props} isDark={isDark} />}
+            <Stack.Screen name={SCREENS.AR_VIEWER} options={{ headerShown: false }}>
+              {(props) => <LiveRoomPreview {...props} />}
+            </Stack.Screen>
+            <Stack.Screen name={SCREENS.LIVE_ROOM_PREVIEW} options={{ headerShown: false }}>
+              {(props) => <LiveRoomPreview {...props} />}
             </Stack.Screen>
           </>
         )}

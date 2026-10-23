@@ -41,6 +41,19 @@
         }
       ],
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SmartAssets to show a live room preview.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow SmartAssets to keep the artwork steady as you move your phone."
+        }
+      ],
+      [
         "@reactvision/react-viro",
         {
           "android": {

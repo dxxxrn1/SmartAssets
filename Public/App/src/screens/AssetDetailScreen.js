@@ -105,6 +105,28 @@ export default function AssetDetailScreen({ navigation, route }) {
     user?.id && (user.id === asset.userId || user.id === asset.user_id),
   );
 
+  const handleOpenLiveRoomPreview = () => {
+    const rawImage =
+      asset?.image ||
+      (Array.isArray(asset?.images) && asset.images.length > 0 ? asset.images[0] : null) ||
+      'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1200&q=80';
+    const imageUri = resolveImageUrl(rawImage);
+    const title = asset?.title || asset?.name || 'Luxury Collectible';
+    const listingId = String(asset?.id || asset?._id || 'asset-detail');
+    const widthCm = Number(asset?.dimensions?.widthCm || asset?.widthCm) || 60;
+    const heightCm = Number(asset?.dimensions?.heightCm || asset?.heightCm) || 80;
+
+    navigation.navigate(SCREENS.LIVE_ROOM_PREVIEW, {
+      imageUri,
+      title,
+      listingId,
+      widthCm,
+      heightCm,
+      asset,
+      onBid: (id) => navigation.navigate(SCREENS.CHECKOUT, { listingId: id, asset }),
+    });
+  };
+
   // Extract all images (primary image, images array, or embedded in description)
   const extractAllImages = (item) => {
     const list = [];
@@ -259,7 +281,7 @@ export default function AssetDetailScreen({ navigation, route }) {
             {/* Top Right "View in AR" Floating Action Pill */}
             <TouchableOpacity
               style={styles.heroArFloatingBtn}
-              onPress={() => navigation.navigate(SCREENS.AR_VIEWER, { asset })}
+              onPress={handleOpenLiveRoomPreview}
               activeOpacity={0.85}
             >
               <Ionicons name="cube-outline" size={14} color="#00C2FF" style={{ marginRight: 4 }} />
@@ -754,7 +776,7 @@ export default function AssetDetailScreen({ navigation, route }) {
           ════════════════════════════════════════════════════════════════════ */}
           <TouchableOpacity
             style={styles.arSpotlightCard}
-            onPress={() => navigation.navigate(SCREENS.AR_VIEWER, { asset })}
+            onPress={handleOpenLiveRoomPreview}
             activeOpacity={0.9}
           >
             <LinearGradient
@@ -798,7 +820,7 @@ export default function AssetDetailScreen({ navigation, route }) {
         <View style={styles.bottomBar}>
           <TouchableOpacity
             style={styles.bottomArBtn}
-            onPress={() => navigation.navigate(SCREENS.AR_VIEWER, { asset })}
+            onPress={handleOpenLiveRoomPreview}
             activeOpacity={0.8}
           >
             <Ionicons name="cube-outline" size={18} color="#00C2FF" />

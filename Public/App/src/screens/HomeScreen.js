@@ -582,7 +582,19 @@ export default function HomeScreen({ navigation }) {
         {/* ── IN-APP AR SHOWROOM SPOTLIGHT BANNER ──────────────────────────────── */}
         <TouchableOpacity
           style={styles.arShowroomBanner}
-          onPress={() => navigation.navigate(SCREENS.AR_VIEWER)}
+          onPress={() =>
+            navigation.navigate(SCREENS.LIVE_ROOM_PREVIEW, {
+              imageUri: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80',
+              title: 'Velvet Lounge Chair',
+              listingId: 'showcase-chair-3d',
+              glbUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/SheenChair/glTF-Binary/SheenChair.glb',
+              source: 'ai_generated',
+              placement: 'floor',
+              widthCm: 75,
+              heightCm: 85,
+              depthCm: 80,
+            })
+          }
           activeOpacity={0.92}
         >
           <LinearGradient

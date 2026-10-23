@@ -4,6 +4,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const authRoutes = require('./routes/authRoutes');
@@ -12,6 +13,7 @@ const assetRoutes = require('./routes/assetRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const escrowRoutes = require('./routes/escrowRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const modelRoutes = require('./routes/modelRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -32,6 +34,7 @@ app.use('/api/assets', assetRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/escrow', escrowRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/models', modelRoutes);
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

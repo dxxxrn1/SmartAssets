@@ -30,6 +30,7 @@ export const SCREENS = {
   PROFILE: 'Profile',
   PROFILE_ANALYTICS: 'ProfileAnalytics',
   AR_VIEWER: 'ARViewer',
+  LIVE_ROOM_PREVIEW: 'LiveRoomPreview',
 };
 
 // Bottom tab config — mirrors BottomNav

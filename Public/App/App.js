@@ -4,6 +4,7 @@
 import React from "react";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFonts } from "expo-font";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import AppNavigator from "./src/navigation/AppNavigator";
@@ -18,6 +19,7 @@ export default function App() {
   });
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaProvider>
       <StatusBar style="auto" />
       <ThemeProvider>
@@ -28,5 +30,6 @@ export default function App() {
         </NetworkProvider>
       </ThemeProvider>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
