@@ -28,28 +28,29 @@ import { getMarketAssets, getUserVault, resolveImageUrl } from "../services/api"
 import { useAuth } from "../context/AuthContext";
 import storage, { STORAGE_KEYS } from "../utils/storage";
 
-// ── Currency Formatter (British Pounds £) ─────────────────────────────────────
-const formatGBP = (val, fallback = "£250") => {
+// ── Currency Formatter (South African Rands R) ───────────────────────────────
+const formatZAR = (val, fallback = "R250") => {
   if (val === undefined || val === null || val === "") return fallback;
   if (typeof val === "string") {
     let str = val.trim();
-    if (str.startsWith("R") || str.startsWith("ZAR")) {
-      str = str.replace(/^(R\s?|ZAR\s?)/i, "");
+    if (str.startsWith("£")) {
+      str = str.replace(/^£\s?/, "");
     }
     const cleanNum = parseFloat(str.replace(/[^0-9.-]+/g, ""));
     if (!isNaN(cleanNum)) {
-      return "£" + cleanNum.toLocaleString("en-GB", { maximumFractionDigits: 0 });
+      return "R" + cleanNum.toLocaleString("en-ZA", { maximumFractionDigits: 0 });
     }
-    if (str.startsWith("£")) return str;
-    return "£" + str;
+    if (str.startsWith("R")) return str;
+    return "R" + str;
   }
   const num =
     typeof val === "number"
       ? val
       : parseFloat(String(val).replace(/[^0-9.-]+/g, ""));
   if (isNaN(num)) return fallback;
-  return "£" + num.toLocaleString("en-GB", { maximumFractionDigits: 0 });
+  return "R" + num.toLocaleString("en-ZA", { maximumFractionDigits: 0 });
 };
+const formatGBP = formatZAR;
 
 // Fallback verified investment offerings with authentic metrics
 const DEFAULT_OFFERINGS = [
@@ -60,10 +61,13 @@ const DEFAULT_OFFERINGS = [
     filterCat: "Watches",
     image:
       "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80",
-    price: "£18,500",
-    share_price: "£100",
+    price: "R18,500",
+    share_price: "R100",
+    shares: 185,
     total_shares: 185,
+    totalShares: 185,
     shares_sold: 142,
+    sharesSold: 142,
     funded_pct: 77,
   },
   {
@@ -73,10 +77,13 @@ const DEFAULT_OFFERINGS = [
     filterCat: "Watches",
     image:
       "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=600&q=80",
-    price: "£34,500",
-    share_price: "£100",
+    price: "R34,500",
+    share_price: "R100",
+    shares: 345,
     total_shares: 345,
+    totalShares: 345,
     shares_sold: 282,
+    sharesSold: 282,
     funded_pct: 82,
   },
   {
@@ -86,10 +93,13 @@ const DEFAULT_OFFERINGS = [
     filterCat: "Cars",
     image:
       "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=600&q=80",
-    price: "£890,000",
-    share_price: "£250",
+    price: "R890,000",
+    share_price: "R250",
+    shares: 3560,
     total_shares: 3560,
+    totalShares: 3560,
     shares_sold: 2314,
+    sharesSold: 2314,
     funded_pct: 65,
   },
   {
@@ -99,10 +109,13 @@ const DEFAULT_OFFERINGS = [
     filterCat: "Art",
     image:
       "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=600&q=80",
-    price: "£124,000",
-    share_price: "£100",
+    price: "R124,000",
+    share_price: "R100",
+    shares: 1240,
     total_shares: 1240,
+    totalShares: 1240,
     shares_sold: 1100,
+    sharesSold: 1100,
     funded_pct: 89,
   },
   {
@@ -112,10 +125,13 @@ const DEFAULT_OFFERINGS = [
     filterCat: "Wine",
     image:
       "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&q=80",
-    price: "£28,900",
-    share_price: "£50",
+    price: "R28,900",
+    share_price: "R50",
+    shares: 578,
     total_shares: 578,
+    totalShares: 578,
     shares_sold: 260,
+    sharesSold: 260,
     funded_pct: 45,
   },
   {
@@ -125,10 +141,13 @@ const DEFAULT_OFFERINGS = [
     filterCat: "Watches",
     image:
       "https://images.unsplash.com/photo-1547996160-81dfa63595aa?w=600&q=80",
-    price: "£98,000",
-    share_price: "£200",
+    price: "R98,000",
+    share_price: "R200",
+    shares: 490,
     total_shares: 490,
+    totalShares: 490,
     shares_sold: 460,
+    sharesSold: 460,
     funded_pct: 94,
   },
   {
@@ -138,10 +157,13 @@ const DEFAULT_OFFERINGS = [
     filterCat: "Real Estate",
     image:
       "https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=600&q=80",
-    price: "£1,450,000",
-    share_price: "£500",
+    price: "R1,450,000",
+    share_price: "R500",
+    shares: 2900,
     total_shares: 2900,
+    totalShares: 2900,
     shares_sold: 1595,
+    sharesSold: 1595,
     funded_pct: 55,
   },
 ];
@@ -183,28 +205,33 @@ export default function InvestScreen({ navigation }) {
   const [availableCash, setAvailableCash] = useState(250);
   const [totalInvested, setTotalInvested] = useState(400);
 
-  // Buy Shares Modal State
-  const [selectedOffering, setSelectedOffering] = useState(null);
-  const [buyModalVisible, setBuyModalVisible] = useState(false);
-  const [buySharesCount, setBuySharesCount] = useState(1);
-
   // Load live market assets and user vault
   const loadData = useCallback(async () => {
     try {
       const res = await getMarketAssets("All", "");
       if (res?.assets && Array.isArray(res.assets) && res.assets.length > 0) {
-        const mapped = res.assets.map((a, i) => ({
-          ...a,
-          share_price: a.share_price
-            ? formatGBP(a.share_price)
-            : a.sharePrice
-            ? formatGBP(a.sharePrice)
-            : "£100",
-          total_shares: a.shares || a.total_shares || 500,
-          shares_sold: a.shares_sold || a.sharesSold || 350,
-          funded_pct:
-            a.fundedPct || Math.round(Math.min(95, 40 + ((i * 12) % 55))),
-        }));
+        const mapped = res.assets.map((a, i) => {
+          const totalShares = Number(a.shares || a.total_shares || a.totalShares || 500);
+          const rawSold = Number(a.shares_sold ?? a.sharesSold);
+          const sharesSold = !isNaN(rawSold) && rawSold < totalShares
+            ? rawSold
+            : Math.round(totalShares * (0.35 + ((i * 7) % 30) / 100));
+          return {
+            ...a,
+            shares: totalShares,
+            total_shares: totalShares,
+            totalShares: totalShares,
+            shares_sold: sharesSold,
+            sharesSold: sharesSold,
+            share_price: a.share_price
+              ? formatZAR(a.share_price)
+              : a.sharePrice
+              ? formatZAR(a.sharePrice)
+              : "R100",
+            funded_pct:
+              a.fundedPct || Math.round((sharesSold / totalShares) * 100),
+          };
+        });
         setOfferings(mapped);
       } else {
         setOfferings(DEFAULT_OFFERINGS);
@@ -258,13 +285,13 @@ export default function InvestScreen({ navigation }) {
     loadData();
   };
 
-  // ── Financial Math: Total Invested & Available Cash (Always £250 Currency Formatted) ──
+  // ── Financial Math: Total Invested & Available Cash (Always R250 Currency Formatted) ──
   const totalInvestedFormatted = useMemo(() => {
-    return formatGBP(totalInvested, "£400");
+    return formatZAR(totalInvested, "R400");
   }, [totalInvested]);
 
   const availableCashFormatted = useMemo(() => {
-    return formatGBP(availableCash, "£250");
+    return formatZAR(availableCash, "R250");
   }, [availableCash]);
 
   // ── Dynamic Portfolio Allocation Breakdown ──────────────────────────────────
@@ -317,9 +344,9 @@ export default function InvestScreen({ navigation }) {
 
     // Default portfolio allocation baseline
     return [
-      { category: "Watches", percentage: 52, color: "#8B5CF6", valueFormatted: "£77,220" },
-      { category: "Art", percentage: 28, color: "#EC4899", valueFormatted: "£41,580" },
-      { category: "Cars", percentage: 20, color: "#06B6D4", valueFormatted: "£29,700" },
+      { category: "Watches", percentage: 52, color: "#8B5CF6", valueFormatted: "R77,220" },
+      { category: "Art", percentage: 28, color: "#EC4899", valueFormatted: "R41,580" },
+      { category: "Cars", percentage: 20, color: "#06B6D4", valueFormatted: "R29,700" },
     ];
   }, [userHoldings]);
 
@@ -328,147 +355,28 @@ export default function InvestScreen({ navigation }) {
     return offerings.filter((o) => wishlistIds.includes(o.id));
   }, [offerings, wishlistIds]);
 
-  // Handle Direct Share Actions
+  // Handle Direct Share Actions — navigates directly to Fractional Investment page
   const handleBuyShares = (offering) => {
-    setSelectedOffering(offering);
-    setBuySharesCount(1);
-    setBuyModalVisible(true);
-  };
-
-  const confirmInvestment = async () => {
-    if (!selectedOffering) return;
+    const totalShares = Number(offering.shares || offering.total_shares || offering.totalShares || 500);
+    const sharesSold = Number(offering.sharesSold ?? offering.shares_sold ?? Math.round(totalShares * 0.45));
     const sharePriceNum =
-      parseFloat(String(selectedOffering.share_price || "").replace(/[^0-9.]/g, "")) || 100;
-    const totalCost = buySharesCount * sharePriceNum;
+      parseFloat(String(offering.share_price || offering.sharePrice || "").replace(/[^0-9.]/g, "")) || 100;
 
-    if (totalCost > availableCash) {
-      Alert.alert(
-        "Insufficient Cash",
-        `You have £${availableCash.toLocaleString()} available in escrow. Please deposit funds via your Vault to complete this £${totalCost.toLocaleString()} investment.`,
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Go to Vault", onPress: () => navigation.navigate(SCREENS.VAULT) },
-        ]
-      );
-      return;
-    }
-
-    // 1. Update Available Cash state & storage
-    const newCash = availableCash - totalCost;
-    setAvailableCash(newCash);
-    await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, newCash);
-
-    // 2. Update Total Invested state
-    const newInvested = totalInvested + totalCost;
-    setTotalInvested(newInvested);
-
-    // 3. Update Offering Funding Progress %
-    setOfferings((prevOfferings) =>
-      prevOfferings.map((off) => {
-        if (off.id === selectedOffering.id) {
-          const currentPct = off.funded_pct || 77;
-          const newPct = Math.min(100, currentPct + buySharesCount);
-          const currentSold = off.shares_sold || 142;
-          return {
-            ...off,
-            funded_pct: newPct,
-            shares_sold: currentSold + buySharesCount,
-          };
-        }
-        return off;
-      })
-    );
-
-    // 4. Update Co-Owned Fractional Holdings in Storage for VaultScreen
-    try {
-      const existingFractions = (await storage.getJSON(STORAGE_KEYS.CO_OWNED_ASSETS)) || [
-        {
-          id: "fraction-rolex",
-          name: "Rolex Submariner Date 126610LN",
-          category: "Watches",
-          image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80",
-          sharesOwned: 2,
-          sharePrice: 100,
-          sharePriceFormatted: "£100/sh",
-          myStake: 200,
-          myStakeFormatted: "£200",
-          returnPct: "+12.4% Return",
-          returnType: "positive",
-          poolValuation: "£18,500",
-          totalShares: 185,
-          fundingPct: 77,
-        },
-        {
-          id: "fraction-jordan",
-          name: "1985 Air Jordan 1 Chicago (OG Mint)",
-          category: "Sneakers",
-          image: "https://images.unsplash.com/photo-1552346154-21d32810aba3?w=600&q=80",
-          sharesOwned: 2,
-          sharePrice: 100,
-          sharePriceFormatted: "£100/sh",
-          myStake: 200,
-          myStakeFormatted: "£200",
-          returnPct: "+12.4% Return",
-          returnType: "positive",
-          poolValuation: "£25,000",
-          totalShares: 250,
-          fundingPct: 88,
-        },
-      ];
-
-      const foundIdx = existingFractions.findIndex(
-        (f) =>
-          f.id === selectedOffering.id ||
-          (f.name &&
-            selectedOffering.name &&
-            f.name.toLowerCase().includes(selectedOffering.name.toLowerCase()))
-      );
-
-      let updatedFractions = [];
-      if (foundIdx >= 0) {
-        updatedFractions = [...existingFractions];
-        const prev = updatedFractions[foundIdx];
-        const updatedShares = (prev.sharesOwned || 0) + buySharesCount;
-        const updatedStake = (prev.myStake || 0) + totalCost;
-        updatedFractions[foundIdx] = {
-          ...prev,
-          sharesOwned: updatedShares,
-          myStake: updatedStake,
-          myStakeFormatted: `£${updatedStake.toLocaleString("en-GB")}`,
-        };
-      } else {
-        const newFractional = {
-          id: "fraction-" + selectedOffering.id,
-          name: selectedOffering.name,
-          category: selectedOffering.category || "Watches",
-          image: selectedOffering.image,
-          sharesOwned: buySharesCount,
-          sharePrice: sharePriceNum,
-          sharePriceFormatted: `£${sharePriceNum}/sh`,
-          myStake: totalCost,
-          myStakeFormatted: `£${totalCost.toLocaleString("en-GB")}`,
-          returnPct: "+12.4% Return",
-          returnType: "positive",
-          poolValuation: selectedOffering.price,
-          totalShares: selectedOffering.total_shares || 185,
-          fundingPct: Math.min(100, (selectedOffering.funded_pct || 77) + buySharesCount),
-        };
-        updatedFractions = [newFractional, ...existingFractions];
-      }
-      await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, updatedFractions);
-    } catch (_) {}
-
-    setBuyModalVisible(false);
-
-    Alert.alert(
-      "Investment Confirmed! 🎉",
-      `You acquired ${buySharesCount} share(s) in "${selectedOffering.name}" for £${totalCost.toLocaleString()}.\n\nRemaining Available Cash: £${newCash.toLocaleString()}.\nYour new position is now live in your Vault under Co-Owned Assets!`,
-      [
-        { text: "Keep Trading", style: "cancel" },
-        { text: "View in Vault", onPress: () => navigation.navigate(SCREENS.VAULT) },
-      ]
-    );
+    navigation.navigate(SCREENS.CHECKOUT, {
+      asset: {
+        ...offering,
+        shares: totalShares,
+        total_shares: totalShares,
+        totalShares: totalShares,
+        sharesSold: sharesSold,
+        shares_sold: sharesSold,
+        sharePrice: sharePriceNum,
+        share_price: sharePriceNum,
+      },
+      isFractional: true,
+    });
   };
+
 
   const handleSellShares = (offering) => {
     const sharePriceNum =
@@ -476,11 +384,11 @@ export default function InvestScreen({ navigation }) {
 
     Alert.alert(
       "Liquidate Shares",
-      `Would you like to liquidate 1 share of "${offering.name}" at fair oracle benchmark of £${sharePriceNum}? Proceeds will immediately credit your Escrow Wallet.`,
+      `Would you like to liquidate 1 share of "${offering.name}" at fair oracle benchmark of R${sharePriceNum}? Proceeds will immediately credit your Escrow Wallet.`,
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: `Sell 1 Share (+£${sharePriceNum})`,
+          text: `Sell 1 Share (+R${sharePriceNum})`,
           onPress: async () => {
             const newCash = availableCash + sharePriceNum;
             setAvailableCash(newCash);
@@ -524,7 +432,7 @@ export default function InvestScreen({ navigation }) {
                     ...prevF,
                     sharesOwned: newShares,
                     myStake: newStake,
-                    myStakeFormatted: `£${newStake.toLocaleString("en-GB")}`,
+                    myStakeFormatted: `R${newStake.toLocaleString("en-ZA")}`,
                   };
                 }
                 await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, updated);
@@ -547,7 +455,7 @@ export default function InvestScreen({ navigation }) {
                   Math.random().toString(16).substring(2, 6) +
                   "..." +
                   Math.random().toString(16).substring(2, 4),
-                amount: `+£${sharePriceNum}`,
+                amount: `+R${sharePriceNum}`,
                 timestamp: "Just now",
                 status: "Liquidated to Escrow",
                 network: "Sepolia Testnet",
@@ -559,7 +467,7 @@ export default function InvestScreen({ navigation }) {
 
             Alert.alert(
               "Shares Liquidated",
-              `Sold 1 share of ${offering.name}. £${sharePriceNum} credited to your Escrow Wallet (New balance: £${newCash.toLocaleString()}).`
+              `Sold 1 share of ${offering.name}. R${sharePriceNum} credited to your Escrow Wallet (New balance: R${newCash.toLocaleString()}).`
             );
           },
         },
@@ -574,7 +482,7 @@ export default function InvestScreen({ navigation }) {
         ? item.price
         : parseFloat(String(item.price || "10000").replace(/[^0-9.-]+/g, "")) ||
           10000;
-    const sharePriceVal = item.share_price || item.sharePrice || "£100";
+    const sharePriceVal = item.share_price || item.sharePrice || "R100";
     const totalSharesVal =
       item.total_shares || item.shares || Math.max(10, Math.round(priceNum / 100));
 
@@ -585,7 +493,7 @@ export default function InvestScreen({ navigation }) {
         name: item.name || item.title || "Fractional Asset",
         title: item.name || item.title || "Fractional Asset",
         category: item.category || item.filterCat || "Watches",
-        price: item.price || `£${priceNum.toLocaleString("en-GB")}`,
+        price: item.price || `R${priceNum.toLocaleString("en-ZA")}`,
         price_num: priceNum,
         share_price: sharePriceVal,
         sharePrice: sharePriceVal,
@@ -845,8 +753,8 @@ export default function InvestScreen({ navigation }) {
               </View>
             ) : (
               offerings.map((offering) => {
-                const formattedPrice = formatGBP(offering.price);
-                const sharePrice = formatGBP(offering.share_price, "£100");
+                const formattedPrice = formatZAR(offering.price);
+                const sharePrice = formatZAR(offering.share_price, "R100");
                 const pct = offering.funded_pct || 75;
                 const isWishlisted = wishlistIds.includes(offering.id);
 
@@ -1074,7 +982,7 @@ export default function InvestScreen({ navigation }) {
                         <View style={{ alignItems: "flex-end" }}>
                           <Text style={styles.wishlistPriceLabel}>Share Price</Text>
                           <Text style={styles.wishlistSharePrice}>
-                            {formatGBP(item.share_price, "£100")}/sh
+                            {formatZAR(item.share_price, "R100")}/sh
                           </Text>
                         </View>
                       </View>
@@ -1105,177 +1013,7 @@ export default function InvestScreen({ navigation }) {
       </ScrollView>
     </SafeAreaView>
 
-    {/* ── Fractional Share Purchase Modal ── */}
-    <Modal
-      visible={buyModalVisible}
-      transparent
-      animationType="slide"
-      onRequestClose={() => setBuyModalVisible(false)}
-    >
-      <View style={styles.buyModalOverlay}>
-        <View style={styles.buyModalCard}>
-          {/* Modal Header */}
-          <View style={styles.buyModalHeader}>
-            <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 10 }}>
-              <View style={styles.buyModalIconBadge}>
-                <Ionicons name="pie-chart" size={18} color="#7C3AED" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.buyModalTitle}>Acquire Fractional Shares</Text>
-                <Text style={styles.buyModalSubtitle} numberOfLines={1}>
-                  {selectedOffering?.name || "Luxury Asset Round"}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.buyModalCloseBtn}
-              onPress={() => setBuyModalVisible(false)}
-              activeOpacity={0.7}
-            >
-              <Feather name="x" size={18} color="#64748B" />
-            </TouchableOpacity>
-          </View>
 
-          {selectedOffering && (() => {
-            const sharePriceNum =
-              parseFloat(String(selectedOffering.share_price || "").replace(/[^0-9.]/g, "")) || 100;
-            const totalCost = buySharesCount * sharePriceNum;
-            const isInsufficient = totalCost > availableCash;
-
-            return (
-              <View style={styles.buyModalBody}>
-                {/* Offering Summary Card */}
-                <View style={styles.buyOfferingMiniCard}>
-                  <Image
-                    source={{ uri: resolveImageUrl(selectedOffering.image) }}
-                    style={styles.buyOfferingThumb}
-                    resizeMode="cover"
-                  />
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.buyOfferingCat}>
-                      {String(selectedOffering.category || "WATCHES").toUpperCase()}
-                    </Text>
-                    <Text style={styles.buyOfferingTitle} numberOfLines={1}>
-                      {selectedOffering.name}
-                    </Text>
-                    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
-                      <Text style={styles.buyOfferingSharePrice}>
-                        {formatGBP(sharePriceNum)} / share
-                      </Text>
-                      <Text style={styles.buyOfferingRoundMeta}>
-                        • {selectedOffering.funded_pct || 77}% Funded
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                {/* Share Stepper Selector */}
-                <View style={styles.stepperContainer}>
-                  <Text style={styles.stepperLabel}>SELECT NUMBER OF SHARES</Text>
-                  <View style={styles.stepperRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.stepperBtn,
-                        buySharesCount <= 1 && styles.stepperBtnDisabled,
-                      ]}
-                      onPress={() => setBuySharesCount((prev) => Math.max(1, prev - 1))}
-                      disabled={buySharesCount <= 1}
-                      activeOpacity={0.75}
-                    >
-                      <Feather name="minus" size={20} color={buySharesCount <= 1 ? "#CBD5E1" : "#0F172A"} />
-                    </TouchableOpacity>
-
-                    <View style={styles.stepperCountWrap}>
-                      <Text style={styles.stepperCountNum}>{buySharesCount}</Text>
-                      <Text style={styles.stepperCountSub}>
-                        {buySharesCount === 1 ? "Share" : "Shares"}
-                      </Text>
-                    </View>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.stepperBtn,
-                        buySharesCount >= 10 && styles.stepperBtnDisabled,
-                      ]}
-                      onPress={() => setBuySharesCount((prev) => Math.min(10, prev + 1))}
-                      disabled={buySharesCount >= 10}
-                      activeOpacity={0.75}
-                    >
-                      <Feather name="plus" size={20} color={buySharesCount >= 10 ? "#CBD5E1" : "#0F172A"} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* Financial Balance & Escrow Calculations */}
-                <View style={styles.buyFinancialSheet}>
-                  <View style={styles.buyFinancialRow}>
-                    <Text style={styles.buyFinancialLabel}>Investment Total</Text>
-                    <Text style={styles.buyFinancialValueBold}>
-                      {formatGBP(totalCost)}
-                    </Text>
-                  </View>
-
-                  <View style={styles.buyFinancialRow}>
-                    <Text style={styles.buyFinancialLabel}>Available Cash (Escrow)</Text>
-                    <Text style={styles.buyFinancialValueCash}>
-                      {formatGBP(availableCash)}
-                    </Text>
-                  </View>
-
-                  <View style={styles.buyFinancialDivider} />
-
-                  <View style={styles.buyFinancialRow}>
-                    <Text style={styles.buyFinancialLabel}>Remaining Cash After</Text>
-                    <Text
-                      style={[
-                        styles.buyFinancialValueRem,
-                        isInsufficient && { color: "#DC2626" },
-                      ]}
-                    >
-                      {formatGBP(Math.max(0, availableCash - totalCost))}
-                    </Text>
-                  </View>
-                </View>
-
-                {isInsufficient && (
-                  <View style={styles.insufficientPill}>
-                    <Ionicons name="warning" size={15} color="#DC2626" style={{ marginRight: 6 }} />
-                    <Text style={styles.insufficientText}>
-                      Insufficient Escrow Cash. Please deposit funds in Vault.
-                    </Text>
-                  </View>
-                )}
-
-                {/* Confirmation CTA */}
-                <TouchableOpacity
-                  style={[
-                    styles.confirmBuyBtn,
-                    isInsufficient && styles.confirmBuyBtnDisabled,
-                  ]}
-                  onPress={confirmInvestment}
-                  disabled={isInsufficient}
-                  activeOpacity={0.88}
-                >
-                  <LinearGradient
-                    colors={isInsufficient ? ["#94A3B8", "#64748B"] : ["#7C3AED", "#2563EB"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.confirmBuyGradient}
-                  >
-                    <Ionicons name="shield-checkmark" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.confirmBuyText}>
-                      {isInsufficient
-                        ? `Insufficient Funds (${formatGBP(availableCash)} Available)`
-                        : `Confirm Investment (${formatGBP(totalCost)})`}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-            );
-          })()}
-        </View>
-      </View>
-    </Modal>
   </View>
   );
 }

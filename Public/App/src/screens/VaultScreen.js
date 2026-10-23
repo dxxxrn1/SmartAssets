@@ -30,24 +30,26 @@ import {
   depositFundsApi,
   withdrawFundsApi,
   getVaultTransactionsApi,
+  getMarketOracleApi,
   resolveImageUrl,
 } from "../services/api";
 import storage, { STORAGE_KEYS } from "../utils/storage";
 
-// ── Currency Formatter (British Pounds £) ─────────────────────────────────────
-const formatGBP = (val, fallback = "£0") => {
+// ── Currency Formatter (South African Rand R) ─────────────────────────────────
+const formatZAR = (val, fallback = "R0") => {
   if (val === undefined || val === null || val === "") return fallback;
-  if (typeof val === "string" && val.startsWith("£")) return val;
-  if (typeof val === "string" && val.startsWith("R")) {
-    return "£" + val.replace(/^R\s?/, "");
+  if (typeof val === "string" && val.startsWith("R")) return val;
+  if (typeof val === "string" && val.startsWith("£")) {
+    return "R" + val.replace(/^£\s?/, "");
   }
   const num =
     typeof val === "number"
       ? val
       : parseFloat(String(val).replace(/[^0-9.-]+/g, ""));
   if (isNaN(num)) return String(val);
-  return "£" + num.toLocaleString("en-GB", { maximumFractionDigits: 0 });
+  return "R" + num.toLocaleString("en-ZA", { maximumFractionDigits: 0 });
 };
+const formatGBP = formatZAR;
 
 // ── Default Seed Data for 3-Tab Asset-First Vault Redesign ────────────────────
 const DEFAULT_PERSONAL_ITEMS = [
@@ -57,10 +59,10 @@ const DEFAULT_PERSONAL_ITEMS = [
     category: "Electronics",
     image: "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&q=80",
     initialValue: 150,
-    initialValueFormatted: "£150",
+    initialValueFormatted: "R150",
     liveMarketValue: 132,
-    liveMarketValueFormatted: "£132",
-    badgeText: "-12% Tech Depreciation",
+    liveMarketValueFormatted: "R132",
+    badgeText: "-12% Market Depreciation",
     badgeType: "negative",
     ownership: "100% Owned",
     certId: "ERC-721 #4811",
@@ -72,9 +74,9 @@ const DEFAULT_PERSONAL_ITEMS = [
     category: "Apparel & Sneakers",
     image: "https://images.unsplash.com/photo-1607522370275-f14206abe5d3?w=600&q=80",
     initialValue: 120,
-    initialValueFormatted: "£120",
+    initialValueFormatted: "R120",
     liveMarketValue: 137,
-    liveMarketValueFormatted: "£137",
+    liveMarketValueFormatted: "R137",
     badgeText: "+14% Market Gain",
     badgeType: "positive",
     ownership: "100% Owned",
@@ -87,9 +89,9 @@ const DEFAULT_PERSONAL_ITEMS = [
     category: "Accessories",
     image: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&q=80",
     initialValue: 65,
-    initialValueFormatted: "£65",
+    initialValueFormatted: "R65",
     liveMarketValue: 58,
-    liveMarketValueFormatted: "£58",
+    liveMarketValueFormatted: "R58",
     badgeText: "-10.8% Wear & Tear",
     badgeType: "negative",
     ownership: "100% Owned",
@@ -106,12 +108,12 @@ const DEFAULT_FRACTIONAL_ITEMS = [
     image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80",
     sharesOwned: 2,
     sharePrice: 100,
-    sharePriceFormatted: "£100/sh",
+    sharePriceFormatted: "R100/sh",
     myStake: 200,
-    myStakeFormatted: "£200",
+    myStakeFormatted: "R200",
     returnPct: "+12.4% Return",
     returnType: "positive",
-    poolValuation: "£18,500",
+    poolValuation: "R18,500",
     totalShares: 185,
     fundingPct: 77,
   },
@@ -122,12 +124,12 @@ const DEFAULT_FRACTIONAL_ITEMS = [
     image: "https://images.unsplash.com/photo-1552346154-21d32810aba3?w=600&q=80",
     sharesOwned: 2,
     sharePrice: 100,
-    sharePriceFormatted: "£100/sh",
+    sharePriceFormatted: "R100/sh",
     myStake: 200,
-    myStakeFormatted: "£200",
+    myStakeFormatted: "R200",
     returnPct: "+12.4% Return",
     returnType: "positive",
-    poolValuation: "£25,000",
+    poolValuation: "R25,000",
     totalShares: 250,
     fundingPct: 88,
   },
@@ -148,27 +150,13 @@ const DEFAULT_ACTIVITY_LOG = [
     badgeColor: "#7C3AED",
   },
   {
-    id: "act-2",
-    type: "ai_sync",
-    title: "AI Market Valuation Sync",
-    assetName: "Rolex Submariner Date 126610LN",
-    hash: "0x4a91b2c3d4e5f60718293a4b5c6d7e8f90123456",
-    hashDisplay: "0x4a9...56",
-    detail: "Synced live comps from Sotheby's & Chrono24 (+12.4% mark-to-market)",
-    timestamp: "Yesterday, 16:45 PM",
-    status: "Oracle Synced",
-    network: "Decentralized Oracle",
-    icon: "trending-up",
-    badgeColor: "#10B981",
-  },
-  {
     id: "act-3",
     type: "escrow_deposit",
     title: "Escrow Deposit Confirmed",
     assetName: "Escrow Wallet Balance",
     hash: "0x85d968be446ec1f77d10bea80de7e491f7d6573988448e2cffafa12d243f53b9",
     hashDisplay: "0x85d...b9",
-    amount: "+£250",
+    amount: "+R250",
     timestamp: "16 Oct, 14:10 PM",
     status: "Escrow Protected",
     network: "SmartAssets Escrow v2",
@@ -195,7 +183,7 @@ const DEFAULT_ACTIVITY_LOG = [
     assetName: "2 Shares • Rolex Submariner Date",
     hash: "0x3a82ef499120ab0192ca840131498b1ab55938b2",
     hashDisplay: "0x3a8...b2",
-    amount: "£200 Locked",
+    amount: "R200 Locked",
     timestamp: "14 Oct, 18:20 PM",
     status: "Contract Escrow",
     network: "Sepolia Testnet",
@@ -237,11 +225,11 @@ export default function VaultScreen({ navigation }) {
   const [holdings, setHoldings] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({
-    availableBalanceFormatted: "£250",
+    availableBalanceFormatted: "R250",
     availableBalanceNum: 250,
-    portfolioValueFormatted: "£827",
+    portfolioValueFormatted: "R827",
     portfolioValueNum: 827,
-    totalValueFormatted: "£1,077",
+    totalValueFormatted: "R1,077",
     totalValueNum: 1077,
     totalCount: 5,
     gainText: "+12.4% YTD",
@@ -340,10 +328,11 @@ export default function VaultScreen({ navigation }) {
           const pct =
             initVal > 0 ? ((diff / initVal) * 100).toFixed(1) : "0.0";
           const isDeprec = diff < 0;
+          const rawBadge = h.badgeText ? String(h.badgeText).replace(/Tech Depreciation/gi, "Market Depreciation") : null;
           const badgeText =
-            h.badgeText ||
+            rawBadge ||
             (isDeprec
-              ? `${pct}% Tech Depreciation`
+              ? `${pct}% Market Depreciation`
               : `+${pct}% Market Gain`);
           const badgeType =
             h.badgeType || (isDeprec ? "negative" : "positive");
@@ -403,7 +392,13 @@ export default function VaultScreen({ navigation }) {
           Array.isArray(cachedPersonal) &&
           cachedPersonal.length > 0
         ) {
-          setPersonalItems(cachedPersonal);
+          const cleaned = cachedPersonal.map((item) => ({
+            ...item,
+            badgeText: item.badgeText
+              ? String(item.badgeText).replace(/Tech Depreciation/gi, "Market Depreciation")
+              : item.badgeText,
+          }));
+          setPersonalItems(cleaned);
         }
         if (
           cachedFractions &&
@@ -419,7 +414,11 @@ export default function VaultScreen({ navigation }) {
           setHoldings(cachedVault.holdings);
         }
         if (cachedLogs && Array.isArray(cachedLogs) && cachedLogs.length > 0) {
-          setActivityLog(cachedLogs);
+          const cleaned = cachedLogs.filter(
+            (log) => log.type !== "ai_sync" && log.title !== "AI Market Valuation Sync"
+          );
+          setActivityLog(cleaned);
+          storage.setJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG, cleaned);
         }
       }
     );
@@ -434,8 +433,15 @@ export default function VaultScreen({ navigation }) {
       let isMounted = true;
       // Reload any freshly saved local storage items (e.g. from Add Asset or Invest screen)
       storage.getJSON(STORAGE_KEYS.PERSONAL_COLLECTION).then((res) => {
-        if (isMounted && res && Array.isArray(res) && res.length > 0)
-          setPersonalItems(res);
+        if (isMounted && res && Array.isArray(res) && res.length > 0) {
+          const cleaned = res.map((item) => ({
+            ...item,
+            badgeText: item.badgeText
+              ? String(item.badgeText).replace(/Tech Depreciation/gi, "Market Depreciation")
+              : item.badgeText,
+          }));
+          setPersonalItems(cleaned);
+        }
       });
       storage.getJSON(STORAGE_KEYS.CO_OWNED_ASSETS).then((res) => {
         if (isMounted && res && Array.isArray(res) && res.length > 0)
@@ -445,8 +451,13 @@ export default function VaultScreen({ navigation }) {
         if (isMounted && typeof res === "number") setEscrowCash(res);
       });
       storage.getJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG).then((res) => {
-        if (isMounted && res && Array.isArray(res) && res.length > 0)
-          setActivityLog(res);
+        if (isMounted && res && Array.isArray(res) && res.length > 0) {
+          const cleaned = res.filter(
+            (log) => log.type !== "ai_sync" && log.title !== "AI Market Valuation Sync"
+          );
+          setActivityLog(cleaned);
+          storage.setJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG, cleaned);
+        }
       });
 
       if (!token) {
@@ -541,77 +552,85 @@ export default function VaultScreen({ navigation }) {
     async (silent = false) => {
       setSyncingPrices(true);
       try {
-        const updated = personalItems.map((item, idx) => {
-          const base = Number(item.initialValue) || 120;
-          // Realistic slight market fluctuation
-          const fluctuationPct =
-            idx % 2 === 0
-              ? -11.5 - ((Date.now() % 3) * 0.5)
-              : +14.2 + ((Date.now() % 4) * 0.6);
-          const newLiveVal = Math.max(
-            10,
-            Math.round(base * (1 + fluctuationPct / 100))
-          );
-          const diff = newLiveVal - base;
-          const pct = ((diff / base) * 100).toFixed(1);
-          const isDeprec = diff < 0;
-          const badgeText = isDeprec
-            ? `${pct}% Tech Depreciation`
-            : `+${pct}% Market Gain`;
-          return {
-            ...item,
-            liveMarketValue: newLiveVal,
-            liveMarketValueFormatted: formatGBP(newLiveVal),
-            badgeText,
-            badgeType: isDeprec ? "negative" : "positive",
-          };
-        });
+        const updated = await Promise.all(
+          personalItems.map(async (item) => {
+            const initialVal =
+              Number(item.initialValue) ||
+              Number(item.price_num) ||
+              parseFloat(String(item.initialValue || item.price || "").replace(/[^0-9.]/g, "")) ||
+              120;
+
+            const currentLiveVal =
+              Number(item.liveMarketValue) ||
+              Number(item.price_num) ||
+              parseFloat(String(item.liveMarketValue || item.price || "").replace(/[^0-9.]/g, "")) ||
+              initialVal;
+
+            let newLiveVal = currentLiveVal;
+
+            try {
+              if (item.name && item.name.trim()) {
+                const res = await getMarketOracleApi(
+                  {
+                    name: item.name.trim(),
+                    category: item.category || "Collectibles",
+                    condition: item.condition || "mint",
+                  },
+                  token
+                );
+
+                const oracleVal = Number(res?.fairMarketValue || res?.fairValue || res?.market?.fairValue);
+                if (oracleVal && !isNaN(oracleVal) && oracleVal > 0) {
+                  newLiveVal = Math.round(oracleVal);
+                }
+              }
+            } catch (err) {
+              console.warn(`[Vault] Market Oracle query error for "${item.name}":`, err.message);
+              // Preserve existing liveMarketValue if Oracle query is offline or fails
+            }
+
+            const diff = newLiveVal - initialVal;
+            const pct = initialVal > 0 ? ((diff / initialVal) * 100).toFixed(1) : "0.0";
+            const isDeprec = diff < 0;
+            const badgeText = isDeprec
+              ? `${pct}% Market Depreciation`
+              : `+${pct}% Market Gain`;
+
+            return {
+              ...item,
+              liveMarketValue: newLiveVal,
+              liveMarketValueFormatted: formatZAR(newLiveVal),
+              initialValue: initialVal,
+              initialValueFormatted: formatZAR(initialVal),
+              badgeText,
+              badgeType: isDeprec ? "negative" : "positive",
+              gain: badgeText,
+              gain_pct: `${pct}%`,
+              positive: !isDeprec,
+              price: formatZAR(newLiveVal),
+              price_num: newLiveVal,
+            };
+          })
+        );
 
         setPersonalItems(updated);
         await storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, updated);
 
-        const newSyncLog = {
-          id: "act-sync-" + Date.now(),
-          type: "ai_sync",
-          title: "AI Market Valuation Sync",
-          assetName: `${updated.length} Personal Items Updated`,
-          hash:
-            "0x" +
-            Array.from({ length: 40 }, () =>
-              Math.floor(Math.random() * 16).toString(16)
-            ).join(""),
-          hashDisplay:
-            "0x" +
-            Math.random().toString(16).substring(2, 6) +
-            "..." +
-            Math.random().toString(16).substring(2, 4),
-          detail:
-            "Refreshed live oracle pricing comps from Chrono24, StockX, and eBay.",
-          timestamp: "Just now",
-          status: "Oracle Synced",
-          network: "Decentralized Oracle",
-          icon: "trending-up",
-          badgeColor: "#10B981",
-        };
-
-        const updatedLogs = [newSyncLog, ...activityLog];
-        setActivityLog(updatedLogs);
-        await storage.setJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG, updatedLogs);
-
         if (!silent) {
           Alert.alert(
             "Live Market Oracle Updated",
-            "Comps refreshed from Chrono24 & StockX. Personal collection mark-to-market valuations synchronized."
+            "Real-time market valuations synchronized from South African retail comps & SerpApi."
           );
         }
-      } catch (_) {
-        if (!silent)
+      } catch (err) {
+        if (!silent) {
           Alert.alert("Sync Complete", "Market prices have been updated.");
+        }
       } finally {
         setSyncingPrices(false);
       }
     },
-    [personalItems, activityLog]
+    [personalItems, token]
   );
 
   const onRefresh = useCallback(async () => {
@@ -640,16 +659,14 @@ export default function VaultScreen({ navigation }) {
           setTransactions(txRes.transactions);
         }
       }
-      // Also sync live market prices on pull-to-refresh
-      await handleSyncLiveMarket(true);
     } catch (_) {}
     setRefreshing(false);
-  }, [token, personalItems, fractionalItems, processHoldingsIntoTabs, handleSyncLiveMarket]);
+  }, [token, personalItems, fractionalItems, processHoldingsIntoTabs]);
 
   const handleDeposit = async () => {
     const amt = parseFloat(depositAmount.replace(/[^0-9.]/g, ""));
     if (isNaN(amt) || amt <= 0) {
-      const msg = "Please enter a valid deposit amount greater than £0.";
+      const msg = "Please enter a valid deposit amount greater than R0.";
       Platform.OS === "web" ? alert(msg) : Alert.alert("Invalid Amount", msg);
       return;
     }
@@ -659,7 +676,7 @@ export default function VaultScreen({ navigation }) {
       const res = await depositFundsApi(
         { amount: amt, method: depositMethod },
         token,
-      ).catch(() => ({ success: true, newBalanceNum: escrowCash + amt, newBalanceFormatted: `£${escrowCash + amt}` }));
+      ).catch(() => ({ success: true, newBalanceNum: escrowCash + amt, newBalanceFormatted: `R${escrowCash + amt}` }));
 
       const updatedCash = (res?.newBalanceNum && !isNaN(res.newBalanceNum)) ? res.newBalanceNum : (escrowCash + amt);
       setEscrowCash(updatedCash);
@@ -672,7 +689,7 @@ export default function VaultScreen({ navigation }) {
         assetName: "Escrow Wallet Balance",
         hash: "0x" + Math.random().toString(16).substring(2, 10) + "71c9a",
         hashDisplay: "0x71c...9a",
-        amount: `+£${amt.toLocaleString()}`,
+        amount: `+R${amt.toLocaleString()}`,
         timestamp: "Just now",
         status: "Escrow Protected",
         network: "SmartAssets Escrow v2",
@@ -683,7 +700,7 @@ export default function VaultScreen({ navigation }) {
 
       setDepositModalVisible(false);
       setDepositAmount("");
-      const msg = `Deposit of £${amt.toLocaleString()} confirmed! New Escrow Balance: £${updatedCash.toLocaleString()}`;
+      const msg = `Deposit of R${amt.toLocaleString()} confirmed! New Escrow Balance: R${updatedCash.toLocaleString()}`;
       Platform.OS === "web" ? alert(msg) : Alert.alert("Deposit Confirmed", msg);
     } catch (err) {
       const msg = err.message || "Failed to process deposit.";
@@ -698,13 +715,13 @@ export default function VaultScreen({ navigation }) {
     const available = escrowCash;
 
     if (isNaN(amt) || amt <= 0) {
-      const msg = "Please enter a valid withdrawal amount greater than £0.";
+      const msg = "Please enter a valid withdrawal amount greater than R0.";
       Platform.OS === "web" ? alert(msg) : Alert.alert("Invalid Amount", msg);
       return;
     }
 
     if (amt > available) {
-      const msg = `Insufficient available balance. You requested £${amt.toLocaleString()} but available cash is £${available.toLocaleString()}.`;
+      const msg = `Insufficient available balance. You requested R${amt.toLocaleString()} but available cash is R${available.toLocaleString()}.`;
       Platform.OS === "web"
         ? alert(msg)
         : Alert.alert("Insufficient Balance", msg);
@@ -727,7 +744,7 @@ export default function VaultScreen({ navigation }) {
       await withdrawFundsApi(payload, token).catch(() => ({
         success: true,
         newBalanceNum: Math.max(0, escrowCash - amt),
-        newBalanceFormatted: `£${Math.max(0, escrowCash - amt)}`,
+        newBalanceFormatted: `R${Math.max(0, escrowCash - amt)}`,
       }));
 
       const updatedCash = Math.max(0, escrowCash - amt);
@@ -741,7 +758,7 @@ export default function VaultScreen({ navigation }) {
         assetName: "Escrow Wallet Balance",
         hash: "0x" + Math.random().toString(16).substring(2, 10) + "85db9",
         hashDisplay: "0x85d...b9",
-        amount: `-£${amt.toLocaleString()}`,
+        amount: `-R${amt.toLocaleString()}`,
         timestamp: "Just now",
         status: "Settled via " + withdrawMethod,
         network: "SmartAssets Escrow v2",
@@ -752,7 +769,7 @@ export default function VaultScreen({ navigation }) {
 
       setWithdrawModalVisible(false);
       setWithdrawAmount("");
-      const msg = `Withdrawal of £${amt.toLocaleString()} processed via ${withdrawMethod}. Remaining Escrow Wallet: £${updatedCash.toLocaleString()}`;
+      const msg = `Withdrawal of R${amt.toLocaleString()} processed via ${withdrawMethod}. Remaining Escrow Wallet: R${updatedCash.toLocaleString()}`;
       Platform.OS === "web" ? alert(msg) : Alert.alert("Withdrawal Processed", msg);
     } catch (err) {
       const msg = err.message || "Failed to process withdrawal.";
@@ -885,13 +902,13 @@ export default function VaultScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Main Headline: Total Collection Value (Assets + £250 Cash) */}
+            {/* Main Headline: Total Collection Value (Assets + R250 Cash) */}
             <Text style={styles.heroHeadlineLabel}>TOTAL COLLECTION VALUE</Text>
             <Text style={styles.totalBalanceNum}>
               {totalCollectionValueFormatted}
             </Text>
 
-            {/* Subtitle Pill: Escrow Wallet: £250 + Gain Badge */}
+            {/* Subtitle Pill: Escrow Wallet: R250 + Gain Badge */}
             <View style={styles.heroSubtitleRow}>
               <View style={styles.escrowWalletPill}>
                 <Ionicons
@@ -901,7 +918,7 @@ export default function VaultScreen({ navigation }) {
                   style={{ marginRight: 5 }}
                 />
                 <Text style={styles.escrowWalletPillText}>
-                  Escrow Wallet: £{escrowCash}
+                  Escrow Wallet: R{escrowCash}
                 </Text>
               </View>
 
@@ -1076,7 +1093,7 @@ export default function VaultScreen({ navigation }) {
                   <Ionicons name="folder-open-outline" size={40} color="#94A3B8" />
                   <Text style={styles.emptyTitle}>Personal Collection is empty</Text>
                   <Text style={styles.emptySub}>
-                    Items uploaded with "[🔒 Save to Personal Collection]" appear here.
+                    Items uploaded with "Save to Personal Vault" appear here.
                   </Text>
                   <TouchableOpacity
                     style={styles.emptyActionBtn}
@@ -1134,8 +1151,12 @@ export default function VaultScreen({ navigation }) {
                           <View style={styles.personalValueComparisonRow}>
                             <View style={styles.personalValCol}>
                               <Text style={styles.personalValLabel}>Initial Value</Text>
-                              <Text style={styles.personalInitialVal}>
-                                {item.initialValueFormatted || formatGBP(item.initialValue)}
+                              <Text
+                                style={styles.personalInitialVal}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                              >
+                                {item.initialValueFormatted || formatZAR(item.initialValue)}
                               </Text>
                             </View>
 
@@ -1145,8 +1166,12 @@ export default function VaultScreen({ navigation }) {
 
                             <View style={[styles.personalValCol, { alignItems: "flex-end" }]}>
                               <Text style={styles.personalValLabel}>Live Market Value</Text>
-                              <Text style={styles.personalLiveVal}>
-                                {item.liveMarketValueFormatted || formatGBP(item.liveMarketValue)}
+                              <Text
+                                style={styles.personalLiveVal}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                              >
+                                {item.liveMarketValueFormatted || formatZAR(item.liveMarketValue)}
                               </Text>
                             </View>
                           </View>
@@ -1170,7 +1195,9 @@ export default function VaultScreen({ navigation }) {
                                 isDeprec ? styles.pnlBadgeTextDeprec : styles.pnlBadgeTextGain,
                               ]}
                             >
-                              {item.badgeText || (isDeprec ? "-12% Tech Depreciation" : "+14% Market Gain")}
+                              {(item.badgeText
+                                ? String(item.badgeText).replace(/Tech Depreciation/gi, "Market Depreciation")
+                                : (isDeprec ? "-12% Market Depreciation" : "+14% Market Gain"))}
                             </Text>
                           </View>
                         </View>
@@ -1232,7 +1259,7 @@ export default function VaultScreen({ navigation }) {
                         </View>
                       </View>
 
-                      {/* Content: Shares Owned: 2, My Stake: £200, +12.4% Return */}
+                      {/* Content: Shares Owned: 2, My Stake: R200, +12.4% Return */}
                       <View style={styles.cardBody}>
                         <Text style={styles.cardCat}>
                           {String(item.category || "WATCHES").toUpperCase()}
@@ -1252,7 +1279,7 @@ export default function VaultScreen({ navigation }) {
                           <View style={styles.fractionalMetricBox}>
                             <Text style={styles.fractionalMetricLabel}>My Stake</Text>
                             <Text style={styles.fractionalMetricValue}>
-                              {item.myStakeFormatted || formatGBP(item.myStake, "£200")}
+                              {item.myStakeFormatted || formatZAR(item.myStake, "R200")}
                             </Text>
                           </View>
                         </View>
@@ -1281,7 +1308,7 @@ export default function VaultScreen({ navigation }) {
                         </TouchableOpacity>
 
                         <Text style={styles.fractionalPoolMeta}>
-                          Pool: {item.poolValuation || "£18,500"} • {item.fundingPct || 77}% funded
+                          Pool: {item.poolValuation || "R18,500"} • {item.fundingPct || 77}% funded
                         </Text>
                       </View>
                     </TouchableOpacity>
@@ -1296,73 +1323,124 @@ export default function VaultScreen({ navigation }) {
           ────────────────────────────────────────────────────────────────── */}
           {activeTab === "log" && (
             <View style={{ gap: 12 }}>
-              {activityLog.map((log, idx) => (
-                <View key={log.id || idx} style={styles.activityCard}>
-                  <View style={styles.activityHeaderRow}>
-                    <View
-                      style={[
-                        styles.activityIconBox,
-                        {
-                          backgroundColor:
-                            log.type === "certificate"
-                              ? "#F3E8FF"
-                              : log.type === "ai_sync"
-                                ? "#DCFCE7"
-                                : "#EFF6FF",
-                        },
-                      ]}
-                    >
+              {(() => {
+                const visibleLogs = activityLog.filter(
+                  (log) =>
+                    log.type !== "ai_sync" &&
+                    log.title !== "AI Market Valuation Sync"
+                );
+                if (visibleLogs.length === 0) {
+                  return (
+                    <View style={styles.emptyCard}>
                       <Ionicons
-                        name={
-                          log.type === "certificate"
-                            ? "diamond"
-                            : log.type === "ai_sync"
-                              ? "trending-up"
-                              : "shield-checkmark"
-                        }
-                        size={18}
-                        color={log.badgeColor || "#7C3AED"}
+                        name="ribbon-outline"
+                        size={40}
+                        color="#94A3B8"
                       />
+                      <Text style={styles.emptyTitle}>
+                        No Certificates Issued Yet
+                      </Text>
+                      <Text style={styles.emptySub}>
+                        ERC-721 authenticity certificates and escrow transactions will appear here.
+                      </Text>
                     </View>
-
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                        <Text style={styles.activityTitle}>{log.title}</Text>
-                        <View style={styles.activityStatusPill}>
-                          <Text style={styles.activityStatusPillText}>{log.status}</Text>
-                        </View>
+                  );
+                }
+                return visibleLogs.map((log, idx) => (
+                  <View key={log.id || idx} style={styles.activityCard}>
+                    <View style={styles.activityHeaderRow}>
+                      <View
+                        style={[
+                          styles.activityIconBox,
+                          {
+                            backgroundColor:
+                              log.type === "certificate"
+                                ? "#F3E8FF"
+                                : "#EFF6FF",
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={
+                            log.type === "certificate"
+                              ? "diamond"
+                              : "shield-checkmark"
+                          }
+                          size={18}
+                          color={log.badgeColor || "#7C3AED"}
+                        />
                       </View>
-                      <Text style={styles.activityAssetName}>{log.assetName}</Text>
+
+                      <View style={{ flex: 1 }}>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <Text style={styles.activityTitle}>{log.title}</Text>
+                          <View style={styles.activityStatusPill}>
+                            <Text style={styles.activityStatusPillText}>
+                              {log.status}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={styles.activityAssetName}>
+                          {log.assetName}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {log.detail ? (
+                      <Text style={styles.activityDetailText}>
+                        {log.detail}
+                      </Text>
+                    ) : null}
+
+                    {/* Hash and Meta Row */}
+                    <View style={styles.activityFooterRow}>
+                      <TouchableOpacity
+                        style={styles.hashPill}
+                        onPress={() => {
+                          const msg = `Transaction Hash on Sepolia: ${log.hash || "0x71c93a84b01...e89a"}`;
+                          Platform.OS === "web"
+                            ? alert(msg)
+                            : Alert.alert("Sepolia Hash", msg);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Feather
+                          name="hash"
+                          size={11}
+                          color="#6366F1"
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text style={styles.hashPillText}>
+                          {log.hashDisplay || "0x71c...9a"}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        {log.amount ? (
+                          <Text style={styles.activityAmountText}>
+                            {log.amount}
+                          </Text>
+                        ) : null}
+                        <Text style={styles.activityTimeText}>
+                          {log.timestamp}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-
-                  {log.detail ? (
-                    <Text style={styles.activityDetailText}>{log.detail}</Text>
-                  ) : null}
-
-                  {/* Hash and Meta Row */}
-                  <View style={styles.activityFooterRow}>
-                    <TouchableOpacity
-                      style={styles.hashPill}
-                      onPress={() => {
-                        const msg = `Transaction Hash on Sepolia: ${log.hash || "0x71c93a84b01...e89a"}`;
-                        Platform.OS === "web" ? alert(msg) : Alert.alert("Sepolia Hash", msg);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Feather name="hash" size={11} color="#6366F1" style={{ marginRight: 4 }} />
-                      <Text style={styles.hashPillText}>{log.hashDisplay || "0x71c...9a"}</Text>
-                    </TouchableOpacity>
-
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      {log.amount ? (
-                        <Text style={styles.activityAmountText}>{log.amount}</Text>
-                      ) : null}
-                      <Text style={styles.activityTimeText}>{log.timestamp}</Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
+                ));
+              })()}
             </View>
           )}
         </View>
@@ -1383,7 +1461,7 @@ export default function VaultScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.modalLabel}>Deposit Amount (£)</Text>
+              <Text style={styles.modalLabel}>Deposit Amount (R)</Text>
               <TextInput
                 value={depositAmount}
                 onChangeText={setDepositAmount}
@@ -1401,7 +1479,7 @@ export default function VaultScreen({ navigation }) {
                     style={styles.presetChip}
                     onPress={() => setDepositAmount(String(amt))}
                   >
-                    <Text style={styles.presetChipText}>+£{amt}</Text>
+                    <Text style={styles.presetChipText}>+R{amt}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1439,7 +1517,7 @@ export default function VaultScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.modalLabel}>Withdrawal Amount (£)</Text>
+              <Text style={styles.modalLabel}>Withdrawal Amount (R)</Text>
               <TextInput
                 value={withdrawAmount}
                 onChangeText={setWithdrawAmount}
@@ -1453,7 +1531,7 @@ export default function VaultScreen({ navigation }) {
               <TextInput
                 value={accountNumber}
                 onChangeText={setAccountNumber}
-                placeholder="UK Bank Account / IBAN"
+                placeholder="SA Bank Account / Account No"
                 style={styles.modalInput}
                 placeholderTextColor="#94A3B8"
               />
@@ -1992,7 +2070,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     backgroundColor: "#F8FAFC",
     borderRadius: 12,
-    padding: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     marginTop: 6,
     marginBottom: 8,
     borderWidth: 1,
@@ -2000,6 +2079,7 @@ const styles = StyleSheet.create({
   },
   personalValCol: {
     flex: 1,
+    minWidth: 0,
   },
   personalValLabel: {
     fontSize: 9,
@@ -2013,7 +2093,10 @@ const styles = StyleSheet.create({
     color: "#64748B",
   },
   personalValArrow: {
-    paddingHorizontal: 6,
+    marginHorizontal: 4,
+    paddingHorizontal: 0,
+    alignItems: "center",
+    justifyContent: "center",
   },
   personalLiveVal: {
     fontSize: 14,

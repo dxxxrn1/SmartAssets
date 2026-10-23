@@ -33,6 +33,7 @@ import VerificationScreen from '../screens/VerificationScreen';
 import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
 import ProfileScreen     from '../screens/ProfileScreen';
 import ProfileAnalyticsScreen from '../screens/ProfileAnalyticsScreen';
+import ScanAndKnowScreen from '../screens/ScanAndKnowScreen';
 
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -409,6 +410,10 @@ export default function Navigation() {
 
             <Stack.Screen name={SCREENS.LIST_ASSET}>
               {(props) => <ListAssetScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.SCAN_AND_KNOW}>
+              {(props) => <ScanAndKnowScreen {...props} isDark={isDark} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.ASSET_DETAIL}>
