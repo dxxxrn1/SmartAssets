@@ -205,5 +205,206 @@
         "completed": false
       }
     ]
+  },
+  {
+    "orderId": "ORD-892104",
+    "assetName": "Verified Collectible",
+    "assetCategory": "Luxury Watch",
+    "assetImage": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800",
+    "amountZar": 28500,
+    "amountGbp": 28500,
+    "amountEth": "11.4000",
+    "paymentMethod": "wallet",
+    "paymentRail": "Ethereum Sepolia Web3",
+    "status": "payment_secured",
+    "currentStep": 1,
+    "totalSteps": 4,
+    "depositTxHash": "0x3a8b4f2c1d9e7a5b6c8d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
+    "etherscanUrl": "https://sepolia.etherscan.io/tx/0x3a8b4f2c1d9e7a5b6c8d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
+    "escrowContractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "sellerAddress": "0x71C3A5b67B7840131498B1aB55938B237F026a76",
+    "createdAt": "2026-09-18T08:08:51.037Z",
+    "updatedAt": "2026-09-18T08:08:51.037Z",
+    "timeline": [
+      {
+        "step": 1,
+        "title": "Payment Secured in Smart Contract",
+        "description": "11.4000 Sepolia ETH locked in Escrow Contract. Protected from withdrawal until inspection passes.",
+        "timestamp": "2026-09-18T08:08:51.037Z",
+        "txHash": "0x3a8b4f2c1d9e7a5b6c8d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
+        "completed": true
+      },
+      {
+        "step": 2,
+        "title": "Physical Asset in Transit to Vault",
+        "description": "Insured courier dispatch in progress to London Custody Center.",
+        "completed": false
+      },
+      {
+        "step": 3,
+        "title": "Authentication & Physical Inspection",
+        "description": "Condition grading and authenticity appraisal.",
+        "completed": false
+      },
+      {
+        "step": 4,
+        "title": "Funds Released to Seller & NFT Delivered",
+        "description": "Automatic settlement on-chain.",
+        "completed": false
+      }
+    ]
+  },
+  {
+    "orderId": "ORD-806539",
+    "buyerId": "47a8f198-06e0-4eb7-b0ec-617b30318091",
+    "buyerAddress": null,
+    "assetId": "e1c3c7f2-3d8b-4f03-a723-afe062338a28",
+    "assetName": "All star",
+    "assetCategory": "Luxury Watch",
+    "assetImage": "/uploads/assets/asset_e1c3c7_1790678285027_pt5l1.jpg",
+    "amountZar": 500,
+    "amountGbp": 500,
+    "amountEth": "0.0104",
+    "paymentMethod": "wallet",
+    "paymentRail": "Ethereum Sepolia Web3",
+    "status": "payment_secured",
+    "currentStep": 1,
+    "totalSteps": 4,
+    "depositTxHash": "0xc95c09bfa0a5352e17b0eb7329fb40ab03a90b44ab158625415c3a3d5357a380",
+    "etherscanUrl": "https://sepolia.etherscan.io/tx/0x465c401450c35e889b29fde78c8b8f6563027c895f7244eff6fe478e0e2d1488",
+    "escrowContractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "sellerAddress": "0x71C3A5b67B7840131498B1aB55938B237F026a76",
+    "createdAt": "2026-09-18T13:42:33.979Z",
+    "updatedAt": "2026-09-18T13:42:33.979Z",
+    "timeline": [
+      {
+        "step": 1,
+        "title": "Payment Secured in Smart Contract",
+        "description": "0.0104 Sepolia ETH locked in Escrow Contract. Protected from withdrawal until physical inspection passes.",
+        "timestamp": "2026-09-18T13:42:33.979Z",
+        "txHash": "0xc95c09bfa0a5352e17b0eb7329fb40ab03a90b44ab158625415c3a3d5357a380",
+        "completed": true
+      },
+      {
+        "step": 2,
+        "title": "Physical Asset in Transit to Vault",
+        "description": "Seller prepares collectible for insured armored courier dispatch to SmartAssets Custody Center.",
+        "completed": false
+      },
+      {
+        "step": 3,
+        "title": "Authentication & Physical Inspection",
+        "description": "Certified Horologists & Gemological Institute conduct physical verification and serial appraisal.",
+        "completed": false
+      },
+      {
+        "step": 4,
+        "title": "Funds Released to Seller & NFT Delivered",
+        "description": "Smart contract automatically transfers payment to seller; Certificate of Authenticity NFT minted to buyer vault.",
+        "completed": false
+      }
+    ]
+  },
+  {
+    "orderId": "ORD-915510",
+    "buyerId": "47a8f198-06e0-4eb7-b0ec-617b30318091",
+    "buyerAddress": null,
+    "assetId": "2e55c0ff-2793-4976-ab6c-b5d8d9fd4f71",
+    "assetName": "Air Jordan 1 Retro High Travis Scott",
+    "assetCategory": "Rare Sneakers",
+    "assetImage": "https://images.unsplash.com/photo-1552346154-21d32810aba3?w=800",
+    "amountZar": 100,
+    "amountGbp": 100,
+    "amountEth": "0.0021",
+    "paymentMethod": "wallet",
+    "paymentRail": "Ethereum Sepolia Web3",
+    "status": "payment_secured",
+    "currentStep": 1,
+    "totalSteps": 4,
+    "depositTxHash": "0x2d31603bf243f9a069900a24828027a43525963877f1867177610b5296a71a3f",
+    "etherscanUrl": "https://sepolia.etherscan.io/tx/0x8a45c4f2a39b83b1df818f018da8d8de0fd56e7d18237ccdd1ef79e5155117a6",
+    "escrowContractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "sellerAddress": "0x71C3A5b67B7840131498B1aB55938B237F026a76",
+    "createdAt": "2026-09-27T06:18:25.606Z",
+    "updatedAt": "2026-09-27T06:18:25.606Z",
+    "timeline": [
+      {
+        "step": 1,
+        "title": "Payment Secured in Smart Contract",
+        "description": "0.0021 Sepolia ETH locked in Escrow Contract. Protected from withdrawal until physical inspection passes.",
+        "timestamp": "2026-09-27T06:18:25.606Z",
+        "txHash": "0x2d31603bf243f9a069900a24828027a43525963877f1867177610b5296a71a3f",
+        "completed": true
+      },
+      {
+        "step": 2,
+        "title": "Physical Asset in Transit to Vault",
+        "description": "Seller prepares collectible for insured armored courier dispatch to SmartAssets Custody Center.",
+        "completed": false
+      },
+      {
+        "step": 3,
+        "title": "Authentication & Physical Inspection",
+        "description": "Certified Horologists & Gemological Institute conduct physical verification and serial appraisal.",
+        "completed": false
+      },
+      {
+        "step": 4,
+        "title": "Funds Released to Seller & NFT Delivered",
+        "description": "Smart contract automatically transfers payment to seller; Certificate of Authenticity NFT minted to buyer vault.",
+        "completed": false
+      }
+    ]
+  },
+  {
+    "orderId": "ORD-838080",
+    "buyerId": "47a8f198-06e0-4eb7-b0ec-617b30318091",
+    "buyerAddress": null,
+    "assetId": "6f80eb79-b749-4a5f-9d0c-292c6bea3336",
+    "assetName": "Authentic Vintage Rolex Submariner",
+    "assetCategory": "Luxury Watch",
+    "assetImage": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80",
+    "amountZar": 18500,
+    "amountGbp": 18500,
+    "amountEth": "7.4000",
+    "paymentMethod": "wallet",
+    "paymentRail": "Ethereum Sepolia Web3",
+    "status": "payment_secured",
+    "currentStep": 1,
+    "totalSteps": 4,
+    "depositTxHash": "0xc0fae9c06d1af90f312c66d0a48b22d8dc5b008a923c459a129b1887bd685aab",
+    "etherscanUrl": "https://sepolia.etherscan.io/tx/0x8b4bc55a835701642fdb753d8954b63f06a0fbf55a7f6ec5cf346c48cfd2c614",
+    "escrowContractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "sellerAddress": "0x71C3A5b67B7840131498B1aB55938B237F026a76",
+    "createdAt": "2026-09-27T06:18:59.465Z",
+    "updatedAt": "2026-09-27T06:18:59.465Z",
+    "timeline": [
+      {
+        "step": 1,
+        "title": "Payment Secured in Smart Contract",
+        "description": "0.0021 Sepolia ETH locked in Escrow Contract. Protected from withdrawal until physical inspection passes.",
+        "timestamp": "2026-09-27T06:18:59.465Z",
+        "txHash": "0xc0fae9c06d1af90f312c66d0a48b22d8dc5b008a923c459a129b1887bd685aab",
+        "completed": true
+      },
+      {
+        "step": 2,
+        "title": "Physical Asset in Transit to Vault",
+        "description": "Seller prepares collectible for insured armored courier dispatch to SmartAssets Custody Center.",
+        "completed": false
+      },
+      {
+        "step": 3,
+        "title": "Authentication & Physical Inspection",
+        "description": "Certified Horologists & Gemological Institute conduct physical verification and serial appraisal.",
+        "completed": false
+      },
+      {
+        "step": 4,
+        "title": "Funds Released to Seller & NFT Delivered",
+        "description": "Smart contract automatically transfers payment to seller; Certificate of Authenticity NFT minted to buyer vault.",
+        "completed": false
+      }
+    ]
   }
 ]

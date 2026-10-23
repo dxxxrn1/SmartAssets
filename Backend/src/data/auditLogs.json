@@ -1,5 +1,29 @@
 [
   {
+    "id": "SEC-LOG-260036",
+    "timestamp": "2026-10-23T21:49:10.551Z",
+    "eventType": "LOGIN",
+    "category": "Authentication",
+    "actorEmail": "pngforster@gmail.com",
+    "actorId": "bf61f4a2-641f-4de2-ba31-9eadd31e361a",
+    "ip": "127.0.0.1",
+    "device": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1",
+    "description": "Successful user authentication via password.",
+    "status": "Success"
+  },
+  {
+    "id": "SEC-LOG-485340",
+    "timestamp": "2026-10-23T21:48:47.835Z",
+    "eventType": "REGISTER",
+    "category": "Authentication",
+    "actorEmail": "pngforster@gmail.com",
+    "actorId": "bf61f4a2-641f-4de2-ba31-9eadd31e361a",
+    "ip": "127.0.0.1",
+    "device": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1",
+    "description": "New user registered account. Awaiting FICA / KYC onboarding.",
+    "status": "Success"
+  },
+  {
     "id": "SEC-LOG-415761",
     "timestamp": "2026-10-23T21:15:13.806Z",
     "eventType": "SESSION_TIMEOUT",

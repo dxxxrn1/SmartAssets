@@ -11,6 +11,7 @@ const aiDetectionService = require('../services/aiDetectionService');
 const aiVisionGatekeeper = require('../services/aiVisionGatekeeper');
 const marketOracleService = require('../services/marketOracleService');
 const { saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
+const { sanitizePostgrestFilter } = require('../middlewares/securityMiddleware');
 
 // In-memory server cache to protect Supabase database egress from repetitive queries
 let assetsCache = null;
@@ -83,8 +84,11 @@ async function getAssets(req, res) {
       query = query.eq('category', category);
     }
 
-    if (q && q.trim()) {
-      query = query.or(`name.ilike.%${q.trim()}%,category.ilike.%${q.trim()}%`);
+    if (q && typeof q === 'string') {
+      const cleanQ = sanitizePostgrestFilter(q);
+      if (cleanQ) {
+        query = query.or(`name.ilike.%${cleanQ}%,category.ilike.%${cleanQ}%`);
+      }
     }
 
     const { data, error } = await query;

@@ -4,11 +4,11 @@
     "userId": "9140495b-22a3-4df4-9c6d-5a7f649e1710",
     "type": "deposit",
     "title": "Vault Cash Deposit",
-    "amount": 9500,
-    "amountFormatted": "+R9 500",
-    "method": "Instant EFT / FNB",
+    "amount": 1000,
+    "amountFormatted": "+R1 000",
+    "method": "Instant EFT / Card",
     "reference": "REF-52204648",
-    "notes": "Deposited into SmartAssets Vault liquid balance",
+    "notes": "Deposited into Vault liquid balance",
     "status": "completed",
     "positive": true,
     "createdAt": "2026-09-23T23:55:02.778Z"
@@ -22,7 +22,7 @@
     "amountFormatted": "+R500",
     "method": "Instant EFT / Card",
     "reference": "REF-37865085",
-    "notes": "Deposited into SmartAssets Vault liquid balance",
+    "notes": "Deposited into Vault liquid balance",
     "status": "completed",
     "positive": true,
     "createdAt": "2026-09-25T09:21:11.183Z"
@@ -51,7 +51,7 @@
     "amountFormatted": "+R50",
     "method": "Instant EFT / Card",
     "reference": "REF-38273615",
-    "notes": "Deposited into SmartAssets Vault liquid balance",
+    "notes": "Deposited into Vault liquid balance",
     "status": "completed",
     "positive": true,
     "createdAt": "2026-10-22T16:57:25.466Z"
