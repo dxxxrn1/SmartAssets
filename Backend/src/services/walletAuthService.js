@@ -186,8 +186,75 @@ async function generateSessionForUser(email) {
   }
 }
 
+const WALLET_TOKEN_SECRET =
+  process.env.SUPABASE_JWT_SECRET ||
+  process.env.JWT_SECRET ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  'smartassets-wallet-verified-token-secret-32chars';
+
+/**
+ * Creates a short-lived (10-minute) cryptographic verification token
+ * proving that the holder has verified ownership of `walletAddress`.
+ * @param {string} walletAddress
+ * @returns {string} token
+ */
+function createWalletVerificationToken(walletAddress) {
+  const cleanAddress = walletAddress.trim().toLowerCase();
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+  const payload = {
+    walletAddress: cleanAddress,
+    expiresAt,
+    type: 'wallet_verification',
+  };
+  const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', WALLET_TOKEN_SECRET)
+    .update(payloadBase64)
+    .digest('base64url');
+  return `${payloadBase64}.${signature}`;
+}
+
+/**
+ * Validates a wallet verification token and returns the verified address.
+ * @param {string} token
+ * @returns {{ valid: boolean, walletAddress?: string, error?: string }}
+ */
+function verifyWalletVerificationToken(token) {
+  if (!token || typeof token !== 'string') {
+    return { valid: false, error: 'Wallet verification token is required.' };
+  }
+  const parts = token.split('.');
+  if (parts.length !== 2) {
+    return { valid: false, error: 'Invalid verification token format.' };
+  }
+  const [payloadBase64, providedSig] = parts;
+  const expectedSig = crypto
+    .createHmac('sha256', WALLET_TOKEN_SECRET)
+    .update(payloadBase64)
+    .digest('base64url');
+
+  if (providedSig !== expectedSig) {
+    return { valid: false, error: 'Invalid or forged verification token signature.' };
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString('utf8'));
+    if (payload.type !== 'wallet_verification') {
+      return { valid: false, error: 'Invalid token type.' };
+    }
+    if (Date.now() > payload.expiresAt) {
+      return { valid: false, error: 'Wallet verification has expired (10-minute limit). Please sign in again with MetaMask.' };
+    }
+    return { valid: true, walletAddress: payload.walletAddress };
+  } catch (err) {
+    return { valid: false, error: 'Corrupt verification token payload.' };
+  }
+}
+
 module.exports = {
   createNonceChallenge,
   verifyWalletSignature,
   generateSessionForUser,
+  createWalletVerificationToken,
+  verifyWalletVerificationToken,
 };

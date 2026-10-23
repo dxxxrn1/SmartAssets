@@ -23,6 +23,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useNetwork, OfflineBanner } from '../context/NetworkContext';
 import { API_BASE_URL, forgotPasswordApi, getWalletNonceApi } from '../services/api';
 import { isOnlineSync, checkInternetConnection } from '../utils/network';
+import CompleteProfileModal from '../components/CompleteProfileModal';
 
 const DEFAULT_DEMO_WALLET =
   '0x71C8360f3a14672D62372c388657B43933c039A4';
@@ -57,6 +58,11 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
   const [customWalletAddress, setCustomWalletAddress] = useState('');
   const [connectingWallet, setConnectingWallet] = useState(false);
   const [walletStatus, setWalletStatus] = useState('');
+
+  // Complete Profile modal for new wallets
+  const [completeProfileVisible, setCompleteProfileVisible] = useState(false);
+  const [pendingWalletAddress, setPendingWalletAddress] = useState('');
+  const [pendingVerificationToken, setPendingVerificationToken] = useState('');
 
   // Forgot password
   const [forgotModalVisible, setForgotModalVisible] = useState(false);
@@ -240,21 +246,10 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
           nonce: challenge.nonce,
         });
 
-        if (res?.needsAccount) {
-          const short = `${targetAddress.substring(0, 6)}...${targetAddress.slice(-4)}`;
-          const msg = `This wallet (${short}) is not linked to any SmartAssets account yet.\n\nPlease log in with your email & password or create an account, then link your wallet in Profile.`;
-          setError(msg);
-          if (Platform.OS === 'web') {
-            alert(msg);
-          } else {
-            Alert.alert('Wallet Not Linked', msg, [
-              { text: 'OK' },
-              {
-                text: 'Create Account',
-                onPress: () => navigation.navigate(SCREENS.REGISTER),
-              },
-            ]);
-          }
+        if (res?.needsProfile || res?.needsAccount) {
+          setPendingWalletAddress(targetAddress);
+          setPendingVerificationToken(res.verificationToken || '');
+          setCompleteProfileVisible(true);
           return;
         }
 
@@ -360,11 +355,11 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
 
     try {
       const res = await loginWithWallet(cleanWallet);
-      if (res?.needsAccount) {
-        const msg = 'This wallet is not linked to any account yet. Please sign in with your email/password first, then link your wallet in Profile.';
-        setError(msg);
-        if (Platform.OS === 'web') alert(msg); else Alert.alert('Wallet Not Linked', msg);
+      if (res?.needsProfile || res?.needsAccount) {
+        setPendingWalletAddress(cleanWallet);
+        setPendingVerificationToken(res.verificationToken || '');
         setWalletModalVisible(false);
+        setCompleteProfileVisible(true);
         return;
       }
     } catch (err) {
@@ -1253,6 +1248,16 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
           </View>
         </View>
       </Modal>
+
+      {/* --------------------------------------------------
+          COMPLETE PROFILE MODAL (MetaMask Web3 Registration)
+      -------------------------------------------------- */}
+      <CompleteProfileModal
+        visible={completeProfileVisible}
+        onClose={() => setCompleteProfileVisible(false)}
+        walletAddress={pendingWalletAddress}
+        verificationToken={pendingVerificationToken}
+      />
     </SafeAreaView>
   );
 }

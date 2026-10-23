@@ -22,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import { useLinkedWallet } from '../hooks/useLinkedWallet';
 import KycGatekeeperModal from '../components/KycGatekeeperModal';
 import {
   processPaymentApi,
@@ -50,6 +51,7 @@ const PAYMENT_METHODS = [
 
 export default function CheckoutScreen({ navigation, route }) {
   const { user, token } = useAuth();
+  const { linkedWallet, isMismatch, activeMetaMaskAccount, verifyTransactionWallet } = useLinkedWallet();
   const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
   const asset = route?.params?.asset ?? {};
   const isFractional = route?.params?.isFractional ?? false;
@@ -216,6 +218,14 @@ export default function CheckoutScreen({ navigation, route }) {
       return;
     }
 
+    // MetaMask Web3 Linked Wallet Validation
+    if (selectedPayment === 'wallet') {
+      const isWalletValid = await verifyTransactionWallet();
+      if (!isWalletValid) {
+        return;
+      }
+    }
+
     // Card validation
     if (selectedPayment === 'card') {
       const cleanNum = cardForm.cardNumber.replace(/\s+/g, '');
@@ -321,7 +331,7 @@ export default function CheckoutScreen({ navigation, route }) {
         if (selectedPayment === 'wallet') {
           paymentDetails = {
             txHash: walletTxHash.trim() || undefined,
-            walletAddress: user?.walletAddress || undefined,
+            walletAddress: linkedWallet || user?.walletAddress || user?.wallet_address || undefined,
             ethAmount,
           };
         } else if (selectedPayment === 'bank') {
@@ -772,11 +782,28 @@ export default function CheckoutScreen({ navigation, route }) {
                 </Text>
               </View>
 
-              {user?.walletAddress ? (
+              {linkedWallet ? (
                 <View style={styles.connectedRow}>
+                  <Ionicons name="link" size={14} color="#10B981" style={{ marginRight: 4 }} />
                   <Text style={styles.connectedLabel}>Paying From:</Text>
                   <Text style={styles.connectedAddress}>
-                    {user.walletAddress.substring(0, 6)}...{user.walletAddress.slice(-4)} (Connected)
+                    {linkedWallet.substring(0, 6)}...{linkedWallet.slice(-4)} (Linked)
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ backgroundColor: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.35)', borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Feather name="alert-triangle" size={16} color="#F59E0B" />
+                  <Text style={{ flex: 1, fontSize: 12, color: '#F59E0B', fontWeight: '600' }}>
+                    No wallet linked. Please link your MetaMask wallet in Profile before checking out with Web3.
+                  </Text>
+                </View>
+              )}
+
+              {isMismatch ? (
+                <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.35)', borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Feather name="alert-circle" size={16} color="#EF4444" />
+                  <Text style={{ flex: 1, fontSize: 12, color: '#EF4444', fontWeight: '600' }}>
+                    MetaMask account mismatch: Active wallet differs from your linked account ({linkedWallet?.substring(0, 6)}...{linkedWallet?.slice(-4)}). Please switch accounts in MetaMask.
                   </Text>
                 </View>
               ) : null}

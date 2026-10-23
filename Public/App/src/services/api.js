@@ -212,6 +212,8 @@ export async function completeWalletProfileApi(params) {
   });
 }
 
+export const registerWalletApi = completeWalletProfileApi;
+
 /**
  * Request a password reset email.
  * @param {{ email: string, redirectTo?: string }} params

@@ -9,6 +9,8 @@ import {
   loginUser,
   registerUser,
   loginWithWalletApi,
+  completeWalletProfileApi,
+  registerWalletApi,
   getUserProfileApi,
   logoutUserApi,
   logoutSessionApi,
@@ -345,7 +347,7 @@ export function AuthProvider({ children }) {
     setSessionExpiredMessage(null);
     try {
       const response = await loginWithWalletApi(params);
-      if (response && response.needsAccount) {
+      if (response && (response.needsAccount || response.needsProfile)) {
         return response;
       }
       if (!response || !response.user || (!response.session?.access_token && !response.token)) {
@@ -367,6 +369,36 @@ export function AuthProvider({ children }) {
         lastActiveAt: now,
       });
       await storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now));
+      return response;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const registerWithWallet = async (params) => {
+    setLoading(true);
+    setSessionNotice(null);
+    setSessionExpiredMessage(null);
+    try {
+      const response = await registerWalletApi(params);
+      if (response?.user && (response.session?.access_token || response.token)) {
+        const nextUser = response.user;
+        const nextToken = response.session?.access_token || response.token;
+        const now = Date.now();
+
+        setUser(nextUser);
+        setToken(nextToken);
+        setSessionExpiredMessage(null);
+        setInactivityWarning(false);
+        lastActiveRef.current = now;
+
+        await storage.setJSON(STORAGE_KEYS.SESSION, {
+          user: nextUser,
+          token: nextToken,
+          lastActiveAt: now,
+        });
+        await storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now));
+      }
       return response;
     } finally {
       setLoading(false);
@@ -466,6 +498,7 @@ export function AuthProvider({ children }) {
         login,
         loginWithWallet,
         register,
+        registerWithWallet,
         logout,
         updateUser,
       }}

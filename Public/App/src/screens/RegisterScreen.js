@@ -20,9 +20,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useColors } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
-import { registerUser } from "../services/api";
+import { registerUser, getWalletNonceApi } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useNetwork, OfflineBanner } from "../context/NetworkContext";
+import CompleteProfileModal from "../components/CompleteProfileModal";
 
 export default function RegisterScreen({
   navigation,
@@ -105,6 +107,82 @@ export default function RegisterScreen({
     } finally {
       setLoading(false);
     }
+  };
+
+  // ── Web3 MetaMask Registration Flow ──
+  const { loginWithWallet } = useAuth();
+  const [connectingWallet, setConnectingWallet] = useState(false);
+  const [walletStatus, setWalletStatus] = useState('');
+  const [completeProfileVisible, setCompleteProfileVisible] = useState(false);
+  const [pendingWalletAddress, setPendingWalletAddress] = useState('');
+  const [pendingVerificationToken, setPendingVerificationToken] = useState('');
+
+  const handleContinueWithMetaMask = async () => {
+    setError('');
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.ethereum) {
+      setConnectingWallet(true);
+      setWalletStatus('Connecting to MetaMask...');
+
+      try {
+        const accounts = await window.ethereum.request({
+          method: 'eth_requestAccounts',
+        });
+
+        if (!accounts || !accounts[0]) {
+          throw new Error('No MetaMask account was selected.');
+        }
+
+        const targetAddress = accounts[0].toLowerCase();
+
+        // 1. Fetch challenge nonce from backend
+        setWalletStatus('Requesting challenge nonce...');
+        const challenge = await getWalletNonceApi(targetAddress);
+        if (!challenge?.success || !challenge?.message || !challenge?.nonce) {
+          throw new Error(challenge?.error || 'Could not retrieve wallet challenge.');
+        }
+
+        // 2. Request cryptographic signature from user via MetaMask personal_sign
+        setWalletStatus('Please sign verification message in MetaMask...');
+        const signature = await window.ethereum.request({
+          method: 'personal_sign',
+          params: [challenge.message, targetAddress],
+        });
+
+        // 3. Verify signature and check if wallet already linked
+        setWalletStatus('Verifying wallet signature...');
+        const res = await loginWithWallet({
+          walletAddress: targetAddress,
+          signature,
+          nonce: challenge.nonce,
+        });
+
+        // If wallet is not linked yet, backend returns needsProfile: true with verificationToken
+        if (res?.needsProfile || res?.needsAccount) {
+          setPendingWalletAddress(targetAddress);
+          setPendingVerificationToken(res.verificationToken || '');
+          setCompleteProfileVisible(true);
+          return;
+        }
+
+        // Wallet was already linked to an existing account: user is now logged in!
+      } catch (err) {
+        if (err?.code === 4001 || err?.message?.toLowerCase().includes('reject')) {
+          setError('MetaMask signature was cancelled.');
+        } else {
+          setError(err?.message || 'MetaMask sign-up failed.');
+        }
+      } finally {
+        setConnectingWallet(false);
+        setWalletStatus('');
+      }
+      return;
+    }
+
+    Alert.alert(
+      'MetaMask Required',
+      'Please open SmartAssets in the MetaMask mobile in-app browser or use a desktop browser with MetaMask installed to sign up with Web3.'
+    );
   };
 
   return (
@@ -363,6 +441,44 @@ export default function RegisterScreen({
                 </LinearGradient>
               </TouchableOpacity>
 
+              {/* ── Divider ── */}
+              <View style={styles.dividerRow}>
+                <View style={[styles.dividerLine, { backgroundColor: isDark ? "rgba(255,255,255,0.12)" : "rgba(151,106,240,0.18)" }]} />
+                <Text style={[styles.dividerText, { color: c.muted }]}>or continue with</Text>
+                <View style={[styles.dividerLine, { backgroundColor: isDark ? "rgba(255,255,255,0.12)" : "rgba(151,106,240,0.18)" }]} />
+              </View>
+
+              {/* ── Continue with MetaMask Button ── */}
+              <TouchableOpacity
+                style={[
+                  styles.walletBtn,
+                  {
+                    backgroundColor: isDark ? "#131A2F" : "#FFFFFF",
+                    borderColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(151, 106, 240, 0.28)",
+                  },
+                ]}
+                onPress={handleContinueWithMetaMask}
+                activeOpacity={0.8}
+                disabled={connectingWallet}
+              >
+                {connectingWallet ? (
+                  <ActivityIndicator color={c.primary} size="small" />
+                ) : (
+                  <View style={styles.walletBtnContent}>
+                    <Ionicons name="wallet-outline" size={19} color="#F5841F" />
+                    <Text style={[styles.walletBtnText, { color: c.warm }]}>
+                      Continue with MetaMask
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {walletStatus ? (
+                <Text style={[styles.walletStatusText, { color: c.muted }]}>
+                  {walletStatus}
+                </Text>
+              ) : null}
+
               {/* ── Sign in link ── */}
               <View style={styles.signInRow}>
                 <Text style={[styles.signInText, { color: c.muted }]}>
@@ -379,6 +495,14 @@ export default function RegisterScreen({
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* ── Complete Profile Modal for Web3 Registrations ── */}
+      <CompleteProfileModal
+        visible={completeProfileVisible}
+        onClose={() => setCompleteProfileVisible(false)}
+        walletAddress={pendingWalletAddress}
+        verificationToken={pendingVerificationToken}
+      />
     </View>
   );
 }
@@ -546,5 +670,44 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: "800",
     textDecorationLine: "underline",
+  },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 14,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  walletBtn: {
+    height: 50,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  walletBtnContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  walletBtnText: {
+    fontSize: 14.5,
+    fontWeight: "700",
+  },
+  walletStatusText: {
+    fontSize: 12,
+    textAlign: "center",
+    marginBottom: 6,
+    fontStyle: "italic",
   },
 });

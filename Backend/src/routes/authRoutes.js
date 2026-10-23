@@ -8,6 +8,7 @@ const {
   getWalletNonce,
   linkWallet,
   unlinkWallet,
+  registerWallet,
   completeWalletProfile,
   logout,
   sessionTimeout,
@@ -40,6 +41,7 @@ router.post('/wallet/nonce', authLimiter, getWalletNonce);
 router.post('/wallet/link', requireAuth, linkWallet);
 router.post('/wallet/login', authLimiter, walletLogin);
 router.post('/wallet/unlink', requireAuth, unlinkWallet);
+router.post('/wallet/register', authLimiter, registerWallet);
 router.post('/wallet/complete-profile', authLimiter, completeWalletProfile);
 
 // Legacy alias

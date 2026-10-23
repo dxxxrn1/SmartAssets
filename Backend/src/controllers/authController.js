@@ -13,6 +13,8 @@ const {
   createNonceChallenge,
   verifyWalletSignature,
   generateSessionForUser,
+  createWalletVerificationToken,
+  verifyWalletVerificationToken,
 } = require('../services/walletAuthService');
 
 // Deterministic password generator for Web3 wallet accounts in Supabase
@@ -407,11 +409,14 @@ async function walletLogin(req, res) {
 
     // 2. If NOT linked to an existing account: DO NOT CREATE A DUMMY USER!
     if (!profile || profile.email?.includes('@metamask.smartassets.io') || profile.full_name?.startsWith('MetaMask (0x')) {
+      const verificationToken = createWalletVerificationToken(cleanAddress);
       return res.status(200).json({
         success: true,
+        needsProfile: true,
         needsAccount: true,
         walletAddress: cleanAddress,
-        message: 'This wallet is not linked to any SmartAssets account yet. Please log in or create an account with your real details to link this wallet.',
+        verificationToken,
+        message: 'Wallet verified! Please complete your profile with your real name and email to finish registering.',
       });
     }
 
@@ -538,70 +543,110 @@ async function unlinkWallet(req, res) {
   }
 }
 
-// ── POST /api/auth/wallet/complete-profile ────────────────────────────────────
+// ── POST /api/auth/wallet/register (and /complete-profile) ─────────────────────
 // Creates a real user account with real name & email linked to a verified wallet.
-async function completeWalletProfile(req, res) {
+// Extracts wallet_address strictly from the cryptographically verified token.
+async function registerWallet(req, res) {
   try {
-    const { walletAddress, signature, nonce, email, fullName, password } = req.body || {};
+    const { verificationToken, walletAddress, signature, nonce, email, fullName, password, avatarUrl } = req.body || {};
 
-    if (!walletAddress || !email || !fullName || !password) {
-      return sendError(res, 400, 'Please provide walletAddress, email, fullName, and password.');
+    if (!email || !fullName) {
+      return sendError(res, 400, 'Please provide both your full name and email address.');
     }
 
-    const cleanAddress = walletAddress.trim().toLowerCase();
     const cleanEmail = email.trim().toLowerCase();
+    const cleanFullName = fullName.trim();
 
-    // Verify signature
-    if (signature && nonce) {
-      const verification = await verifyWalletSignature(cleanAddress, signature, nonce);
-      if (!verification.valid) {
-        return sendError(res, 400, verification.error || 'Cryptographic signature verification failed.');
+    // 1. Resolve verified wallet address
+    let verifiedAddress = null;
+    if (verificationToken) {
+      const tokenVerification = verifyWalletVerificationToken(verificationToken);
+      if (!tokenVerification.valid) {
+        return sendError(res, 400, tokenVerification.error || 'Invalid or expired wallet verification token.');
       }
+      verifiedAddress = tokenVerification.walletAddress;
+    } else if (walletAddress && signature && nonce) {
+      const cleanAddr = walletAddress.trim().toLowerCase();
+      const sigVerification = await verifyWalletSignature(cleanAddr, signature, nonce);
+      if (!sigVerification.valid) {
+        return sendError(res, 400, sigVerification.error || 'Cryptographic signature verification failed.');
+      }
+      verifiedAddress = cleanAddr;
+    } else {
+      return sendError(res, 400, 'Valid wallet verification token or signed challenge is required.');
     }
 
-    // Check if wallet already linked
+    // 2. Validate email is not already in use
+    const { data: existingEmailUser } = await supabase
+      .from('profiles')
+      .select('id, email')
+      .eq('email', cleanEmail)
+      .maybeSingle();
+
+    if (existingEmailUser) {
+      return sendError(
+        res,
+        409,
+        'An account with this email address already exists. Please log in with your email and password, then link your wallet from your Profile.',
+        'EMAIL_ALREADY_IN_USE'
+      );
+    }
+
+    // 3. Check if wallet is already linked to another account
     const { data: existingWallet } = await supabase
       .from('profiles')
       .select('id, full_name, email')
-      .eq('wallet_address', cleanAddress)
+      .eq('wallet_address', verifiedAddress)
       .maybeSingle();
 
     if (existingWallet) {
-      return sendError(res, 409, 'This wallet is already linked to an account.');
+      return sendError(res, 409, 'This wallet is already linked to an account.', 'WALLET_ALREADY_LINKED');
     }
 
-    // Create user in Supabase
+    // 4. Create user in Supabase Auth
+    const effectivePassword = password && password.length >= 6 ? password : getDeterministicPassword(verifiedAddress);
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email: cleanEmail,
-      password,
+      password: effectivePassword,
       email_confirm: true,
       user_metadata: {
-        full_name: fullName.trim(),
-        wallet_address: cleanAddress,
+        full_name: cleanFullName,
+        wallet_address: verifiedAddress,
+        avatar_url: avatarUrl || null,
       },
     });
 
     if (authError) {
-      return sendError(res, 400, authError.message);
+      const isDuplicate = authError.message.toLowerCase().includes('already') || authError.message.toLowerCase().includes('exists');
+      const status = isDuplicate ? 409 : 400;
+      return sendError(
+        res,
+        status,
+        isDuplicate
+          ? 'An account with this email already exists. Please log in with your email and password, then link your wallet from Profile.'
+          : authError.message
+      );
     }
 
-    // Create profile
+    // 5. Create or sync profile table record
     await supabase.from('profiles').upsert(
       {
         id: authData.user.id,
-        full_name: fullName.trim(),
+        full_name: cleanFullName,
         email: cleanEmail,
-        wallet_address: cleanAddress,
+        wallet_address: verifiedAddress,
+        avatar_url: avatarUrl || null,
       },
       { onConflict: 'id' }
     );
 
-    // Initialize user compliance profile
+    // 6. Initialize compliance profile
     const compliance = complianceService.getUserCompliance(authData.user.id, cleanEmail);
 
-    // Generate session
+    // 7. Generate genuine Supabase session
     const session = await generateSessionForUser(cleanEmail);
 
+    // Audit log
     auditLogService.logEvent({
       eventType: 'REGISTER',
       category: 'Authentication',
@@ -609,7 +654,7 @@ async function completeWalletProfile(req, res) {
       actorId: authData.user.id,
       ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
       device: req.headers['user-agent'] || 'SmartAssets Client',
-      description: `New user account created via verified wallet ${cleanAddress}.`,
+      description: `New user account created via verified wallet ${verifiedAddress}.`,
       status: 'Success',
     });
 
@@ -619,8 +664,10 @@ async function completeWalletProfile(req, res) {
       user: {
         id: authData.user.id,
         email: cleanEmail,
-        fullName: fullName.trim(),
-        walletAddress: cleanAddress,
+        fullName: cleanFullName,
+        walletAddress: verifiedAddress,
+        avatarUrl: avatarUrl || null,
+        avatar_url: avatarUrl || null,
         kycStatus: compliance?.kycStatus || 'unverified',
         accountStatus: compliance?.accountStatus || 'active',
         isSuspended: false,
@@ -628,10 +675,12 @@ async function completeWalletProfile(req, res) {
       session,
     });
   } catch (err) {
-    console.error('completeWalletProfile error:', err);
+    console.error('registerWallet error:', err);
     return sendError(res, 500, 'Failed to complete profile registration.');
   }
 }
+
+const completeWalletProfile = registerWallet;
 
 // ── POST /api/auth/logout ────────────────────────────────────────────────────
 // Terminates the session, revokes the JWT token, invalidates Supabase session,
@@ -834,6 +883,7 @@ module.exports = {
   getWalletNonce,
   linkWallet,
   unlinkWallet,
+  registerWallet,
   completeWalletProfile,
   logout,
   sessionTimeout,

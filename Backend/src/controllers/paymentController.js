@@ -195,8 +195,40 @@ async function processPayment(req, res) {
     let etherscanUrl = null;
     let stripeReceipt = null;
 
+    let linkedWallet = null;
+
     // 2. Handle payment method rails
     if (paymentMethod === 'wallet') {
+      // ─── Enforce linked wallet for authenticated user ───
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('wallet_address')
+        .eq('id', userId)
+        .maybeSingle();
+
+      linkedWallet = userProfile?.wallet_address ? userProfile.wallet_address.toLowerCase() : null;
+      if (!linkedWallet) {
+        return sendError(
+          res,
+          400,
+          'No linked wallet found. Please link your MetaMask wallet in your profile before initiating Web3 transactions.',
+          'WALLET_NOT_LINKED'
+        );
+      }
+
+      // Check client-provided walletAddress matches
+      if (paymentDetails?.walletAddress) {
+        const clientWallet = paymentDetails.walletAddress.trim().toLowerCase();
+        if (clientWallet !== linkedWallet) {
+          return sendError(
+            res,
+            400,
+            `Transaction wallet mismatch: The provided wallet (${clientWallet}) does not match your linked settlement wallet (${linkedWallet}).`,
+            'WALLET_MISMATCH'
+          );
+        }
+      }
+
       // ─── MetaMask Web3 Payment ───
       const txHash = paymentDetails?.txHash;
       if (txHash) {
@@ -210,6 +242,20 @@ async function processPayment(req, res) {
             verificationResult.reason || 'Transaction verification failed on Ethereum Sepolia.'
           );
         }
+
+        // Verify the on-chain sender matches the user's linked wallet
+        if (verificationResult.from) {
+          const onChainFrom = verificationResult.from.toLowerCase();
+          if (onChainFrom !== linkedWallet) {
+            return sendError(
+              res,
+              400,
+              `On-chain transaction sender (${onChainFrom}) does not match your linked settlement wallet (${linkedWallet}).`,
+              'WALLET_SENDER_MISMATCH'
+            );
+          }
+        }
+
         onChainTxHash = verificationResult.txHash;
         etherscanUrl = verificationResult.etherscanUrl;
       } else {
@@ -345,7 +391,7 @@ async function processPayment(req, res) {
     const escrowOrder = await escrowService.createEscrowOrder({
       orderId,
       buyerId: userId,
-      buyerAddress: paymentDetails?.walletAddress || req.user.walletAddress,
+      buyerAddress: paymentMethod === 'wallet' ? (linkedWallet || paymentDetails?.walletAddress || req.user.walletAddress) : (paymentDetails?.walletAddress || req.user.walletAddress),
       assetId: asset?.id || null,
       assetName,
       assetCategory,
