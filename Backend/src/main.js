@@ -3,7 +3,12 @@
 
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
+let helmet;
+try {
+  helmet = require('helmet');
+} catch (_) {
+  console.warn('⚠️ [Helmet] helmet package not found. Using custom securityHeaders middleware.');
+}
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
@@ -22,12 +27,14 @@ const PORT = process.env.PORT || 5000;
 
 // ── Security Hardening (Helmet + Security Headers) ───────────────────────────
 app.disable('x-powered-by');
-app.use(
-  helmet({
-    crossOriginResourcePolicy: false,
-    contentSecurityPolicy: false, // Ensure admin console scripts & images load unblocked
-  })
-);
+if (typeof helmet === 'function') {
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: false,
+      contentSecurityPolicy: false, // Ensure admin console scripts & images load unblocked
+    })
+  );
+}
 app.use(securityHeaders);
 
 // ── CORS Configuration (Explicitly supporting Live Server :5500 & Expo) ────────
