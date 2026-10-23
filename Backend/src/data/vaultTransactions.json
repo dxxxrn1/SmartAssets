@@ -360,5 +360,19 @@
     "status": "completed",
     "positive": false,
     "createdAt": "2026-10-12T07:57:37.755Z"
+  },
+  {
+    "id": "TXN-DEP-983487",
+    "userId": "47a8f198-06e0-4eb7-b0ec-617b30318091",
+    "type": "deposit",
+    "title": "Vault Cash Deposit",
+    "amount": 50,
+    "amountFormatted": "+R50",
+    "method": "Instant EFT / Card",
+    "reference": "REF-38273615",
+    "notes": "Deposited into Vault liquid balance",
+    "status": "completed",
+    "positive": true,
+    "createdAt": "2026-10-22T16:57:25.466Z"
   }
 ]

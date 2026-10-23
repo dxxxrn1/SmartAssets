@@ -56,7 +56,7 @@ app.use((_req, res) => {
 });
 
 // ── Start server ─────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 SmartAssets API running at http://localhost:${PORT}`);
   console.log(`   Admin Console: http://localhost:${PORT}/admin`);
   console.log(`   Admin API:     http://localhost:${PORT}/api/admin/overview`);

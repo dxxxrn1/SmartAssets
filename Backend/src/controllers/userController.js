@@ -55,6 +55,8 @@ async function getVault(req, res) {
             if (meta.badgeType) badgeType = meta.badgeType;
             if (meta.sharesOwned) sharesOwned = meta.sharesOwned;
             if (meta.myStake) myStake = Number(meta.myStake);
+            if (meta.certId) item.certId = meta.certId;
+            if (meta.hashDisplay) item.hashDisplay = meta.hashDisplay;
           } catch (_) {}
         }
       }
@@ -65,14 +67,14 @@ async function getVault(req, res) {
         ...item,
         image: normalizeImageUrl(item.image, req),
         initialValue,
-        initialValueFormatted: `£${initialValue.toLocaleString('en-GB')}`,
+        initialValueFormatted: `R${initialValue.toLocaleString('en-ZA')}`,
         liveMarketValue,
-        liveMarketValueFormatted: `£${liveMarketValue.toLocaleString('en-GB')}`,
+        liveMarketValueFormatted: `R${liveMarketValue.toLocaleString('en-ZA')}`,
         badgeText: cleanGain,
         badgeType,
         sharesOwned,
         myStake,
-        myStakeFormatted: `£${myStake.toLocaleString('en-GB')}`,
+        myStakeFormatted: `R${myStake.toLocaleString('en-ZA')}`,
       };
     });
     const vaultTxService = require('../services/vaultTransactionService');
@@ -146,6 +148,8 @@ async function addHolding(req, res) {
         liveMarketValue: Number(liveMarketValue || effectivePriceNum),
         badgeText: badgeText || gainVal,
         badgeType: positive !== undefined ? (positive ? 'positive' : 'negative') : 'positive',
+        certId: req.body.certId || 'ERC-721 #4811',
+        hashDisplay: req.body.hashDisplay || '0x71c...9a',
       };
       gainVal = `${badgeText || gainVal}<!--meta:${JSON.stringify(meta)}-->`;
     }
@@ -156,7 +160,7 @@ async function addHolding(req, res) {
         user_id: userId,
         name: name.trim(),
         category: category.trim(),
-        price: price || `£${effectivePriceNum.toLocaleString('en-GB')}`,
+        price: price || `R${effectivePriceNum.toLocaleString('en-ZA')}`,
         price_num: effectivePriceNum,
         gain: gainVal,
         gain_pct: gainPct || '0%',
