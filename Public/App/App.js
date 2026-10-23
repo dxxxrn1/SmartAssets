@@ -1,5 +1,6 @@
 // ─── SmartAssets — React Native Entry Point ───────────────────────────────────
-// Mounts ThemeProvider, AuthProvider, full navigation tree, and SafeAreaProvider
+// Mounts ThemeProvider, NetworkProvider, AuthProvider, InactivityWatcher
+// (5-min inactivity timer & 30s warning toast), full navigation tree, and SafeAreaProvider.
 
 import React from "react";
 import { StatusBar } from "expo-status-bar";
@@ -21,18 +22,18 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-    <SafeAreaProvider>
-      <StatusBar style="auto" />
-      <ThemeProvider>
-        <NetworkProvider>
-        <AuthProvider>
-          <InactivityWatcher>
-            <AppNavigator />
-          </InactivityWatcher>
-        </AuthProvider>
-        </NetworkProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+      <SafeAreaProvider>
+        <StatusBar style="auto" />
+        <ThemeProvider>
+          <NetworkProvider>
+            <AuthProvider>
+              <InactivityWatcher>
+                <AppNavigator />
+              </InactivityWatcher>
+            </AuthProvider>
+          </NetworkProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

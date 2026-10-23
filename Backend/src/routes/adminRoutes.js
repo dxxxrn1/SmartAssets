@@ -1,6 +1,6 @@
-// ─── Admin Routes ────────────────────────────────────────────────────────────
+// ─── SmartAssets Admin Routes ────────────────────────────────────────────────
 // Zero-migration administration endpoints for managing marketplace assets,
-// escrow custody workflows, and support resolution desks.
+// escrow custody workflows, support resolution desks, and compliance operations.
 
 const express = require('express');
 const router = express.Router();
@@ -24,12 +24,15 @@ router.patch('/tickets/:id', adminController.updateAdminTicket);
 
 // User Directory & Profile Operations
 router.get('/users', adminController.getAdminUsers);
+router.patch('/users/:id/status', adminController.updateUserStatus);
+router.post('/users/:id/suspend', adminController.updateUserStatus);
 
 // Chronological Activity Ledger
 router.get('/activity', adminController.getAdminActivity);
 
-// Verification & Compliance Reviews (Demonstration Queue)
+// Verification & Compliance Reviews (Live Queue + Approvals/Rejections)
 router.get('/verifications', adminController.getAdminVerifications);
+router.post('/verifications/:id/approve', adminController.approveKyc);
+router.post('/verifications/:id/reject', adminController.rejectKyc);
 
 module.exports = router;
-

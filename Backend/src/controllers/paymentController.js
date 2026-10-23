@@ -88,6 +88,14 @@ async function createIntent(req, res) {
 async function processPayment(req, res) {
   try {
     const userId = req.user.id;
+    const complianceService = require('../services/complianceService');
+    const comp = complianceService.getUserCompliance(userId, req.user?.email);
+    if (comp && comp.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
+    }
+    if (comp && comp.kycStatus !== 'verified') {
+      return sendError(res, 403, 'KYC Verification Required: You must submit your FICA compliance pack and be approved before making transactions.');
+    }
     const userEmail = req.user.email || '';
     const userName = req.user.fullName || req.user.email?.split('@')[0] || 'Collector';
     const { assetId, paymentMethod, paymentDetails, amountGbp } = req.body;

@@ -14,6 +14,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
 import { Feather, Ionicons } from '@expo/vector-icons';
@@ -29,7 +30,7 @@ const DEFAULT_DEMO_WALLET =
 export default function LoginScreen({ navigation, isDark: propIsDark }) {
   const { isDark, toggleTheme } = useTheme();
   const c = useColors(isDark);
-  const { login, loginWithWallet } = useAuth();
+  const { login, loginWithWallet, sessionNotice, clearSessionNotice } = useAuth();
   const { isConnected, isOffline, checkConnection } = useNetwork();
 
   // Network check helper before auth actions
@@ -407,9 +408,20 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     <SafeAreaView
       style={[
         styles.safeArea,
-        { backgroundColor: c.canvas || (isDark ? '#0F172A' : '#FFFFFF') },
+        { backgroundColor: c.canvas || (isDark ? '#0F172A' : '#F3EEFF') },
       ]}
     >
+      <LinearGradient
+        colors={
+          isDark
+            ? ['#0F172A', '#131A2F', '#1E1B4B', '#0A0E1A']
+            : ['#e4e0ffff', '#e0daffff', '#f5dfefff', '#fff5efff', '#ffffffff']
+        }
+        locations={isDark ? [0, 0.35, 0.7, 1] : [0, 0.22, 0.52, 0.78, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.85, y: 1 }}
+        style={[StyleSheet.absoluteFillObject, { pointerEvents: 'none' }]}
+      />
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={
@@ -426,18 +438,18 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
           {/* HEADER */}
           <View style={styles.header}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 16 }}>
-              <View
-                style={[
-                  styles.logoBox,
-                  { backgroundColor: c.primary, marginBottom: 0 },
-                ]}
+              <LinearGradient
+                colors={['#976af0', '#00fbff']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.logoBox, { marginBottom: 0 }]}
               >
-                <Feather
-                  name="shield"
-                  size={26}
+                <Ionicons
+                  name="diamond"
+                  size={24}
                   color="#FFFFFF"
                 />
-              </View>
+              </LinearGradient>
 
               <TouchableOpacity
                 onPress={toggleTheme}
@@ -644,6 +656,30 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
             </TouchableOpacity>
 
             {/* ERROR */}
+            {sessionNotice ? (
+              <View
+                style={[
+                  styles.errorBox,
+                  {
+                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                    borderColor: '#F59E0B',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginBottom: 12,
+                  },
+                ]}
+              >
+                <Feather name="alert-triangle" size={16} color="#F59E0B" />
+                <Text style={[styles.errorText, { color: '#F59E0B', flex: 1, fontWeight: '600' }]}>
+                  {sessionNotice}
+                </Text>
+                <TouchableOpacity onPress={clearSessionNotice}>
+                  <Feather name="x" size={16} color="#F59E0B" />
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             {error ? (
               <View
                 style={[
@@ -1379,7 +1415,7 @@ const styles = StyleSheet.create({
   },
 
   primaryBtnText: {
-    color: '#004C3C',
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
   },

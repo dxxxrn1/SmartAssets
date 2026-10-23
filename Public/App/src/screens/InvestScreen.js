@@ -26,6 +26,7 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { SCREENS } from "../constants/navigation";
 import { getMarketAssets, getUserVault, resolveImageUrl } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import KycGatekeeperModal from "../components/KycGatekeeperModal";
 import storage, { STORAGE_KEYS } from "../utils/storage";
 import { getMarketAssetsCache } from "../services/storage";
 
@@ -173,6 +174,7 @@ const WISHLIST_STORAGE_KEY = "@smartassets_wishlist";
 
 export default function InvestScreen({ navigation }) {
   const { user, token } = useAuth();
+  const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
   const [activeTab, setActiveTab] = useState("trading"); // 'trading' | 'wishlist'
   const [offerings, setOfferings] = useState(DEFAULT_OFFERINGS);
   const [loading, setLoading] = useState(false);
@@ -368,6 +370,10 @@ export default function InvestScreen({ navigation }) {
 
   // Handle Direct Share Actions — navigates directly to Fractional Investment page
   const handleBuyShares = (offering) => {
+    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+      setKycGatekeeperVisible(true);
+      return;
+    }
     const totalShares = Number(offering.shares || offering.total_shares || offering.totalShares || 500);
     const sharesSold = Number(offering.sharesSold ?? offering.shares_sold ?? Math.round(totalShares * 0.45));
     const sharePriceNum =
@@ -390,6 +396,10 @@ export default function InvestScreen({ navigation }) {
 
 
   const handleSellShares = (offering) => {
+    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+      setKycGatekeeperVisible(true);
+      return;
+    }
     const sharePriceNum =
       parseFloat(String(offering.share_price || "").replace(/[^0-9.]/g, "")) || 100;
 
@@ -1022,6 +1032,15 @@ export default function InvestScreen({ navigation }) {
         {/* Bottom space for floating bottom bar */}
         <View style={{ height: 110 }} />
       </ScrollView>
+
+      <KycGatekeeperModal
+        visible={kycGatekeeperVisible}
+        onClose={() => setKycGatekeeperVisible(false)}
+        isSuspended={Boolean(user?.isSuspended)}
+        onCompleteVerification={() =>
+          navigation.navigate(SCREENS.PROFILE, { openKyc: true })
+        }
+      />
     </SafeAreaView>
 
 

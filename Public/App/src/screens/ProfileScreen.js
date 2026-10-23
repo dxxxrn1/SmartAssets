@@ -25,6 +25,8 @@ import {
   deleteAccountApi,
   lodgeSupportTicketApi,
   getUserSupportTicketsApi,
+  submitKycApi,
+  getKycStatusApi,
 } from "../services/api";
 import useLinkedWallet from "../hooks/useLinkedWallet";
 
@@ -39,7 +41,7 @@ const isWalletOrMetaMaskString = (str) => {
   );
 };
 
-export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme }) {
+export default function ProfileScreen({ navigation, route, isDark: propIsDark, toggleTheme: propToggleTheme }) {
   const themeContext = useTheme();
   // const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
   // const toggleTheme = propToggleTheme || themeContext.toggleTheme;
@@ -74,6 +76,34 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
   const initialRawEmail = user?.email || "";
   const initialCleanEmail = !isWalletOrMetaMaskString(initialRawEmail) ? initialRawEmail : "";
 
+  // ── SmartAssets FICA / KYC & Banking State ───────────────────────────────
+  const SA_BANKS = [
+    { name: 'FNB', code: '250655' },
+    { name: 'Standard Bank', code: '051001' },
+    { name: 'Capitec', code: '470010' },
+    { name: 'Absa', code: '632005' },
+    { name: 'Nedbank', code: '198765' },
+    { name: 'TymeBank', code: '678910' },
+  ];
+
+  const [kycStatus, setKycStatus] = useState(user?.kycStatus || "unverified");
+  const [rejectionReason, setRejectionReason] = useState(null);
+  const [submittingKyc, setSubmittingKyc] = useState(false);
+  const [supportModalVisible, setSupportModalVisible] = useState(false);
+
+  const [kycForm, setKycForm] = useState({
+    idNumber: "",
+    idDocumentUrl: null,
+    taxNumber: "",
+    taxDocumentUrl: null,
+    residentialAddress: "",
+    proofOfResidenceUrl: null,
+    bankName: "FNB",
+    accountHolder: initialCleanName || user?.fullName || "",
+    accountNumber: "",
+    branchCode: "250655",
+  });
+
   const [form, setForm] = useState({
     fullName: initialCleanName,
     gender: user?.gender || "",
@@ -94,6 +124,7 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
   const [supportCategory, setSupportCategory] = useState("Escrow & Payments");
   const [supportSubject, setSupportSubject] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
+  const [supportPriority, setSupportPriority] = useState("normal");
   const [supportTickets, setSupportTickets] = useState([]);
 
   // Delete Account Confirmation
@@ -103,6 +134,38 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpandedSection(expandedSection === section ? null : section);
   };
+
+  // Listen for navigation route params (e.g. from gatekeeper modal)
+  useEffect(() => {
+    if (route?.params?.openKyc) {
+      setExpandedSection("kyc");
+    } else if (route?.params?.openSupport) {
+      setExpandedSection("support");
+    }
+  }, [route?.params]);
+
+  // Load latest profile, tickets & KYC status on mount
+  useEffect(() => {
+    if (token) {
+      getKycStatusApi(token)
+        .then((res) => {
+          if (res?.compliance) {
+            setKycStatus(res.compliance.kycStatus || "unverified");
+            setRejectionReason(res.compliance.rejectionReason || null);
+            if (res.compliance.bankingDetails) {
+              setKycForm((prev) => ({
+                ...prev,
+                bankName: res.compliance.bankingDetails.bankName || prev.bankName,
+                accountHolder: res.compliance.bankingDetails.accountHolder || prev.accountHolder,
+                accountNumber: res.compliance.bankingDetails.accountNumber || prev.accountNumber,
+                branchCode: res.compliance.bankingDetails.branchCode || prev.branchCode,
+              }));
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [token]);
 
   // Load latest profile & tickets on mount
   useEffect(() => {
@@ -352,6 +415,89 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
     }
   };
 
+  // ── SmartAssets FICA / KYC Document Picker ──
+  const pickKycDocument = async (field) => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: false,
+        quality: 0.5,
+        base64: true,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        const dataUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setKycForm((prev) => ({ ...prev, [field]: dataUri }));
+      }
+    } catch (err) {
+      Alert.alert("File Selection Error", err.message || "Could not select document.");
+    }
+  };
+
+  const handleSelectBank = (bank) => {
+    setKycForm((prev) => ({
+      ...prev,
+      bankName: bank.name,
+      branchCode: bank.code,
+    }));
+  };
+
+  const handleSubmitKyc = async () => {
+    if (!kycForm.idNumber.trim()) {
+      Alert.alert("Required", "Please provide your SA ID or Passport Number.");
+      return;
+    }
+    if (!kycForm.taxNumber.trim()) {
+      Alert.alert("Required", "Please provide your SARS Tax Reference Number.");
+      return;
+    }
+    if (!kycForm.residentialAddress.trim()) {
+      Alert.alert("Required", "Please provide your Physical Residential Address.");
+      return;
+    }
+    if (!kycForm.accountNumber.trim()) {
+      Alert.alert("Required", "Please enter your Bank Account Number for payouts.");
+      return;
+    }
+
+    setSubmittingKyc(true);
+    try {
+      const payload = {
+        fullName: user?.fullName || kycForm.accountHolder,
+        idNumber: kycForm.idNumber.trim(),
+        idDocumentUrl: kycForm.idDocumentUrl,
+        taxNumber: kycForm.taxNumber.trim(),
+        taxDocumentUrl: kycForm.taxDocumentUrl,
+        residentialAddress: kycForm.residentialAddress.trim(),
+        proofOfResidenceUrl: kycForm.proofOfResidenceUrl,
+        bankingDetails: {
+          bankName: kycForm.bankName,
+          accountHolder: kycForm.accountHolder || user?.fullName,
+          accountNumber: kycForm.accountNumber.trim(),
+          branchCode: kycForm.branchCode,
+        },
+      };
+
+      const res = await submitKycApi(payload, token);
+      if (res?.success) {
+        setKycStatus("pending");
+        updateUser({
+          kycStatus: "pending",
+          bankingDetails: payload.bankingDetails,
+        });
+        Alert.alert(
+          "✅ Compliance Pack Submitted!",
+          "Your FICA identity documents and verified banking details are now in the Admin Operations review queue. You will be cleared to transact upon approval."
+        );
+      } else {
+        Alert.alert("Notice", res?.error || "KYC submission failed.");
+      }
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to submit KYC compliance pack.");
+    } finally {
+      setSubmittingKyc(false);
+    }
+  };
+
   // ── Lodge Support Ticket ──
   const handleLodgeSupport = async () => {
     if (!supportSubject.trim()) {
@@ -376,6 +522,7 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
           category: supportCategory,
           subject: supportSubject.trim(),
           message: supportMessage.trim(),
+          priority: supportPriority,
         },
         token,
       );
@@ -520,6 +667,13 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
 
   // Menu items with original pastel colors
   const MENU_ITEMS = [
+    {
+      id: "kyc",
+      label: "FICA / KYC & Banking Verification",
+      icon: "shield",
+      bgColor: "#DCFCE7",
+      textColor: "#15803D",
+    },
     {
       id: "edit",
       label: "Edit Profile",
@@ -833,6 +987,299 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
                     style={{ opacity: 0.6 }}
                   />
                 </TouchableOpacity>
+
+                {/* ── Expanded: FICA / KYC & Banking Verification ── */}
+                {isExpanded && item.id === "kyc" && (
+                  <View style={[styles.expandedContent, { backgroundColor: "#F8FAFC" }]}>
+                    {/* Status Card */}
+                    <View
+                      style={{
+                        padding: 14,
+                        borderRadius: 12,
+                        marginBottom: 16,
+                        backgroundColor:
+                          kycStatus === "verified"
+                            ? "#DCFCE7"
+                            : kycStatus === "pending"
+                            ? "#DBEAFE"
+                            : kycStatus === "rejected"
+                            ? "#FEE2E2"
+                            : "#FEF3C7",
+                        borderWidth: 1,
+                        borderColor:
+                          kycStatus === "verified"
+                            ? "#86EFAC"
+                            : kycStatus === "pending"
+                            ? "#93C5FD"
+                            : kycStatus === "rejected"
+                            ? "#FCA5A5"
+                            : "#FDE68A",
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <Feather
+                          name={
+                            kycStatus === "verified"
+                              ? "check-circle"
+                              : kycStatus === "pending"
+                              ? "clock"
+                              : kycStatus === "rejected"
+                              ? "alert-circle"
+                              : "alert-triangle"
+                          }
+                          size={18}
+                          color={
+                            kycStatus === "verified"
+                              ? "#15803D"
+                              : kycStatus === "pending"
+                              ? "#1D4ED8"
+                              : kycStatus === "rejected"
+                              ? "#B91C1C"
+                              : "#B45309"
+                          }
+                        />
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            fontWeight: "800",
+                            color:
+                              kycStatus === "verified"
+                                ? "#15803D"
+                                : kycStatus === "pending"
+                                ? "#1D4ED8"
+                                : kycStatus === "rejected"
+                                ? "#B91C1C"
+                                : "#B45309",
+                          }}
+                        >
+                          {kycStatus === "verified"
+                            ? "✅ FICA Verified Investor"
+                            : kycStatus === "pending"
+                            ? "⏳ Pending Admin Compliance Review"
+                            : kycStatus === "rejected"
+                            ? "❌ Compliance Dossier Rejected"
+                            : "⚠️ Unverified Investor Account"}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 12, color: "#334155", lineHeight: 18 }}>
+                        {kycStatus === "verified"
+                          ? "Your FICA compliance pack is fully approved. You are cleared for all marketplace listings, fractional trading tranches, and vault cash movements."
+                          : kycStatus === "pending"
+                          ? "Your submitted documents are currently undergoing administrative compliance review. The Admin Portal will approve your account shortly."
+                          : kycStatus === "rejected"
+                          ? `Rejection Reason: ${rejectionReason || "Documentation did not meet compliance criteria. Please resubmit clear photos."}`
+                          : "Financial regulations require submission of your SA ID/Passport, SARS Tax Reference, Proof of Residence, and Bank Details before you can list assets or transact."}
+                      </Text>
+                    </View>
+
+                    {/* Section 1: Required Document Uploads */}
+                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                      1. Required FICA Identity Documents
+                    </Text>
+
+                    {/* SA ID / Passport */}
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                      Government ID / Passport Number
+                    </Text>
+                    <TextInput
+                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      placeholder="e.g. 9001015009087 or ZA Passport"
+                      placeholderTextColor="#94A3B8"
+                      value={kycForm.idNumber}
+                      onChangeText={(v) => setKycForm({ ...kycForm, idNumber: v })}
+                    />
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => pickKycDocument("idDocumentUrl")}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                        backgroundColor: "#FFFFFF",
+                        padding: 12,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: "#CBD5E1",
+                        borderStyle: "dashed",
+                        marginBottom: 14,
+                      }}
+                    >
+                      <Feather name="upload" size={16} color="#2563EB" />
+                      <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
+                        {kycForm.idDocumentUrl ? "✅ ID Document Attached (Tap to replace)" : "Upload ID Document Photo / Scan"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* SARS Tax Reference */}
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                      SARS Tax Reference Number
+                    </Text>
+                    <TextInput
+                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      placeholder="e.g. 9123456789"
+                      placeholderTextColor="#94A3B8"
+                      value={kycForm.taxNumber}
+                      onChangeText={(v) => setKycForm({ ...kycForm, taxNumber: v })}
+                    />
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => pickKycDocument("taxDocumentUrl")}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                        backgroundColor: "#FFFFFF",
+                        padding: 12,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: "#CBD5E1",
+                        borderStyle: "dashed",
+                        marginBottom: 14,
+                      }}
+                    >
+                      <Feather name="upload" size={16} color="#2563EB" />
+                      <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
+                        {kycForm.taxDocumentUrl ? "✅ Tax Notice Attached (Tap to replace)" : "Upload SARS Notice / Certificate"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* Proof of Residence */}
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                      Physical Residential Address
+                    </Text>
+                    <TextInput
+                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      placeholder="Street address, suburb, city, postal code"
+                      placeholderTextColor="#94A3B8"
+                      value={kycForm.residentialAddress}
+                      onChangeText={(v) => setKycForm({ ...kycForm, residentialAddress: v })}
+                    />
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => pickKycDocument("proofOfResidenceUrl")}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                        backgroundColor: "#FFFFFF",
+                        padding: 12,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: "#CBD5E1",
+                        borderStyle: "dashed",
+                        marginBottom: 20,
+                      }}
+                    >
+                      <Feather name="upload" size={16} color="#2563EB" />
+                      <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
+                        {kycForm.proofOfResidenceUrl ? "✅ Utility Bill Attached (Tap to replace)" : "Upload Utility Bill / Bank Statement (< 3 months)"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* Section 2: Verified Banking Details */}
+                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                      2. Verified South African Banking Details
+                    </Text>
+                    <Text style={{ fontSize: 12, color: "#64748B", marginBottom: 10 }}>
+                      Required for instant ZAR escrow payouts, dividends, and vault withdrawals.
+                    </Text>
+
+                    {/* Bank Selector Chips */}
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                      {SA_BANKS.map((bank) => {
+                        const isSelected = kycForm.bankName === bank.name;
+                        return (
+                          <TouchableOpacity
+                            key={bank.name}
+                            activeOpacity={0.8}
+                            onPress={() => handleSelectBank(bank)}
+                            style={{
+                              paddingHorizontal: 12,
+                              paddingVertical: 8,
+                              borderRadius: 8,
+                              backgroundColor: isSelected ? "#2563EB" : "#FFFFFF",
+                              borderWidth: 1,
+                              borderColor: isSelected ? "#2563EB" : "#CBD5E1",
+                            }}
+                          >
+                            <Text style={{ fontSize: 12, fontWeight: "700", color: isSelected ? "#FFFFFF" : "#334155" }}>
+                              {bank.name}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                      Account Holder Name
+                    </Text>
+                    <TextInput
+                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      placeholder="Account Holder Full Name"
+                      placeholderTextColor="#94A3B8"
+                      value={kycForm.accountHolder}
+                      onChangeText={(v) => setKycForm({ ...kycForm, accountHolder: v })}
+                    />
+
+                    <View style={styles.rowInputs}>
+                      <View style={[styles.inputWrap, { flex: 2, marginRight: 8 }]}>
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                          Account Number
+                        </Text>
+                        <TextInput
+                          style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                          placeholder="e.g. 62819203918"
+                          placeholderTextColor="#94A3B8"
+                          keyboardType="numeric"
+                          value={kycForm.accountNumber}
+                          onChangeText={(v) => setKycForm({ ...kycForm, accountNumber: v })}
+                        />
+                      </View>
+                      <View style={[styles.inputWrap, { flex: 1 }]}>
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                          Branch Code
+                        </Text>
+                        <TextInput
+                          style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                          placeholder="250655"
+                          placeholderTextColor="#94A3B8"
+                          keyboardType="numeric"
+                          value={kycForm.branchCode}
+                          onChangeText={(v) => setKycForm({ ...kycForm, branchCode: v })}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Submit Button */}
+                    <TouchableOpacity
+                      activeOpacity={0.88}
+                      onPress={handleSubmitKyc}
+                      disabled={submittingKyc}
+                      style={[
+                        styles.saveBtn,
+                        {
+                          backgroundColor: "#15803D",
+                          marginTop: 14,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 8,
+                        },
+                      ]}
+                    >
+                      {submittingKyc ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <>
+                          <Feather name="shield" size={16} color="#FFFFFF" />
+                          <Text style={[styles.saveBtnText, { color: "#FFFFFF" }]}>
+                            {kycStatus === "verified" ? "Update Compliance Details" : "Submit Compliance Pack for Approval"}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
 
                 {/* ── Expanded: Edit Profile ── */}
                 {isExpanded && item.id === "edit" && (
@@ -1266,8 +1713,18 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
                                 marginTop: 2,
                               }}
                             >
-                              {ticket.id} · {ticket.category}
+                              {ticket.id} · {ticket.category} · Priority: {ticket.priority || 'Normal'}
                             </Text>
+                            {(ticket.resolutionNote || ticket.adminResponse) && (
+                              <View style={{ marginTop: 6, padding: 8, borderRadius: 6, backgroundColor: '#DCFCE7', borderWidth: 1, borderColor: '#86EFAC' }}>
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803D', marginBottom: 2 }}>
+                                  Admin Resolution:
+                                </Text>
+                                <Text style={{ fontSize: 11, color: '#166534', lineHeight: 16 }}>
+                                  {ticket.resolutionNote || ticket.adminResponse}
+                                </Text>
+                              </View>
+                            )}
                           </View>
                         ))}
                       </View>

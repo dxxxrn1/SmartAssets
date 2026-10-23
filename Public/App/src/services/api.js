@@ -257,35 +257,72 @@ export async function verifySessionApi(token) {
 
 // ── User-Isolated Data API ───────────────────────────────────────────────────
 
+let clientVaultCache = null;
+let clientVaultCacheTime = 0;
+let clientVaultCacheToken = null;
+let inFlightVaultPromise = null;
+const CLIENT_VAULT_CACHE_TTL = 10 * 1000; // 10 seconds
+
+export function invalidateVaultCache() {
+  clientVaultCache = null;
+  clientVaultCacheTime = 0;
+  clientVaultCacheToken = null;
+  inFlightVaultPromise = null;
+}
+
 /**
  * Fetch strictly the authenticated user's vault holdings and stats.
  * @param {string} token - User's Supabase JWT access token
+ * @param {boolean} [forceRefresh]
  */
-export async function getUserVault(token) {
-  try {
-    const data = await apiRequest('/user/vault', { method: 'GET' }, token);
-    if (data?.success) {
-      saveVaultCache({
-        summary: data.summary,
-        holdings: data.holdings,
-        transactions: data.transactions,
-      }).catch(() => {});
-    }
-    return data;
-  } catch (err) {
-    const cached = await getVaultCache();
-    if (cached) {
-      return {
-        success: true,
-        summary: cached.summary,
-        holdings: cached.holdings || [],
-        transactions: cached.transactions || [],
-        isOffline: true,
-        cachedAt: cached.cachedAt,
-      };
-    }
-    throw err;
+export async function getUserVault(token, forceRefresh = false) {
+  if (
+    !forceRefresh &&
+    token &&
+    clientVaultCache &&
+    clientVaultCacheToken === token &&
+    Date.now() - clientVaultCacheTime < CLIENT_VAULT_CACHE_TTL
+  ) {
+    return clientVaultCache;
   }
+
+  if (!forceRefresh && inFlightVaultPromise && clientVaultCacheToken === token) {
+    return inFlightVaultPromise;
+  }
+
+  clientVaultCacheToken = token;
+  inFlightVaultPromise = (async () => {
+    try {
+      const data = await apiRequest('/user/vault', { method: 'GET' }, token);
+      if (data?.success) {
+        clientVaultCache = data;
+        clientVaultCacheTime = Date.now();
+        saveVaultCache({
+          summary: data.summary,
+          holdings: data.holdings,
+          transactions: data.transactions,
+        }).catch(() => {});
+      }
+      return data;
+    } catch (err) {
+      const cached = await getVaultCache();
+      if (cached) {
+        return {
+          success: true,
+          summary: cached.summary,
+          holdings: cached.holdings || [],
+          transactions: cached.transactions || [],
+          isOffline: true,
+          cachedAt: cached.cachedAt,
+        };
+      }
+      throw err;
+    } finally {
+      inFlightVaultPromise = null;
+    }
+  })();
+
+  return inFlightVaultPromise;
 }
 
 /**
@@ -294,6 +331,7 @@ export async function getUserVault(token) {
  * @param {object} holdingData
  */
 export async function addUserHolding(token, holdingData) {
+  invalidateVaultCache();
   return apiRequest(
     '/user/vault',
     {
@@ -309,6 +347,7 @@ export async function addUserHolding(token, holdingData) {
  * @param {string} token
  */
 export async function seedUserStarter(token) {
+  invalidateVaultCache();
   return apiRequest('/user/seed-starter', { method: 'POST' }, token);
 }
 
@@ -694,6 +733,7 @@ export async function getUserSupportTicketsApi(token) {
  * @param {{ amount: number, method?: string, reference?: string, notes?: string }} depositData
  */
 export async function depositFundsApi(depositData, token) {
+  invalidateVaultCache();
   return apiRequest(
     '/user/deposit',
     {
@@ -709,6 +749,7 @@ export async function depositFundsApi(depositData, token) {
  * @param {{ amount: number, method?: string, bankDetails?: object, walletAddress?: string, notes?: string }} withdrawData
  */
 export async function withdrawFundsApi(withdrawData, token) {
+  invalidateVaultCache();
   return apiRequest(
     '/user/withdraw',
     {
@@ -744,7 +785,7 @@ export function resolveImageUrl(
   }
   if (imageUri.startsWith('data:image/')) return imageUri;
 
-  const uploadsMatch = imageUri.match(/\/uploads\/assets\/[^"'\s?#]+/i);
+  const uploadsMatch = imageUri.match(/\/uploads\/(?:assets|kyc|avatars)\/[^"'\s?#]+/i);
   if (uploadsMatch) {
     const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
     return `${baseOrigin}${uploadsMatch[0]}`;
@@ -757,4 +798,59 @@ export function resolveImageUrl(
   }
 
   return imageUri;
+}
+
+// ── FICA / KYC Compliance API ────────────────────────────────────────────────
+
+/**
+ * Submit FICA / KYC compliance pack (SA ID, SARS Tax, Proof of Residence, Bank details).
+ */
+export async function submitKycApi(kycData, token) {
+  return apiRequest(
+    '/users/kyc-submit',
+    {
+      method: 'POST',
+      body: JSON.stringify(kycData),
+    },
+    token
+  );
+}
+
+/**
+ * Retrieve user's KYC verification and compliance status.
+ */
+export async function getKycStatusApi(token) {
+  return apiRequest('/users/kyc-status', { method: 'GET' }, token);
+}
+
+/**
+ * Logout session on backend to record audit trail.
+ */
+export async function logoutSessionApi(token, email = null) {
+  try {
+    return await apiRequest(
+      '/auth/logout',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      },
+      token
+    );
+  } catch (_) {
+    return { success: true };
+  }
+}
+
+/**
+ * Report 5-minute inactivity session timeout to backend audit ledger.
+ */
+export async function logSessionTimeoutApi(email = null, userId = null) {
+  try {
+    return await apiRequest('/auth/session-timeout', {
+      method: 'POST',
+      body: JSON.stringify({ email, userId }),
+    });
+  } catch (_) {
+    return { success: true };
+  }
 }

@@ -1,4 +1,4 @@
-// ─── Auth Routes ─────────────────────────────────────────────────────────────
+// ─── SmartAssets Auth Routes ─────────────────────────────────────────────────
 const express = require('express');
 
 const {
@@ -9,9 +9,10 @@ const {
   linkWallet,
   unlinkWallet,
   completeWalletProfile,
+  logout,
+  sessionTimeout,
   forgotPassword,
   resetPassword,
-  logout,
   verifySession,
 } = require('../controllers/authController');
 const { requireAuth } = require('../middlewares/authMiddleware');
@@ -31,6 +32,7 @@ router.post('/login', authLimiter, login);
 router.post('/forgot-password', authLimiter, forgotPassword);
 router.post('/reset-password', resetPassword);
 router.post('/logout', logout);
+router.post('/session-timeout', sessionTimeout);
 router.get('/session', verifySession);
 
 // ── Web3 MetaMask Cryptographic Challenge-Response Routes ────────────────────

@@ -1,6 +1,6 @@
 // ─── RegisterScreen ──────────────────────────────────────────────────────────
 // Full registration form — Full Name, Email, Password, Confirm Password
-// Matches the app's existing design language (dark theme, sky-blue accents)
+// Matches the SmartAssets Luminous Lavender & Violet-Cyan Glassmorphism Theme
 
 import React, { useState } from "react";
 import {
@@ -16,24 +16,31 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import { useColors } from "../constants/theme";
 import { SCREENS } from "../constants/navigation";
-import { Feather } from "@expo/vector-icons";
 import { registerUser } from "../services/api";
 import { useTheme } from "../context/ThemeContext";
 import { useNetwork, OfflineBanner } from "../context/NetworkContext";
 
-export default function RegisterScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme }) {
+export default function RegisterScreen({
+  navigation,
+  isDark: propIsDark,
+  toggleTheme: propToggleTheme,
+}) {
   const themeContext = useTheme();
   const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
   const toggleTheme = propToggleTheme || themeContext.toggleTheme;
   const c = useColors(isDark);
-  const { isConnected, isOffline, checkConnection } = useNetwork();
+  const { isConnected, isOffline } = useNetwork();
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -47,7 +54,6 @@ export default function RegisterScreen({ navigation, isDark: propIsDark, toggleT
       setError("Please enter your email address.");
       return false;
     }
-    // Basic email format check
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
       setError("Please enter a valid email address.");
@@ -71,22 +77,29 @@ export default function RegisterScreen({ navigation, isDark: propIsDark, toggleT
 
     setLoading(true);
     try {
-      const result = await registerUser({
+      await registerUser({
         email: email.trim().toLowerCase(),
         password,
         fullName: fullName.trim(),
       });
 
-      Alert.alert(
-        "Account Created",
-        "Your SmartAssets account has been created. Please sign in.",
-        [
-          {
-            text: "Sign In",
-            onPress: () => navigation.navigate(SCREENS.LOGIN),
-          },
-        ],
-      );
+      if (Platform.OS === "web") {
+        window.alert(
+          "Account Created — FICA Notice\n\nYour SmartAssets account has been created! To list assets, trade fractional shares, and deposit funds, please submit your FICA compliance pack in your Profile upon signing in."
+        );
+        navigation.navigate(SCREENS.LOGIN);
+      } else {
+        Alert.alert(
+          "Account Created — FICA Notice",
+          "Your SmartAssets account has been created! To list assets, trade fractional shares, and deposit funds, please submit your FICA compliance pack (ID, Tax Number, Proof of Residence, and Banking details) in your Profile upon signing in.",
+          [
+            {
+              text: "Continue to Sign In",
+              onPress: () => navigation.navigate(SCREENS.LOGIN),
+            },
+          ]
+        );
+      }
     } catch (err) {
       setError(err.message || "Registration failed. Please try again.");
     } finally {
@@ -95,212 +108,362 @@ export default function RegisterScreen({ navigation, isDark: propIsDark, toggleT
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.obsidian }]}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        {/* ── Back button ── */}
-        <View style={styles.navBar}>
-          <TouchableOpacity
-            style={[
-              styles.backBtn,
-              { backgroundColor: c.card, borderColor: c.border },
-            ]}
-            onPress={() => navigation.goBack()}
-          >
-            <Feather name="arrow-left" size={18} color={c.warm} />
-          </TouchableOpacity>
-        </View>
+    <View style={[styles.root, { backgroundColor: isDark ? "#0F172A" : "#F3EEFF" }]}>
+      {/* ── SmartAssets Mesh Gradient Background ── */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ["#0F172A", "#131A2F", "#1E1B4B", "#0A0E1A"]
+            : ["#e4e0ffff", "#e0daffff", "#f5dfefff", "#fff5efff", "#ffffffff"]
+        }
+        locations={isDark ? [0, 0.35, 0.7, 1] : [0, 0.22, 0.52, 0.78, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.85, y: 1 }}
+        style={[StyleSheet.absoluteFillObject, { pointerEvents: "none" }]}
+      />
 
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
+      <SafeAreaView style={styles.safe}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          {/* OFFLINE BANNER */}
-          <OfflineBanner
-            isDark={isDark}
-            message="You are currently offline. Connect to the internet to register."
-            style={{ marginHorizontal: 0, marginBottom: 14 }}
-          />
-
-          {/* ── Heading ── */}
-          <Text style={[styles.heading, { color: c.warm }]}>
-            Create Account
-          </Text>
-          <Text style={[styles.sub, { color: c.muted }]}>
-            Join SmartAssets — the verified luxury marketplace
-          </Text>
-
-          {/* ── Error message ── */}
-          {error ? (
-            <View style={[styles.errorBox, { backgroundColor: c.redBg }]}>
-              <Feather name="alert-circle" size={16} color={c.red} />
-              <Text style={[styles.errorText, { color: c.red }]}>{error}</Text>
-            </View>
-          ) : null}
-
-          {/* ── Full Name field ── */}
-          <View style={styles.fieldWrap}>
-            <Text style={[styles.label, { color: c.muted }]}>FULL NAME</Text>
-            <TextInput
-              value={fullName}
-              onChangeText={(text) => {
-                setFullName(text);
-                setError("");
-              }}
-              autoCapitalize="words"
-              placeholder="John Doe"
+          {/* ── Top Bar: Back Button + Brand Badge + Theme Toggle ── */}
+          <View style={styles.navBar}>
+            <TouchableOpacity
               style={[
-                styles.input,
+                styles.backBtn,
                 {
-                  backgroundColor: c.card,
-                  borderColor: c.border,
-                  color: c.warm,
+                  backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "#FFFFFF",
+                  borderColor: isDark ? "rgba(255,255,255,0.14)" : "rgba(151, 106, 240, 0.22)",
                 },
               ]}
-              placeholderTextColor={c.muted}
-            />
-          </View>
-
-          {/* ── Email field ── */}
-          <View style={styles.fieldWrap}>
-            <Text style={[styles.label, { color: c.muted }]}>
-              EMAIL ADDRESS
-            </Text>
-            <TextInput
-              value={email}
-              onChangeText={(text) => {
-                setEmail(text);
-                setError("");
-              }}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              placeholder="you@example.com"
-              style={[
-                styles.input,
-                {
-                  backgroundColor: c.card,
-                  borderColor: c.border,
-                  color: c.warm,
-                },
-              ]}
-              placeholderTextColor={c.muted}
-            />
-          </View>
-
-          {/* ── Password field ── */}
-          <View style={styles.fieldWrap}>
-            <Text style={[styles.label, { color: c.muted }]}>PASSWORD</Text>
-            <TextInput
-              value={password}
-              onChangeText={(text) => {
-                setPassword(text);
-                setError("");
-              }}
-              secureTextEntry
-              placeholder="Min. 6 characters"
-              style={[
-                styles.input,
-                {
-                  backgroundColor: c.card,
-                  borderColor: c.border,
-                  color: c.warm,
-                },
-              ]}
-              placeholderTextColor={c.muted}
-            />
-          </View>
-
-          {/* ── Confirm Password field ── */}
-          <View style={styles.fieldWrap}>
-            <Text style={[styles.label, { color: c.muted }]}>
-              CONFIRM PASSWORD
-            </Text>
-            <TextInput
-              value={confirmPassword}
-              onChangeText={(text) => {
-                setConfirmPassword(text);
-                setError("");
-              }}
-              secureTextEntry
-              placeholder="Re-enter your password"
-              style={[
-                styles.input,
-                {
-                  backgroundColor: c.card,
-                  borderColor: c.border,
-                  color: c.warm,
-                },
-              ]}
-              placeholderTextColor={c.muted}
-            />
-          </View>
-
-          {/* ── Register button ── */}
-          <TouchableOpacity
-            style={[
-              styles.primaryBtn,
-              { backgroundColor: loading ? c.primaryDim : c.primary },
-            ]}
-            onPress={handleRegister}
-            activeOpacity={0.85}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Text style={styles.primaryBtnLabel}>Create Account</Text>
-            )}
-          </TouchableOpacity>
-
-          {/* ── Sign in link ── */}
-          <Text style={[styles.signInText, { color: c.muted }]}>
-            Already have an account?{" "}
-            <Text
-              style={[styles.signInLink, { color: c.primary }]}
-              onPress={() => navigation.navigate(SCREENS.LOGIN)}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.8}
             >
-              Sign In
-            </Text>
-          </Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+              <Feather name="arrow-left" size={18} color={c.warm} />
+            </TouchableOpacity>
+
+            <View style={styles.brandRow}>
+              <LinearGradient
+                colors={["#976af0", "#00fbff"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.brandLogoBadge}
+              >
+                <Ionicons name="diamond" size={16} color="#FFFFFF" />
+              </LinearGradient>
+              <Text style={[styles.brandTitle, { color: c.warm }]}>SmartAssets</Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={toggleTheme}
+              activeOpacity={0.75}
+              style={[
+                styles.themePill,
+                {
+                  backgroundColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.85)",
+                  borderColor: isDark ? "rgba(255,255,255,0.18)" : "rgba(151, 106, 240, 0.22)",
+                },
+              ]}
+            >
+              <Feather
+                name={isDark ? "sun" : "moon"}
+                size={15}
+                color={isDark ? "#F59E0B" : "#7C3AED"}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* OFFLINE BANNER */}
+            <OfflineBanner
+              isDark={isDark}
+              message="You are currently offline. Connect to the internet to register."
+              style={{ maxWidth: 480, alignSelf: "center", width: "100%", marginBottom: 14 }}
+            />
+
+            {/* ── Frosted Glass Form Card ── */}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: isDark ? "rgba(24, 33, 56, 0.92)" : "rgba(255, 255, 255, 0.92)",
+                  borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(151, 106, 240, 0.2)",
+                },
+              ]}
+            >
+              {/* ── Heading ── */}
+              <Text style={[styles.heading, { color: c.warm }]}>Create Account</Text>
+              <Text style={[styles.sub, { color: c.muted }]}>
+                Join SmartAssets — the verified luxury & fractional asset marketplace
+              </Text>
+
+              {/* ── Error message ── */}
+              {error ? (
+                <View
+                  style={[
+                    styles.errorBox,
+                    {
+                      backgroundColor: "rgba(239, 68, 68, 0.12)",
+                      borderColor: "rgba(239, 68, 68, 0.35)",
+                    },
+                  ]}
+                >
+                  <Feather name="alert-circle" size={16} color="#EF4444" />
+                  <Text style={[styles.errorText, { color: "#EF4444" }]}>{error}</Text>
+                </View>
+              ) : null}
+
+              {/* ── Full Name field ── */}
+              <View style={styles.fieldWrap}>
+                <Text style={[styles.label, { color: c.muted }]}>FULL NAME</Text>
+                <TextInput
+                  value={fullName}
+                  onChangeText={(text) => {
+                    setFullName(text);
+                    setError("");
+                  }}
+                  autoCapitalize="words"
+                  placeholder="John Doe"
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: isDark ? "#131A2F" : "#F8FAFC",
+                      borderColor: isDark ? "rgba(255,255,255,0.12)" : "#E2E8F0",
+                      color: c.warm,
+                    },
+                  ]}
+                  placeholderTextColor={c.muted}
+                />
+              </View>
+
+              {/* ── Email field ── */}
+              <View style={styles.fieldWrap}>
+                <Text style={[styles.label, { color: c.muted }]}>EMAIL ADDRESS</Text>
+                <TextInput
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    setError("");
+                  }}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="you@example.com"
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: isDark ? "#131A2F" : "#F8FAFC",
+                      borderColor: isDark ? "rgba(255,255,255,0.12)" : "#E2E8F0",
+                      color: c.warm,
+                    },
+                  ]}
+                  placeholderTextColor={c.muted}
+                />
+              </View>
+
+              {/* ── Password field ── */}
+              <View style={styles.fieldWrap}>
+                <Text style={[styles.label, { color: c.muted }]}>PASSWORD</Text>
+                <View
+                  style={[
+                    styles.passwordRow,
+                    {
+                      backgroundColor: isDark ? "#131A2F" : "#F8FAFC",
+                      borderColor: isDark ? "rgba(255,255,255,0.12)" : "#E2E8F0",
+                    },
+                  ]}
+                >
+                  <TextInput
+                    value={password}
+                    onChangeText={(text) => {
+                      setPassword(text);
+                      setError("");
+                    }}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    placeholder="Min. 6 characters"
+                    style={[styles.passwordInput, { color: c.warm }]}
+                    placeholderTextColor={c.muted}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowPassword((v) => !v)}
+                    activeOpacity={0.7}
+                    style={styles.eyeBtn}
+                  >
+                    <Feather
+                      name={showPassword ? "eye-off" : "eye"}
+                      size={18}
+                      color={c.muted}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* ── Confirm Password field ── */}
+              <View style={styles.fieldWrap}>
+                <Text style={[styles.label, { color: c.muted }]}>CONFIRM PASSWORD</Text>
+                <View
+                  style={[
+                    styles.passwordRow,
+                    {
+                      backgroundColor: isDark ? "#131A2F" : "#F8FAFC",
+                      borderColor: isDark ? "rgba(255,255,255,0.12)" : "#E2E8F0",
+                    },
+                  ]}
+                >
+                  <TextInput
+                    value={confirmPassword}
+                    onChangeText={(text) => {
+                      setConfirmPassword(text);
+                      setError("");
+                    }}
+                    secureTextEntry={!showConfirmPassword}
+                    autoCapitalize="none"
+                    placeholder="Re-enter your password"
+                    style={[styles.passwordInput, { color: c.warm }]}
+                    placeholderTextColor={c.muted}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowConfirmPassword((v) => !v)}
+                    activeOpacity={0.7}
+                    style={styles.eyeBtn}
+                  >
+                    <Feather
+                      name={showConfirmPassword ? "eye-off" : "eye"}
+                      size={18}
+                      color={c.muted}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* ── Register button (SmartAssets Signature Gradient) ── */}
+              <TouchableOpacity
+                style={styles.primaryBtnWrap}
+                onPress={handleRegister}
+                activeOpacity={0.88}
+                disabled={loading}
+              >
+                <LinearGradient
+                  colors={["#7C3AED", "#5B36F5", "#2563EB"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.primaryBtnGradient}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.primaryBtnLabel}>Create Account</Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* ── Sign in link ── */}
+              <View style={styles.signInRow}>
+                <Text style={[styles.signInText, { color: c.muted }]}>
+                  Already have an account?{" "}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate(SCREENS.LOGIN)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.signInLink, { color: c.primary }]}>Sign In</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   safe: { flex: 1 },
   navBar: {
+    maxWidth: 520,
+    width: "100%",
+    alignSelf: "center",
     paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingTop: 10,
+    paddingBottom: 8,
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  brandLogoBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  brandTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+  },
+  themePill: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
   scroll: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  card: {
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 26,
     gap: 16,
+    shadowColor: "#5B36F5",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 6,
   },
   heading: {
-    fontSize: 30,
-    fontWeight: "700",
+    fontSize: 28,
+    fontWeight: "800",
     letterSpacing: -0.5,
-    marginTop: 8,
   },
   sub: {
-    fontSize: 13,
-    marginTop: 2,
+    fontSize: 13.5,
+    lineHeight: 20,
+    marginTop: -6,
     marginBottom: 4,
   },
   errorBox: {
@@ -310,45 +473,78 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 12,
+    borderWidth: 1,
   },
   errorText: {
     fontSize: 13,
-    fontWeight: "500",
+    fontWeight: "600",
     flex: 1,
   },
   fieldWrap: {
     gap: 6,
   },
   label: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "700",
-    letterSpacing: 1.2,
+    letterSpacing: 0.9,
   },
   input: {
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 14,
-  },
-  primaryBtn: {
-    borderRadius: 18,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 4,
-  },
-  primaryBtnLabel: {
-    color: "#004C3C",
-    fontWeight: "700",
     fontSize: 15,
   },
+  passwordRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingVertical: 14,
+    fontSize: 15,
+  },
+  eyeBtn: {
+    paddingLeft: 10,
+    paddingVertical: 8,
+  },
+  primaryBtnWrap: {
+    borderRadius: 16,
+    overflow: "hidden",
+    marginTop: 6,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  primaryBtnGradient: {
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  primaryBtnLabel: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 15.5,
+    letterSpacing: 0.2,
+  },
+  signInRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 6,
+  },
   signInText: {
-    textAlign: "center",
-    fontSize: 12,
-    marginTop: 8,
+    fontSize: 13.5,
   },
   signInLink: {
-    fontWeight: "700",
+    fontSize: 13.5,
+    fontWeight: "800",
     textDecorationLine: "underline",
   },
 });

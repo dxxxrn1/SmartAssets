@@ -1,7 +1,6 @@
 // ─── SplashScreen / Landing Page ──────────────────────────────────────────────
-// Modern high-converting fintech landing page inspired by the reference design:
-// Full-screen lifestyle hero photography with golden spiral & sparkle accents,
-// smooth dark vignette gradient, clean bold typography, and a luminous mint CTA pill.
+// SmartAssets Landing Page — Full-screen hero photography with Violet-Indigo
+// vignette gradient, diamond brand badge, and signature SmartAssets CTA pill.
 
 import React from 'react';
 import {
@@ -16,8 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SCREENS } from '../constants/navigation';
-import { ALIM } from '../constants/theme';
-import { Feather, Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -26,21 +24,21 @@ export default function SplashScreen({ navigation }) {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* ── Background Hero Image (Lifestyle Photography with Golden Spiral) ── */}
+      {/* ── Background Hero Image ── */}
       <Image
         source={require('../../assets/landing_hero.png')}
         style={styles.heroBackground}
         resizeMode="cover"
       />
 
-      {/* ── Deep Vignette Fade (Darkens bottom half for high text readability) ── */}
+      {/* ── Deep Violet-Indigo Vignette Fade ── */}
       <LinearGradient
         colors={[
-          'rgba(30, 39, 104, 0.05)',
-          'rgba(30, 39, 104, 0.35)',
-          'rgba(30, 39, 104, 0.85)',
-          '#1E2768',
-          '#1E2768',
+          'rgba(46, 16, 101, 0.05)',
+          'rgba(46, 16, 101, 0.35)',
+          'rgba(46, 16, 101, 0.85)',
+          '#1E1B4B',
+          '#1E1B4B',
         ]}
         locations={[0, 0.38, 0.62, 0.82, 1]}
         style={styles.vignetteOverlay}
@@ -50,13 +48,13 @@ export default function SplashScreen({ navigation }) {
       <SafeAreaView edges={['top']} style={styles.topSafeArea}>
         <View style={styles.topBrandRow}>
           <View style={styles.brandPill}>
-            <Ionicons name="shield-checkmark" size={14} color="#F59E0B" />
+            <Ionicons name="diamond" size={14} color="#00C2FF" />
             <Text style={styles.brandPillText}>SMARTASSETS</Text>
           </View>
         </View>
       </SafeAreaView>
 
-      {/* ── Bottom Content & CTA Section (Matching Mockup) ── */}
+      {/* ── Bottom Content & CTA Section ── */}
       <SafeAreaView edges={['bottom', 'left', 'right']} style={styles.bottomSafeArea}>
         <View style={styles.contentWrap}>
           {/* Headline */}
@@ -67,14 +65,14 @@ export default function SplashScreen({ navigation }) {
             One-stop solution to verified luxury assets & fractional investments
           </Text>
 
-          {/* ── Primary Action: Vibrant Luminous Mint Pill Button ── */}
+          {/* ── Primary Action: SmartAssets Violet-Cyan Gradient Pill Button ── */}
           <TouchableOpacity
             style={styles.ctaButton}
             activeOpacity={0.88}
             onPress={() => navigation.navigate(SCREENS.ONBOARDING)}
           >
             <LinearGradient
-              colors={['#3B82F6', '#2563EB']}
+              colors={['#7C3AED', '#5B36F5', '#2563EB']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.ctaGradient}
@@ -103,7 +101,7 @@ export default function SplashScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1E2768',
+    backgroundColor: '#1E1B4B',
   },
 
   heroBackground: {
@@ -136,12 +134,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(30, 39, 104, 0.75)',
+    backgroundColor: 'rgba(46, 16, 101, 0.75)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: 'rgba(255, 255, 255, 0.16)',
   },
 
   brandPillText: {
@@ -177,7 +175,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 15,
     lineHeight: 22,
-    color: '#CBD5E1',
+    color: '#E2E8F0',
     fontWeight: '400',
     textAlign: 'center',
     marginBottom: 32,
@@ -189,8 +187,9 @@ const styles = StyleSheet.create({
 
   ctaButton: {
     width: '100%',
+    maxWidth: 460,
     borderRadius: 999,
-    shadowColor: '#2563EB',
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.45,
     shadowRadius: 16,
@@ -218,12 +217,12 @@ const styles = StyleSheet.create({
 
   signInPrompt: {
     fontSize: 13.5,
-    color: '#94A3B8',
+    color: '#CBD5E1',
     fontWeight: '500',
   },
 
   signInHighlight: {
-    color: '#60A5FA',
+    color: '#C084FC',
     fontWeight: '700',
     textDecorationLine: 'underline',
   },

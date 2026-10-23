@@ -17,23 +17,98 @@ const STORAGE_KEYS = {
 // Fallback in-memory map for environments where AsyncStorage / localStorage fails
 const memoryStore = new Map();
 
+const CACHE_KEY_SET = new Set([
+  STORAGE_KEYS.VAULT_CACHE,
+  STORAGE_KEYS.MARKET_CACHE,
+  '@smartassets_cached_assets',
+  '@smartassets_cached_vault',
+  '@smartassets_personal_collection',
+  '@smartassets_co_owned_assets',
+]);
+
+/**
+ * Strip multi-megabyte base64 data URIs from cache objects before writing to
+ * browser localStorage (which has a strict 5MB origin quota).
+ */
+export function sanitizeForStorage(val) {
+  if (!val) return val;
+  if (typeof val === 'string') {
+    if (val.startsWith('data:image/') && val.length > 2000) {
+      return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
+    }
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map(sanitizeForStorage);
+  }
+  if (typeof val === 'object') {
+    const out = {};
+    for (const k of Object.keys(val)) {
+      out[k] = sanitizeForStorage(val[k]);
+    }
+    return out;
+  }
+  return val;
+}
+
+/**
+ * Evict oversized or base64-bloated cache entries from Web localStorage on startup
+ * or when QuotaExceededError occurs, ensuring auth sessions always have room.
+ */
+export function pruneBloatedWebStorage(aggressive = false) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const keys = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k) keys.push(k);
+      }
+      for (const k of keys) {
+        if (
+          k === '@smartassets_session' ||
+          k === STORAGE_KEYS.AUTH_USER ||
+          k === STORAGE_KEYS.AUTH_TOKEN ||
+          k === STORAGE_KEYS.THEME_DARK
+        ) {
+          continue;
+        }
+        const raw = window.localStorage.getItem(k);
+        if (
+          aggressive ||
+          (CACHE_KEY_SET.has(k) && raw && (raw.length > 150000 || raw.includes('data:image/')))
+        ) {
+          window.localStorage.removeItem(k);
+        } else if (raw && (raw.length > 250000 || raw.includes('data:image/'))) {
+          window.localStorage.removeItem(k);
+        }
+      }
+    } catch (_) {}
+  }
+}
+
+// Run once on module initialization to clear any legacy 5MB quota bloat in browser
+pruneBloatedWebStorage(false);
+
 /**
  * Safely store an item
  */
 export async function setItem(key, value) {
-  const serialized = JSON.stringify(value);
+  const safeVal = CACHE_KEY_SET.has(key) ? sanitizeForStorage(value) : value;
+  const serialized = JSON.stringify(safeVal);
+  memoryStore.set(key, serialized);
+
+  if (Platform.OS === 'web' && CACHE_KEY_SET.has(key) && serialized.length > 350000) {
+    return;
+  }
+
   try {
     await AsyncStorage.setItem(key, serialized);
   } catch (err) {
-    console.warn(`[Storage] AsyncStorage.setItem failed for ${key}, falling back:`, err);
+    pruneBloatedWebStorage(true);
     if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
       try {
         window.localStorage.setItem(key, serialized);
-      } catch (localErr) {
-        memoryStore.set(key, serialized);
-      }
-    } else {
-      memoryStore.set(key, serialized);
+      } catch (_) {}
     }
   }
 }
@@ -47,8 +122,7 @@ export async function getItem(key, defaultValue = null) {
     if (raw !== null && raw !== undefined) {
       return JSON.parse(raw);
     }
-  } catch (err) {
-    console.warn(`[Storage] AsyncStorage.getItem failed for ${key}, checking fallback:`, err);
+  } catch (_) {
     if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
       try {
         const localRaw = window.localStorage.getItem(key);
@@ -57,12 +131,12 @@ export async function getItem(key, defaultValue = null) {
         }
       } catch (_) {}
     }
-    const memRaw = memoryStore.get(key);
-    if (memRaw !== undefined) {
-      try {
-        return JSON.parse(memRaw);
-      } catch (_) {}
-    }
+  }
+  const memRaw = memoryStore.get(key);
+  if (memRaw !== undefined) {
+    try {
+      return JSON.parse(memRaw);
+    } catch (_) {}
   }
   return defaultValue;
 }
@@ -73,9 +147,7 @@ export async function getItem(key, defaultValue = null) {
 export async function removeItem(key) {
   try {
     await AsyncStorage.removeItem(key);
-  } catch (err) {
-    console.warn(`[Storage] AsyncStorage.removeItem failed for ${key}:`, err);
-  }
+  } catch (_) {}
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
     try {
       window.localStorage.removeItem(key);

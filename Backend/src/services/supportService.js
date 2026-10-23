@@ -60,7 +60,7 @@ function createTicket({ userId, userEmail, userName, category, subject, message,
     subject: subject.trim(),
     message: message.trim(),
     priority,
-    status: 'Open', // 'Open' | 'In Review' | 'Resolved'
+    status: 'Open', // 'Open' | 'In Progress' | 'In Review' | 'Resolved'
     createdAt: now,
     updatedAt: now,
     responseEstimate: '2-4 hours',
@@ -105,10 +105,11 @@ function updateTicketStatus(ticketId, status, resolutionNote = null) {
   const ticket = ticketsMap.get(ticketId);
   if (!ticket) return null;
 
-  ticket.status = status; // 'Open' | 'In Review' | 'Resolved'
+  ticket.status = status; // 'Open' | 'In Progress' | 'In Review' | 'Resolved'
   ticket.updatedAt = new Date().toISOString();
   if (resolutionNote) {
     ticket.resolutionNote = resolutionNote;
+    ticket.adminResponse = resolutionNote;
   }
   ticketsMap.set(ticketId, ticket);
   persistTickets();
@@ -129,4 +130,3 @@ module.exports = {
   getAllTickets,
   updateTicketStatus,
 };
-

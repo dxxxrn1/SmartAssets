@@ -5,13 +5,17 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const UPLOADS_DIR = path.resolve(__dirname, '../../uploads/assets');
+const KYC_UPLOADS_DIR = path.resolve(__dirname, '../../uploads/kyc');
+
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
-
-const crypto = require('crypto');
+if (!fs.existsSync(KYC_UPLOADS_DIR)) {
+  fs.mkdirSync(KYC_UPLOADS_DIR, { recursive: true });
+}
 
 /**
  * Extracts and saves a base64 image data URI to static storage on disk.
@@ -67,13 +71,16 @@ function normalizeImageUrl(url, req = null) {
     return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
   }
 
-  // Preserve base64 strings without triggering disk writes
+  // Offload large base64 data URIs to content-hash deduplicated static files
   if (url.startsWith('data:image/')) {
+    if (url.length > 2000) {
+      return saveBase64Image(url, 'asset', req);
+    }
     return url;
   }
 
-  // Handle uploaded assets
-  const uploadsMatch = url.match(/\/uploads\/assets\/[^"'\s?#]+/i);
+  // Handle uploaded assets and KYC compliance documents
+  const uploadsMatch = url.match(/\/uploads\/(?:assets|kyc)\/[^"'\s?#]+/i);
   if (uploadsMatch) {
     const assetPath = uploadsMatch[0];
     if (req) {
@@ -141,4 +148,5 @@ module.exports = {
   normalizeAssetImages,
   purgeCachedBloat,
   UPLOADS_DIR,
+  KYC_UPLOADS_DIR,
 };

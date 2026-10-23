@@ -21,6 +21,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { SCREENS } from "../constants/navigation";
 import { useAuth } from "../context/AuthContext";
+import KycGatekeeperModal from "../components/KycGatekeeperModal";
 import { createAssetApi, verifyAssetUploadApi, addUserHolding } from "../services/api";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import storage, { STORAGE_KEYS } from "../utils/storage";
@@ -82,7 +83,8 @@ function yearFromEra(era) {
 }
 
 export default function ListAssetScreen({ navigation, route }) {
-  const { token } = useAuth();
+  const { user, token } = useAuth();
+  const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
   const appliedScanKey = useRef(null);
 
   const [step, setStep] = useState(0);
@@ -436,6 +438,10 @@ export default function ListAssetScreen({ navigation, route }) {
 
   // ── Save Directly to Personal Collection (Private Vault) ────────────────────
   const handleSaveToPersonalCollection = async () => {
+    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+      setKycGatekeeperVisible(true);
+      return;
+    }
     if (!form.name.trim()) {
       showAlert("Missing Details", "Please enter an asset name.");
       setStep(0);
@@ -560,6 +566,10 @@ export default function ListAssetScreen({ navigation, route }) {
 
   // ── Submit Listing ─────────────────────────────────────────────────────────
   const handleSubmitListing = async (forceConfirmArg = false) => {
+    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+      setKycGatekeeperVisible(true);
+      return;
+    }
     const forceConfirm = forceConfirmArg === true;
     if (!form.name.trim()) {
       showAlert("Missing Details", "Please enter an asset name.");
@@ -1861,6 +1871,15 @@ export default function ListAssetScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
+
+        <KycGatekeeperModal
+          visible={kycGatekeeperVisible}
+          onClose={() => setKycGatekeeperVisible(false)}
+          isSuspended={Boolean(user?.isSuspended)}
+          onCompleteVerification={() =>
+            navigation.navigate(SCREENS.PROFILE, { openKyc: true })
+          }
+        />
       </SafeAreaView>
     </View>
   );

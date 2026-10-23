@@ -1,6 +1,7 @@
 // ─── Authentication Context & Financial-Grade Inactivity Manager ─────────────
 // Provides global authentication state, user session persistence via AsyncStorage,
-// strict 5-minute inactivity auto-logout, background app-lock enforcement, and auth actions.
+// compliance status synchronization, strict 5-minute inactivity auto-logout,
+// background app-lock enforcement, and auth actions.
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { AppState, Platform } from 'react-native';
@@ -10,6 +11,8 @@ import {
   loginWithWalletApi,
   getUserProfileApi,
   logoutUserApi,
+  logoutSessionApi,
+  logSessionTimeoutApi,
   setUnauthorizedHandler,
 } from '../services/api';
 import storage, { STORAGE_KEYS } from '../utils/storage';
@@ -30,6 +33,7 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(false);
   const [sessionRestored, setSessionRestored] = useState(false);
+  const [sessionNotice, setSessionNotice] = useState(null);
 
   // Security notification states
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState(null);
@@ -44,6 +48,17 @@ export function AuthProvider({ children }) {
   const userRef = useRef(user);
   userRef.current = user;
 
+  // Clear notice on manual navigation or acknowledgment
+  const clearSessionNotice = useCallback(() => {
+    setSessionNotice(null);
+    setSessionExpiredMessage(null);
+  }, []);
+
+  const clearSessionExpiredMessage = useCallback(() => {
+    setSessionExpiredMessage(null);
+    setSessionNotice(null);
+  }, []);
+
   // ── Record User Activity (resets 5-minute idle countdown) ───────────────────
   const lastPersistRef = useRef(0);
   const recordActivity = useCallback(() => {
@@ -56,9 +71,12 @@ export function AuthProvider({ children }) {
     // Throttle writing last_active to storage to at most once every 10 seconds
     if (now - lastPersistRef.current > 10 * 1000) {
       lastPersistRef.current = now;
-      storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now)).catch(() => { });
+      storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now)).catch(() => {});
     }
   }, []);
+
+  // Alias for compatibility with components calling resetInactivityTimer
+  const resetInactivityTimer = recordActivity;
 
   // ── Force Logout Due to Inactivity or Session Termination ───────────────────
   const handleInactivityLogout = useCallback(
@@ -68,10 +86,13 @@ export function AuthProvider({ children }) {
       console.warn(`🔒 [AuthContext] Inactivity auto-logout triggered: ${reason}`);
 
       const currentToken = tokenRef.current;
+      const currentUser = userRef.current;
+
       setUser(null);
       setToken(null);
       setInactivityWarning(false);
       setSessionExpiredMessage(reason);
+      setSessionNotice(reason);
 
       try {
         await storage.removeItem(STORAGE_KEYS.SESSION);
@@ -81,9 +102,12 @@ export function AuthProvider({ children }) {
         console.warn('[AuthContext] Error clearing storage on timeout:', err.message);
       }
 
-      // Notify backend to revoke JWT server-side
+      // Log event to backend audit ledger & revoke JWT server-side
+      if (currentUser) {
+        logSessionTimeoutApi(currentUser.email, currentUser.id).catch(() => {});
+      }
       if (currentToken) {
-        logoutUserApi(currentToken).catch(() => { });
+        logoutUserApi(currentToken).catch(() => {});
       }
     },
     []
@@ -104,10 +128,10 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     async function restoreSession() {
       try {
-        // Check if a prior session expired message was stored
         const pendingMsg = await storage.getItem(STORAGE_KEYS.SESSION_EXPIRED_MESSAGE);
         if (pendingMsg) {
           setSessionExpiredMessage(pendingMsg);
+          setSessionNotice(pendingMsg);
           await storage.removeItem(STORAGE_KEYS.SESSION_EXPIRED_MESSAGE);
         }
 
@@ -118,27 +142,32 @@ export function AuthProvider({ children }) {
           const now = Date.now();
           const lastActive = lastActiveStr
             ? Number(lastActiveStr)
-            : savedSession.lastActiveAt || 0;
+            : savedSession.lastActiveAt || now;
           const elapsed = now - lastActive;
 
           // If away longer than 5 minutes, reject restoration immediately!
-          if (!lastActive || elapsed >= INACTIVITY_TIMEOUT_MS) {
+          if (elapsed >= INACTIVITY_TIMEOUT_MS) {
             console.warn(
               `🔒 [AuthContext] Boot session rejected: elapsed ${Math.round(elapsed / 1000)}s >= ${INACTIVITY_TIMEOUT_MS / 1000}s limit.`
             );
             await storage.removeItem(STORAGE_KEYS.SESSION);
             await storage.removeItem(STORAGE_KEYS.LAST_ACTIVE_AT);
-            setSessionExpiredMessage(
-              'Your session timed out after 5 minutes of inactivity for your financial security. Please sign in again.'
-            );
+            const msg =
+              'Your session timed out after 5 minutes of inactivity for your financial security. Please sign in again.';
+            setSessionExpiredMessage(msg);
+            setSessionNotice(msg);
             setUser(null);
             setToken(null);
             return;
           }
 
           try {
-            await getUserProfileApi(savedSession.token);
-            setUser(savedSession.user);
+            const profileRes = await getUserProfileApi(savedSession.token);
+            const enrichedUser = {
+              ...savedSession.user,
+              ...(profileRes?.profile || {}),
+            };
+            setUser(enrichedUser);
             setToken(savedSession.token);
             lastActiveRef.current = now;
             await storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now));
@@ -154,6 +183,13 @@ export function AuthProvider({ children }) {
               await storage.removeItem(STORAGE_KEYS.SESSION);
               await storage.removeItem(STORAGE_KEYS.LAST_ACTIVE_AT);
               setSessionExpiredMessage('Your session has expired. Please sign in again.');
+              setUser(null);
+              setToken(null);
+            } else if (msg.includes('Suspended')) {
+              const suspMsg = 'Account Suspended by Compliance. Please contact support.';
+              setSessionNotice(suspMsg);
+              setSessionExpiredMessage(suspMsg);
+              await storage.removeItem(STORAGE_KEYS.SESSION);
               setUser(null);
               setToken(null);
             } else {
@@ -212,7 +248,7 @@ export function AuthProvider({ children }) {
       const now = Date.now();
       if (nextAppState === 'background' || nextAppState === 'inactive') {
         backgroundTimestampRef.current = now;
-        storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now)).catch(() => { });
+        storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now)).catch(() => {});
       } else if (nextAppState === 'active') {
         const bgTime = backgroundTimestampRef.current;
         if (bgTime) {
@@ -224,7 +260,6 @@ export function AuthProvider({ children }) {
             return;
           }
         }
-        // Active touch / interaction resumed
         recordActivity();
       }
     });
@@ -239,7 +274,7 @@ export function AuthProvider({ children }) {
         const now = Date.now();
         if (document.hidden) {
           webHiddenTimestamp = now;
-          storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now)).catch(() => { });
+          storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now)).catch(() => {});
         } else {
           if (webHiddenTimestamp && now - webHiddenTimestamp >= INACTIVITY_TIMEOUT_MS) {
             handleInactivityLogout(
@@ -256,9 +291,9 @@ export function AuthProvider({ children }) {
       };
 
       document.addEventListener('visibilitychange', handleVisibilityChange);
-      window.addEventListener('pointerdown', handleWebActivity);
-      window.addEventListener('keydown', handleWebActivity);
-      window.addEventListener('scroll', handleWebActivity);
+      window.addEventListener('pointerdown', handleWebActivity, { passive: true });
+      window.addEventListener('keydown', handleWebActivity, { passive: true });
+      window.addEventListener('scroll', handleWebActivity, { passive: true });
     }
 
     return () => {
@@ -278,6 +313,8 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     setLoading(true);
+    setSessionNotice(null);
+    setSessionExpiredMessage(null);
     try {
       const response = await loginUser({ email, password });
       const nextUser = response.user;
@@ -290,7 +327,6 @@ export function AuthProvider({ children }) {
       setInactivityWarning(false);
       lastActiveRef.current = now;
 
-      // Persist session and initial active timestamp
       await storage.setJSON(STORAGE_KEYS.SESSION, {
         user: nextUser,
         token: nextToken,
@@ -305,6 +341,8 @@ export function AuthProvider({ children }) {
 
   const loginWithWallet = async (params) => {
     setLoading(true);
+    setSessionNotice(null);
+    setSessionExpiredMessage(null);
     try {
       const response = await loginWithWalletApi(params);
       if (response && response.needsAccount) {
@@ -337,6 +375,8 @@ export function AuthProvider({ children }) {
 
   const register = async (email, password, fullName) => {
     setLoading(true);
+    setSessionNotice(null);
+    setSessionExpiredMessage(null);
     try {
       const response = await registerUser({ email, password, fullName });
       if (response?.user && response?.session?.access_token) {
@@ -363,12 +403,24 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const logout = async () => {
+  const logout = async (reason = 'user') => {
     const currentToken = token;
+    const currentEmail = user?.email;
+
+    if (reason === 'inactivity') {
+      logSessionTimeoutApi(currentEmail, user?.id).catch(() => {});
+      const msg = 'Session expired due to 5 minutes of inactivity.';
+      setSessionNotice(msg);
+      setSessionExpiredMessage(msg);
+    } else {
+      logoutSessionApi(currentToken, currentEmail).catch(() => {});
+      setSessionNotice(null);
+      setSessionExpiredMessage(null);
+    }
+
     setUser(null);
     setToken(null);
     setInactivityWarning(false);
-    setSessionExpiredMessage(null);
 
     try {
       await storage.removeItem(STORAGE_KEYS.SESSION);
@@ -379,7 +431,7 @@ export function AuthProvider({ children }) {
     }
 
     if (currentToken) {
-      logoutUserApi(currentToken).catch(() => { });
+      logoutUserApi(currentToken).catch(() => {});
     }
   };
 
@@ -395,10 +447,6 @@ export function AuthProvider({ children }) {
     });
   };
 
-  const clearSessionExpiredMessage = useCallback(() => {
-    setSessionExpiredMessage(null);
-  }, []);
-
   return (
     <AuthContext.Provider
       value={{
@@ -407,6 +455,9 @@ export function AuthProvider({ children }) {
         isAuthenticated: !!user,
         loading,
         sessionRestored,
+        sessionNotice,
+        clearSessionNotice,
+        resetInactivityTimer,
         sessionExpiredMessage,
         clearSessionExpiredMessage,
         inactivityWarning,

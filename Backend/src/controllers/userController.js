@@ -4,7 +4,9 @@
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const avatarService = require('../services/avatarService');
-const { normalizeImageUrl } = require('../utils/imageHandler');
+const complianceService = require('../services/complianceService');
+const auditLogService = require('../services/auditLogService');
+const { saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
 
 // ── GET /api/user/vault ──────────────────────────────────────────────────────
 // Returns ONLY holdings belonging to the authenticated user.
@@ -154,6 +156,10 @@ async function addHolding(req, res) {
       gainVal = `${badgeText || gainVal}<!--meta:${JSON.stringify(meta)}-->`;
     }
 
+    const cleanImage = image
+      ? saveBase64Image(image, 'holding', null)
+      : 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
+
     const { data, error } = await supabase
       .from('user_holdings')
       .insert({
@@ -165,7 +171,7 @@ async function addHolding(req, res) {
         gain: gainVal,
         gain_pct: gainPct || '0%',
         positive: positive !== undefined ? positive : true,
-        image: image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
+        image: cleanImage,
         asset_type: assetType || 'personal',
       })
       .select()
@@ -179,7 +185,10 @@ async function addHolding(req, res) {
     return res.status(201).json({
       success: true,
       message: 'Asset added to your personal vault!',
-      holding: data,
+      holding: {
+        ...data,
+        image: normalizeImageUrl(data?.image, req),
+      },
     });
   } catch (err) {
     console.error('addHolding error:', err);
@@ -281,6 +290,7 @@ async function getProfile(req, res) {
     const dob = userMeta.dob || '';
     const phone = userMeta.phone || '';
     const createdAt = authUser?.created_at || profile?.created_at || new Date().toISOString();
+    const comp = complianceService.getUserCompliance(userId, email);
 
     return res.status(200).json({
       success: true,
@@ -295,6 +305,11 @@ async function getProfile(req, res) {
         dob,
         phone,
         createdAt,
+        kycStatus: comp.kycStatus || (walletAddress ? 'verified' : 'unverified'),
+        accountStatus: comp.accountStatus || 'active',
+        isSuspended: comp.isSuspended || false,
+        suspensionReason: comp.suspensionReason || null,
+        bankingDetails: comp.bankingDetails || null,
       },
     });
   } catch (err) {
@@ -436,6 +451,13 @@ async function deleteAccount(req, res) {
 async function deposit(req, res) {
   try {
     const userId = req.user.id;
+    const comp = complianceService.getUserCompliance(userId, req.user?.email);
+    if (comp && comp.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
+    }
+    if (comp && comp.kycStatus !== 'verified') {
+      return sendError(res, 403, 'KYC Verification Required: You must submit your FICA compliance pack and be approved before depositing funds.');
+    }
     const { amount, method, reference, notes } = req.body;
 
     if (!amount || Number(amount) <= 0) {
@@ -467,6 +489,13 @@ async function deposit(req, res) {
 async function withdraw(req, res) {
   try {
     const userId = req.user.id;
+    const comp = complianceService.getUserCompliance(userId, req.user?.email);
+    if (comp && comp.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
+    }
+    if (comp && comp.kycStatus !== 'verified') {
+      return sendError(res, 403, 'KYC Verification Required: You must submit your FICA compliance pack and be approved before withdrawing funds.');
+    }
     const { amount, method, bankDetails, walletAddress, notes } = req.body;
 
     if (!amount || Number(amount) <= 0) {
@@ -743,7 +772,79 @@ async function getAnalytics(req, res) {
   }
 }
 
+
+// ── POST /api/user/kyc-submit ────────────────────────────────────────────────
+async function submitKyc(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const fullName = req.user.user_metadata?.full_name || req.body.fullName || 'SmartAssets Collector';
+    const {
+      idNumber,
+      idDocumentUrl,
+      taxNumber,
+      taxDocumentUrl,
+      residentialAddress,
+      proofOfResidenceUrl,
+      bankingDetails,
+    } = req.body;
+
+    const record = complianceService.submitKyc({
+      userId,
+      userEmail,
+      fullName,
+      idNumber,
+      idDocumentUrl,
+      taxNumber,
+      taxDocumentUrl,
+      residentialAddress,
+      proofOfResidenceUrl,
+      bankingDetails,
+    });
+
+    auditLogService.logEvent({
+      eventType: 'KYC_SUBMIT',
+      category: 'Compliance',
+      actorEmail: userEmail,
+      actorId: userId,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Mobile App',
+      description: 'Submitted FICA / KYC compliance pack. Dossier: ' + record.id,
+      status: 'Pending Review',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'KYC compliance documents submitted successfully! Our compliance desk will review your dossier.',
+      verification: record,
+      kycStatus: 'pending',
+    });
+  } catch (err) {
+    console.error('submitKyc error:', err);
+    return sendError(res, 500, 'Failed to submit KYC compliance details.');
+  }
+}
+
+// ── GET /api/user/kyc-status ─────────────────────────────────────────────────
+async function getKycStatus(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const compliance = complianceService.getUserCompliance(userId, userEmail);
+
+    return res.status(200).json({
+      success: true,
+      compliance,
+    });
+  } catch (err) {
+    console.error('getKycStatus error:', err);
+    return sendError(res, 500, 'Failed to fetch KYC compliance status.');
+  }
+}
+
 module.exports = {
+  submitKyc,
+  getKycStatus,
   getVault,
   addHolding,
   seedStarterHoldings,

@@ -1,10 +1,13 @@
-// ─── Auth Controller ─────────────────────────────────────────────────────────
-// Handles user registration, login, and MetaMask Web3 wallet authentication via Supabase.
+// ─── SmartAssets Auth Controller ─────────────────────────────────────────────
+// Handles user registration, login, MetaMask Web3 wallet authentication,
+// token revocation, session timeouts, and audit logging via Supabase and SmartAssets Compliance Guard.
 
 const crypto = require('crypto');
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const avatarService = require('../services/avatarService');
+const complianceService = require('../services/complianceService');
+const auditLogService = require('../services/auditLogService');
 const { revokeToken } = require('../middlewares/authMiddleware');
 const {
   createNonceChallenge,
@@ -14,9 +17,7 @@ const {
 
 // Deterministic password generator for Web3 wallet accounts in Supabase
 function getDeterministicPassword(walletAddress) {
-  const secret =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || 'smartassets-web3-salt';
-
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || 'smartassets-web3-salt';
   return (
     crypto
       .createHmac('sha256', secret)
@@ -26,8 +27,7 @@ function getDeterministicPassword(walletAddress) {
   );
 }
 
-// Only allow redirect targets we control, so nobody can abuse this endpoint
-// to send Supabase reset emails that redirect to an arbitrary site.
+// Allowed redirect targets for password resets
 const ALLOWED_RESET_REDIRECTS = [
   'smartassets://reset-password',
   'http://localhost:3000',
@@ -47,27 +47,16 @@ async function register(req, res) {
     const { email, password, fullName } = req.body;
 
     if (!email || !password || !fullName) {
-      return sendError(
-        res,
-        400,
-        'Please provide email, password, and fullName.'
-      );
+      return sendError(res, 400, 'Please provide email, password, and fullName.');
     }
 
     if (password.length < 6) {
-      return sendError(
-        res,
-        400,
-        'Password must be at least 6 characters.'
-      );
+      return sendError(res, 400, 'Password must be at least 6 characters.');
     }
 
     const cleanEmail = email.trim().toLowerCase();
 
-    const {
-      data: authData,
-      error: authError,
-    } = await supabase.auth.admin.createUser({
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email: cleanEmail,
       password,
       email_confirm: true,
@@ -80,9 +69,7 @@ async function register(req, res) {
       const isDuplicate =
         authError.message.toLowerCase().includes('already') ||
         authError.message.toLowerCase().includes('exists');
-
       const status = isDuplicate ? 409 : 400;
-
       return sendError(res, status, authError.message);
     }
 
@@ -99,32 +86,42 @@ async function register(req, res) {
         );
 
       if (profileError) {
-        console.warn(
-          'Profile table sync warning:',
-          profileError.message
-        );
+        console.warn('Profile table sync warning:', profileError.message);
       }
     } catch (err) {
       console.warn('Profile sync exception:', err.message);
     }
 
+    // Initialize user compliance profile
+    const compliance = complianceService.getUserCompliance(authData.user.id, cleanEmail);
+
+    // Audit log
+    auditLogService.logEvent({
+      eventType: 'REGISTER',
+      category: 'Authentication',
+      actorEmail: cleanEmail,
+      actorId: authData.user.id,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Client',
+      description: 'New user registered account. Awaiting FICA / KYC onboarding.',
+      status: 'Success',
+    });
+
     return res.status(201).json({
       success: true,
-      message: 'Account created successfully!',
+      message: 'Account created successfully! Please complete FICA / KYC verification.',
       user: {
         id: authData.user.id,
         email: authData.user.email,
         fullName: fullName.trim(),
+        kycStatus: compliance.kycStatus || 'unverified',
+        accountStatus: compliance.accountStatus || 'active',
+        isSuspended: false,
       },
     });
   } catch (err) {
     console.error('Register error:', err);
-
-    return sendError(
-      res,
-      500,
-      'Internal server error. Please try again.'
-    );
+    return sendError(res, 500, 'Internal server error. Please try again.');
   }
 }
 
@@ -134,28 +131,57 @@ async function login(req, res) {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return sendError(
-        res,
-        400,
-        'Please provide email and password.'
-      );
+      return sendError(res, 400, 'Please provide email and password.');
     }
 
     const cleanEmail = email.trim().toLowerCase();
 
-    const { data, error } =
-      await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password,
-      });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
 
     if (error) {
-      return sendError(
-        res,
-        401,
-        'Invalid email or password.'
-      );
+      auditLogService.logEvent({
+        eventType: 'LOGIN_FAILED',
+        category: 'Authentication',
+        actorEmail: cleanEmail,
+        actorId: 'unknown',
+        ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+        device: req.headers['user-agent'] || 'SmartAssets Client',
+        description: `Failed login attempt for ${cleanEmail}: ${error.message}`,
+        status: 'Failed',
+      });
+      return sendError(res, 401, 'Invalid email or password.');
     }
+
+    // ── Check Compliance Suspension Lock ──
+    const compliance = complianceService.getUserCompliance(data.user.id, data.user.email);
+    if (compliance && compliance.isSuspended) {
+      auditLogService.logEvent({
+        eventType: 'LOGIN_BLOCKED',
+        category: 'Security',
+        actorEmail: cleanEmail,
+        actorId: data.user.id,
+        ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+        device: req.headers['user-agent'] || 'SmartAssets Client',
+        description: 'Login rejected: Account Suspended by Compliance.',
+        status: 'Blocked',
+      });
+      return sendError(res, 403, 'Account Suspended by Compliance. Please contact support.');
+    }
+
+    // Record successful login audit
+    auditLogService.logEvent({
+      eventType: 'LOGIN',
+      category: 'Authentication',
+      actorEmail: data.user.email,
+      actorId: data.user.id,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Mobile App',
+      description: 'Successful user authentication via password.',
+      status: 'Success',
+    });
 
     // ── Fetch the user's profile (including avatar) ──
     let fullName = data.user.user_metadata?.full_name || '';
@@ -172,7 +198,6 @@ async function login(req, res) {
       if (profile?.full_name) {
         fullName = profile.full_name;
       }
-
       if (profile?.wallet_address) {
         walletAddress = profile.wallet_address;
       }
@@ -180,10 +205,7 @@ async function login(req, res) {
         avatarUrl = profile.avatar_url;
       }
     } catch (profileFetchErr) {
-      console.warn(
-        'Profile fetch warning (using metadata):',
-        profileFetchErr.message
-      );
+      console.warn('Profile fetch warning (using metadata):', profileFetchErr.message);
     }
 
     return res.status(200).json({
@@ -196,6 +218,10 @@ async function login(req, res) {
         walletAddress,
         avatarUrl,
         avatar_url: avatarUrl,
+        kycStatus: compliance.kycStatus || (walletAddress ? 'verified' : 'unverified'),
+        accountStatus: compliance.accountStatus || 'active',
+        isSuspended: compliance.isSuspended || false,
+        bankingDetails: compliance.bankingDetails || null,
       },
       session: {
         access_token: data.session.access_token,
@@ -205,12 +231,7 @@ async function login(req, res) {
     });
   } catch (err) {
     console.error('Login error:', err);
-
-    return sendError(
-      res,
-      500,
-      'Internal server error. Please try again.'
-    );
+    return sendError(res, 500, 'Internal server error. Please try again.');
   }
 }
 
@@ -317,6 +338,20 @@ async function linkWallet(req, res) {
       .eq('id', userId)
       .maybeSingle();
 
+    // Check compliance status
+    const compliance = complianceService.getUserCompliance(userId, freshProfile?.email || req.user.email);
+
+    auditLogService.logEvent({
+      eventType: 'WALLET_LINKED',
+      category: 'Web3',
+      actorEmail: freshProfile?.email || req.user.email,
+      actorId: userId,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Client',
+      description: `MetaMask wallet ${cleanAddress} linked to user profile.`,
+      status: 'Success',
+    });
+
     return res.status(200).json({
       success: true,
       message: 'MetaMask wallet linked successfully to your account!',
@@ -327,6 +362,10 @@ async function linkWallet(req, res) {
         walletAddress: cleanAddress,
         avatarUrl: freshProfile?.avatar_url || req.user.user_metadata?.avatar_url || null,
         avatar_url: freshProfile?.avatar_url || req.user.user_metadata?.avatar_url || null,
+        kycStatus: compliance?.kycStatus || 'verified',
+        accountStatus: compliance?.accountStatus || 'active',
+        isSuspended: compliance?.isSuspended || false,
+        bankingDetails: compliance?.bankingDetails || null,
       },
     });
   } catch (err) {
@@ -376,13 +415,28 @@ async function walletLogin(req, res) {
       });
     }
 
+    // Check Compliance Suspension Lock
+    const compliance = complianceService.getUserCompliance(profile.id, profile.email);
+    if (compliance && compliance.isSuspended) {
+      auditLogService.logEvent({
+        eventType: 'LOGIN_BLOCKED',
+        category: 'Security',
+        actorEmail: profile.email,
+        actorId: profile.id,
+        ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+        device: req.headers['user-agent'] || 'SmartAssets Web3 / MetaMask',
+        description: 'Login rejected: Account Suspended by Compliance.',
+        status: 'Blocked',
+      });
+      return sendError(res, 403, 'Account Suspended by Compliance. Please contact support.');
+    }
+
     // 3. User IS linked! Generate authentic session for their real account
     let session = null;
     try {
       session = await generateSessionForUser(profile.email);
     } catch (sessionErr) {
       console.warn('generateSessionForUser fallback:', sessionErr.message);
-      // Fallback: create fresh login token
       const tempPass = getDeterministicPassword(cleanAddress);
       const resAttempt = await supabase.auth.signInWithPassword({
         email: profile.email,
@@ -401,6 +455,18 @@ async function walletLogin(req, res) {
       );
     }
 
+    // Record audit event
+    auditLogService.logEvent({
+      eventType: 'LOGIN',
+      category: 'Authentication',
+      actorEmail: profile.email,
+      actorId: profile.id,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Web3 / MetaMask',
+      description: `Successful Web3 wallet login (${cleanAddress}).`,
+      status: 'Success',
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Logged in successfully with linked wallet!',
@@ -411,6 +477,10 @@ async function walletLogin(req, res) {
         walletAddress: cleanAddress,
         avatarUrl: profile.avatar_url,
         avatar_url: profile.avatar_url,
+        kycStatus: compliance?.kycStatus || 'verified',
+        accountStatus: compliance?.accountStatus || 'active',
+        isSuspended: false,
+        bankingDetails: compliance?.bankingDetails || null,
       },
       session: {
         access_token: session.access_token,
@@ -446,6 +516,17 @@ async function unlinkWallet(req, res) {
         },
       });
     } catch (_) {}
+
+    auditLogService.logEvent({
+      eventType: 'WALLET_UNLINKED',
+      category: 'Web3',
+      actorEmail: req.user?.email || 'unknown',
+      actorId: userId,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Client',
+      description: 'Web3 wallet disconnected from user profile.',
+      status: 'Success',
+    });
 
     return res.status(200).json({
       success: true,
@@ -515,8 +596,22 @@ async function completeWalletProfile(req, res) {
       { onConflict: 'id' }
     );
 
+    // Initialize user compliance profile
+    const compliance = complianceService.getUserCompliance(authData.user.id, cleanEmail);
+
     // Generate session
     const session = await generateSessionForUser(cleanEmail);
+
+    auditLogService.logEvent({
+      eventType: 'REGISTER',
+      category: 'Authentication',
+      actorEmail: cleanEmail,
+      actorId: authData.user.id,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Client',
+      description: `New user account created via verified wallet ${cleanAddress}.`,
+      status: 'Success',
+    });
 
     return res.status(201).json({
       success: true,
@@ -526,6 +621,9 @@ async function completeWalletProfile(req, res) {
         email: cleanEmail,
         fullName: fullName.trim(),
         walletAddress: cleanAddress,
+        kycStatus: compliance?.kycStatus || 'unverified',
+        accountStatus: compliance?.accountStatus || 'active',
+        isSuspended: false,
       },
       session,
     });
@@ -535,126 +633,9 @@ async function completeWalletProfile(req, res) {
   }
 }
 
-// ── POST /api/auth/forgot-password ──────────────────────────────────────────
-async function forgotPassword(req, res) {
-  try {
-    const { email, redirectTo } = req.body || {};
-
-    if (!email || typeof email !== 'string') {
-      return sendError(res, 400, 'Please provide an email address.');
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (!cleanEmail) {
-      return sendError(res, 400, 'Please provide an email address.');
-    }
-
-    const finalRedirect = isAllowedRedirect(redirectTo)
-      ? redirectTo
-      : process.env.PASSWORD_RESET_REDIRECT_URL;
-
-    const { error } = await supabase.auth.resetPasswordForEmail(
-      cleanEmail,
-      {
-        redirectTo: finalRedirect,
-      }
-    );
-
-    if (error) {
-      console.error('SUPABASE RESET ERROR:', error);
-
-      return sendError(
-        res,
-        500,
-        error.message || 'Could not send the password reset email.'
-      );
-    }
-
-    return res.status(200).json({
-      success: true,
-      message:
-        'If an account exists for that email, a password reset link has been sent.',
-    });
-  } catch (err) {
-    console.error('FORGOT PASSWORD ERROR:', err);
-
-    return sendError(
-      res,
-      500,
-      'Internal server error. Please try again.'
-    );
-  }
-}
-
-// ── POST /api/auth/reset-password ────────────────────────────────────────────
-// Takes the access_token that Supabase attached to the reset link, verifies it,
-// and sets the new password for that user via the Supabase admin API.
-async function resetPassword(req, res) {
-  try {
-    const { accessToken, newPassword } = req.body || {};
-
-    if (!accessToken || typeof accessToken !== 'string') {
-      return sendError(
-        res,
-        400,
-        'This reset link is invalid or has expired. Please request a new one.'
-      );
-    }
-
-    if (!newPassword || newPassword.length < 6) {
-      return sendError(
-        res,
-        400,
-        'Password must be at least 6 characters.'
-      );
-    }
-
-    const { data: userData, error: userError } =
-      await supabase.auth.getUser(accessToken);
-
-    if (userError || !userData?.user) {
-      console.error('RESET PASSWORD TOKEN ERROR:', userError);
-
-      return sendError(
-        res,
-        401,
-        'This reset link is invalid or has expired. Please request a new one.'
-      );
-    }
-
-    const { error: updateError } =
-      await supabase.auth.admin.updateUserById(userData.user.id, {
-        password: newPassword,
-      });
-
-    if (updateError) {
-      console.error('RESET PASSWORD UPDATE ERROR:', updateError);
-
-      return sendError(
-        res,
-        500,
-        updateError.message || 'Could not update your password.'
-      );
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Password updated successfully!',
-    });
-  } catch (err) {
-    console.error('RESET PASSWORD ERROR:', err);
-
-    return sendError(
-      res,
-      500,
-      'Internal server error. Please try again.'
-    );
-  }
-}
-
 // ── POST /api/auth/logout ────────────────────────────────────────────────────
-// Terminates the session, revokes the JWT token, and invalidates Supabase session.
+// Terminates the session, revokes the JWT token, invalidates Supabase session,
+// and records the logout event in the security audit ledger.
 async function logout(req, res) {
   try {
     const authHeader = req.headers.authorization;
@@ -670,12 +651,26 @@ async function logout(req, res) {
       }
     }
 
+    const email = req.user?.email || req.body?.email || 'collector@smartassets.io';
+    const userId = req.user?.id || req.body?.userId || 'system';
+
+    auditLogService.logEvent({
+      eventType: 'LOGOUT',
+      category: 'Authentication',
+      actorEmail: email,
+      actorId: userId,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Client',
+      description: 'User initiated session sign out.',
+      status: 'Success',
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Logged out successfully. Session revoked.',
     });
   } catch (err) {
-    console.error('Logout error:', err);
+    console.error('logout error:', err);
     return res.status(200).json({
       success: true,
       message: 'Logged out successfully.',
@@ -683,13 +678,132 @@ async function logout(req, res) {
   }
 }
 
+// ── POST /api/auth/session-timeout ───────────────────────────────────────────
+async function sessionTimeout(req, res) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      if (token) {
+        revokeToken(token);
+      }
+    }
+
+    const email = req.body?.email || req.user?.email || 'collector@smartassets.io';
+    const userId = req.body?.userId || req.user?.id || 'system';
+
+    auditLogService.logEvent({
+      eventType: 'SESSION_TIMEOUT',
+      category: 'Security',
+      actorEmail: email,
+      actorId: userId,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Mobile App',
+      description: 'User session automatically terminated due to 5 minutes of inactivity.',
+      status: 'Session Expired',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Inactivity session timeout logged.',
+    });
+  } catch (err) {
+    console.error('sessionTimeout error:', err);
+    return sendError(res, 500, 'Error recording session timeout.');
+  }
+}
+
+// ── POST /api/auth/forgot-password ───────────────────────────────────────────
+async function forgotPassword(req, res) {
+  try {
+    const { email, redirectTo } = req.body || {};
+
+    if (!email) {
+      return sendError(res, 400, 'Please provide your email address.');
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (redirectTo && !isAllowedRedirect(redirectTo)) {
+      return sendError(res, 400, 'Invalid redirect URL.');
+    }
+
+    const finalRedirect = redirectTo
+      ? redirectTo
+      : process.env.PASSWORD_RESET_REDIRECT_URL;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: finalRedirect,
+    });
+
+    if (error) {
+      console.error('SUPABASE RESET ERROR:', error);
+      return sendError(res, 500, error.message || 'Could not send the password reset email.');
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'If an account exists for that email, a password reset link has been sent.',
+    });
+  } catch (err) {
+    console.error('FORGOT PASSWORD ERROR:', err);
+    return sendError(res, 500, 'Internal server error. Please try again.');
+  }
+}
+
+// ── POST /api/auth/reset-password ────────────────────────────────────────────
+async function resetPassword(req, res) {
+  try {
+    const { accessToken, newPassword } = req.body || {};
+
+    if (!accessToken) {
+      return sendError(
+        res,
+        400,
+        'Reset token is missing. Please request a new reset link.'
+      );
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+      return sendError(res, 400, 'Password must be at least 6 characters.');
+    }
+
+    const { data: userData, error: userError } = await supabase.auth.getUser(accessToken);
+
+    if (userError || !userData?.user) {
+      console.error('RESET PASSWORD TOKEN ERROR:', userError);
+      return sendError(
+        res,
+        401,
+        'This reset link is invalid or has expired. Please request a new one.'
+      );
+    }
+
+    const { error: updateError } = await supabase.auth.admin.updateUserById(userData.user.id, {
+      password: newPassword,
+    });
+
+    if (updateError) {
+      console.error('RESET PASSWORD UPDATE ERROR:', updateError);
+      return sendError(res, 500, updateError.message || 'Could not update your password.');
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password has been reset successfully. You can now sign in.',
+    });
+  } catch (err) {
+    console.error('RESET PASSWORD ERROR:', err);
+    return sendError(res, 500, 'Internal server error. Please try again.');
+  }
+}
+
 // ── GET /api/auth/session ────────────────────────────────────────────────────
-// Validates whether the caller's session token is active and unexpired.
 async function verifySession(req, res) {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return sendError(res, 401, 'No session token provided.', 'NO_TOKEN');
+      return sendError(res, 401, 'No session token provided.');
     }
 
     const token = authHeader.split(' ')[1];
@@ -721,8 +835,9 @@ module.exports = {
   linkWallet,
   unlinkWallet,
   completeWalletProfile,
+  logout,
+  sessionTimeout,
   forgotPassword,
   resetPassword,
-  logout,
   verifySession,
 };

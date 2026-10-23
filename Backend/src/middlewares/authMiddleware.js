@@ -1,9 +1,11 @@
 // ─── Authentication Middleware ───────────────────────────────────────────────
 // Validates Supabase JWT access tokens from the Authorization header,
-// enforces cryptographic token expiration, and checks against revoked session tokens.
+// enforces cryptographic token expiration, checks against revoked session tokens,
+// and enforces compliance suspension locks.
 
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
+const complianceService = require('../services/complianceService');
 
 // In-memory revoked token set (stores token hash -> expiration timestamp)
 const revokedTokens = new Map();
@@ -112,7 +114,14 @@ async function requireAuth(req, res, next) {
       );
     }
 
+    // Enforce compliance account suspension lock
+    const compliance = complianceService.getUserCompliance(user.id, user.email);
+    if (compliance && compliance.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Please contact support.');
+    }
+
     req.user = user;
+    req.compliance = compliance;
     req.token = token;
     next();
   } catch (err) {
@@ -129,7 +138,9 @@ async function optionalAuth(req, _res, next) {
       if (token && !isTokenRevoked(token)) {
         const { data: { user }, error } = await supabase.auth.getUser(token);
         if (!error && user) {
+          const compliance = complianceService.getUserCompliance(user.id, user.email);
           req.user = user;
+          req.compliance = compliance;
           req.token = token;
         }
       }
