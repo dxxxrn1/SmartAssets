@@ -1,0 +1,74 @@
+[
+  {
+    "id": "KYC-ZA-2026-100",
+    "userId": "47a8f198-06e0-4eb7-b0ec-617b30318091",
+    "userEmail": "darrenforster3@gmail.com",
+    "fullName": "Darren Forster",
+    "idNumber": "9805145089082",
+    "idDocumentUrl": "/uploads/kyc/KYC-ZA-2026-100_id.svg",
+    "taxNumber": "9048192834",
+    "taxDocumentUrl": "/uploads/kyc/KYC-ZA-2026-100_tax.svg",
+    "residentialAddress": "18 Maude Street, Sandton Central, Johannesburg, 2196",
+    "proofOfResidenceUrl": "/uploads/kyc/KYC-ZA-2026-100_residence.svg",
+    "bankingDetails": {
+      "bankName": "Standard Bank",
+      "accountHolder": "Darren Forster",
+      "accountNumber": "10184921234",
+      "branchCode": "051001"
+    },
+    "kycStatus": "verified",
+    "rejectionReason": null,
+    "submittedAt": "2026-09-25T08:30:00.000Z",
+    "reviewedAt": "2026-09-25T09:00:00.000Z",
+    "reviewedBy": "Admin Compliance Operations",
+    "notes": "South African Smart ID Card, SARS IT150 Tax Notice, and Sandton Municipal Utility Bill verified."
+  },
+  {
+    "id": "KYC-ZA-2026-101",
+    "userId": "9140495b-22a3-4df4-9c6d-5a7f649e1710",
+    "userEmail": "kgomotso.mabena@smartassets.co.za",
+    "fullName": "Kgomotso Mabena",
+    "idNumber": "9311085192086",
+    "idDocumentUrl": "/uploads/kyc/KYC-ZA-2026-101_id.svg",
+    "taxNumber": "9481029381",
+    "taxDocumentUrl": "/uploads/kyc/KYC-ZA-2026-101_tax.svg",
+    "residentialAddress": "44 Victoria Road, Clifton, Cape Town, 8005",
+    "proofOfResidenceUrl": "/uploads/kyc/KYC-ZA-2026-101_residence.svg",
+    "bankingDetails": {
+      "bankName": "FNB",
+      "accountHolder": "Kgomotso Mabena",
+      "accountNumber": "62819203918",
+      "branchCode": "250655"
+    },
+    "kycStatus": "pending",
+    "rejectionReason": null,
+    "submittedAt": "2026-10-23T16:23:39.693Z",
+    "reviewedAt": null,
+    "reviewedBy": null,
+    "notes": "South African Smart ID Card + City of Cape Town Rates Account (< 30 days) + SARS Tax Notice."
+  },
+  {
+    "id": "KYC-ZA-2026-102",
+    "userId": "usr-demo-02",
+    "userEmail": "naledi.khumalo@smartassets.co.za",
+    "fullName": "Naledi Khumalo",
+    "idNumber": "9108220194088",
+    "idDocumentUrl": "/uploads/kyc/KYC-ZA-2026-102_id.svg",
+    "taxNumber": "9120938472",
+    "taxDocumentUrl": "/uploads/kyc/KYC-ZA-2026-102_tax.svg",
+    "residentialAddress": "12 West Road South, Morningside, Sandton, 2196",
+    "proofOfResidenceUrl": "/uploads/kyc/KYC-ZA-2026-102_residence.svg",
+    "bankingDetails": {
+      "bankName": "Capitec",
+      "accountHolder": "Naledi Khumalo",
+      "accountNumber": "1589204918",
+      "branchCode": "470010"
+    },
+    "kycStatus": "pending",
+    "rejectionReason": null,
+    "submittedAt": "2026-10-23T18:10:00.000Z",
+    "reviewedAt": null,
+    "reviewedBy": null,
+    "notes": "SA Smart ID Card + Sandton Municipal Utility Statement + SARS IT150 Tax Confirmation."
+  }
+]

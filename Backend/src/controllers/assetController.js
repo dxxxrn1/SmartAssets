@@ -496,6 +496,14 @@ async function verifyAssetUpload(req, res) {
 async function createAsset(req, res) {
   try {
     const userId = req.user.id;
+    const complianceService = require('../services/complianceService');
+    const comp = complianceService.getUserCompliance(userId, req.user?.email);
+    if (comp && comp.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Asset listings blocked.');
+    }
+    if (comp && comp.kycStatus !== 'verified') {
+      return sendError(res, 403, 'KYC Verification Required: You must submit your FICA compliance pack and be approved before listing assets.');
+    }
     const { name, category, askingPrice, year, condition, description, image, history, forceConfirmPrice } = req.body;
 
     if (!name || !askingPrice) {

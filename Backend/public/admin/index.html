@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SmartAssets — Financial Operations Portal</title>
+  <title>SmartAssets — SmartAssets Operations & Compliance Portal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -924,7 +924,8 @@
       padding: 20px;
     }
 
-    .modal-overlay.active {
+    .modal-overlay.active,
+    .modal-overlay.open {
       display: flex;
       animation: modalFadeIn 0.2s ease-out;
     }
@@ -1258,49 +1259,49 @@
       <div class="brand-mark">SA</div>
       <div class="brand-info">
         <div class="brand-title">SmartAssets</div>
-        <div class="brand-badge">Fintech Operations</div>
+        <div class="brand-badge">SmartAssets Operations</div>
       </div>
     </div>
 
     <ul class="nav-list">
       <div class="nav-label">Core Operations</div>
-      <li class="nav-item active" onclick="navigate('overview')">
+      <li class="nav-item active" data-view="overview" onclick="navigate('overview')">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
         Overview
       </li>
-      <li class="nav-item" onclick="navigate('assets')">
+      <li class="nav-item" data-view="assets" onclick="navigate('assets')">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
         Assets
         <span class="nav-counter" id="badge-assets-count">0</span>
       </li>
-      <li class="nav-item" onclick="navigate('escrows')">
+      <li class="nav-item" data-view="escrows" onclick="navigate('escrows')">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
         Escrow &amp; Custody
         <span class="nav-counter" id="badge-escrows-count">0</span>
       </li>
-      <li class="nav-item" onclick="navigate('tickets')">
+      <li class="nav-item" data-view="tickets" onclick="navigate('tickets')">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
         Support
         <span class="nav-counter" id="badge-tickets-count">0</span>
       </li>
 
       <div class="nav-label" style="margin-top: 10px;">Directory &amp; Trust</div>
-      <li class="nav-item" onclick="navigate('verifications')">
+      <li class="nav-item" data-view="verifications" onclick="navigate('verifications')">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138z"/></svg>
         Verification
       </li>
-      <li class="nav-item" onclick="navigate('users')">
+      <li class="nav-item" data-view="users" onclick="navigate('users')">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
         Users
         <span class="nav-counter" id="badge-users-count">0</span>
       </li>
-      <li class="nav-item" onclick="navigate('activity')">
+      <li class="nav-item" data-view="activity" onclick="navigate('activity')">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         Activity Logs
       </li>
 
       <div class="nav-label" style="margin-top: 10px;">Developer &amp; Diagnostics</div>
-      <li class="nav-item" onclick="navigate('api')">
+      <li class="nav-item" data-view="api" onclick="navigate('api')">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
         API Explorer
       </li>
@@ -1436,9 +1437,9 @@
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138z"/></svg>
               </div>
             </div>
-            <div class="kpi-value" id="kpi-verifications-count">3 Demo</div>
+            <div class="kpi-value" id="kpi-verifications-count">2 Pending</div>
             <div class="kpi-meta">
-              <span class="pill pill-amber" style="font-size: 10px;">Demonstration Queue</span>
+              <span class="pill pill-green" style="font-size: 10px;">Live FICA / KYC Queue</span>
             </div>
           </div>
         </div>
@@ -1703,6 +1704,7 @@
           <select class="filter-select" id="tickets-status-filter" onchange="filterTicketsTable()">
             <option value="All">All Statuses</option>
             <option value="Open">Open</option>
+            <option value="In Progress">In Progress</option>
             <option value="In Review">In Review</option>
             <option value="Resolved">Resolved</option>
           </select>
@@ -1754,31 +1756,31 @@
         </div>
 
         <!-- Mandatory Sprint Notice Banner -->
-        <div class="notice-banner notice-amber">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        <div class="notice-banner notice-green" style="background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.28);padding:14px 18px;border-radius:10px;margin-bottom:20px;display:flex;gap:12px;align-items:center;">
+          <div style="font-size:20px;">🛡️</div>
           <div>
-            <strong>Sprint Demonstration Interface:</strong> The records below represent simulated compliance verification cases. The current database schema does not store investor identity documents or tax certificates. To comply with zero-migration sprint constraints and protect user privacy, simulated compliance dossiers are presented for operational testing.
+            <strong style="color:var(--green);">SmartAssets FICA / KYC Compliance Queue:</strong> Review investor South African ID/Passports, SARS tax reference numbers, and 3-month proof of residence with verified banking details. Approving a dossier grants instant platform listing and fractional trading authorization.
           </div>
         </div>
 
         <!-- Verifications Table -->
         <div class="table-card">
           <div class="table-card-header">
-            <div class="table-card-title">Demonstration Compliance Dossiers</div>
-            <span class="pill pill-amber">Sprint Mockup Queue</span>
+            <div class="table-card-title">Submitted FICA / KYC Compliance Dossiers</div>
+            <span class="pill pill-green">Live Compliance Queue</span>
           </div>
           <div class="table-responsive">
             <table>
               <thead>
                 <tr>
                   <th>Dossier Reference</th>
-                  <th>Investor / Organization</th>
-                  <th>Investor Classification</th>
-                  <th>Target Asset Class</th>
-                  <th>Verification Tier</th>
-                  <th>Risk Assessment</th>
-                  <th>Status</th>
-                  <th>Compliance Review</th>
+                  <th>Collector / Email</th>
+                  <th>SA ID / Passport</th>
+                  <th>SARS Tax Ref</th>
+                  <th>Proof of Residence</th>
+                  <th>Bank Account</th>
+                  <th>KYC Status</th>
+                  <th>Compliance Actions</th>
                 </tr>
               </thead>
               <tbody id="verifications-tbody">
@@ -1827,14 +1829,14 @@
             <table>
               <thead>
                 <tr>
-                  <th>Collector Name</th>
+                  <th>Collector / ID</th>
                   <th>Email Address</th>
-                  <th>Web3 Wallet / Account Type</th>
-                  <th>Vault Balance</th>
-                  <th>Assets Listed</th>
-                  <th>Escrows Engaged</th>
+                  <th>KYC Compliance</th>
                   <th>Account Status</th>
-                  <th>Details</th>
+                  <th>Linked Bank Account</th>
+                  <th>Vault Balance</th>
+                  <th>Listings</th>
+                  <th>Operational Actions</th>
                 </tr>
               </thead>
               <tbody id="users-tbody">
@@ -1871,6 +1873,9 @@
         <div class="controls-bar">
           <select class="filter-select" id="activity-category-filter" onchange="filterActivityList()">
             <option value="All">All Categories</option>
+            <option value="Authentication">Authentication & Logins (LOGIN / LOGOUT / TIMEOUT)</option>
+            <option value="Compliance">FICA / KYC Compliance Reviews</option>
+            <option value="Security">Security Audit & Account Suspensions</option>
             <option value="Escrow">Escrow Custody Events</option>
             <option value="Vault">Vault Financial Settlements</option>
             <option value="Support">Support Desk Events</option>
@@ -2043,6 +2048,31 @@
 (function () {
   'use strict';
 
+  // ── Dynamic Port 5500 vs 5000 API Resolution ───────────────────────────────
+  // When opened via VS Code Live Server (port 5500), automatically prefix requests
+  // with http://localhost:5000 so relative API calls don't return 404 HTML.
+  const API_BASE = (typeof window !== 'undefined' && window.location.port !== '5000')
+    ? (window.location.protocol + '//' + window.location.hostname + ':5000')
+    : '';
+
+  function apiFetch(url, options) {
+    const fullUrl = (typeof url === 'string' && url.startsWith('/api'))
+      ? (API_BASE + url)
+      : url;
+    return fetch(fullUrl, options);
+  }
+
+  function resolveImg(url) {
+    if (!url || typeof url !== 'string') return '';
+    if (url.includes('asset_6f80eb') || url.includes('b1tmz')) {
+      return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
+    }
+    if (url.startsWith('/uploads/')) {
+      return API_BASE + url;
+    }
+    return url;
+  }
+
   // ── Central State Store ──
   const STATE = {
     currentView: 'overview',
@@ -2198,7 +2228,7 @@
     const activeEl = document.getElementById('view-' + viewName);
     if (activeEl) activeEl.classList.add('active');
 
-    const links = document.querySelectorAll('.nav-link');
+    const links = document.querySelectorAll('.nav-item, .nav-link');
     links.forEach(function (link) {
       if (link.getAttribute('data-view') === viewName) {
         link.classList.add('active');
@@ -2212,7 +2242,7 @@
       assets: 'Marketplace Asset Moderation',
       escrows: 'Escrow Custody & Settlement Oversight',
       tickets: 'Customer Support Desk',
-      verifications: 'High-Value Asset Verification Reviews',
+      verifications: 'FICA / KYC Compliance Verification Desk',
       users: 'Platform User Directory',
       activity: 'Chronological Operations Ledger',
       api: 'Live API Explorer & Diagnostics'
@@ -2252,7 +2282,10 @@
 
   window.closeModal = function (modalId) {
     const modal = document.getElementById(modalId);
-    if (modal) modal.classList.remove('open');
+    if (modal) {
+      modal.classList.remove('open');
+      modal.classList.remove('active');
+    }
   };
 
   window.loadAllData = function () {
@@ -2292,7 +2325,7 @@
 
   // ── Overview & Health ──
   function loadOverview() {
-    fetch('/api/admin/overview')
+    apiFetch('/api/admin/overview')
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data.success) throw new Error(data.error || 'Failed to load overview');
@@ -2371,13 +2404,14 @@
     }
     let html = '';
     orders.forEach(function (o) {
+      const imgUrl = resolveImg(o.assetImage) || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
       html += '<tr>' +
         '<td><span class="id-mono">' + escapeHtml(o.orderId) + '</span></td>' +
-        '<td><strong>' + escapeHtml(o.assetName) + '</strong></td>' +
-        '<td><span class="text-xs text-muted font-mono">' + escapeHtml(o.buyerId ? o.buyerId.slice(0, 10) + '…' : '—') + '</span></td>' +
-        '<td>' + formatEth(o.amountEth) + '<br><span class="text-xs text-muted">' + formatZar(o.amountZar) + '</span></td>' +
+        '<td><div style="display:flex;align-items:center;gap:10px;"><img src="' + escapeHtml(imgUrl) + '" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);"/><div><strong>' + escapeHtml(o.assetName) + '</strong><div class="text-xs text-muted">' + escapeHtml(o.assetCategory || 'Luxury Asset') + '</div></div></div></td>' +
+        '<td><span class="text-xs text-muted font-mono">' + escapeHtml(o.buyerId ? o.buyerId.slice(0, 12) + '…' : '—') + '</span></td>' +
+        '<td><strong>' + formatEth(o.amountEth) + '</strong><br><span class="text-xs text-muted">' + formatZar(o.amountZar) + '</span></td>' +
+        '<td><span class="pill pill-muted">' + escapeHtml(o.paymentRail || 'Sepolia Web3') + '</span></td>' +
         '<td>' + renderStatusPill(o.status) + '</td>' +
-        '<td><span class="text-xs text-muted">' + formatDate(o.createdAt) + '</span></td>' +
         '<td><button class="btn btn-secondary btn-sm" onclick="openEscrowModal(\'' + escapeHtml(o.orderId) + '\')">Inspect</button></td>' +
         '</tr>';
     });
@@ -2388,7 +2422,7 @@
     const tbody = document.getElementById('overview-moderation-tbody');
     if (!tbody) return;
     if (!queue.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">All marketplace listings currently cleared. Moderation queue is empty.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">All marketplace listings currently cleared. Moderation queue is empty.</td></tr>';
       return;
     }
     let html = '';
@@ -2398,7 +2432,6 @@
         '<td><span class="pill pill-muted">' + escapeHtml(a.category || 'General') + '</span></td>' +
         '<td>' + formatZar(a.price_num || a.price) + '</td>' +
         '<td>' + renderStatusPill(a.status || 'pending') + '</td>' +
-        '<td><span class="pill pill-amber">' + escapeHtml(a.badge || 'Review Required') + '</span></td>' +
         '<td><button class="btn btn-secondary btn-sm" onclick="openAssetModal(\'' + escapeHtml(a.id) + '\')">Moderate</button></td>' +
         '</tr>';
     });
@@ -2409,25 +2442,25 @@
     const tbody = document.getElementById('overview-support-tbody');
     if (!tbody) return;
     if (!tickets.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No support inquiries pending in inbox.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No support inquiries pending in inbox.</td></tr>';
       return;
     }
     let html = '';
     tickets.forEach(function (t) {
+      const pLow = String(t.priority || 'normal').toLowerCase();
       html += '<tr>' +
         '<td><span class="id-mono">' + escapeHtml(t.id) + '</span></td>' +
-        '<td><strong>' + escapeHtml(t.subject) + '</strong></td>' +
         '<td>' + escapeHtml(t.userName || t.userEmail || 'User') + '</td>' +
-        '<td><span class="pill pill-' + (t.priority === 'High' ? 'red' : 'muted') + '">' + escapeHtml(t.priority || 'Normal') + '</span></td>' +
+        '<td><span class="pill pill-' + (pLow === 'high' ? 'red' : 'muted') + '">' + escapeHtml(t.priority || 'Normal') + '</span></td>' +
+        '<td><strong>' + escapeHtml(t.subject) + '</strong></td>' +
         '<td>' + renderStatusPill(t.status) + '</td>' +
-        '<td><button class="btn btn-secondary btn-sm" onclick="openTicketModal(\'' + escapeHtml(t.id) + '\')">View</button></td>' +
         '</tr>';
     });
     tbody.innerHTML = html;
   }
 
   function loadHealth() {
-    fetch('/api/admin/health')
+    apiFetch('/api/admin/health')
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data.success) throw new Error(data.error || 'Failed to check system health');
@@ -2456,7 +2489,7 @@
       { key: 'storage', title: 'Asset Storage Engine', icon: '📁' },
       { key: 'escrow', title: 'Escrow Custody Service', icon: '🔒' },
       { key: 'blockchain', title: 'Ethereum Relayer', icon: '⛓️' },
-      { key: 'aiFraud', title: 'AI Fraud Detection Guard', icon: '🛡️' }
+      { key: 'compliance', title: 'SmartAssets KYC & Compliance Ledger', icon: '🛡️' }
     ];
 
     list.forEach(function (item) {
@@ -2498,7 +2531,7 @@
     if (tbody && (!STATE.assets.length || force)) {
       tbody.innerHTML = '<tr><td colspan="7" class="loading-state"><div class="spinner"></div>Loading marketplace assets...</td></tr>';
     }
-    fetch('/api/admin/assets')
+    apiFetch('/api/admin/assets')
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data.success) throw new Error(data.error || 'Failed to fetch assets');
@@ -2516,12 +2549,14 @@
     const searchVal = (document.getElementById('assets-search-input')?.value || '').toLowerCase().trim();
     const statusVal = document.getElementById('assets-status-filter')?.value || 'All';
     const catVal = document.getElementById('assets-category-filter')?.value || 'All';
-    const sortVal = document.getElementById('assets-sort-filter')?.value || 'date_desc';
+    const sortVal = document.getElementById('assets-sort-filter')?.value || 'newest';
 
     let filtered = STATE.assets.filter(function (a) {
       const matchSearch = !searchVal ||
         (a.title && a.title.toLowerCase().includes(searchVal)) ||
         (a.name && a.name.toLowerCase().includes(searchVal)) ||
+        (a.cert && a.cert.toLowerCase().includes(searchVal)) ||
+        (a.condition && a.condition.toLowerCase().includes(searchVal)) ||
         (a.id && a.id.toLowerCase().includes(searchVal)) ||
         (a.user_id && a.user_id.toLowerCase().includes(searchVal));
       const matchStatus = statusVal === 'All' || a.status === statusVal;
@@ -2529,46 +2564,44 @@
       return matchSearch && matchStatus && matchCat;
     });
 
-    if (sortVal === 'date_desc') {
+    if (sortVal === 'newest' || sortVal === 'date_desc') {
       filtered.sort(function (a, b) { return new Date(b.created_at || 0) - new Date(a.created_at || 0); });
     } else if (sortVal === 'date_asc') {
       filtered.sort(function (a, b) { return new Date(a.created_at || 0) - new Date(b.created_at || 0); });
-    } else if (sortVal === 'price_desc') {
+    } else if (sortVal === 'price-desc' || sortVal === 'price_desc') {
       filtered.sort(function (a, b) { return (b.price_num || 0) - (a.price_num || 0); });
-    } else if (sortVal === 'price_asc') {
+    } else if (sortVal === 'price-asc' || sortVal === 'price_asc') {
       filtered.sort(function (a, b) { return (a.price_num || 0) - (b.price_num || 0); });
-    } else if (sortVal === 'name_asc') {
+    } else if (sortVal === 'name' || sortVal === 'name_asc') {
       filtered.sort(function (a, b) { return (a.title || a.name || '').localeCompare(b.title || b.name || ''); });
     }
 
     const countEl = document.getElementById('assets-filtered-count');
-    if (countEl) countEl.textContent = 'Showing ' + filtered.length + ' of ' + STATE.assets.length + ' assets';
+    if (countEl) countEl.textContent = filtered.length;
 
     const tbody = document.getElementById('assets-tbody');
     if (!tbody) return;
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No assets match the current filter criteria.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No assets match the current filter criteria.</td></tr>';
       return;
     }
 
     let html = '';
     filtered.forEach(function (a) {
-      const imgUrl = a.image || '/assets/default-asset.png';
+      const imgUrl = resolveImg(a.image) || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
       html += '<tr>' +
         '<td>' +
-        '<div style="display:flex;align-items:center;gap:12px;">' +
-        '<img src="' + escapeHtml(imgUrl) + '" alt="' + escapeHtml(a.title || a.name) + '" class="table-thumb" onerror="this.src=\'data:image/svg+xml;utf8,<svg xmlns=\\\'http://www.w3.org/2000/svg\\\' width=\\\'40\\\' height=\\\'40\\\'><rect width=\\\'40\\\' height=\\\'40\\\' fill=\\\'%231f2937\\\'/><text x=\\\'50%\\\' y=\\\'50%\\\' fill=\\\'%239ca3af\\\' text-anchor=\\\'middle\\\' dy=\\\'.3em\\\' font-size=\\\'10\\\'>Asset</text></svg>\'">' +
-        '<div>' +
+        '<img src="' + escapeHtml(imgUrl) + '" alt="' + escapeHtml(a.title || a.name) + '" class="table-thumb" style="width:44px;height:44px;object-fit:cover;border-radius:8px;border:1px solid var(--border);" onerror="this.src=\'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80\'">' +
+        '</td>' +
+        '<td>' +
         '<strong>' + escapeHtml(a.title || a.name || 'Untitled') + '</strong>' +
-        '<div class="text-xs text-muted font-mono">' + escapeHtml(a.id) + '</div>' +
-        '</div>' +
-        '</div>' +
+        '<div class="text-xs text-muted">' + escapeHtml(a.year ? 'Year: ' + a.year : 'Condition: ' + (a.condition || 'Mint')) + '</div>' +
         '</td>' +
         '<td><span class="pill pill-muted">' + escapeHtml(a.category || 'Standard') + '</span></td>' +
         '<td><strong>' + formatZar(a.price_num || a.price) + '</strong></td>' +
-        '<td>' + renderStatusPill(a.status) + '</td>' +
-        '<td>' + (a.badge ? '<span class="pill pill-blue">' + escapeHtml(a.badge) + '</span>' : '<span class="text-muted">—</span>') + '</td>' +
-        '<td><span class="text-xs text-muted font-mono">' + escapeHtml(a.user_id ? a.user_id.slice(0, 8) + '…' : '—') + '</span></td>' +
+        '<td><span class="font-mono text-xs text-muted">' + escapeHtml(a.cert || 'SmartAssets Verified') + '</span></td>' +
+        '<td>' + (a.badge ? '<span class="pill pill-blue">' + escapeHtml(a.badge) + '</span>' : '<span class="pill pill-green">Verified</span>') + '</td>' +
+        '<td>' + renderStatusPill(a.status || 'active') + '</td>' +
         '<td><button class="btn btn-secondary btn-sm" onclick="openAssetModal(\'' + escapeHtml(a.id) + '\')">Inspect</button></td>' +
         '</tr>';
     });
@@ -2581,31 +2614,29 @@
     const titleEl = document.getElementById('modal-asset-title');
     if (titleEl) titleEl.textContent = 'Asset Moderation: ' + (asset.title || asset.name || asset.id);
 
+    const imgUrl = resolveImg(asset.image) || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
     const bodyEl = document.getElementById('modal-asset-body');
     if (bodyEl) {
       bodyEl.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">' +
         '<div>' +
-        '<img src="' + escapeHtml(asset.image || '') + '" alt="Asset Preview" style="width:100%;height:220px;object-fit:cover;border-radius:8px;border:1px solid var(--border-color);background:#000;" onerror="this.src=\'data:image/svg+xml;utf8,<svg xmlns=\\\'http://www.w3.org/2000/svg\\\' width=\\\'300\\\' height=\\\'200\\\'><rect width=\\\'300\\\' height=\\\'200\\\' fill=\\\'%23111827\\\'/><text x=\\\'50%\\\' y=\\\'50%\\\' fill=\\\'%239ca3af\\\' text-anchor=\\\'middle\\\' dy=\\\'.3em\\\'>Image Unavailable</text></svg>\'">' +
-        '<div style="margin-top:12px;" class="text-xs text-muted">Offload Storage Path: <span class="font-mono">' + escapeHtml(asset.image || 'None') + '</span></div>' +
+        '<img src="' + escapeHtml(imgUrl) + '" alt="Asset Preview" style="width:100%;height:220px;object-fit:cover;border-radius:8px;border:1px solid var(--border);background:#000;" onerror="this.src=\'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80\'">' +
+        '<div style="margin-top:12px;" class="text-xs text-muted">Storage URI: <span class="font-mono">' + escapeHtml(asset.image || 'None') + '</span></div>' +
         '</div>' +
         '<div>' +
-        '<div class="data-field"><div class="data-label">Asset Title</div><div class="data-val">' + escapeHtml(asset.title || asset.name) + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Asset Title</div><div class="data-val"><strong>' + escapeHtml(asset.title || asset.name) + '</strong></div></div>' +
         '<div class="data-field"><div class="data-label">Asset ID</div><div class="data-val font-mono text-xs">' + escapeHtml(asset.id) + '</div></div>' +
         '<div class="data-field"><div class="data-label">Owner User ID</div><div class="data-val font-mono text-xs">' + escapeHtml(asset.user_id || 'System') + '</div></div>' +
         '<div class="data-field"><div class="data-label">Valuation / Listing Price</div><div class="data-val">' + formatZar(asset.price_num || asset.price) + '</div></div>' +
-        '<div class="data-field"><div class="data-label">Category & Badge</div><div class="data-val">' + escapeHtml(asset.category || 'General') + ' · ' + (asset.badge ? escapeHtml(asset.badge) : 'None') + '</div></div>' +
-        '<div class="data-field"><div class="data-label">Current Moderation Status</div><div class="data-val">' + renderStatusPill(asset.status) + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Category &amp; Badge</div><div class="data-val">' + escapeHtml(asset.category || 'General') + ' &middot; ' + (asset.badge ? escapeHtml(asset.badge) : 'Verified') + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Current Moderation Status</div><div class="data-val">' + renderStatusPill(asset.status || 'active') + '</div></div>' +
         '<div class="data-field"><div class="data-label">Listed Timestamp</div><div class="data-val text-xs text-muted">' + formatDate(asset.created_at) + '</div></div>' +
         '</div>' +
         '</div>' +
         '<div style="margin-top:16px;">' +
         '<div class="data-label">Description</div>' +
-        '<p style="font-size:13px;line-height:1.5;color:var(--text-secondary);background:var(--bg-main);padding:12px;border-radius:6px;border:1px solid var(--border-color);">' +
-        escapeHtml(asset.description || 'No description provided by seller.') +
+        '<p style="font-size:13px;line-height:1.5;color:var(--text-muted);background:var(--sidebar);padding:12px;border-radius:6px;border:1px solid var(--border);">' +
+        escapeHtml(asset.description || 'Verified physical luxury asset held in SmartAssets custody.') +
         '</p>' +
-        '</div>' +
-        '<div class="banner banner-info" style="margin-top:16px;">' +
-        '<strong>Backend Constraint Notice:</strong> Arbitrary asset deletion is disabled per sprint safety rules. Moderation decisions (Active, Flagged, Rejected) update Supabase directly and immediately synchronize with the mobile application.' +
         '</div>';
     }
 
@@ -2622,7 +2653,7 @@
   };
 
   window.updateAssetStatus = function (assetId, newStatus, badge) {
-    fetch('/api/admin/assets/' + encodeURIComponent(assetId) + '/status', {
+    apiFetch('/api/admin/assets/' + encodeURIComponent(assetId) + '/status', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus, badge: badge || null })
@@ -2647,7 +2678,7 @@
     if (tbody && (!STATE.escrows.length || force)) {
       tbody.innerHTML = '<tr><td colspan="8" class="loading-state"><div class="spinner"></div>Loading escrow custody orders...</td></tr>';
     }
-    fetch('/api/admin/escrows')
+    apiFetch('/api/admin/escrows')
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data.success) throw new Error(data.error || 'Failed to load escrows');
@@ -2676,7 +2707,7 @@
     });
 
     const countEl = document.getElementById('escrows-filtered-count');
-    if (countEl) countEl.textContent = 'Showing ' + filtered.length + ' of ' + STATE.escrows.length + ' orders';
+    if (countEl) countEl.textContent = filtered.length;
 
     const tbody = document.getElementById('escrows-tbody');
     if (!tbody) return;
@@ -2687,12 +2718,13 @@
 
     let html = '';
     filtered.forEach(function (o) {
+      const imgUrl = resolveImg(o.assetImage) || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
       html += '<tr>' +
         '<td><span class="id-mono">' + escapeHtml(o.orderId) + '</span></td>' +
-        '<td><strong>' + escapeHtml(o.assetName) + '</strong></td>' +
-        '<td><span class="font-mono text-xs text-muted">' + escapeHtml(o.buyerId ? o.buyerId.slice(0, 10) + '…' : '—') + '</span></td>' +
-        '<td><span class="font-mono text-xs text-muted">' + escapeHtml(o.sellerId ? o.sellerId.slice(0, 10) + '…' : '—') + '</span></td>' +
+        '<td><div style="display:flex;align-items:center;gap:10px;"><img src="' + escapeHtml(imgUrl) + '" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);"/><div><strong>' + escapeHtml(o.assetName) + '</strong><div class="text-xs text-muted">' + escapeHtml(o.assetCategory || 'Luxury Asset') + '</div></div></div></td>' +
+        '<td><span class="font-mono text-xs text-muted">' + escapeHtml(o.buyerId ? o.buyerId.slice(0, 12) + '…' : '—') + '</span></td>' +
         '<td><strong>' + formatEth(o.amountEth) + '</strong><br><span class="text-xs text-muted">' + formatZar(o.amountZar) + '</span></td>' +
+        '<td><span class="pill pill-muted">' + escapeHtml(o.paymentRail || 'Sepolia Web3') + '</span></td>' +
         '<td>' + renderStatusPill(o.status) + '</td>' +
         '<td><span class="text-xs text-muted">' + formatDate(o.createdAt) + '</span></td>' +
         '<td><button class="btn btn-secondary btn-sm" onclick="openEscrowModal(\'' + escapeHtml(o.orderId) + '\')">Inspect</button></td>' +
@@ -2785,7 +2817,7 @@
     }
     if (reason) payload.reason = reason;
 
-    fetch('/api/admin/escrows/' + encodeURIComponent(orderId) + '/action', {
+    apiFetch('/api/admin/escrows/' + encodeURIComponent(orderId) + '/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -2816,7 +2848,7 @@
     if (tbody && (!STATE.tickets.length || force)) {
       tbody.innerHTML = '<tr><td colspan="7" class="loading-state"><div class="spinner"></div>Loading support tickets...</td></tr>';
     }
-    fetch('/api/admin/tickets')
+    apiFetch('/api/admin/tickets')
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data.success) throw new Error(data.error || 'Failed to fetch tickets');
@@ -2833,38 +2865,41 @@
   window.filterTicketsTable = function () {
     const searchVal = (document.getElementById('tickets-search-input')?.value || '').toLowerCase().trim();
     const statusVal = document.getElementById('tickets-status-filter')?.value || 'All';
-    const priorityVal = document.getElementById('tickets-priority-filter')?.value || 'All';
+    const priorityVal = (document.getElementById('tickets-priority-filter')?.value || 'All').toLowerCase();
 
     let filtered = STATE.tickets.filter(function (t) {
       const matchSearch = !searchVal ||
         (t.id && t.id.toLowerCase().includes(searchVal)) ||
         (t.subject && t.subject.toLowerCase().includes(searchVal)) ||
+        (t.message && t.message.toLowerCase().includes(searchVal)) ||
         (t.userName && t.userName.toLowerCase().includes(searchVal)) ||
         (t.userEmail && t.userEmail.toLowerCase().includes(searchVal));
-      const matchStatus = statusVal === 'All' || t.status === statusVal;
-      const matchPriority = priorityVal === 'All' || t.priority === priorityVal;
+      const matchStatus = statusVal === 'All' || t.status === statusVal || (statusVal === 'In Progress' && t.status === 'In Review');
+      const matchPriority = priorityVal === 'all' || String(t.priority || 'normal').toLowerCase() === priorityVal;
       return matchSearch && matchStatus && matchPriority;
     });
 
     const countEl = document.getElementById('tickets-filtered-count');
-    if (countEl) countEl.textContent = 'Showing ' + filtered.length + ' of ' + STATE.tickets.length + ' tickets';
+    if (countEl) countEl.textContent = filtered.length;
 
     const tbody = document.getElementById('tickets-tbody');
     if (!tbody) return;
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No support tickets match the current filters.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No support tickets match the current filters.</td></tr>';
       return;
     }
 
     let html = '';
     filtered.forEach(function (t) {
+      const pLow = String(t.priority || 'normal').toLowerCase();
       html += '<tr>' +
         '<td><span class="id-mono">' + escapeHtml(t.id) + '</span></td>' +
-        '<td><strong>' + escapeHtml(t.subject) + '</strong></td>' +
-        '<td>' + escapeHtml(t.userName || t.userEmail || 'Customer') + '</td>' +
+        '<td><strong>' + escapeHtml(t.userName || 'Collector') + '</strong><br><span class="font-mono text-xs text-muted">' + escapeHtml(t.userEmail || '—') + '</span></td>' +
         '<td><span class="pill pill-muted">' + escapeHtml(t.category || 'General') + '</span></td>' +
-        '<td><span class="pill pill-' + (t.priority === 'High' ? 'red' : 'muted') + '">' + escapeHtml(t.priority || 'Normal') + '</span></td>' +
+        '<td><strong>' + escapeHtml(t.subject) + '</strong><div class="text-xs text-muted" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(t.message || '') + '</div></td>' +
+        '<td><span class="pill pill-' + (pLow === 'high' ? 'red' : 'muted') + '">' + escapeHtml(t.priority || 'Normal') + '</span></td>' +
         '<td>' + renderStatusPill(t.status) + '</td>' +
+        '<td><span class="text-xs text-muted">' + formatDate(t.createdAt) + '</span></td>' +
         '<td><button class="btn btn-secondary btn-sm" onclick="openTicketModal(\'' + escapeHtml(t.id) + '\')">Manage</button></td>' +
         '</tr>';
     });
@@ -2881,39 +2916,44 @@
     const bodyEl = document.getElementById('modal-ticket-body');
     if (bodyEl) {
       bodyEl.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">' +
-        '<div class="data-field"><div class="data-label">Customer Name</div><div class="data-val">' + escapeHtml(ticket.userName || 'Anonymous') + '</div></div>' +
-        '<div class="data-field"><div class="data-label">Customer Email</div><div class="data-val font-mono text-xs">' + escapeHtml(ticket.userEmail || '—') + '</div></div>' +
-        '<div class="data-field"><div class="data-label">Category & Priority</div><div class="data-val">' + escapeHtml(ticket.category || 'General') + ' · ' + escapeHtml(ticket.priority || 'Normal') + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Collector Name</div><div class="data-val"><strong>' + escapeHtml(ticket.userName || 'Collector') + '</strong></div></div>' +
+        '<div class="data-field"><div class="data-label">Collector Email</div><div class="data-val font-mono text-xs">' + escapeHtml(ticket.userEmail || '—') + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Category &amp; Priority</div><div class="data-val">' + escapeHtml(ticket.category || 'General') + ' &middot; ' + escapeHtml(ticket.priority || 'Normal') + '</div></div>' +
         '<div class="data-field"><div class="data-label">Current Status</div><div class="data-val">' + renderStatusPill(ticket.status) + '</div></div>' +
         '</div>' +
         '<div style="margin-top:16px;">' +
-        '<div class="data-label">Inquiry Message</div>' +
-        '<p style="font-size:13px;line-height:1.5;color:var(--text-secondary);background:var(--bg-main);padding:12px;border-radius:6px;border:1px solid var(--border-color);">' +
+        '<div class="data-label" style="margin-bottom:6px;">Collector Inquiry Message</div>' +
+        '<p style="font-size:13px;line-height:1.5;color:var(--text);background:var(--sidebar);padding:12px;border-radius:8px;border:1px solid var(--border);">' +
         escapeHtml(ticket.message || 'No body provided.') +
         '</p>' +
         '</div>' +
-        (ticket.resolutionNote ? '<div style="margin-top:16px;"><div class="data-label">Resolution Note</div><p style="font-size:13px;color:var(--text-green);background:var(--bg-main);padding:10px;border-radius:6px;border:1px solid var(--border-color);">' + escapeHtml(ticket.resolutionNote) + '</p></div>' : '') +
-        '<div style="margin-top:12px;" class="text-xs text-muted">Created: ' + formatDate(ticket.createdAt) + ' · Updated: ' + formatDate(ticket.updatedAt) + '</div>';
+        '<div style="margin-top:16px;">' +
+        '<div class="data-label" style="margin-bottom:6px;color:var(--blue);font-weight:700;">Admin Resolution Response</div>' +
+        '<textarea id="ticket-resolution-note" rows="3" placeholder="Type official resolution response to collector..." style="width:100%;background:var(--sidebar);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px;font-family:inherit;resize:vertical;">' + escapeHtml(ticket.resolutionNote || ticket.adminResponse || '') + '</textarea>' +
+        '</div>' +
+        '<div style="margin-top:10px;" class="text-xs text-muted">Created: ' + formatDate(ticket.createdAt) + ' &middot; Updated: ' + formatDate(ticket.updatedAt) + '</div>';
     }
 
     const footerEl = document.getElementById('modal-ticket-footer');
     if (footerEl) {
       footerEl.innerHTML = '<button class="btn btn-secondary btn-sm" onclick="closeModal(\'modal-ticket\')">Close</button>' +
-        '<button class="btn btn-warning btn-sm" onclick="updateTicketStatus(\'' + escapeHtml(ticket.id) + '\', \'In Review\')">Set In Review</button>' +
-        '<button class="btn btn-primary btn-sm" onclick="promptTicketResolution(\'' + escapeHtml(ticket.id) + '\')">Mark Resolved</button>';
+        '<button class="btn btn-secondary btn-sm" onclick="submitTicketResolution(\'' + escapeHtml(ticket.id) + '\', \'Open\')">Set Open</button>' +
+        '<button class="btn btn-warning btn-sm" onclick="submitTicketResolution(\'' + escapeHtml(ticket.id) + '\', \'In Progress\')">Set In Progress</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="submitTicketResolution(\'' + escapeHtml(ticket.id) + '\', \'Resolved\')">✅ Mark Resolved</button>';
     }
 
     const modal = document.getElementById('modal-ticket');
     if (modal) modal.classList.add('open');
   };
 
-  window.promptTicketResolution = function (ticketId) {
-    const note = prompt('Optional resolution note or message for the customer:', 'Resolved by administrative desk.');
-    window.updateTicketStatus(ticketId, 'Resolved', note);
+  window.submitTicketResolution = function (ticketId, newStatus) {
+    const noteInput = document.getElementById('ticket-resolution-note');
+    const note = noteInput ? noteInput.value.trim() : '';
+    window.updateTicketStatus(ticketId, newStatus, note || ('Status updated to ' + newStatus + ' by SmartAssets Support Desk.'));
   };
 
   window.updateTicketStatus = function (ticketId, newStatus, note) {
-    fetch('/api/admin/tickets/' + encodeURIComponent(ticketId), {
+    apiFetch('/api/admin/tickets/' + encodeURIComponent(ticketId), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus, resolutionNote: note || null })
@@ -2938,7 +2978,7 @@
     if (tbody && (!STATE.verifications.length || force)) {
       tbody.innerHTML = '<tr><td colspan="7" class="loading-state"><div class="spinner"></div>Loading verification queue...</td></tr>';
     }
-    fetch('/api/admin/verifications')
+    apiFetch('/api/admin/verifications')
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data.success) throw new Error(data.error || 'Failed to load verifications');
@@ -2956,20 +2996,44 @@
     const tbody = document.getElementById('verifications-tbody');
     if (!tbody) return;
     if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No verification applications pending review.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No verification dossiers in queue.</td></tr>';
       return;
     }
 
     let html = '';
     items.forEach(function (v) {
+      const isPending = (v.kycStatus === 'pending');
+      const isVerified = (v.kycStatus === 'verified');
+      const bankText = v.bankingDetails ? (v.bankingDetails.bankName + ' · ' + (v.bankingDetails.accountNumber ? v.bankingDetails.accountNumber.slice(-4) : '••••')) : '<span class="text-muted text-xs">Unlinked</span>';
+      
+      let statusPillHtml = '';
+      if (isVerified) {
+        statusPillHtml = '<span class="pill pill-green">✅ Verified</span>';
+      } else if (isPending) {
+        statusPillHtml = '<span class="pill pill-blue">⏳ Pending Review</span>';
+      } else if (v.kycStatus === 'rejected') {
+        statusPillHtml = '<span class="pill pill-red">❌ Rejected</span>';
+      } else {
+        statusPillHtml = '<span class="pill pill-muted">Unverified</span>';
+      }
+
       html += '<tr>' +
-        '<td><span class="id-mono">' + escapeHtml(v.id) + '</span></td>' +
-        '<td><strong>' + escapeHtml(v.userName) + '</strong></td>' +
-        '<td>' + escapeHtml(v.assetName) + '<br><span class="text-xs text-muted">' + formatZar(v.assetValuation) + '</span></td>' +
-        '<td><span class="pill pill-blue">' + escapeHtml(v.verificationTier) + '</span></td>' +
-        '<td>' + renderStatusPill(v.status) + '</td>' +
-        '<td><span class="pill pill-amber">&#9888; Demo Record</span></td>' +
-        '<td><button class="btn btn-secondary btn-sm" onclick="openVerificationModal(\'' + escapeHtml(v.id) + '\')">Inspect Case</button></td>' +
+        '<td><span class="id-mono">' + escapeHtml(v.id) + '</span><br><span class="text-xs text-muted">' + formatDate(v.submittedAt) + '</span></td>' +
+        '<td><strong>' + escapeHtml(v.fullName || 'Collector') + '</strong><br><span class="font-mono text-xs text-muted">' + escapeHtml(v.userEmail || '—') + '</span></td>' +
+        '<td><span class="font-mono text-xs">' + escapeHtml(v.idNumber || '—') + '</span></td>' +
+        '<td><span class="font-mono text-xs">' + escapeHtml(v.taxNumber || '—') + '</span></td>' +
+        '<td><span class="text-xs" style="max-width:180px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(v.residentialAddress) + '">' + escapeHtml(v.residentialAddress || '—') + '</span></td>' +
+        '<td><span class="font-mono text-xs">' + bankText + '</span></td>' +
+        '<td>' + statusPillHtml + '</td>' +
+        '<td>' +
+        '<div style="display:flex;gap:6px;align-items:center;">' +
+        '<button class="btn btn-secondary btn-sm" onclick="openVerificationModal(\'' + escapeHtml(v.id) + '\')">Inspect</button>' +
+        (isPending ? (
+          '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveKycDossier(\'' + escapeHtml(v.id) + '\')">✅ Approve</button>' +
+          '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectKycDossier(\'' + escapeHtml(v.id) + '\')">❌ Reject</button>'
+        ) : '') +
+        '</div>' +
+        '</td>' +
         '</tr>';
     });
     tbody.innerHTML = html;
@@ -2980,42 +3044,109 @@
     if (!item) return;
 
     const titleEl = document.getElementById('modal-verification-title');
-    if (titleEl) titleEl.textContent = 'Compliance Dossier: ' + item.id + ' — ' + item.userName;
+    if (titleEl) titleEl.textContent = 'FICA / KYC Compliance Dossier: ' + item.id + ' — ' + (item.fullName || item.userEmail);
 
     const bodyEl = document.getElementById('modal-verification-body');
     if (bodyEl) {
-      let docsHtml = '';
-      (item.documents || []).forEach(function (doc) {
-        docsHtml += '<div style="background:var(--bg-main);padding:10px 14px;border-radius:6px;border:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-          '<div>' +
-          '<strong>' + escapeHtml(doc.type) + '</strong>: ' + escapeHtml(doc.filename) +
-          '<div class="text-xs text-muted">Uploaded: ' + formatDate(doc.uploadedAt) + '</div>' +
-          '</div>' +
-          renderStatusPill(doc.status) +
-          '</div>';
-      });
+      const bank = item.bankingDetails || {};
+      bodyEl.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">' +
+        '<div class="data-field"><div class="data-label">Applicant Name</div><div class="data-val"><strong>' + escapeHtml(item.fullName || '—') + '</strong></div></div>' +
+        '<div class="data-field"><div class="data-label">Email Address</div><div class="data-val font-mono text-xs">' + escapeHtml(item.userEmail || '—') + '</div></div>' +
+        '<div class="data-field"><div class="data-label">SA ID / Passport Number</div><div class="data-val font-mono text-xs">🇿🇦 ' + escapeHtml(item.idNumber || '—') + '</div></div>' +
+        '<div class="data-field"><div class="data-label">SARS Tax Reference Number</div><div class="data-val font-mono text-xs">🏛️ ' + escapeHtml(item.taxNumber || '—') + '</div></div>' +
+        '<div class="data-field" style="grid-column: span 2;"><div class="data-label">Residential Address (Proof of Residence)</div><div class="data-val">' + escapeHtml(item.residentialAddress || '—') + '</div></div>' +
+        '</div>' +
 
-      bodyEl.innerHTML = '<div class="banner banner-warning" style="margin-bottom:16px;">' +
-        '<strong>Sprint Demonstration Queue:</strong> The live database schema currently contains no identity document table. These cases demonstrate the valuable-asset appraisal compliance workflow without introducing unapproved migrations or fake DB mutations.' +
+        '<div style="background:var(--card-header);padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:16px;">' +
+        '<div class="data-label" style="margin-bottom:8px;color:var(--blue);font-weight:700;">🏦 Verified Banking Details (For Withdrawals & Payouts)</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">' +
+        '<div><div class="text-xs text-muted">Bank Name</div><strong>' + escapeHtml(bank.bankName || '—') + '</strong></div>' +
+        '<div><div class="text-xs text-muted">Account Holder</div><strong>' + escapeHtml(bank.accountHolder || item.fullName || '—') + '</strong></div>' +
+        '<div><div class="text-xs text-muted">Account Number</div><strong class="font-mono">' + escapeHtml(bank.accountNumber || '—') + '</strong></div>' +
+        '<div><div class="text-xs text-muted">Branch Code</div><strong class="font-mono">' + escapeHtml(bank.branchCode || '—') + '</strong></div>' +
         '</div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">' +
-        '<div class="data-field"><div class="data-label">Applicant</div><div class="data-val">' + escapeHtml(item.userName) + '</div></div>' +
-        '<div class="data-field"><div class="data-label">Asset Valuation</div><div class="data-val">' + formatZar(item.assetValuation) + ' (' + escapeHtml(item.assetName) + ')</div></div>' +
-        '<div class="data-field"><div class="data-label">Compliance Tier</div><div class="data-val">' + escapeHtml(item.verificationTier) + '</div></div>' +
-        '<div class="data-field"><div class="data-label">Review Status</div><div class="data-val">' + renderStatusPill(item.status) + '</div></div>' +
         '</div>' +
-        '<div class="data-label" style="margin-bottom:8px;">Submitted Verification Artifacts</div>' +
-        docsHtml +
-        '<div style="margin-top:16px;">' +
-        '<div class="data-label">Compliance Review Notes</div>' +
-        '<p style="font-size:13px;line-height:1.5;color:var(--text-secondary);background:var(--bg-main);padding:12px;border-radius:6px;border:1px solid var(--border-color);">' +
-        escapeHtml(item.notes || 'No review notes recorded.') +
-        '</p>' +
-        '</div>';
+
+        '<div class="data-label" style="margin-bottom:10px;">Submitted Document Artifacts (3 Required FICA Items — Click Any Document to Enlarge)</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;margin-bottom:16px;">' +
+        '<div style="background:var(--sidebar);padding:12px;border-radius:8px;border:1px solid var(--border);text-align:center;">' +
+        '<div class="text-xs text-muted" style="margin-bottom:6px;font-weight:700;">1. SA Smart ID / Passport</div>' +
+        (item.idDocumentUrl ? ('<a href="' + escapeHtml(resolveImg(item.idDocumentUrl)) + '" target="_blank"><img src="' + escapeHtml(resolveImg(item.idDocumentUrl)) + '" style="width:100%;height:130px;object-fit:contain;background:#0b1120;border-radius:6px;border:1px solid var(--border);"/></a>') : '<div class="text-xs text-muted" style="padding:40px 0;">Document on file</div>') +
+        '</div>' +
+        '<div style="background:var(--sidebar);padding:12px;border-radius:8px;border:1px solid var(--border);text-align:center;">' +
+        '<div class="text-xs text-muted" style="margin-bottom:6px;font-weight:700;">2. SARS Tax Notice (IT150)</div>' +
+        (item.taxDocumentUrl ? ('<a href="' + escapeHtml(resolveImg(item.taxDocumentUrl)) + '" target="_blank"><img src="' + escapeHtml(resolveImg(item.taxDocumentUrl)) + '" style="width:100%;height:130px;object-fit:contain;background:#0b1120;border-radius:6px;border:1px solid var(--border);"/></a>') : '<div class="text-xs text-muted" style="padding:40px 0;">Document on file</div>') +
+        '</div>' +
+        '<div style="background:var(--sidebar);padding:12px;border-radius:8px;border:1px solid var(--border);text-align:center;">' +
+        '<div class="text-xs text-muted" style="margin-bottom:6px;font-weight:700;">3. Proof of Residence (&lt; 3 mo)</div>' +
+        (item.proofOfResidenceUrl ? ('<a href="' + escapeHtml(resolveImg(item.proofOfResidenceUrl)) + '" target="_blank"><img src="' + escapeHtml(resolveImg(item.proofOfResidenceUrl)) + '" style="width:100%;height:130px;object-fit:contain;background:#0b1120;border-radius:6px;border:1px solid var(--border);"/></a>') : '<div class="text-xs text-muted" style="padding:40px 0;">Document on file</div>') +
+        '</div>' +
+        '</div>' +
+
+        (item.rejectionReason ? ('<div class="banner banner-warning" style="margin-bottom:12px;background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.28);color:#EF4444;"><strong>Rejection Reason:</strong> ' + escapeHtml(item.rejectionReason) + '</div>') : '') +
+        '<div class="text-xs text-muted">Submitted: ' + formatDate(item.submittedAt) + (item.reviewedAt ? (' · Reviewed: ' + formatDate(item.reviewedAt) + ' by ' + escapeHtml(item.reviewedBy || 'Admin Desk')) : '') + '</div>';
+    }
+
+    const modalFooter = document.querySelector('#modal-verification .modal-footer');
+    if (modalFooter) {
+      modalFooter.innerHTML = '<button class="btn btn-secondary btn-sm" onclick="closeModal(\'modal-verification\')">Close Dossier</button>' +
+        (item.kycStatus === 'pending' ? (
+          '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectKycDossier(\'' + escapeHtml(item.id) + '\')">❌ Reject KYC (with reason)</button>' +
+          '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveKycDossier(\'' + escapeHtml(item.id) + '\')">✅ Approve KYC</button>'
+        ) : (item.kycStatus === 'verified' ? (
+          '<span class="pill pill-green" style="margin-left:auto;">✅ FICA Verified User</span>'
+        ) : (
+          '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveKycDossier(\'' + escapeHtml(item.id) + '\')">✅ Re-Approve KYC</button>'
+        )));
     }
 
     const modal = document.getElementById('modal-verification');
     if (modal) modal.classList.add('open');
+  };
+
+  window.approveKycDossier = function (verificationId) {
+    apiFetch('/api/admin/verifications/' + encodeURIComponent(verificationId) + '/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: 'FICA compliance verified by Admin Operations Desk' })
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.success) throw new Error(data.error || 'Failed to approve KYC');
+        showToast('✅ KYC Dossier approved! User is now verified.', 'success');
+        window.closeModal('modal-verification');
+        window.loadVerifications(true);
+        if (typeof window.loadUsers === 'function') window.loadUsers(true);
+        loadOverview();
+      })
+      .catch(function (err) {
+        console.error('approveKycDossier error:', err);
+        showToast('Error approving KYC: ' + err.message, 'error');
+      });
+  };
+
+  window.rejectKycDossier = function (verificationId) {
+    const reason = prompt('Please enter the compliance rejection reason to send to the collector:', 'Proof of residence document is older than 3 months. Please upload a recent municipal utility bill.');
+    if (!reason || !reason.trim()) return;
+
+    apiFetch('/api/admin/verifications/' + encodeURIComponent(verificationId) + '/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason.trim() })
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.success) throw new Error(data.error || 'Failed to reject KYC');
+        showToast('❌ KYC Dossier rejected. Rejection notice logged.', 'error');
+        window.closeModal('modal-verification');
+        window.loadVerifications(true);
+        if (typeof window.loadUsers === 'function') window.loadUsers(true);
+        loadOverview();
+      })
+      .catch(function (err) {
+        console.error('rejectKycDossier error:', err);
+        showToast('Error: ' + err.message, 'error');
+      });
   };
 
   // ── Users Directory ──
@@ -3024,7 +3155,7 @@
     if (tbody && (!STATE.users.length || force)) {
       tbody.innerHTML = '<tr><td colspan="7" class="loading-state"><div class="spinner"></div>Loading Supabase user directory...</td></tr>';
     }
-    fetch('/api/admin/users')
+    apiFetch('/api/admin/users')
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data.success) throw new Error(data.error || 'Failed to fetch users');
@@ -3040,7 +3171,7 @@
 
   window.filterUsersTable = function () {
     const searchVal = (document.getElementById('users-search-input')?.value || '').toLowerCase().trim();
-    const sortVal = document.getElementById('users-sort-filter')?.value || 'created_desc';
+    const sortVal = document.getElementById('users-sort-filter')?.value || 'newest';
 
     let filtered = STATE.users.filter(function (u) {
       const matchSearch = !searchVal ||
@@ -3051,34 +3182,59 @@
       return matchSearch;
     });
 
-    if (sortVal === 'created_desc') {
+    if (sortVal === 'newest' || sortVal === 'created_desc') {
       filtered.sort(function (a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
     } else if (sortVal === 'created_asc') {
       filtered.sort(function (a, b) { return new Date(a.createdAt || 0) - new Date(b.createdAt || 0); });
-    } else if (sortVal === 'balance_desc') {
+    } else if (sortVal === 'balance-desc' || sortVal === 'balance_desc') {
       filtered.sort(function (a, b) { return (b.balance || 0) - (a.balance || 0); });
-    } else if (sortVal === 'name_asc') {
+    } else if (sortVal === 'assets-desc') {
+      filtered.sort(function (a, b) { return (b.assetsListed || 0) - (a.assetsListed || 0); });
+    } else if (sortVal === 'name' || sortVal === 'name_asc') {
       filtered.sort(function (a, b) { return (a.fullName || '').localeCompare(b.fullName || ''); });
     }
 
     const countEl = document.getElementById('users-filtered-count');
-    if (countEl) countEl.textContent = 'Showing ' + filtered.length + ' of ' + STATE.users.length + ' users';
+    if (countEl) countEl.textContent = filtered.length;
 
     const tbody = document.getElementById('users-tbody');
     if (!tbody) return;
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No users match the search filter.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No users match the search filter.</td></tr>';
       return;
     }
 
     let html = '';
     filtered.forEach(function (u) {
+      const isSuspended = (u.accountStatus === 'suspended' || u.isSuspended === true);
+      const isVerified = (u.kycStatus === 'verified');
+      const isPending = (u.kycStatus === 'pending');
+      const isRejected = (u.kycStatus === 'rejected');
+      const bankText = u.bankingDetails ? (u.bankingDetails.bankName + ' (' + (u.bankingDetails.accountNumber ? u.bankingDetails.accountNumber.slice(-4) : '••••') + ')') : '<span class="text-muted text-xs">Unlinked</span>';
+
+      let kycPill = '';
+      if (isVerified) {
+        kycPill = '<span class="pill pill-green">Verified</span>';
+      } else if (isPending) {
+        kycPill = '<span class="pill pill-blue">Pending Review</span>';
+      } else if (isRejected) {
+        kycPill = '<span class="pill pill-red">Rejected</span>';
+      } else {
+        kycPill = '<span class="pill pill-muted">Unverified</span>';
+      }
+
+      const statusPill = isSuspended
+        ? '<span class="pill pill-red">🚫 Suspended</span>'
+        : '<span class="pill pill-green">Active</span>';
+
+      const avatarHtml = (u.avatarUrl && u.avatarUrl.startsWith('data:image/'))
+        ? '<img src="' + escapeHtml(u.avatarUrl) + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid var(--border);" />'
+        : '<div style="width:32px;height:32px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;">' + escapeHtml((u.fullName || 'U').slice(0, 1).toUpperCase()) + '</div>';
+
       html += '<tr>' +
         '<td>' +
         '<div style="display:flex;align-items:center;gap:10px;">' +
-        '<div style="width:32px;height:32px;border-radius:50%;background:var(--accent-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;">' +
-        escapeHtml((u.fullName || 'U').slice(0, 1).toUpperCase()) +
-        '</div>' +
+        avatarHtml +
         '<div>' +
         '<strong>' + escapeHtml(u.fullName) + '</strong>' +
         '<div class="text-xs text-muted font-mono">' + escapeHtml(u.id.slice(0, 8) + '…') + '</div>' +
@@ -3086,22 +3242,63 @@
         '</div>' +
         '</td>' +
         '<td><span class="text-xs font-mono">' + escapeHtml(u.email) + '</span></td>' +
-        '<td>' + (u.walletAddress ? '<span class="font-mono text-xs text-blue">' + escapeHtml(u.walletAddress.slice(0, 6) + '…' + u.walletAddress.slice(-4)) + '</span>' : '<span class="text-muted text-xs">Unlinked</span>') + '</td>' +
+        '<td>' + kycPill + '</td>' +
+        '<td>' + statusPill + '</td>' +
+        '<td><span class="font-mono text-xs">' + bankText + '</span></td>' +
         '<td>' + formatZar(u.balance) + '</td>' +
         '<td><span class="pill pill-muted">' + (u.assetsListed || 0) + ' listed</span></td>' +
-        '<td><span class="pill pill-muted">' + (u.escrowOrders || 0) + ' escrows</span></td>' +
-        '<td><button class="btn btn-secondary btn-sm" onclick="openUserModal(\'' + escapeHtml(u.id) + '\')">Profile</button></td>' +
+        '<td>' +
+        '<div style="display:flex;gap:6px;align-items:center;">' +
+        '<button class="btn btn-secondary btn-sm" onclick="openUserModal(\'' + escapeHtml(u.id) + '\')">Profile</button>' +
+        (isSuspended ? (
+          '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="toggleUserSuspension(\'' + escapeHtml(u.id) + '\', false)">✅ Reactivate</button>'
+        ) : (
+          '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="toggleUserSuspension(\'' + escapeHtml(u.id) + '\', true)">🚫 Suspend</button>'
+        )) +
+        '</div>' +
+        '</td>' +
         '</tr>';
     });
     tbody.innerHTML = html;
+  };
+
+  window.toggleUserSuspension = function (userId, shouldSuspend) {
+    let reason = null;
+    if (shouldSuspend) {
+      reason = prompt('Enter the compliance suspension reason (will be logged to audit ledger):', 'Compliance policy enforcement.');
+      if (!reason) return;
+    }
+
+    apiFetch('/api/admin/users/' + encodeURIComponent(userId) + '/status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: shouldSuspend ? 'suspended' : 'active',
+        reason: reason
+      })
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.success) throw new Error(data.error || 'Failed to update user status');
+        showToast(shouldSuspend ? '🚫 User suspended by Compliance Desk' : '✅ User account reactivated', shouldSuspend ? 'error' : 'success');
+        window.loadUsers(true);
+        if (typeof window.loadActivity === 'function') window.loadActivity(true);
+      })
+      .catch(function (err) {
+        console.error('toggleUserSuspension error:', err);
+        showToast('Error: ' + err.message, 'error');
+      });
   };
 
   window.openUserModal = function (userId) {
     const user = STATE.users.find(function (u) { return u.id === userId; });
     if (!user) return;
 
+    const isSuspended = (user.accountStatus === 'suspended' || user.isSuspended === true);
+    const bank = user.bankingDetails || {};
+
     const titleEl = document.getElementById('modal-user-title');
-    if (titleEl) titleEl.textContent = 'User Profile: ' + user.fullName;
+    if (titleEl) titleEl.textContent = 'Collector Profile: ' + user.fullName;
 
     const bodyEl = document.getElementById('modal-user-body');
     if (bodyEl) {
@@ -3109,16 +3306,26 @@
         '<div class="data-field"><div class="data-label">User ID (Supabase Auth)</div><div class="data-val font-mono text-xs">' + escapeHtml(user.id) + '</div></div>' +
         '<div class="data-field"><div class="data-label">Display Name</div><div class="data-val">' + escapeHtml(user.fullName) + '</div></div>' +
         '<div class="data-field"><div class="data-label">Email Address</div><div class="data-val font-mono text-xs">' + escapeHtml(user.email) + '</div></div>' +
-        '<div class="data-field"><div class="data-label">Web3 Wallet Address</div><div class="data-val font-mono text-xs">' + (user.walletAddress ? escapeHtml(user.walletAddress) : 'No wallet linked') + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Account Security Status</div><div class="data-val">' + (isSuspended ? '<span class="pill pill-red">🚫 Suspended by Compliance</span>' : '<span class="pill pill-green">Active</span>') + '</div></div>' +
+        '<div class="data-field"><div class="data-label">FICA / KYC Status</div><div class="data-val">' + renderStatusPill(user.kycStatus || user.verificationStatus) + '</div></div>' +
         '<div class="data-field"><div class="data-label">Vault Fiat Balance</div><div class="data-val text-green font-bold">' + formatZar(user.balance) + '</div></div>' +
-        '<div class="data-field"><div class="data-label">Platform Verification Status</div><div class="data-val">' + renderStatusPill(user.verificationStatus) + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Linked Bank Name</div><div class="data-val">' + escapeHtml(bank.bankName || 'No bank linked') + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Bank Account Number</div><div class="data-val font-mono text-xs">' + escapeHtml(bank.accountNumber || '—') + ' (Branch: ' + escapeHtml(bank.branchCode || '—') + ')</div></div>' +
         '<div class="data-field"><div class="data-label">Marketplace Assets Listed</div><div class="data-val">' + (user.assetsListed || 0) + ' assets</div></div>' +
         '<div class="data-field"><div class="data-label">Escrow Custody Orders</div><div class="data-val">' + (user.escrowOrders || 0) + ' orders</div></div>' +
         '</div>' +
-        '<div style="margin-top:12px;" class="text-xs text-muted">Account Registered: ' + formatDate(user.createdAt) + '</div>' +
-        '<div class="banner banner-info" style="margin-top:16px;">' +
-        '<strong>Security Guardrail:</strong> Account suspension is omitted from this sprint because no authorized suspension endpoint currently exists on the backend. Suspension cannot be simulated as a client-only flag.' +
-        '</div>';
+        (isSuspended && user.suspensionReason ? ('<div class="banner banner-warning" style="margin-top:16px;background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.28);color:#EF4444;"><strong>Suspension Reason:</strong> ' + escapeHtml(user.suspensionReason) + '</div>') : '') +
+        '<div style="margin-top:12px;" class="text-xs text-muted">Account Registered: ' + formatDate(user.createdAt) + '</div>';
+    }
+
+    const modalFooter = document.querySelector('#modal-user .modal-footer');
+    if (modalFooter) {
+      modalFooter.innerHTML = '<button class="btn btn-secondary btn-sm" onclick="closeModal(\'modal-user\')">Dismiss</button>' +
+        (isSuspended ? (
+          '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="toggleUserSuspension(\'' + escapeHtml(user.id) + '\', false);closeModal(\'modal-user\');">✅ Reactivate Account</button>'
+        ) : (
+          '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="toggleUserSuspension(\'' + escapeHtml(user.id) + '\', true);closeModal(\'modal-user\');">🚫 Suspend Account</button>'
+        ));
     }
 
     const modal = document.getElementById('modal-user');
@@ -3131,7 +3338,7 @@
     if (tbody && (!STATE.activity.length || force)) {
       tbody.innerHTML = '<tr><td colspan="6" class="loading-state"><div class="spinner"></div>Loading activity ledger...</td></tr>';
     }
-    fetch('/api/admin/activity')
+    apiFetch('/api/admin/activity')
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data.success) throw new Error(data.error || 'Failed to fetch activity');
@@ -3166,7 +3373,21 @@
     filtered.forEach(function (act) {
       html += '<tr>' +
         '<td><span class="text-xs text-muted font-mono">' + formatDate(act.timestamp) + '</span></td>' +
-        '<td><span class="pill pill-blue">' + escapeHtml(act.category) + '</span></td>' +
+        '<td>' + (function(cat, title) {
+          if (title.indexOf('LOGIN') !== -1) return '<span class="pill pill-green">LOGIN</span>';
+          if (title.indexOf('LOGOUT') !== -1) return '<span class="pill pill-muted">LOGOUT</span>';
+          if (title.indexOf('SESSION_TIMEOUT') !== -1) return '<span class="pill pill-amber" style="background:rgba(245,158,11,0.18);color:#F59E0B;">TIMEOUT</span>';
+          if (title.indexOf('KYC_APPROVED') !== -1) return '<span class="pill pill-green">KYC APPROVED</span>';
+          if (title.indexOf('KYC_REJECTED') !== -1) return '<span class="pill pill-red">KYC REJECTED</span>';
+          if (title.indexOf('KYC_SUBMIT') !== -1) return '<span class="pill pill-blue">KYC SUBMIT</span>';
+          if (title.indexOf('SUSPENDED') !== -1) return '<span class="pill pill-red">SUSPENDED</span>';
+          if (title.indexOf('REACTIVATED') !== -1) return '<span class="pill pill-green">REACTIVATED</span>';
+          if (cat === 'Compliance') return '<span class="pill pill-blue">Compliance</span>';
+          if (cat === 'Security') return '<span class="pill pill-red">Security</span>';
+          if (cat === 'Vault') return '<span class="pill pill-green">Vault</span>';
+          if (cat === 'Support') return '<span class="pill pill-muted">Support</span>';
+          return '<span class="pill pill-blue">' + escapeHtml(cat) + '</span>';
+        })(act.category, act.title || '') + '</td>' +
         '<td><strong>' + escapeHtml(act.title) + '</strong></td>' +
         '<td>' + escapeHtml(act.description) + (act.txHash ? '<br><span class="font-mono text-xs text-muted">TX: ' + escapeHtml(act.txHash.slice(0, 14) + '…') + '</span>' : '') + '</td>' +
         '<td><span class="font-mono text-xs text-muted">' + escapeHtml(act.actor ? act.actor.slice(0, 10) + '…' : 'System') + '</span></td>' +
@@ -3229,7 +3450,7 @@
 
     const startTime = performance.now();
 
-    fetch(ep.path)
+    apiFetch(ep.path)
       .then(function (res) {
         const latency = Math.round(performance.now() - startTime);
         if (statusEl) statusEl.textContent = res.status + ' ' + res.statusText;

@@ -1,8 +1,10 @@
 // ─── Authentication Middleware ───────────────────────────────────────────────
-// Validates Supabase JWT access tokens from the Authorization header.
+// Validates Supabase JWT access tokens from the Authorization header and
+// enforces compliance suspension locks.
 
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
+const complianceService = require('../services/complianceService');
 
 async function requireAuth(req, res, next) {
   try {
@@ -23,7 +25,14 @@ async function requireAuth(req, res, next) {
       return sendError(res, 401, 'Unauthorized: Session expired or invalid token.');
     }
 
+    // Enforce compliance account suspension lock
+    const compliance = complianceService.getUserCompliance(user.id, user.email);
+    if (compliance && compliance.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Please contact support.');
+    }
+
     req.user = user;
+    req.compliance = compliance;
     next();
   } catch (err) {
     console.error('Auth middleware error:', err);
@@ -39,7 +48,9 @@ async function optionalAuth(req, _res, next) {
       if (token) {
         const { data: { user }, error } = await supabase.auth.getUser(token);
         if (!error && user) {
+          const compliance = complianceService.getUserCompliance(user.id, user.email);
           req.user = user;
+          req.compliance = compliance;
         }
       }
     }
