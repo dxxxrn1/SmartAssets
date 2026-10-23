@@ -281,12 +281,31 @@ export default function HomeScreen({ navigation }) {
     loadVaultData();
   };
 
-  // Derive user display name & photo
+  // Derive user display name & photo (strictly never displays MetaMask or wallet hex as a person's name)
+  const isWalletOrMetaMaskString = (str) => {
+    if (!str || typeof str !== "string") return true;
+    const trimmed = str.trim().toLowerCase();
+    return (
+      trimmed.startsWith("metamask") ||
+      /^0x[a-f0-9]{4,}/i.test(trimmed) ||
+      trimmed.includes("@metamask.smartassets.io")
+    );
+  };
+
+  const rawFullName = user?.fullName || user?.full_name || user?.name || "";
+  const cleanFullName = !isWalletOrMetaMaskString(rawFullName) ? rawFullName.trim() : "";
+  const rawEmail = user?.email || "";
+  const cleanEmail = !isWalletOrMetaMaskString(rawEmail) ? rawEmail.trim() : "";
+  const cleanFirstName =
+    user?.firstName && !isWalletOrMetaMaskString(user?.firstName)
+      ? user.firstName.trim()
+      : "";
+
   const userName =
-    user?.firstName ||
-    user?.fullName?.split(" ")[0] ||
-    user?.email?.split("@")[0] ||
-    "James";
+    cleanFirstName ||
+    (cleanFullName ? cleanFullName.split(" ")[0] : "") ||
+    (cleanEmail ? cleanEmail.split("@")[0] : "") ||
+    "Collector";
 
   const userPhoto =
     user?.avatarUrl ||
@@ -296,13 +315,14 @@ export default function HomeScreen({ navigation }) {
     user?.profileImage;
 
   const userInitials = (
-    user?.fullName
-      ? user.fullName
+    cleanFullName
+      ? cleanFullName
           .split(" ")
+          .filter(Boolean)
           .map((n) => n[0])
           .slice(0, 2)
           .join("")
-      : "JH"
+      : (userName ? userName.slice(0, 2) : "SA")
   ).toUpperCase();
 
   return (

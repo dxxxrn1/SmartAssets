@@ -303,10 +303,16 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const loginWithWallet = async (walletAddress) => {
+  const loginWithWallet = async (params) => {
     setLoading(true);
     try {
-      const response = await loginWithWalletApi(walletAddress);
+      const response = await loginWithWalletApi(params);
+      if (response && response.needsAccount) {
+        return response;
+      }
+      if (!response || !response.user || (!response.session?.access_token && !response.token)) {
+        throw new Error(response?.message || 'Wallet login failed to establish a session.');
+      }
       const nextUser = response.user;
       const nextToken = response.session?.access_token || response.token;
       const now = Date.now();

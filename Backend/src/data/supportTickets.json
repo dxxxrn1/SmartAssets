@@ -329,5 +329,20 @@
     "updatedAt": "2026-10-23T20:07:14.126Z",
     "responseEstimate": "2-4 hours",
     "assignedTeam": "Smart Contract Settlement Desk"
+  },
+  {
+    "id": "TKT-539447",
+    "userId": "test-user-1792791373726",
+    "userEmail": "collector@luxuryassets.com",
+    "userName": "Alexander Wright",
+    "category": "Escrow & Payments",
+    "subject": "Escrow deposit confirmation delay",
+    "message": "My Sepolia ETH deposit took 2 blocks to confirm. Want to ensure custody tracking is synchronized.",
+    "priority": "high",
+    "status": "Open",
+    "createdAt": "2026-10-23T21:36:13.726Z",
+    "updatedAt": "2026-10-23T21:36:13.726Z",
+    "responseEstimate": "2-4 hours",
+    "assignedTeam": "Smart Contract Settlement Desk"
   }
 ]

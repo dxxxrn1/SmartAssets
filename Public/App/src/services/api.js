@@ -157,13 +157,58 @@ export async function loginUser({ email, password }) {
 }
 
 /**
- * Sign in or register using a MetaMask wallet address.
+ * Generate a single-use 5-minute cryptographic challenge nonce for a wallet.
  * @param {string} walletAddress
  */
-export async function loginWithWalletApi(walletAddress) {
-  return apiRequest('/auth/wallet-login', {
+export async function getWalletNonceApi(walletAddress) {
+  return apiRequest('/auth/wallet/nonce', {
     method: 'POST',
     body: JSON.stringify({ walletAddress }),
+  });
+}
+
+/**
+ * Link a verified MetaMask wallet to the currently logged in user profile.
+ * @param {{ walletAddress: string, signature: string, nonce: string }} params
+ * @param {string} token - User's JWT token
+ */
+export async function linkWalletApi({ walletAddress, signature, nonce }, token) {
+  return apiRequest('/auth/wallet/link', {
+    method: 'POST',
+    body: JSON.stringify({ walletAddress, signature, nonce }),
+  }, token);
+}
+
+/**
+ * Sign in using a verified MetaMask wallet.
+ * @param {string|{ walletAddress: string, signature?: string, nonce?: string }} params
+ */
+export async function loginWithWalletApi(params) {
+  const payload = typeof params === 'string' ? { walletAddress: params } : params;
+  return apiRequest('/auth/wallet/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Disconnect/unlink the current user's wallet.
+ * @param {string} token
+ */
+export async function unlinkWalletApi(token) {
+  return apiRequest('/auth/wallet/unlink', {
+    method: 'POST',
+  }, token);
+}
+
+/**
+ * Create a new user profile with real details linked to a verified wallet.
+ * @param {{ walletAddress: string, signature: string, nonce: string, email: string, fullName: string, password?: string }} params
+ */
+export async function completeWalletProfileApi(params) {
+  return apiRequest('/auth/wallet/complete-profile', {
+    method: 'POST',
+    body: JSON.stringify(params),
   });
 }
 

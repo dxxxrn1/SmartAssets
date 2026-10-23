@@ -5,11 +5,16 @@ const {
   register,
   login,
   walletLogin,
+  getWalletNonce,
+  linkWallet,
+  unlinkWallet,
+  completeWalletProfile,
   forgotPassword,
   resetPassword,
   logout,
   verifySession,
 } = require('../controllers/authController');
+const { requireAuth } = require('../middlewares/authMiddleware');
 const { rateLimiter } = require('../middlewares/securityMiddleware');
 
 const router = express.Router();
@@ -23,10 +28,19 @@ const authLimiter = rateLimiter({
 
 router.post('/register', authLimiter, register);
 router.post('/login', authLimiter, login);
-router.post('/wallet-login', authLimiter, walletLogin);
 router.post('/forgot-password', authLimiter, forgotPassword);
 router.post('/reset-password', resetPassword);
 router.post('/logout', logout);
 router.get('/session', verifySession);
+
+// ── Web3 MetaMask Cryptographic Challenge-Response Routes ────────────────────
+router.post('/wallet/nonce', authLimiter, getWalletNonce);
+router.post('/wallet/link', requireAuth, linkWallet);
+router.post('/wallet/login', authLimiter, walletLogin);
+router.post('/wallet/unlink', requireAuth, unlinkWallet);
+router.post('/wallet/complete-profile', authLimiter, completeWalletProfile);
+
+// Legacy alias
+router.post('/wallet-login', authLimiter, walletLogin);
 
 module.exports = router;

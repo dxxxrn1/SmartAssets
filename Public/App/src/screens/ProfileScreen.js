@@ -26,6 +26,18 @@ import {
   lodgeSupportTicketApi,
   getUserSupportTicketsApi,
 } from "../services/api";
+import useLinkedWallet from "../hooks/useLinkedWallet";
+
+// Helper to filter out synthetic MetaMask strings and raw hex addresses from user name fields
+const isWalletOrMetaMaskString = (str) => {
+  if (!str || typeof str !== "string") return true;
+  const trimmed = str.trim().toLowerCase();
+  return (
+    trimmed.startsWith("metamask") ||
+    /^0x[a-f0-9]{4,}/i.test(trimmed) ||
+    trimmed.includes("@metamask.smartassets.io")
+  );
+};
 
 export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTheme: propToggleTheme }) {
   const themeContext = useTheme();
@@ -34,6 +46,19 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
   const setIsDark = themeContext.setIsDark;
   const { user, token, logout, updateUser } = useAuth();
   const { isDark, toggleTheme } = useTheme();
+
+  // Web3 Linked Wallet Hook
+  const {
+    linkedWallet,
+    activeMetaMaskAccount,
+    isMismatch,
+    isSepolia,
+    loading: walletActionLoading,
+    linkWallet,
+    unlinkWallet,
+  } = useLinkedWallet();
+
+  const [copiedWallet, setCopiedWallet] = useState(false);
 
   // State to manage which accordion section is expanded
   const [expandedSection, setExpandedSection] = useState(null);
@@ -44,11 +69,16 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [submittingSupport, setSubmittingSupport] = useState(false);
 
+  const initialRawName = user?.fullName || user?.name || "";
+  const initialCleanName = !isWalletOrMetaMaskString(initialRawName) ? initialRawName : "";
+  const initialRawEmail = user?.email || "";
+  const initialCleanEmail = !isWalletOrMetaMaskString(initialRawEmail) ? initialRawEmail : "";
+
   const [form, setForm] = useState({
-    fullName: user?.fullName || user?.name || "",
+    fullName: initialCleanName,
     gender: user?.gender || "",
     dob: user?.dob || "",
-    email: user?.email || "",
+    email: initialCleanEmail,
     password: "",
   });
 
@@ -81,21 +111,22 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
         .then((res) => {
           if (res?.success && res.profile) {
             const p = res.profile;
+            const cleanPFullName = (!isWalletOrMetaMaskString(p.fullName) && p.fullName) ? p.fullName : "";
+            const cleanPEmail = (!isWalletOrMetaMaskString(p.email) && p.email) ? p.email : "";
             setForm((prev) => ({
               ...prev,
-              fullName: p.fullName || prev.fullName,
+              fullName: cleanPFullName || prev.fullName,
               gender: p.gender || prev.gender,
               dob: p.dob || prev.dob,
-              email: p.email || prev.email,
+              email: cleanPEmail || prev.email,
             }));
             const effectiveAvatar = p.avatarUrl || p.avatar_url;
-            if (effectiveAvatar) {
-              updateUser({
-                avatarUrl: effectiveAvatar,
-                avatar_url: effectiveAvatar,
-                fullName: p.fullName,
-              });
-            }
+            const effectiveWallet = p.wallet_address || p.walletAddress;
+            updateUser({
+              ...(effectiveAvatar ? { avatarUrl: effectiveAvatar, avatar_url: effectiveAvatar } : {}),
+              ...(cleanPFullName ? { fullName: cleanPFullName } : {}),
+              ...(effectiveWallet ? { walletAddress: effectiveWallet, wallet_address: effectiveWallet } : {}),
+            });
           }
         })
         .catch(() => {});
@@ -423,18 +454,69 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
     ]);
   };
 
-  // Dynamic values (no hardcoded "Anna Miller" or "anna@profile.com")
+  // Dynamic values: strictly display real user details (never "MetaMask" or placeholder email)
+  const rawFullName = user?.fullName || user?.name || form.fullName || "";
+  const cleanFullName = !isWalletOrMetaMaskString(rawFullName) ? rawFullName.trim() : "";
+  const rawEmail = user?.email || form.email || "";
+  const cleanEmail = !isWalletOrMetaMaskString(rawEmail) ? rawEmail.trim() : "";
+
   const displayName =
-    user?.fullName ||
-    user?.name ||
-    form.fullName ||
-    (user?.email ? user.email.split("@")[0] : "Luxury Collector");
+    cleanFullName ||
+    (cleanEmail ? cleanEmail.split("@")[0] : "") ||
+    "Luxury Collector";
+
   const displayEmail =
-    user?.email ||
-    (user?.walletAddress
-      ? `${user.walletAddress.substring(0, 6)}...${user.walletAddress.slice(-4)}`
+    cleanEmail ||
+    (linkedWallet
+      ? `Wallet linked (${linkedWallet.substring(0, 6)}...${linkedWallet.slice(-4)})`
       : "Verified Member");
+
   const avatarUrl = user?.avatarUrl || user?.avatar_url;
+
+  const handleCopyWallet = async () => {
+    if (!linkedWallet) return;
+    try {
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(linkedWallet);
+      }
+      setCopiedWallet(true);
+      setTimeout(() => setCopiedWallet(false), 2000);
+      if (Platform.OS !== "web") {
+        Alert.alert("Wallet Address", linkedWallet);
+      }
+    } catch (_) {
+      Alert.alert("Wallet Address", linkedWallet);
+    }
+  };
+
+  const handleDisconnectWallet = () => {
+    Alert.alert(
+      "Disconnect Wallet",
+      "Are you sure you want to unlink this wallet from your profile? You will need to link a wallet again to sign smart contract transactions.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Unlink",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await unlinkWallet();
+            } catch (err) {
+              Alert.alert("Error", err.message || "Failed to unlink wallet.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleConnectWallet = async () => {
+    try {
+      await linkWallet();
+    } catch (_) {
+      // Error handled within hook alerts
+    }
+  };
 
   // Menu items with original pastel colors
   const MENU_ITEMS = [
@@ -521,6 +603,147 @@ export default function ProfileScreen({ navigation, isDark: propIsDark, toggleTh
           </TouchableOpacity>
           <Text style={styles.userName}>{displayName}</Text>
           <Text style={styles.userEmail}>{displayEmail}</Text>
+        </View>
+
+        {/* ── Web3 Settlement Wallet Card ── */}
+        <View
+          style={[
+            styles.walletCard,
+            {
+              backgroundColor: isDark ? "#131A2F" : "#FFFFFF",
+              borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+            },
+          ]}
+        >
+          <View style={styles.walletHeaderRow}>
+            <View style={styles.walletTitleGroup}>
+              <View style={styles.walletIconCircle}>
+                <Ionicons name="wallet-outline" size={18} color="#00FBFF" />
+              </View>
+              <View>
+                <Text
+                  style={[
+                    styles.walletCardTitle,
+                    { color: isDark ? "#F8FAFC" : "#0F172A" },
+                  ]}
+                >
+                  Web3 Settlement Wallet
+                </Text>
+                <Text style={styles.walletCardSubtitle}>
+                  {linkedWallet
+                    ? "Linked for purchases, escrows & auctions"
+                    : "Connect MetaMask on Sepolia to authorize transactions"}
+                </Text>
+              </View>
+            </View>
+            {linkedWallet && (
+              <View style={styles.networkBadge}>
+                <View style={styles.networkPulseDot} />
+                <Text style={styles.networkBadgeText}>Sepolia</Text>
+              </View>
+            )}
+          </View>
+
+          {linkedWallet ? (
+            <View style={styles.walletConnectedContent}>
+              <View
+                style={[
+                  styles.addressDisplayRow,
+                  {
+                    backgroundColor: isDark ? "rgba(15, 23, 42, 0.6)" : "#F8FAFC",
+                    borderColor: isDark ? "rgba(255, 255, 255, 0.08)" : "#E2E8F0",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.addressMonoText,
+                    { color: isDark ? "#F8FAFC" : "#1E293B" },
+                  ]}
+                >
+                  {`${linkedWallet.substring(0, 8)}...${linkedWallet.slice(-6)}`}
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.copyBtn,
+                    {
+                      backgroundColor: isDark
+                        ? "rgba(255, 255, 255, 0.08)"
+                        : "#EEF2F6",
+                    },
+                  ]}
+                  onPress={handleCopyWallet}
+                  activeOpacity={0.7}
+                >
+                  <Feather
+                    name={copiedWallet ? "check" : "copy"}
+                    size={14}
+                    color={copiedWallet ? "#10B981" : isDark ? "#94A3B8" : "#64748B"}
+                  />
+                  <Text
+                    style={[
+                      styles.copyBtnText,
+                      { color: copiedWallet ? "#10B981" : isDark ? "#94A3B8" : "#64748B" },
+                    ]}
+                  >
+                    {copiedWallet ? "Copied" : "Copy"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {isMismatch && (
+                <View style={styles.walletWarningBanner}>
+                  <Ionicons name="warning-outline" size={16} color="#FBBF24" />
+                  <Text style={styles.walletWarningText}>
+                    MetaMask is active with account (
+                    {activeMetaMaskAccount
+                      ? `${activeMetaMaskAccount.substring(0, 6)}...${activeMetaMaskAccount.slice(-4)}`
+                      : "unknown"}
+                    ). Switch MetaMask to your linked wallet to sign transactions.
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.walletActionRow}>
+                <TouchableOpacity
+                  style={styles.unlinkBtn}
+                  onPress={handleDisconnectWallet}
+                  disabled={walletActionLoading}
+                  activeOpacity={0.8}
+                >
+                  {walletActionLoading ? (
+                    <ActivityIndicator size="small" color="#EF4444" />
+                  ) : (
+                    <>
+                      <Feather name="link-2" size={14} color="#EF4444" />
+                      <Text style={styles.unlinkBtnText}>Disconnect</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.walletUnconnectedContent}>
+              <Text style={styles.walletEmptyDesc}>
+                No wallet linked to your account. Connect your MetaMask wallet on Ethereum Sepolia to securely verify asset ownership and execute smart contracts.
+              </Text>
+              <TouchableOpacity
+                style={styles.connectWalletBtn}
+                onPress={handleConnectWallet}
+                disabled={walletActionLoading}
+                activeOpacity={0.85}
+              >
+                {walletActionLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="wallet-outline" size={16} color="#FFFFFF" />
+                    <Text style={styles.connectWalletBtnText}>Connect MetaMask</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* ── OFFLINE BANNER ── */}
@@ -1362,5 +1585,154 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: "#10B981",
+  },
+  walletCard: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+  },
+  walletHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  walletTitleGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  walletIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(0, 251, 255, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  walletCardTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  walletCardSubtitle: {
+    fontSize: 12,
+    color: "#94A3B8",
+    marginTop: 2,
+  },
+  networkBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.25)",
+  },
+  networkPulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#10B981",
+  },
+  networkBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#10B981",
+  },
+  walletConnectedContent: {
+    marginTop: 4,
+  },
+  addressDisplayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+  },
+  addressMonoText: {
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  copyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  copyBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  walletWarningBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(251, 191, 36, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(251, 191, 36, 0.25)",
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  walletWarningText: {
+    fontSize: 12,
+    color: "#FCD34D",
+    flex: 1,
+    lineHeight: 16,
+  },
+  walletActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    marginTop: 12,
+  },
+  unlinkBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.2)",
+  },
+  unlinkBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#EF4444",
+  },
+  walletUnconnectedContent: {
+    marginTop: 6,
+  },
+  walletEmptyDesc: {
+    fontSize: 12,
+    color: "#94A3B8",
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  connectWalletBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#6366F1",
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  connectWalletBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
 });

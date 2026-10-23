@@ -20,7 +20,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useNetwork, OfflineBanner } from '../context/NetworkContext';
-import { API_BASE_URL, forgotPasswordApi } from '../services/api';
+import { API_BASE_URL, forgotPasswordApi, getWalletNonceApi } from '../services/api';
 import { isOnlineSync, checkInternetConnection } from '../utils/network';
 
 const DEFAULT_DEMO_WALLET =
@@ -204,27 +204,69 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       window.ethereum
     ) {
       setConnectingWallet(true);
-      setWalletStatus('Requesting MetaMask permissions...');
+      setWalletStatus('Connecting to MetaMask...');
 
       try {
         const accounts = await window.ethereum.request({
           method: 'eth_requestAccounts',
         });
 
-        if (accounts && accounts[0]) {
-          setWalletStatus('Authenticating with Supabase...');
+        if (!accounts || !accounts[0]) {
+          throw new Error('No MetaMask account was selected.');
+        }
 
-          await loginWithWallet(accounts[0]);
+        const targetAddress = accounts[0].toLowerCase();
 
+        // 1. Fetch challenge nonce from backend
+        setWalletStatus('Requesting challenge nonce...');
+        const challenge = await getWalletNonceApi(targetAddress);
+        if (!challenge?.success || !challenge?.message || !challenge?.nonce) {
+          throw new Error(challenge?.error || 'Could not retrieve wallet challenge.');
+        }
+
+        // 2. Request cryptographic signature from user via MetaMask personal_sign
+        setWalletStatus('Please sign verification message in MetaMask...');
+        const signature = await window.ethereum.request({
+          method: 'personal_sign',
+          params: [challenge.message, targetAddress],
+        });
+
+        // 3. Verify signature and login with linked account
+        setWalletStatus('Verifying account credentials...');
+        const res = await loginWithWallet({
+          walletAddress: targetAddress,
+          signature,
+          nonce: challenge.nonce,
+        });
+
+        if (res?.needsAccount) {
+          const short = `${targetAddress.substring(0, 6)}...${targetAddress.slice(-4)}`;
+          const msg = `This wallet (${short}) is not linked to any SmartAssets account yet.\n\nPlease log in with your email & password or create an account, then link your wallet in Profile.`;
+          setError(msg);
+          if (Platform.OS === 'web') {
+            alert(msg);
+          } else {
+            Alert.alert('Wallet Not Linked', msg, [
+              { text: 'OK' },
+              {
+                text: 'Create Account',
+                onPress: () => navigation.navigate(SCREENS.REGISTER),
+              },
+            ]);
+          }
           return;
         }
 
-        throw new Error('No MetaMask account was selected.');
+        return;
       } catch (err) {
-        setError(
-          err?.message ||
-          'MetaMask connection was cancelled.'
-        );
+        if (err?.code === 4001 || err?.message?.toLowerCase().includes('reject')) {
+          setError('MetaMask signature was cancelled.');
+        } else {
+          setError(
+            err?.message ||
+            'MetaMask sign-in failed.'
+          );
+        }
       } finally {
         setConnectingWallet(false);
         setWalletStatus('');
@@ -259,7 +301,14 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     }
 
     try {
-      await loginWithWallet(DEFAULT_DEMO_WALLET);
+      const res = await loginWithWallet(DEFAULT_DEMO_WALLET);
+      if (res?.needsAccount) {
+        const msg = 'This demo wallet is not linked to any SmartAssets account. Please sign in with your email and password first, then link your wallet in Profile.';
+        setError(msg);
+        if (Platform.OS === 'web') alert(msg); else Alert.alert('Wallet Not Linked', msg);
+        setWalletModalVisible(false);
+        return;
+      }
     } catch (err) {
       if (
         err?.message?.includes('Network') ||
@@ -309,7 +358,14 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     }
 
     try {
-      await loginWithWallet(cleanWallet);
+      const res = await loginWithWallet(cleanWallet);
+      if (res?.needsAccount) {
+        const msg = 'This wallet is not linked to any account yet. Please sign in with your email/password first, then link your wallet in Profile.';
+        setError(msg);
+        if (Platform.OS === 'web') alert(msg); else Alert.alert('Wallet Not Linked', msg);
+        setWalletModalVisible(false);
+        return;
+      }
     } catch (err) {
       if (
         err?.message?.includes('Network') ||

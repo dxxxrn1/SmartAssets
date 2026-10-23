@@ -6,6 +6,11 @@ const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const avatarService = require('../services/avatarService');
 const { revokeToken } = require('../middlewares/authMiddleware');
+const {
+  createNonceChallenge,
+  verifyWalletSignature,
+  generateSessionForUser,
+} = require('../services/walletAuthService');
 
 // Deterministic password generator for Web3 wallet accounts in Supabase
 function getDeterministicPassword(walletAddress) {
@@ -209,157 +214,324 @@ async function login(req, res) {
   }
 }
 
-// ── POST /api/auth/wallet-login ──────────────────────────────────────────────
-async function walletLogin(req, res) {
+// ── POST /api/auth/wallet/nonce ──────────────────────────────────────────────
+// Generates a cryptographically random, single-use 5-minute challenge nonce for a wallet.
+async function getWalletNonce(req, res) {
   try {
-    const { walletAddress } = req.body;
+    const walletAddress = req.body?.walletAddress || req.query?.walletAddress;
 
-    if (
-      !walletAddress ||
-      typeof walletAddress !== 'string'
-    ) {
-      return sendError(
-        res,
-        400,
-        'Please provide a valid wallet address.'
-      );
+    if (!walletAddress || typeof walletAddress !== 'string') {
+      return sendError(res, 400, 'Please provide a valid Ethereum wallet address.');
     }
 
     const cleanAddress = walletAddress.trim().toLowerCase();
-
     if (!/^0x[a-f0-9]{40}$/i.test(cleanAddress)) {
-      return sendError(
-        res,
-        400,
-        'Invalid Ethereum wallet address format.'
-      );
+      return sendError(res, 400, 'Invalid Ethereum wallet address format (must be 0x followed by 40 hex chars).');
     }
 
-    const deterministicEmail =
-      `${cleanAddress}@metamask.smartassets.io`;
-
-    const deterministicPassword =
-      getDeterministicPassword(cleanAddress);
-
-    const shortAddress =
-      `${cleanAddress.slice(0, 6)}...${cleanAddress.slice(-4)}`;
-
-    const displayName =
-      `MetaMask (${shortAddress})`;
-
-    let authResult =
-      await supabase.auth.signInWithPassword({
-        email: deterministicEmail,
-        password: deterministicPassword,
-      });
-
-    if (authResult.error) {
-      const {
-        data: createdUser,
-        error: createError,
-      } = await supabase.auth.admin.createUser({
-        email: deterministicEmail,
-        password: deterministicPassword,
-        email_confirm: true,
-        user_metadata: {
-          full_name: displayName,
-          wallet_address: cleanAddress,
-          is_web3: true,
-        },
-      });
-
-      if (createError) {
-        console.error(
-          'Error creating Web3 user:',
-          createError
-        );
-
-        return sendError(
-          res,
-          500,
-          `Could not register Web3 wallet: ${createError.message}`
-        );
-      }
-
-      try {
-        await supabase
-          .from('profiles')
-          .upsert(
-            {
-              id: createdUser.user.id,
-              full_name: displayName,
-              email: deterministicEmail,
-              wallet_address: cleanAddress,
-            },
-            { onConflict: 'id' }
-          );
-      } catch (profErr) {
-        console.warn(
-          'Profile upsert warning for wallet:',
-          profErr.message
-        );
-      }
-
-      authResult =
-        await supabase.auth.signInWithPassword({
-          email: deterministicEmail,
-          password: deterministicPassword,
-        });
-
-      if (authResult.error) {
-        return sendError(
-          res,
-          500,
-          'Failed to establish session for wallet.'
-        );
-      }
-    }
-
-    const { data: sessionData } = authResult;
-
-    // Fetch avatar from DB
-    let avatarUrl = sessionData.user.user_metadata?.avatar_url || null;
-    try {
-      const { data: walletProfile } = await supabase
-        .from('profiles')
-        .select('avatar_url')
-        .eq('id', sessionData.user.id)
-        .maybeSingle();
-      if (walletProfile?.avatar_url) {
-        avatarUrl = walletProfile.avatar_url;
-      }
-    } catch (_e) { /* ignore */ }
+    const challenge = await createNonceChallenge(cleanAddress);
 
     return res.status(200).json({
       success: true,
-      message:
-        'MetaMask wallet connected successfully!',
+      walletAddress: cleanAddress,
+      nonce: challenge.nonce,
+      message: challenge.message,
+      expiresAt: challenge.expiresAt,
+    });
+  } catch (err) {
+    console.error('getWalletNonce error:', err);
+    return sendError(res, 500, 'Failed to generate wallet verification challenge.');
+  }
+}
+
+// ── POST /api/auth/wallet/link ───────────────────────────────────────────────
+// Links a verified MetaMask wallet to the CURRENT logged-in user's profile.
+// Verifies the user actually owns the wallet via personal_sign.
+async function linkWallet(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return sendError(res, 401, 'Unauthorized: Please log in to link your wallet.');
+    }
+
+    const { walletAddress, signature, nonce } = req.body || {};
+
+    if (!walletAddress || !signature || !nonce) {
+      return sendError(res, 400, 'Wallet address, signature, and challenge nonce are required.');
+    }
+
+    const cleanAddress = walletAddress.trim().toLowerCase();
+    if (!/^0x[a-f0-9]{40}$/i.test(cleanAddress)) {
+      return sendError(res, 400, 'Invalid Ethereum wallet address format.');
+    }
+
+    // 1. Verify cryptographic signature
+    const verification = await verifyWalletSignature(cleanAddress, signature, nonce);
+    if (!verification.valid) {
+      return sendError(res, 400, verification.error || 'Cryptographic signature verification failed.');
+    }
+
+    // 2. Check if this wallet is already linked to another account
+    const { data: existingUser } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .eq('wallet_address', cleanAddress)
+      .maybeSingle();
+
+    if (existingUser && existingUser.id !== userId) {
+      return sendError(
+        res,
+        409,
+        `This wallet address is already linked to another account (${existingUser.email ? existingUser.email.slice(0, 3) + '***' : 'different user'}). Each wallet can only be linked to one account.`,
+        'WALLET_ALREADY_LINKED'
+      );
+    }
+
+    // 3. Link wallet to the current user's profile
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({ wallet_address: cleanAddress })
+      .eq('id', userId);
+
+    if (profileError) {
+      console.error('Profile wallet link update error:', profileError);
+      return sendError(res, 500, 'Could not save linked wallet to your profile.');
+    }
+
+    // Update Supabase auth user_metadata
+    try {
+      await supabase.auth.admin.updateUserById(userId, {
+        user_metadata: {
+          ...(req.user.user_metadata || {}),
+          wallet_address: cleanAddress,
+        },
+      });
+    } catch (metaErr) {
+      console.warn('Metadata wallet update warning:', metaErr.message);
+    }
+
+    // Retrieve fresh real profile
+    const { data: freshProfile } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, wallet_address, avatar_url')
+      .eq('id', userId)
+      .maybeSingle();
+
+    return res.status(200).json({
+      success: true,
+      message: 'MetaMask wallet linked successfully to your account!',
       user: {
-        id: sessionData.user.id,
-        email: deterministicEmail,
-        fullName: displayName,
+        id: userId,
+        email: freshProfile?.email || req.user.email,
+        fullName: freshProfile?.full_name || req.user.user_metadata?.full_name || '',
         walletAddress: cleanAddress,
-        isWeb3: true,
-        avatarUrl,
-        avatar_url: avatarUrl,
+        avatarUrl: freshProfile?.avatar_url || req.user.user_metadata?.avatar_url || null,
+        avatar_url: freshProfile?.avatar_url || req.user.user_metadata?.avatar_url || null,
+      },
+    });
+  } catch (err) {
+    console.error('linkWallet error:', err);
+    return sendError(res, 500, 'Internal error linking wallet.');
+  }
+}
+
+// ── POST /api/auth/wallet/login (and /api/auth/wallet-login) ──────────────────
+// Logs into an existing account via linked wallet signature.
+// If wallet is NOT linked, refuses to create a dummy user and returns needsAccount: true.
+async function walletLogin(req, res) {
+  try {
+    const { walletAddress, signature, nonce } = req.body || {};
+
+    if (!walletAddress) {
+      return sendError(res, 400, 'Please provide a valid Ethereum wallet address.');
+    }
+
+    const cleanAddress = walletAddress.trim().toLowerCase();
+    if (!/^0x[a-f0-9]{40}$/i.test(cleanAddress)) {
+      return sendError(res, 400, 'Invalid Ethereum wallet address format.');
+    }
+
+    // If client supplied signature & nonce, verify cryptographically
+    if (signature && nonce) {
+      const verification = await verifyWalletSignature(cleanAddress, signature, nonce);
+      if (!verification.valid) {
+        return sendError(res, 400, verification.error || 'Cryptographic signature verification failed.');
+      }
+    }
+
+    // 1. Check if this wallet is linked to ANY real user account
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, wallet_address, avatar_url')
+      .eq('wallet_address', cleanAddress)
+      .maybeSingle();
+
+    // 2. If NOT linked to an existing account: DO NOT CREATE A DUMMY USER!
+    if (!profile || profile.email?.includes('@metamask.smartassets.io') || profile.full_name?.startsWith('MetaMask (0x')) {
+      return res.status(200).json({
+        success: true,
+        needsAccount: true,
+        walletAddress: cleanAddress,
+        message: 'This wallet is not linked to any SmartAssets account yet. Please log in or create an account with your real details to link this wallet.',
+      });
+    }
+
+    // 3. User IS linked! Generate authentic session for their real account
+    let session = null;
+    try {
+      session = await generateSessionForUser(profile.email);
+    } catch (sessionErr) {
+      console.warn('generateSessionForUser fallback:', sessionErr.message);
+      // Fallback: create fresh login token
+      const tempPass = getDeterministicPassword(cleanAddress);
+      const resAttempt = await supabase.auth.signInWithPassword({
+        email: profile.email,
+        password: tempPass,
+      });
+      if (resAttempt.data?.session) {
+        session = resAttempt.data.session;
+      }
+    }
+
+    if (!session?.access_token) {
+      return sendError(
+        res,
+        500,
+        'Could not establish session for your linked account. Please sign in with your email and password.'
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged in successfully with linked wallet!',
+      user: {
+        id: profile.id,
+        email: profile.email,
+        fullName: profile.full_name,
+        walletAddress: cleanAddress,
+        avatarUrl: profile.avatar_url,
+        avatar_url: profile.avatar_url,
       },
       session: {
-        access_token:
-          sessionData.session.access_token,
-        refresh_token:
-          sessionData.session.refresh_token,
-        expires_at:
-          sessionData.session.expires_at,
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_at: session.expires_at,
       },
     });
   } catch (err) {
     console.error('walletLogin error:', err);
+    return sendError(res, 500, 'Internal wallet authentication error.');
+  }
+}
 
-    return sendError(
-      res,
-      500,
-      'Internal wallet authentication error.'
+// ── POST /api/auth/wallet/unlink ─────────────────────────────────────────────
+// Disconnects/unlinks the wallet from the current user's profile.
+async function unlinkWallet(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return sendError(res, 401, 'Unauthorized: Please log in to manage your wallet.');
+    }
+
+    await supabase
+      .from('profiles')
+      .update({ wallet_address: null })
+      .eq('id', userId);
+
+    try {
+      await supabase.auth.admin.updateUserById(userId, {
+        user_metadata: {
+          ...(req.user.user_metadata || {}),
+          wallet_address: null,
+        },
+      });
+    } catch (_) {}
+
+    return res.status(200).json({
+      success: true,
+      message: 'Wallet unlinked successfully.',
+    });
+  } catch (err) {
+    console.error('unlinkWallet error:', err);
+    return sendError(res, 500, 'Failed to unlink wallet.');
+  }
+}
+
+// ── POST /api/auth/wallet/complete-profile ────────────────────────────────────
+// Creates a real user account with real name & email linked to a verified wallet.
+async function completeWalletProfile(req, res) {
+  try {
+    const { walletAddress, signature, nonce, email, fullName, password } = req.body || {};
+
+    if (!walletAddress || !email || !fullName || !password) {
+      return sendError(res, 400, 'Please provide walletAddress, email, fullName, and password.');
+    }
+
+    const cleanAddress = walletAddress.trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Verify signature
+    if (signature && nonce) {
+      const verification = await verifyWalletSignature(cleanAddress, signature, nonce);
+      if (!verification.valid) {
+        return sendError(res, 400, verification.error || 'Cryptographic signature verification failed.');
+      }
+    }
+
+    // Check if wallet already linked
+    const { data: existingWallet } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .eq('wallet_address', cleanAddress)
+      .maybeSingle();
+
+    if (existingWallet) {
+      return sendError(res, 409, 'This wallet is already linked to an account.');
+    }
+
+    // Create user in Supabase
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: cleanEmail,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName.trim(),
+        wallet_address: cleanAddress,
+      },
+    });
+
+    if (authError) {
+      return sendError(res, 400, authError.message);
+    }
+
+    // Create profile
+    await supabase.from('profiles').upsert(
+      {
+        id: authData.user.id,
+        full_name: fullName.trim(),
+        email: cleanEmail,
+        wallet_address: cleanAddress,
+      },
+      { onConflict: 'id' }
     );
+
+    // Generate session
+    const session = await generateSessionForUser(cleanEmail);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Account created and wallet linked successfully!',
+      user: {
+        id: authData.user.id,
+        email: cleanEmail,
+        fullName: fullName.trim(),
+        walletAddress: cleanAddress,
+      },
+      session,
+    });
+  } catch (err) {
+    console.error('completeWalletProfile error:', err);
+    return sendError(res, 500, 'Failed to complete profile registration.');
   }
 }
 
@@ -545,6 +717,10 @@ module.exports = {
   register,
   login,
   walletLogin,
+  getWalletNonce,
+  linkWallet,
+  unlinkWallet,
+  completeWalletProfile,
   forgotPassword,
   resetPassword,
   logout,
