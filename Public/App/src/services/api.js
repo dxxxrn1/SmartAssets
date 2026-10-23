@@ -1,8 +1,7 @@
 // ─── SmartAssets API Service ──────────────────────────────────────────────────
 // Handles all HTTP communication between the React Native app and the backend.
 
-<<<<<<< HEAD
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 import {
   saveVaultCache,
   getVaultCache,
@@ -11,9 +10,6 @@ import {
   saveUserProfile,
   getUserProfile,
 } from './storage';
-=======
-import { Platform, NativeModules } from 'react-native';
->>>>>>> frontend/darren
 
 // Extract the live LAN IP that Metro Bundler is serving from on physical mobile devices
 function getMetroLanBaseUrl() {
@@ -64,15 +60,10 @@ function getFallbackBaseUrls() {
 
 // ── Generic request helper with automatic LAN host failover ──────────────────
 async function apiRequest(endpoint, options = {}, token = null) {
-<<<<<<< HEAD
   if (Platform.OS === 'web' && typeof navigator !== 'undefined' && !navigator.onLine) {
     throw new Error('No internet connection. Please connect to the internet to continue.');
   }
 
-  const url = `${API_BASE_URL}${endpoint}`;
-
-=======
->>>>>>> frontend/darren
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

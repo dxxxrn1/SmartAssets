@@ -33,12 +33,9 @@ import VerificationScreen from '../screens/VerificationScreen';
 import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
 import ProfileScreen     from '../screens/ProfileScreen';
 import ProfileAnalyticsScreen from '../screens/ProfileAnalyticsScreen';
-<<<<<<< HEAD
 import ARScreen          from '../screens/ARScreen';
 import LiveRoomPreview from '../components/liveRoomPreview/LiveRoomPreview';
-=======
 import ScanAndKnowScreen from '../screens/ScanAndKnowScreen';
->>>>>>> frontend/darren
 
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
