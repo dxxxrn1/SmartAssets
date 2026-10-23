@@ -22,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import KycGatekeeperModal from '../components/KycGatekeeperModal';
 import {
   processPaymentApi,
   getPaymentRatesApi,
@@ -49,6 +50,7 @@ const PAYMENT_METHODS = [
 
 export default function CheckoutScreen({ navigation, route }) {
   const { user, token } = useAuth();
+  const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
   const asset = route?.params?.asset ?? {};
   const isFractional = route?.params?.isFractional ?? false;
   const isOwner = Boolean(
@@ -205,6 +207,10 @@ export default function CheckoutScreen({ navigation, route }) {
 
   // ── Confirm Purchase Handler ───────────────────────────────────────────────
   const handleConfirmPurchase = async () => {
+    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+      setKycGatekeeperVisible(true);
+      return;
+    }
     if (isFractional && !riskAcknowledged) {
       setRiskAcknowledged(true);
       return;
@@ -936,6 +942,15 @@ export default function CheckoutScreen({ navigation, route }) {
             )}
           </TouchableOpacity>
         </View>
+
+        <KycGatekeeperModal
+          visible={kycGatekeeperVisible}
+          onClose={() => setKycGatekeeperVisible(false)}
+          isSuspended={Boolean(user?.isSuspended)}
+          onCompleteVerification={() =>
+            navigation.navigate(SCREENS.PROFILE, { openKyc: true })
+          }
+        />
       </SafeAreaView>
     </View>
   );

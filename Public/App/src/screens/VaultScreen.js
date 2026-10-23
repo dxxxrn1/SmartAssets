@@ -25,6 +25,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { SCREENS } from "../constants/navigation";
 import { useAuth } from "../context/AuthContext";
+import KycGatekeeperModal from "../components/KycGatekeeperModal";
 import { useTheme } from "../context/ThemeContext";
 import { OfflineBanner } from "../context/NetworkContext";
 import { getVaultCache } from "../services/storage";
@@ -216,6 +217,7 @@ export default function VaultScreen({ navigation }) {
     : (screenWidth - 36 - 16) / 2;
 
   const { user, token, logout } = useAuth();
+  const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -667,6 +669,10 @@ export default function VaultScreen({ navigation }) {
   }, [token, personalItems, fractionalItems, processHoldingsIntoTabs]);
 
   const handleDeposit = async () => {
+    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+      setKycGatekeeperVisible(true);
+      return;
+    }
     const amt = parseFloat(depositAmount.replace(/[^0-9.]/g, ""));
     if (isNaN(amt) || amt <= 0) {
       const msg = "Please enter a valid deposit amount greater than R0.";
@@ -714,6 +720,10 @@ export default function VaultScreen({ navigation }) {
   };
 
   const handleWithdraw = async () => {
+    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+      setKycGatekeeperVisible(true);
+      return;
+    }
     const amt = parseFloat(withdrawAmount.replace(/[^0-9.]/g, ""));
     const available = escrowCash;
 
@@ -1559,6 +1569,15 @@ export default function VaultScreen({ navigation }) {
         {/* Bottom space */}
         <View style={{ height: 110 }} />
       </ScrollView>
+
+      <KycGatekeeperModal
+        visible={kycGatekeeperVisible}
+        onClose={() => setKycGatekeeperVisible(false)}
+        isSuspended={Boolean(user?.isSuspended)}
+        onCompleteVerification={() =>
+          navigation.navigate(SCREENS.PROFILE, { openKyc: true })
+        }
+      />
     </SafeAreaView>
   </View>
   );
