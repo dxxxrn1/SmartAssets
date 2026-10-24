@@ -14,13 +14,31 @@
         "NSCameraUsageDescription": "SmartAssets requires camera access to place and preview luxury collectibles and fine art in Augmented Reality on your walls and floors.",
         "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos",
         "NSPhotoLibraryAddUsageDescription": "Allow $(PRODUCT_NAME) to save photos",
-        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use your microphone"
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use your microphone",
+        "LSApplicationQueriesSchemes": [
+          "metamask",
+          "smartassets"
+        ]
       }
     },
     "android": {
       "package": "com.smartassets.app",
       "permissions": [
         "android.permission.CAMERA"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "smartassets"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

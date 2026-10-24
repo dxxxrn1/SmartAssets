@@ -29,6 +29,7 @@ import {
   getKycStatusApi,
 } from "../services/api";
 import useLinkedWallet from "../hooks/useLinkedWallet";
+import InstallMetaMaskModal from "../components/InstallMetaMaskModal";
 
 // Helper to filter out synthetic MetaMask strings and raw hex addresses from user name fields
 const isWalletOrMetaMaskString = (str) => {
@@ -56,6 +57,8 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
     isMismatch,
     isSepolia,
     loading: walletActionLoading,
+    installModalVisible,
+    setInstallModalVisible,
     linkWallet,
     unlinkWallet,
   } = useLinkedWallet();
@@ -1855,6 +1858,16 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* ── Install MetaMask Modal (Friendly Mobile Install Screen) ── */}
+      <InstallMetaMaskModal
+        visible={installModalVisible}
+        onClose={() => setInstallModalVisible(false)}
+        onRetry={() => {
+          setInstallModalVisible(false);
+          linkWallet();
+        }}
+      />
     </SafeAreaView>
   );
 }

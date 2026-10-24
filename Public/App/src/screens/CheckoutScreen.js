@@ -24,6 +24,8 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useLinkedWallet } from '../hooks/useLinkedWallet';
 import KycGatekeeperModal from '../components/KycGatekeeperModal';
+import InstallMetaMaskModal from '../components/InstallMetaMaskModal';
+import { isMetaMaskAppInstalled } from '../services/mobileWalletService';
 import {
   processPaymentApi,
   getPaymentRatesApi,
@@ -53,6 +55,7 @@ export default function CheckoutScreen({ navigation, route }) {
   const { user, token } = useAuth();
   const { linkedWallet, isMismatch, activeMetaMaskAccount, verifyTransactionWallet } = useLinkedWallet();
   const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
+  const [installModalVisible, setInstallModalVisible] = useState(false);
   const asset = route?.params?.asset ?? {};
   const isFractional = route?.params?.isFractional ?? false;
   const isOwner = Boolean(
@@ -146,6 +149,12 @@ export default function CheckoutScreen({ navigation, route }) {
 
   // ── Open MetaMask Mobile App Deep Link ─────────────────────────────────────
   const handleOpenMetaMask = async () => {
+    const isInstalled = await isMetaMaskAppInstalled();
+    if (!isInstalled && Platform.OS !== 'web') {
+      setInstallModalVisible(true);
+      return;
+    }
+
     const weiValue = BigInt(Math.round(parseFloat(ethAmount) * 1e18)).toString(16);
     const deepLink = `https://metamask.app.link/send/${rates.escrowAddress}?value=${weiValue}`;
     const nativeScheme = `ethereum:${rates.escrowAddress}?value=${weiValue}`;
@@ -977,6 +986,15 @@ export default function CheckoutScreen({ navigation, route }) {
           onCompleteVerification={() =>
             navigation.navigate(SCREENS.PROFILE, { openKyc: true })
           }
+        />
+
+        <InstallMetaMaskModal
+          visible={installModalVisible}
+          onClose={() => setInstallModalVisible(false)}
+          onRetry={() => {
+            setInstallModalVisible(false);
+            handleOpenMetaMask();
+          }}
         />
       </SafeAreaView>
     </View>

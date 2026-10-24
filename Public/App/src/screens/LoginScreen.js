@@ -24,6 +24,12 @@ import { useNetwork, OfflineBanner } from '../context/NetworkContext';
 import { API_BASE_URL, forgotPasswordApi, getWalletNonceApi } from '../services/api';
 import { isOnlineSync, checkInternetConnection } from '../utils/network';
 import CompleteProfileModal from '../components/CompleteProfileModal';
+import InstallMetaMaskModal from '../components/InstallMetaMaskModal';
+import {
+  isMetaMaskAppInstalled,
+  connectMobileWallet,
+  signPersonalMessage,
+} from '../services/mobileWalletService';
 
 const DEFAULT_DEMO_WALLET =
   '0x71C8360f3a14672D62372c388657B43933c039A4';
@@ -63,6 +69,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
   const [completeProfileVisible, setCompleteProfileVisible] = useState(false);
   const [pendingWalletAddress, setPendingWalletAddress] = useState('');
   const [pendingVerificationToken, setPendingVerificationToken] = useState('');
+  const [installModalVisible, setInstallModalVisible] = useState(false);
 
   // Forgot password
   const [forgotModalVisible, setForgotModalVisible] = useState(false);
@@ -204,75 +211,65 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       return;
     }
 
-    // Web browser with MetaMask installed
-    if (
-      Platform.OS === 'web' &&
-      typeof window !== 'undefined' &&
-      window.ethereum
-    ) {
-      setConnectingWallet(true);
-      setWalletStatus('Connecting to MetaMask...');
-
-      try {
-        const accounts = await window.ethereum.request({
-          method: 'eth_requestAccounts',
-        });
-
-        if (!accounts || !accounts[0]) {
-          throw new Error('No MetaMask account was selected.');
-        }
-
-        const targetAddress = accounts[0].toLowerCase();
-
-        // 1. Fetch challenge nonce from backend
-        setWalletStatus('Requesting challenge nonce...');
-        const challenge = await getWalletNonceApi(targetAddress);
-        if (!challenge?.success || !challenge?.message || !challenge?.nonce) {
-          throw new Error(challenge?.error || 'Could not retrieve wallet challenge.');
-        }
-
-        // 2. Request cryptographic signature from user via MetaMask personal_sign
-        setWalletStatus('Please sign verification message in MetaMask...');
-        const signature = await window.ethereum.request({
-          method: 'personal_sign',
-          params: [challenge.message, targetAddress],
-        });
-
-        // 3. Verify signature and login with linked account
-        setWalletStatus('Verifying account credentials...');
-        const res = await loginWithWallet({
-          walletAddress: targetAddress,
-          signature,
-          nonce: challenge.nonce,
-        });
-
-        if (res?.needsProfile || res?.needsAccount) {
-          setPendingWalletAddress(targetAddress);
-          setPendingVerificationToken(res.verificationToken || '');
-          setCompleteProfileVisible(true);
-          return;
-        }
-
-        return;
-      } catch (err) {
-        if (err?.code === 4001 || err?.message?.toLowerCase().includes('reject')) {
-          setError('MetaMask signature was cancelled.');
-        } else {
-          setError(
-            err?.message ||
-            'MetaMask sign-in failed.'
-          );
-        }
-      } finally {
-        setConnectingWallet(false);
-        setWalletStatus('');
-      }
-
+    // Check if MetaMask mobile app or browser extension is installed
+    const isInstalled = await isMetaMaskAppInstalled();
+    if (!isInstalled && Platform.OS !== 'web') {
+      setInstallModalVisible(true);
       return;
     }
 
-    // Mobile or browser without MetaMask
-    setWalletModalVisible(true);
+    setConnectingWallet(true);
+    setWalletStatus('Connecting to MetaMask...');
+
+    try {
+      // Connect to MetaMask app via deep link
+      const targetAddress = await connectMobileWallet();
+      if (!targetAddress) {
+        throw new Error('No account selected in MetaMask.');
+      }
+
+      // 1. Fetch challenge nonce from backend
+      setWalletStatus('Requesting challenge nonce...');
+      const challenge = await getWalletNonceApi(targetAddress);
+      if (!challenge?.success || !challenge?.message || !challenge?.nonce) {
+        throw new Error(challenge?.error || 'Could not retrieve wallet challenge.');
+      }
+
+      // 2. Request cryptographic signature from user via MetaMask personal_sign (opens app via deep link)
+      setWalletStatus('Please sign verification message in MetaMask...');
+      const signature = await signPersonalMessage(challenge.message, targetAddress);
+
+      // 3. Verify signature and login with linked account
+      setWalletStatus('Verifying account credentials...');
+      const res = await loginWithWallet({
+        walletAddress: targetAddress,
+        signature,
+        nonce: challenge.nonce,
+      });
+
+      if (res?.needsProfile || res?.needsAccount) {
+        setPendingWalletAddress(targetAddress);
+        setPendingVerificationToken(res.verificationToken || '');
+        setCompleteProfileVisible(true);
+        return;
+      }
+
+      return;
+    } catch (err) {
+      if (err?.message === 'METAMASK_NOT_INSTALLED') {
+        setInstallModalVisible(true);
+      } else if (err?.code === 4001 || err?.message?.toLowerCase().includes('reject') || err?.message?.toLowerCase().includes('cancel')) {
+        setError('MetaMask signature was cancelled.');
+      } else {
+        setError(
+          err?.message ||
+          'MetaMask sign-in failed.'
+        );
+      }
+    } finally {
+      setConnectingWallet(false);
+      setWalletStatus('');
+    }
   };
 
   const handleDemoWalletLogin = async () => {
@@ -1257,6 +1254,18 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
         onClose={() => setCompleteProfileVisible(false)}
         walletAddress={pendingWalletAddress}
         verificationToken={pendingVerificationToken}
+      />
+
+      {/* --------------------------------------------------
+          INSTALL METAMASK MODAL (Friendly Mobile Install Screen)
+      -------------------------------------------------- */}
+      <InstallMetaMaskModal
+        visible={installModalVisible}
+        onClose={() => setInstallModalVisible(false)}
+        onRetry={() => {
+          setInstallModalVisible(false);
+          handleWalletConnectPress();
+        }}
       />
     </SafeAreaView>
   );

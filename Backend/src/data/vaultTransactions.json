@@ -55,5 +55,34 @@
     "status": "completed",
     "positive": true,
     "createdAt": "2026-10-22T16:57:25.466Z"
+  },
+  {
+    "id": "TXN-DEP-561646",
+    "userId": "test-vault-user-1792797257702",
+    "type": "deposit",
+    "title": "Vault Cash Deposit",
+    "amount": 5000,
+    "amountFormatted": "+R5 000",
+    "method": "Instant EFT",
+    "reference": "REF-DEP-TEST-001",
+    "notes": "Unit test deposit",
+    "status": "completed",
+    "positive": true,
+    "createdAt": "2026-10-23T23:14:18.716Z"
+  },
+  {
+    "id": "TXN-WTH-468702",
+    "userId": "test-vault-user-1792797257702",
+    "type": "withdraw",
+    "title": "Vault Cash Withdrawal",
+    "amount": 2000,
+    "amountFormatted": "-R2 000",
+    "method": "Bank EFT",
+    "destination": "Standard Bank (...7890)",
+    "reference": "WTH-77609382",
+    "notes": "Unit test withdrawal",
+    "status": "completed",
+    "positive": false,
+    "createdAt": "2026-10-23T23:14:19.536Z"
   }
 ]
