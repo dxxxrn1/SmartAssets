@@ -10,28 +10,50 @@ const config = getDefaultConfig(__dirname);
   }
 });
 
+const resolveSafe = (pkg) => {
+  try {
+    return require.resolve(pkg);
+  } catch (_e) {
+    try {
+      return require.resolve(pkg.replace(/\/$/, ''));
+    } catch {
+      return null;
+    }
+  }
+};
+
+const cryptoPolyfill = resolveSafe('crypto-browserify');
+const bufferPolyfill = resolveSafe('buffer/') || resolveSafe('buffer');
+const streamPolyfill = resolveSafe('readable-stream');
+const eventsPolyfill = resolveSafe('events/') || resolveSafe('events');
+const stringDecoderPolyfill = resolveSafe('string_decoder/') || resolveSafe('string_decoder');
+
 const polyfills = {
-  crypto: require.resolve('crypto-browserify'),
-  'node:crypto': require.resolve('crypto-browserify'),
-  buffer: require.resolve('buffer/'),
-  'node:buffer': require.resolve('buffer/'),
-  stream: require.resolve('readable-stream'),
-  'node:stream': require.resolve('readable-stream'),
-  events: require.resolve('events/'),
-  'node:events': require.resolve('events/'),
-  string_decoder: require.resolve('string_decoder/'),
-  'node:string_decoder': require.resolve('string_decoder/'),
+  crypto: cryptoPolyfill,
+  'node:crypto': cryptoPolyfill,
+  buffer: bufferPolyfill,
+  'node:buffer': bufferPolyfill,
+  stream: streamPolyfill,
+  'node:stream': streamPolyfill,
+  events: eventsPolyfill,
+  'node:events': eventsPolyfill,
+  string_decoder: stringDecoderPolyfill,
+  'node:string_decoder': stringDecoderPolyfill,
 };
 
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,
-  buffer: require.resolve('buffer/'),
-  crypto: require.resolve('crypto-browserify'),
-  stream: require.resolve('readable-stream'),
-  events: require.resolve('events/'),
+  ...(bufferPolyfill ? { buffer: bufferPolyfill } : {}),
+  ...(cryptoPolyfill ? { crypto: cryptoPolyfill } : {}),
+  ...(streamPolyfill ? { stream: streamPolyfill } : {}),
+  ...(eventsPolyfill ? { events: eventsPolyfill } : {}),
 };
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Noble 1.3 exposes the crypto subpath as "./crypto", not "./crypto.js".
+  if (moduleName === '@noble/hashes/crypto.js') {
+    return context.resolveRequest(context, '@noble/hashes/crypto', platform);
+  }
   if (polyfills[moduleName]) {
     return {
       type: 'sourceFile',

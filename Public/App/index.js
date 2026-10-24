@@ -39,6 +39,11 @@ if (typeof global.process === 'undefined') {
 }
 global.process.version = global.process.version || 'v18.0.0';
 global.process.browser = true;
+if (typeof global.process.nextTick !== 'function') {
+  global.process.nextTick = (callback, ...args) => {
+    Promise.resolve().then(() => callback(...args));
+  };
+}
 
 // Mock window and location for SDKs expecting browser-like environments
 if (typeof global.window === 'undefined') {
