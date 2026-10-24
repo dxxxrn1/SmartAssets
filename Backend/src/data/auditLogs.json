@@ -1,5 +1,17 @@
 [
   {
+    "id": "SEC-LOG-484847",
+    "timestamp": "2026-10-24T16:49:14.280Z",
+    "eventType": "SESSION_TIMEOUT",
+    "category": "Security",
+    "actorEmail": "darrenforster3@gmail.com",
+    "actorId": "47a8f198-06e0-4eb7-b0ec-617b30318091",
+    "ip": "10.250.205.70",
+    "device": "okhttp/4.12.0",
+    "description": "User session automatically terminated due to 5 minutes of inactivity.",
+    "status": "Session Expired"
+  },
+  {
     "id": "SEC-LOG-260036",
     "timestamp": "2026-10-23T21:49:10.551Z",
     "eventType": "LOGIN",

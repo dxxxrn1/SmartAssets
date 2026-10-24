@@ -22,11 +22,21 @@ export async function isMetaMaskAppInstalled() {
 
   try {
     const canOpen = await Linking.canOpenURL('metamask://');
-    return Boolean(canOpen);
+    if (canOpen) return true;
+
+    // On Android 11+ (API 30+), Linking.canOpenURL('metamask://') returns false
+    // if package queries were not declared in the native manifest, even though MetaMask
+    // is installed and Linking.openURL('metamask://') works normally.
+    // For Android, do not falsely report MetaMask as missing.
+    if (Platform.OS === 'android') {
+      return true;
+    }
+    return false;
   } catch (err) {
     console.warn('[mobileWalletService] Error checking metamask:// scheme:', err.message);
-    // On Android 11+, canOpenURL might return false if queries are not declared,
-    // but the SDK can still attempt connection. Default to checking SDK.
+    if (Platform.OS === 'android') {
+      return true;
+    }
     return false;
   }
 }
@@ -68,29 +78,50 @@ export async function getMobileEthereumProvider() {
 
   // On Native Mobile: Initialize @metamask/sdk with Expo deep linking
   try {
-    const { MetaMaskSDK } = require('@metamask/sdk');
+    const sdkModule = require('@metamask/sdk');
+    const MetaMaskSDK = sdkModule?.MetaMaskSDK || sdkModule?.default || sdkModule;
 
-    sdkInstance = new MetaMaskSDK({
-      dappMetadata: {
-        name: 'SmartAssets',
-        url: 'https://smartassets.io',
-        scheme: 'smartassets',
-        iconUrl: 'https://smartassets.io/icon.png',
-      },
-      openDeeplink: (link) => {
-        try {
-          Linking.openURL(link);
-        } catch (linkErr) {
-          console.warn('[mobileWalletService] openDeeplink error:', linkErr.message);
-        }
-      },
-      storage: {
-        enabled: true,
-      },
-      checkInstallationImmediately: false,
-    });
+    if (!MetaMaskSDK || typeof MetaMaskSDK !== 'function') {
+      throw new Error('MetaMaskSDK constructor unavailable');
+    }
 
-    providerInstance = sdkInstance.getProvider();
+    if (!sdkInstance) {
+      sdkInstance = new MetaMaskSDK({
+        dappMetadata: {
+          name: 'SmartAssets',
+          url: 'https://smartassets.io',
+          scheme: 'smartassets',
+          iconUrl: 'https://smartassets.io/icon.png',
+        },
+        openDeeplink: (link) => {
+          try {
+            Linking.openURL(link);
+          } catch (linkErr) {
+            console.warn('[mobileWalletService] openDeeplink error:', linkErr.message);
+          }
+        },
+        storage: {
+          enabled: true,
+        },
+        checkInstallationImmediately: false,
+      });
+
+      // Await initialization so activeProvider is populated
+      try {
+        await sdkInstance.init();
+      } catch (initErr) {
+        console.warn('[mobileWalletService] sdkInstance.init() warning:', initErr?.message || initErr);
+      }
+    }
+
+    const provider = sdkInstance.getProvider();
+    if (provider) {
+      providerInstance = provider;
+      return providerInstance;
+    }
+
+    console.warn('[mobileWalletService] SDK provider not ready, engaging native deep link provider');
+    providerInstance = createDeepLinkFallbackProvider();
     return providerInstance;
   } catch (sdkError) {
     console.warn('[mobileWalletService] @metamask/sdk load warning:', sdkError.message);
@@ -113,11 +144,11 @@ function createDeepLinkFallbackProvider() {
       console.log(`[mobileWalletService:fallback] Requesting ${method}`, params);
 
       if (method === 'eth_requestAccounts' || method === 'eth_accounts') {
-        const canOpen = await Linking.canOpenURL('metamask://');
-        if (!canOpen) {
-          throw new Error('METAMASK_NOT_INSTALLED');
+        try {
+          await Linking.openURL('metamask://dapp/smartassets.io');
+        } catch {
+          await Linking.openURL('metamask://');
         }
-        await Linking.openURL('metamask://dapp/smartassets.io');
         throw new Error('Please return to SmartAssets after approving in MetaMask.');
       }
 
