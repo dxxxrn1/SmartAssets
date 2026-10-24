@@ -27,6 +27,8 @@ export const SCREENS = {
   HEALTH_REPORT: 'HealthReport',
   CHECKOUT: 'Checkout',
   VERIFICATION: 'Verification',
+  VERIFY_ACCOUNT: 'VerifyAccount',
+  BANK_DETAILS: 'BankDetails',
   ESCROW_TRACKER: 'EscrowTracker',
   PROFILE: 'Profile',
   PROFILE_ANALYTICS: 'ProfileAnalytics',

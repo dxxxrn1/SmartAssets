@@ -40,12 +40,12 @@
       "accountNumber": "62819203918",
       "branchCode": "250655"
     },
-    "kycStatus": "pending",
+    "kycStatus": "verified",
     "rejectionReason": null,
     "submittedAt": "2026-10-23T16:23:39.693Z",
-    "reviewedAt": null,
-    "reviewedBy": null,
-    "notes": "South African Smart ID Card + City of Cape Town Rates Account (< 30 days) + SARS Tax Notice."
+    "reviewedAt": "2026-10-24T18:38:27.685Z",
+    "reviewedBy": "Admin Compliance Operations",
+    "notes": "FICA compliance verified by Admin Operations Desk"
   },
   {
     "id": "KYC-ZA-2026-102",
@@ -64,11 +64,11 @@
       "accountNumber": "1589204918",
       "branchCode": "470010"
     },
-    "kycStatus": "pending",
-    "rejectionReason": null,
+    "kycStatus": "rejected",
+    "rejectionReason": "Proof of residence document is older than 3 months. Please upload a recent municipal utility bill.",
     "submittedAt": "2026-10-23T18:10:00.000Z",
-    "reviewedAt": null,
-    "reviewedBy": null,
+    "reviewedAt": "2026-10-24T18:38:24.743Z",
+    "reviewedBy": "Admin Compliance Operations",
     "notes": "SA Smart ID Card + Sandton Municipal Utility Statement + SARS IT150 Tax Confirmation."
   }
 ]

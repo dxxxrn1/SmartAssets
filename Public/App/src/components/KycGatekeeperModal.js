@@ -1,6 +1,9 @@
-// ─── SmartAssets KYC Gatekeeper Modal ─────────────────────────────────────────
-// Clean, high-conversion compliance interceptor modal that prevents unverified
-// or suspended users from listing assets, buying/selling shares, or moving funds.
+// ─── SmartAssets KYC & Bank Account Gatekeeper Modal ──────────────────────────
+// Compliance interceptor modal that blocks unverified users from:
+// a) listing an item for sale
+// b) depositing funds
+// c) withdrawing funds (which requires BOTH 3-doc KYC verification AND an approved bank account)
+// and provides a direct button to VerifyAccountScreen or BankDetailsScreen.
 
 import React from 'react';
 import {
@@ -12,7 +15,6 @@ import {
   Platform,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
 
 export default function KycGatekeeperModal({
@@ -22,20 +24,24 @@ export default function KycGatekeeperModal({
   isSuspended = false,
   suspensionReason = null,
   kycStatus = 'unverified',
+  bankStatus = 'not_submitted',
+  requireBankOnly = false,
   actionTitle = 'Perform This Action',
 }) {
-  const c = useColors(true); // Default dark theme compliance palette
+  const isVerified = kycStatus === 'verified';
+  const needsBankApproval = requireBankOnly || (isVerified && bankStatus !== 'approved');
+  const isPending = needsBankApproval ? bankStatus === 'pending' : kycStatus === 'pending';
+  const isRejected = needsBankApproval ? bankStatus === 'rejected' : kycStatus === 'rejected';
 
-  const handleCompleteVerification = () => {
+  const handlePrimaryNavigation = () => {
     if (onClose) onClose();
-    if (navigation) {
-      // Navigate straight to Profile with auto-expansion of KYC module
-      navigation.navigate(SCREENS.PROFILE, { openKyc: true });
+    if (!navigation) return;
+    if (needsBankApproval) {
+      navigation.navigate(SCREENS.BANK_DETAILS);
+    } else {
+      navigation.navigate(SCREENS.VERIFY_ACCOUNT);
     }
   };
-
-  const isPending = kycStatus === 'pending';
-  const isRejected = kycStatus === 'rejected';
 
   return (
     <Modal
@@ -45,13 +51,36 @@ export default function KycGatekeeperModal({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <View style={[styles.card, { backgroundColor: '#111A2E', borderColor: isSuspended ? '#EF4444' : 'rgba(59, 130, 246, 0.4)' }]}>
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: '#111A2E',
+              borderColor: isSuspended ? '#EF4444' : 'rgba(124, 92, 252, 0.45)',
+            },
+          ]}
+        >
           {/* Header Icon */}
-          <View style={[styles.iconCircle, { backgroundColor: isSuspended ? 'rgba(239, 68, 68, 0.15)' : 'rgba(59, 130, 246, 0.15)' }]}>
+          <View
+            style={[
+              styles.iconCircle,
+              {
+                backgroundColor: isSuspended
+                  ? 'rgba(239, 68, 68, 0.15)'
+                  : 'rgba(124, 92, 252, 0.16)',
+              },
+            ]}
+          >
             <Ionicons
-              name={isSuspended ? 'shield-half' : 'shield-checkmark'}
+              name={
+                isSuspended
+                  ? 'shield-half'
+                  : needsBankApproval
+                  ? 'card-outline'
+                  : 'shield-checkmark'
+              }
               size={36}
-              color={isSuspended ? '#EF4444' : '#3B82F6'}
+              color={isSuspended ? '#EF4444' : '#A78BFA'}
             />
           </View>
 
@@ -59,38 +88,43 @@ export default function KycGatekeeperModal({
           <Text style={styles.title}>
             {isSuspended
               ? '🚫 Account Suspended by Compliance'
+              : needsBankApproval
+              ? isPending
+                ? '⏳ Bank Account Approval Pending'
+                : '🏦 Approved Bank Account Required'
               : isPending
-              ? '⏳ KYC Verification In Review'
-              : '🔒 FICA / KYC Verification Required'}
+              ? '⏳ Account Verification In Review'
+              : `🔒 Verify Your Account to ${actionTitle}`}
           </Text>
 
           {/* Subtitle / Explanation */}
           <Text style={styles.message}>
             {isSuspended
-              ? (suspensionReason || 'Your SmartAssets account is currently under administrative suspension. Transactions and listings are restricted. Please lodge an inquiry with our support desk.')
+              ? suspensionReason ||
+                'Your SmartAssets account is currently under administrative suspension. Transactions and listings are restricted.'
+              : needsBankApproval
+              ? isPending
+                ? 'Your bank account details have been submitted and are awaiting admin approval. Withdrawals are only allowed to an admin-approved bank account.'
+                : 'Withdrawals require BOTH a verified account (3 approved KYC documents) and an admin-approved bank account. Please enter your bank details for admin approval.'
               : isPending
-              ? 'Your FICA identity, tax documents, and banking details were submitted and are currently in the compliance review queue. You will be cleared to transact as soon as an Admin approves your dossier.'
-              : 'To keep SmartAssets secure and comply with regulatory financial standards, you must submit your ID, Tax Number, Proof of Residence, and Banking Details and be approved by an Admin before listing assets or making transactions.'}
+              ? 'Your uploaded KYC documents are currently awaiting admin review. Your account becomes verified once all 3 documents (ID, Tax, and Proof of Residence) are approved.'
+              : 'Until your account is verified, you cannot list an item for sale, deposit funds, or withdraw funds. Upload and get all 3 documents approved by an admin to unlock this feature.'}
           </Text>
 
-          {/* Checklist of required items (if unverified or rejected) */}
-          {!isSuspended && (
+          {/* Checklist of required items */}
+          {!isSuspended && !needsBankApproval && (
             <View style={styles.checklist}>
               <View style={styles.checkItem}>
                 <Feather name="check-circle" size={14} color="#10B981" />
-                <Text style={styles.checkText}>SA Government ID / Passport Document</Text>
+                <Text style={styles.checkText}>1. ID Document (SA Smart ID or Passport)</Text>
               </View>
               <View style={styles.checkItem}>
                 <Feather name="check-circle" size={14} color="#10B981" />
-                <Text style={styles.checkText}>SARS Tax Reference Number & Certificate</Text>
+                <Text style={styles.checkText}>2. Tax Document (SARS Tax Certificate)</Text>
               </View>
               <View style={styles.checkItem}>
                 <Feather name="check-circle" size={14} color="#10B981" />
-                <Text style={styles.checkText}>Proof of Residence (Utility Bill &lt; 3 months)</Text>
-              </View>
-              <View style={styles.checkItem}>
-                <Feather name="check-circle" size={14} color="#10B981" />
-                <Text style={styles.checkText}>Verified SA Bank Account (FNB, Standard, etc.)</Text>
+                <Text style={styles.checkText}>3. Proof of Residence (Utility Bill &lt; 3 months)</Text>
               </View>
             </View>
           )}
@@ -105,29 +139,27 @@ export default function KycGatekeeperModal({
               <Text style={styles.cancelBtnText}>Dismiss</Text>
             </TouchableOpacity>
 
-            {!isSuspended && !isPending && (
+            {!isSuspended ? (
               <TouchableOpacity
                 style={styles.actionBtn}
-                onPress={handleCompleteVerification}
+                onPress={handlePrimaryNavigation}
                 activeOpacity={0.8}
               >
                 <Text style={styles.actionBtnText}>
-                  {isRejected ? 'Resubmit Verification →' : 'Complete Verification Now →'}
+                  {needsBankApproval
+                    ? isRejected
+                      ? 'Resubmit Bank Details →'
+                      : isPending
+                      ? 'View Bank Status →'
+                      : 'Enter Bank Details →'
+                    : isRejected
+                    ? 'Re-upload Rejected Doc →'
+                    : isPending
+                    ? 'View Verification Status →'
+                    : 'Verify Your Account →'}
                 </Text>
               </TouchableOpacity>
-            )}
-
-            {isPending && (
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: '#3B82F6' }]}
-                onPress={handleCompleteVerification}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.actionBtnText}>View Compliance Status →</Text>
-              </TouchableOpacity>
-            )}
-
-            {isSuspended && (
+            ) : (
               <TouchableOpacity
                 style={[styles.actionBtn, { backgroundColor: '#EF4444' }]}
                 onPress={() => {
@@ -240,7 +272,7 @@ const styles = StyleSheet.create({
     flex: 2,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#7C5CFC',
     alignItems: 'center',
     justifyContent: 'center',
   },

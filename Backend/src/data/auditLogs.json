@@ -1,5 +1,29 @@
 [
   {
+    "id": "SEC-LOG-268784",
+    "timestamp": "2026-10-24T18:38:27.686Z",
+    "eventType": "KYC_APPROVED",
+    "category": "Compliance",
+    "actorEmail": "kgomotso.mabena@smartassets.co.za",
+    "actorId": "9140495b-22a3-4df4-9c6d-5a7f649e1710",
+    "ip": "127.0.0.1",
+    "device": "Admin Operations Desk",
+    "description": "FICA / KYC compliance dossier KYC-ZA-2026-101 approved by compliance officer.",
+    "status": "Approved"
+  },
+  {
+    "id": "SEC-LOG-692070",
+    "timestamp": "2026-10-24T18:38:24.745Z",
+    "eventType": "KYC_REJECTED",
+    "category": "Compliance",
+    "actorEmail": "naledi.khumalo@smartassets.co.za",
+    "actorId": "usr-demo-02",
+    "ip": "127.0.0.1",
+    "device": "Admin Operations Desk",
+    "description": "FICA / KYC compliance dossier KYC-ZA-2026-102 rejected: Proof of residence document is older than 3 months. Please upload a recent municipal utility bill.",
+    "status": "Rejected"
+  },
+  {
     "id": "SEC-LOG-484847",
     "timestamp": "2026-10-24T16:49:14.280Z",
     "eventType": "SESSION_TIMEOUT",

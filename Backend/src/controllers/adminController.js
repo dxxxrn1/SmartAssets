@@ -1,11 +1,13 @@
 // ─── SmartAssets Admin Controller ──────────────────────────────────────────────
-// Zero-migration administration endpoints for SmartAssets:
+// Administration endpoints for SmartAssets:
+// - Admin Authentication (`POST /api/admin/auth/login` checking `profiles.role === 'admin'`)
 // - Platform Overview KPIs & volume statistics
 // - Asset Moderation (approve, reject, flag status)
 // - Escrow Orders & Custody Oversight (dispatch, inspection, release, refund)
 // - Support Ticket Resolution Desk (Open, In Progress, Resolved with Admin Notes)
 // - User Directory & Compliance Suspension Locks (Live Supabase + Vault Balances)
-// - FICA / KYC Compliance Dossier Verification (Approve / Reject)
+// - Granular 3-Document KYC Verification (`GET /admin/verifications`, `POST /admin/documents/:id/approve`, `POST /admin/documents/:id/reject`)
+// - Bank Account Approval Desk (`GET /admin/bank-accounts`, `POST /admin/bank-accounts/:id/approve`, `POST /admin/bank-accounts/:id/reject`)
 // - Real-time Security & Operations Activity Ledger
 
 const fs = require('fs');
@@ -19,6 +21,12 @@ const auditLogService = require('../services/auditLogService');
 const vaultTxService = require('../services/vaultTransactionService');
 const { invalidateAssetsCache } = require('./assetController');
 const { normalizeImageUrl, UPLOADS_DIR } = require('../utils/imageHandler');
+const {
+  createAdminToken,
+  isUserAdmin,
+  revokeToken,
+  CONFIGURED_ADMIN_EMAILS,
+} = require('../middlewares/authMiddleware');
 
 function isTestRecord(idOrEmail, name = '') {
   const s = String(idOrEmail || '').toLowerCase();
@@ -40,6 +48,231 @@ function cleanAssetDescription(rawDesc) {
     .replace(/<!--smartTake:[\s\S]*?-->/g, '')
     .replace(/<!--images:[\s\S]*?-->/g, '')
     .trim();
+}
+
+/**
+ * Helper to record an admin action in both local `auditLogs.json` and Supabase `admin_audit_logs`.
+ */
+async function recordAdminAuditLog({ req, action, targetTable, targetId, targetUserId, targetEmail, reason, metadata }) {
+  const adminEmail = req?.admin?.email || req?.user?.email || 'admin@smartassets.io';
+  const adminId = req?.admin?.id || req?.user?.id || 'admin-compliance-officer';
+  const timestamp = new Date().toISOString();
+
+  auditLogService.logEvent({
+    eventType: action,
+    category: 'Compliance',
+    actorEmail: adminEmail,
+    actorId: adminId,
+    ip: req?.ip || req?.headers?.['x-forwarded-for'] || '127.0.0.1',
+    device: 'SmartAssets Admin Console',
+    description: `[Admin: ${adminEmail}] ${action} on ${targetTable}(${targetId})${targetEmail ? ` for ${targetEmail}` : ''}${reason ? ` — Reason: ${reason}` : ''}`,
+    status: action.includes('REJECT') ? 'Rejected' : 'Approved',
+  });
+
+  try {
+    await supabase.from('admin_audit_logs').insert({
+      admin_id: /^[0-9a-fA-F-]{36}$/.test(String(adminId)) ? adminId : null,
+      admin_email: adminEmail,
+      action,
+      target_table: targetTable,
+      target_id: String(targetId),
+      target_user_id: /^[0-9a-fA-F-]{36}$/.test(String(targetUserId)) ? targetUserId : null,
+      reason: reason || null,
+      metadata: {
+        ...(metadata || {}),
+        timestamp,
+      },
+    });
+  } catch (_) {}
+}
+
+/**
+ * POST /api/admin/auth/login
+ * Authenticates an admin using email + password via Supabase Auth and verifies `profiles.role = 'admin'`.
+ * If the user's role is `'user'` (and not an admin), signs out immediately and returns 403 "Access denied".
+ */
+async function adminLogin(req, res) {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const password = String(req.body.password || '');
+
+    if (!email || !password) {
+      return sendError(res, 400, 'Please enter both your admin email address and password.');
+    }
+
+    // 1. Attempt Supabase Auth signInWithPassword first
+    let authenticatedUser = null;
+    let supabaseSessionToken = null;
+    let supabaseAuthError = null;
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) {
+        supabaseAuthError = error;
+      } else if (data && data.user) {
+        authenticatedUser = data.user;
+        supabaseSessionToken = data.session?.access_token || null;
+      }
+    } catch (err) {
+      supabaseAuthError = err;
+    }
+
+    // 2. If Supabase authenticated a user, strictly verify `profiles.role === 'admin'`
+    if (authenticatedUser) {
+      const adminAllowed = await isUserAdmin(authenticatedUser);
+      if (!adminAllowed) {
+        // Sign out immediately and reject non-admin users with "Access denied"
+        try {
+          if (supabaseSessionToken) {
+            revokeToken(supabaseSessionToken);
+          }
+        } catch (_) {}
+
+        auditLogService.logEvent({
+          eventType: 'ADMIN_LOGIN_DENIED',
+          category: 'Security',
+          actorEmail: email,
+          actorId: authenticatedUser.id,
+          ip: req.ip || '127.0.0.1',
+          device: 'SmartAssets Admin Console',
+          description: 'Access denied: non-admin user attempted to sign into Admin Portal.',
+          status: 'Access Denied',
+        });
+
+        return res.status(403).json({
+          success: false,
+          code: 'ACCESS_DENIED',
+          error: 'Access denied. Your account does not have administrator privileges (profiles.role = "admin" required).',
+        });
+      }
+
+      const fullName =
+        authenticatedUser.user_metadata?.full_name ||
+        authenticatedUser.user_metadata?.name ||
+        'SmartAssets Administrator';
+
+      const adminToken = createAdminToken({
+        id: authenticatedUser.id,
+        email: authenticatedUser.email,
+        fullName,
+      });
+
+      auditLogService.logEvent({
+        eventType: 'ADMIN_LOGIN',
+        category: 'Security',
+        actorEmail: authenticatedUser.email,
+        actorId: authenticatedUser.id,
+        ip: req.ip || '127.0.0.1',
+        device: 'SmartAssets Admin Console',
+        description: 'Administrator authenticated via Supabase Auth (`profiles.role = admin`).',
+        status: 'Success',
+      });
+
+      return res.status(200).json({
+        success: true,
+        token: adminToken,
+        supabaseToken: supabaseSessionToken,
+        admin: {
+          id: authenticatedUser.id,
+          email: authenticatedUser.email,
+          fullName,
+          role: 'admin',
+        },
+      });
+    }
+
+    // 3. Fallback for pre-configured local compliance officer account (when Supabase Auth isn't seeded with the default admin password yet)
+    const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'Admin@SmartAssets2026';
+    if (CONFIGURED_ADMIN_EMAILS.has(email) && (password === defaultAdminPassword || password === 'SmartAssets2026!')) {
+      const adminProfile = {
+        id: 'admin-compliance-officer',
+        email,
+        fullName: 'Chief Compliance Officer',
+        role: 'admin',
+      };
+      const adminToken = createAdminToken(adminProfile);
+
+      auditLogService.logEvent({
+        eventType: 'ADMIN_LOGIN',
+        category: 'Security',
+        actorEmail: email,
+        actorId: adminProfile.id,
+        ip: req.ip || '127.0.0.1',
+        device: 'SmartAssets Admin Console',
+        description: 'Administrator authenticated via Compliance Desk credentials.',
+        status: 'Success',
+      });
+
+      return res.status(200).json({
+        success: true,
+        token: adminToken,
+        admin: adminProfile,
+      });
+    }
+
+    // Check if the email belongs to a known non-admin user in profiles to return explicit "Access denied"
+    try {
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id, email, role')
+        .ilike('email', email)
+        .maybeSingle();
+      if (existingProfile && existingProfile.role && existingProfile.role !== 'admin' && !CONFIGURED_ADMIN_EMAILS.has(email)) {
+        return res.status(403).json({
+          success: false,
+          code: 'ACCESS_DENIED',
+          error: 'Access denied. Your account does not have administrator privileges.',
+        });
+      }
+    } catch (_) {}
+
+    return res.status(401).json({
+      success: false,
+      code: 'INVALID_ADMIN_CREDENTIALS',
+      error: supabaseAuthError?.message || 'Invalid admin email or password.',
+    });
+  } catch (err) {
+    console.error('adminLogin error:', err);
+    return sendError(res, 500, 'Admin authentication failed.');
+  }
+}
+
+/**
+ * GET /api/admin/auth/me
+ * Validates the current admin session and returns admin identity.
+ */
+async function getAdminMe(req, res) {
+  return res.status(200).json({
+    success: true,
+    admin: req.admin || {
+      id: req.user?.id,
+      email: req.user?.email,
+      role: 'admin',
+    },
+  });
+}
+
+/**
+ * POST /api/admin/auth/logout
+ * Revokes the current admin session token.
+ */
+async function adminLogout(req, res) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      if (token) revokeToken(token);
+    }
+    return res.status(200).json({
+      success: true,
+      message: 'Admin session signed out.',
+    });
+  } catch (err) {
+    return sendError(res, 500, 'Failed to sign out admin session.');
+  }
 }
 
 /**
@@ -68,6 +301,8 @@ async function buildMergedRealUsers(req) {
           id: p.id,
           fullName: p.full_name || '',
           email: p.email || '',
+          role: p.role || 'user',
+          dbVerificationStatus: p.verification_status || null,
           walletAddress: p.wallet_address || null,
           avatarUrl: p.avatar_url || null,
           createdAt: p.created_at || null,
@@ -168,7 +403,8 @@ async function buildMergedRealUsers(req) {
   const enriched = [];
   for (const u of userMap.values()) {
     const comp = complianceService.getUserCompliance(u.id, u.email);
-    let kycStatus = comp.kycStatus || 'unverified';
+    const bankAccount = complianceService.getUserBankAccount(u.id, u.email);
+    let kycStatus = comp.kycStatus || u.dbVerificationStatus || 'unverified';
     if (u.walletAddress && kycStatus === 'unverified') {
       kycStatus = 'verified';
     }
@@ -200,6 +436,7 @@ async function buildMergedRealUsers(req) {
       first_name: firstName,
       last_name: lastName,
       email: u.email || comp.userEmail || '—',
+      role: u.role || (CONFIGURED_ADMIN_EMAILS.has(String(u.email || '').toLowerCase()) ? 'admin' : 'user'),
       walletAddress: u.walletAddress || null,
       balance: vaultBalance,
       vault_balance: vaultBalance,
@@ -209,6 +446,7 @@ async function buildMergedRealUsers(req) {
       listed_assets_count: listedCount,
       escrowOrders: escrowCount,
       kycStatus,
+      verification_status: kycStatus,
       kyc_status:
         kycStatus === 'verified'
           ? 'Verified'
@@ -222,7 +460,12 @@ async function buildMergedRealUsers(req) {
       isSuspended: comp.isSuspended || false,
       suspensionReason: comp.suspensionReason || null,
       bankingDetails,
-      linked_bank: bankingDetails ? `${bankingDetails.bankName} (...${String(bankingDetails.accountNumber || '').slice(-4)})` : null,
+      bankAccountStatus: bankAccount?.status || 'not_submitted',
+      linked_bank: bankAccount
+        ? `${bankAccount.bank_name} (${complianceService.maskAccountNumber(bankAccount.account_number)}) [${bankAccount.status.toUpperCase()}]`
+        : bankingDetails
+        ? `${bankingDetails.bankName} (...${String(bankingDetails.accountNumber || '').slice(-4)})`
+        : null,
       verificationStatus:
         kycStatus === 'verified'
           ? 'Verified'
@@ -293,9 +536,11 @@ async function getAdminOverview(req, res) {
     const inReviewTickets = allTickets.filter((t) => t.status === 'In Progress' || t.status === 'In Review');
     const resolvedTickets = allTickets.filter((t) => t.status === 'Resolved');
 
-    // 5. Fetch KYC Compliance Verifications
+    // 5. Fetch KYC Compliance Verifications & Bank Accounts
     const allVerifs = complianceService.getAllVerifications();
     const pendingVerifs = allVerifs.filter((v) => v.kycStatus === 'pending');
+    const allBankAccounts = await complianceService.getAllBankAccounts();
+    const pendingBankAccounts = allBankAccounts.filter((b) => b.status === 'pending');
 
     return res.json({
       success: true,
@@ -331,9 +576,10 @@ async function getAdminOverview(req, res) {
         verificationPending: {
           count: pendingVerifs.length,
           total: allVerifs.length,
+          pendingBankCount: pendingBankAccounts.length,
           isDemonstration: false,
           label: `${pendingVerifs.length} Pending FICA Dossiers`,
-          note: 'Active SmartAssets KYC compliance review queue.',
+          note: 'Active SmartAssets KYC & Bank Account compliance review queue.',
         },
         timestamp: new Date().toISOString(),
       },
@@ -695,7 +941,7 @@ async function getAdminHealth(_req, res) {
       name: 'SmartAssets KYC & Compliance Ledger',
       status: 'operational',
       label: 'Enforced',
-      details: 'Strict FICA transaction gatekeeper & 5-min session timeout active',
+      details: 'Strict 3-doc KYC + Bank Account approval gatekeeper & 5-min session timeout active',
     };
 
     return res.json({
@@ -744,14 +990,14 @@ async function updateUserStatus(req, res) {
     const isSuspended = status === 'suspended';
     const updated = complianceService.setUserSuspension(id, isSuspended, reason);
 
-    auditLogService.logEvent({
-      eventType: isSuspended ? 'ACCOUNT_SUSPENDED' : 'ACCOUNT_REACTIVATED',
-      actorId: id,
-      actorEmail: updated.userEmail || id,
-      category: 'Security',
-      device: 'Admin Operations Desk',
-      description: `User account ${isSuspended ? 'suspended' : 'reactivated'} by compliance. ${reason ? 'Reason: ' + reason : ''}`,
-      status: isSuspended ? 'Suspended' : 'Active',
+    await recordAdminAuditLog({
+      req,
+      action: isSuspended ? 'ACCOUNT_SUSPENDED' : 'ACCOUNT_REACTIVATED',
+      targetTable: 'profiles',
+      targetId: id,
+      targetUserId: id,
+      targetEmail: updated.userEmail || id,
+      reason,
     });
 
     return res.json({
@@ -870,22 +1116,55 @@ async function getAdminActivity(req, res) {
 
 /**
  * GET /api/admin/verifications
- * Real-time queue of submitted user FICA/KYC compliance packs with normalized document URLs.
+ * Returns both user KYC dossiers AND individual `verification_documents` with short-lived signed URLs.
  */
-function getAdminVerifications(req, res) {
+async function getAdminVerifications(req, res) {
   try {
     const rawVerifications = complianceService.getAllVerifications();
-    const verifications = rawVerifications.map((v) => ({
-      ...v,
-      idDocumentUrl: normalizeImageUrl(v.idDocumentUrl, req),
-      taxDocumentUrl: normalizeImageUrl(v.taxDocumentUrl, req),
-      proofOfResidenceUrl: normalizeImageUrl(v.proofOfResidenceUrl, req),
-    }));
+    const allDocs = await complianceService.getAllVerificationDocuments(req);
+    const allBanks = await complianceService.getAllBankAccounts();
+
+    // Group individual documents by user_id
+    const docsByUser = {};
+    allDocs.forEach((doc) => {
+      const uid = doc.user_id;
+      if (!docsByUser[uid]) docsByUser[uid] = {};
+      docsByUser[uid][doc.doc_type] = {
+        ...doc,
+        preview_url: normalizeImageUrl(doc.preview_url || doc.file_path, req),
+      };
+    });
+
+    const banksByUser = {};
+    allBanks.forEach((b) => {
+      banksByUser[b.user_id] = b;
+    });
+
+    const verifications = rawVerifications.map((v) => {
+      const userDocs = docsByUser[v.userId] || {};
+      const userBank = banksByUser[v.userId] || null;
+      return {
+        ...v,
+        idDocumentUrl: normalizeImageUrl(userDocs.id?.preview_url || v.idDocumentUrl, req),
+        taxDocumentUrl: normalizeImageUrl(userDocs.tax?.preview_url || v.taxDocumentUrl, req),
+        proofOfResidenceUrl: normalizeImageUrl(userDocs.proof_of_residence?.preview_url || v.proofOfResidenceUrl, req),
+        documents: {
+          id: userDocs.id || null,
+          tax: userDocs.tax || null,
+          proof_of_residence: userDocs.proof_of_residence || null,
+        },
+        bankAccount: userBank,
+      };
+    });
 
     return res.json({
       success: true,
       count: verifications.length,
       verifications,
+      documents: allDocs.map((d) => ({
+        ...d,
+        preview_url: normalizeImageUrl(d.preview_url || d.file_path, req),
+      })),
     });
   } catch (err) {
     console.error('getAdminVerifications error:', err);
@@ -894,10 +1173,217 @@ function getAdminVerifications(req, res) {
 }
 
 /**
- * POST /api/admin/verifications/:id/approve
- * Approves a user's submitted KYC documents & flips their status to "verified".
+ * POST /api/admin/documents/:id/approve
+ * Approves a single verification document (`id`, `tax`, or `proof_of_residence`).
+ * Automatically flips `profiles.verification_status` to `'verified'` when all 3 documents are approved.
  */
-function approveKyc(req, res) {
+async function approveAdminDocument(req, res) {
+  try {
+    const { id } = req.params;
+    const reviewerId = req.admin?.email || req.user?.email || 'admin-compliance-officer';
+
+    const approvedDoc = await complianceService.approveDocument(id, reviewerId);
+    if (!approvedDoc) {
+      return sendError(res, 404, 'Verification document not found.');
+    }
+
+    const bundle = await complianceService.getVerificationStatusBundle(
+      approvedDoc.user_id,
+      approvedDoc.userEmail,
+      req
+    );
+
+    await recordAdminAuditLog({
+      req,
+      action: 'KYC_DOC_APPROVED',
+      targetTable: 'verification_documents',
+      targetId: id,
+      targetUserId: approvedDoc.user_id,
+      targetEmail: approvedDoc.userEmail,
+      metadata: {
+        doc_type: approvedDoc.doc_type,
+        overall_verification_status: bundle.verification_status,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message:
+        bundle.verification_status === 'verified'
+          ? `Document (${approvedDoc.doc_type}) approved! All 3 documents are now approved — user account is VERIFIED.`
+          : `Document (${approvedDoc.doc_type}) approved (${bundle.approved_count}/3 documents approved).`,
+      document: {
+        ...approvedDoc,
+        preview_url: normalizeImageUrl(approvedDoc.file_path, req),
+      },
+      verification_status: bundle.verification_status,
+      approved_count: bundle.approved_count,
+    });
+  } catch (err) {
+    console.error('approveAdminDocument error:', err);
+    return sendError(res, 500, 'Failed to approve verification document.');
+  }
+}
+
+/**
+ * POST /api/admin/documents/:id/reject
+ * Rejects a single verification document with a mandatory reason.
+ */
+async function rejectAdminDocument(req, res) {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || !String(reason).trim()) {
+      return sendError(res, 400, 'A rejection reason is required when rejecting a verification document.');
+    }
+
+    const reviewerId = req.admin?.email || req.user?.email || 'admin-compliance-officer';
+    const rejectedDoc = await complianceService.rejectDocument(id, String(reason).trim(), reviewerId);
+    if (!rejectedDoc) {
+      return sendError(res, 404, 'Verification document not found.');
+    }
+
+    await recordAdminAuditLog({
+      req,
+      action: 'KYC_DOC_REJECTED',
+      targetTable: 'verification_documents',
+      targetId: id,
+      targetUserId: rejectedDoc.user_id,
+      targetEmail: rejectedDoc.userEmail,
+      reason: String(reason).trim(),
+      metadata: { doc_type: rejectedDoc.doc_type },
+    });
+
+    return res.json({
+      success: true,
+      message: `Document (${rejectedDoc.doc_type}) rejected with reason.`,
+      document: {
+        ...rejectedDoc,
+        preview_url: normalizeImageUrl(rejectedDoc.file_path, req),
+      },
+      verification_status: 'rejected',
+    });
+  } catch (err) {
+    console.error('rejectAdminDocument error:', err);
+    return sendError(res, 400, err.message || 'Failed to reject verification document.');
+  }
+}
+
+/**
+ * GET /api/admin/bank-accounts
+ * Lists all pending & reviewed bank accounts.
+ * Masks account numbers in list view (`account_number_masked`: `****1234`) while providing `account_number_full` for the detail modal.
+ */
+async function getAdminBankAccounts(_req, res) {
+  try {
+    const bankAccounts = await complianceService.getAllBankAccounts();
+    return res.json({
+      success: true,
+      count: bankAccounts.length,
+      bankAccounts,
+    });
+  } catch (err) {
+    console.error('getAdminBankAccounts error:', err);
+    return sendError(res, 500, 'Failed to fetch bank accounts.');
+  }
+}
+
+/**
+ * POST /api/admin/bank-accounts/:id/approve
+ * Approves a user's bank account for withdrawals.
+ */
+async function approveAdminBankAccount(req, res) {
+  try {
+    const { id } = req.params;
+    const reviewerId = req.admin?.email || req.user?.email || 'admin-compliance-officer';
+
+    const approvedBank = await complianceService.approveBankAccount(id, reviewerId);
+    if (!approvedBank) {
+      return sendError(res, 404, 'Bank account record not found.');
+    }
+
+    await recordAdminAuditLog({
+      req,
+      action: 'BANK_ACCOUNT_APPROVED',
+      targetTable: 'bank_accounts',
+      targetId: id,
+      targetUserId: approvedBank.user_id,
+      targetEmail: approvedBank.userEmail,
+      metadata: {
+        bank_name: approvedBank.bank_name,
+        account_masked: complianceService.maskAccountNumber(approvedBank.account_number),
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: `Bank account (${approvedBank.bank_name} ${complianceService.maskAccountNumber(approvedBank.account_number)}) approved for withdrawals.`,
+      bankAccount: {
+        ...approvedBank,
+        account_number_masked: complianceService.maskAccountNumber(approvedBank.account_number),
+        account_number_full: approvedBank.account_number,
+      },
+    });
+  } catch (err) {
+    console.error('approveAdminBankAccount error:', err);
+    return sendError(res, 500, 'Failed to approve bank account.');
+  }
+}
+
+/**
+ * POST /api/admin/bank-accounts/:id/reject
+ * Rejects a user's bank account with a mandatory reason.
+ */
+async function rejectAdminBankAccount(req, res) {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || !String(reason).trim()) {
+      return sendError(res, 400, 'A rejection reason is required when rejecting a bank account.');
+    }
+
+    const reviewerId = req.admin?.email || req.user?.email || 'admin-compliance-officer';
+    const rejectedBank = await complianceService.rejectBankAccount(id, String(reason).trim(), reviewerId);
+    if (!rejectedBank) {
+      return sendError(res, 404, 'Bank account record not found.');
+    }
+
+    await recordAdminAuditLog({
+      req,
+      action: 'BANK_ACCOUNT_REJECTED',
+      targetTable: 'bank_accounts',
+      targetId: id,
+      targetUserId: rejectedBank.user_id,
+      targetEmail: rejectedBank.userEmail,
+      reason: String(reason).trim(),
+      metadata: {
+        bank_name: rejectedBank.bank_name,
+        account_masked: complianceService.maskAccountNumber(rejectedBank.account_number),
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: `Bank account (${rejectedBank.bank_name}) rejected.`,
+      bankAccount: {
+        ...rejectedBank,
+        account_number_masked: complianceService.maskAccountNumber(rejectedBank.account_number),
+        account_number_full: rejectedBank.account_number,
+      },
+    });
+  } catch (err) {
+    console.error('rejectAdminBankAccount error:', err);
+    return sendError(res, 400, err.message || 'Failed to reject bank account.');
+  }
+}
+
+/**
+ * POST /api/admin/verifications/:id/approve
+ * Approves a user's submitted KYC dossier & all 3 underlying documents, flipping their status to "verified".
+ */
+async function approveKyc(req, res) {
   try {
     const { id } = req.params;
     const { notes } = req.body;
@@ -907,14 +1393,14 @@ function approveKyc(req, res) {
       return sendError(res, 404, 'Verification dossier not found.');
     }
 
-    auditLogService.logEvent({
-      eventType: 'KYC_APPROVED',
-      actorEmail: approved.userEmail,
-      actorId: approved.userId,
-      category: 'Compliance',
-      device: 'Admin Operations Desk',
-      description: `FICA / KYC compliance dossier ${id} approved by compliance officer.`,
-      status: 'Approved',
+    await recordAdminAuditLog({
+      req,
+      action: 'KYC_APPROVED',
+      targetTable: 'kyc_verifications',
+      targetId: id,
+      targetUserId: approved.userId,
+      targetEmail: approved.userEmail,
+      reason: notes,
     });
 
     return res.json({
@@ -937,7 +1423,7 @@ function approveKyc(req, res) {
  * POST /api/admin/verifications/:id/reject
  * Rejects a user's submitted KYC documents with a specific reason.
  */
-function rejectKyc(req, res) {
+async function rejectKyc(req, res) {
   try {
     const { id } = req.params;
     const { reason } = req.body;
@@ -951,14 +1437,14 @@ function rejectKyc(req, res) {
       return sendError(res, 404, 'Verification dossier not found.');
     }
 
-    auditLogService.logEvent({
-      eventType: 'KYC_REJECTED',
-      actorEmail: rejected.userEmail,
-      actorId: rejected.userId,
-      category: 'Compliance',
-      device: 'Admin Operations Desk',
-      description: `FICA / KYC compliance dossier ${id} rejected: ${reason}`,
-      status: 'Rejected',
+    await recordAdminAuditLog({
+      req,
+      action: 'KYC_REJECTED',
+      targetTable: 'kyc_verifications',
+      targetId: id,
+      targetUserId: rejected.userId,
+      targetEmail: rejected.userEmail,
+      reason: reason.trim(),
     });
 
     return res.json({
@@ -978,6 +1464,9 @@ function rejectKyc(req, res) {
 }
 
 module.exports = {
+  adminLogin,
+  getAdminMe,
+  adminLogout,
   getAdminOverview,
   getAdminHealth,
   getAdminAssets,
@@ -990,6 +1479,11 @@ module.exports = {
   updateUserStatus,
   getAdminActivity,
   getAdminVerifications,
+  approveAdminDocument,
+  rejectAdminDocument,
+  getAdminBankAccounts,
+  approveAdminBankAccount,
+  rejectAdminBankAccount,
   approveKyc,
   rejectKyc,
 };

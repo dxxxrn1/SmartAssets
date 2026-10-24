@@ -8,6 +8,8 @@ const DATA_DIR = path.resolve(__dirname, '../src/data');
 const KYC_UPLOADS_DIR = path.resolve(__dirname, '../uploads/kyc');
 const SNAPSHOT_FILES = [
   'kycVerifications.json',
+  'verificationDocuments.json',
+  'bankAccounts.json',
   'userStatus.json',
   'auditLogs.json',
   'supportTickets.json',
@@ -26,7 +28,7 @@ const auditLogService = require('../src/services/auditLogService');
 const supportService = require('../src/services/supportService');
 
 async function runTests() {
-  console.log('\n🚀 Starting SmartAssets Compliance & Security Verification Suite...\n');
+  console.log('\n🚀 Starting SmartAssets Compliance, 3-Doc KYC & Bank Approval Suite...\n');
   let generatedDossierId = null;
 
   try {
@@ -111,8 +113,98 @@ async function runTests() {
     assert.strictEqual(userComp.isSuspended, false, 'User compliance must report active');
     console.log(`   ✅ User account reactivated: isSuspended = ${userComp.isSuspended}`);
 
-    // TEST 6: Audit Log Recording & Retrieval
-    console.log('🧪 [TEST 6] Testing Security & Auth Audit Log Ledger...');
+    // TEST 6: Granular 3-Document Verification Workflow (id, tax, proof_of_residence)
+    console.log('🧪 [TEST 6] Testing Granular 3-Document Upload, Rejection & Full Verification...');
+    const threeDocUserId = 'usr-3doc-' + Date.now();
+    const threeDocEmail = 'threedoc.collector@smartassets.io';
+
+    const idDoc = await complianceService.uploadVerificationDocument({
+      userId: threeDocUserId,
+      userEmail: threeDocEmail,
+      fullName: 'Three Doc Collector',
+      docType: 'id',
+      fileData: '/uploads/kyc/KYC_ZA_884210_id.svg',
+      fileName: 'sa_id_card.jpg',
+      mimeType: 'image/jpeg',
+    });
+    const taxDoc = await complianceService.uploadVerificationDocument({
+      userId: threeDocUserId,
+      userEmail: threeDocEmail,
+      fullName: 'Three Doc Collector',
+      docType: 'tax',
+      fileData: '/uploads/kyc/KYC_ZA_884210_tax.svg',
+      fileName: 'sars_tax_cert.pdf',
+      mimeType: 'application/pdf',
+    });
+    const residenceDoc = await complianceService.uploadVerificationDocument({
+      userId: threeDocUserId,
+      userEmail: threeDocEmail,
+      fullName: 'Three Doc Collector',
+      docType: 'proof_of_residence',
+      fileData: '/uploads/kyc/KYC_ZA_884210_residence.svg',
+      fileName: 'municipal_bill.pdf',
+      mimeType: 'application/pdf',
+    });
+
+    assert.strictEqual(idDoc.document.status, 'pending');
+    assert.strictEqual(taxDoc.document.status, 'pending');
+    assert.strictEqual(residenceDoc.document.status, 'pending');
+
+    // Approve ID and Tax, Reject Proof of Residence -> overall status should be 'rejected'
+    await complianceService.approveDocument(idDoc.document.id, 'admin-1');
+    await complianceService.approveDocument(taxDoc.document.id, 'admin-1');
+    const rejRes = await complianceService.rejectDocument(
+      residenceDoc.document.id,
+      'Address does not match profile',
+      'admin-1'
+    );
+
+    assert.strictEqual(rejRes.verification_status, 'rejected', 'Overall status must be rejected if any of the 3 docs is rejected');
+
+    // Re-upload Proof of Residence -> status should flip back to 'pending'
+    const reuploadedResDoc = await complianceService.uploadVerificationDocument({
+      userId: threeDocUserId,
+      userEmail: threeDocEmail,
+      fullName: 'Three Doc Collector',
+      docType: 'proof_of_residence',
+      fileData: '/uploads/kyc/KYC_ZA_884210_residence.svg',
+      fileName: 'municipal_bill_updated.pdf',
+      mimeType: 'application/pdf',
+    });
+    assert.strictEqual(reuploadedResDoc.document.status, 'pending');
+    assert.strictEqual(reuploadedResDoc.document.rejection_reason, null);
+    assert.strictEqual(reuploadedResDoc.verification_status, 'pending', 'Overall status must be pending when 2 approved + 1 pending');
+
+    // Approve 3rd document -> overall status must flip to 'verified'
+    const finalApproved = await complianceService.approveDocument(reuploadedResDoc.document.id, 'admin-1');
+    assert.strictEqual(finalApproved.verification_status, 'verified', 'Overall status must be verified when all 3 docs are approved');
+    console.log(`   ✅ 3-Document KYC lifecycle verified: pending -> rejected -> re-uploaded -> verified.`);
+
+    // TEST 7: Separate Bank Account Submission, Masking & Admin Approval
+    console.log('🧪 [TEST 7] Testing Bank Account Submission, Masking & Approval Rule...');
+    const bankRecord = await complianceService.submitBankAccount({
+      userId: threeDocUserId,
+      userEmail: threeDocEmail,
+      accountHolder: 'Three Doc Collector',
+      bankName: 'Standard Bank',
+      accountNumber: '10192837465',
+      branchCode: '051001',
+      accountType: 'cheque',
+    });
+    assert.strictEqual(bankRecord.status, 'pending');
+    assert.strictEqual(complianceService.maskAccountNumber(bankRecord.account_number), '****7465');
+
+    const rejectedBank = await complianceService.rejectBankAccount(bankRecord.id, 'Account holder name mismatch', 'admin-1');
+    assert.strictEqual(rejectedBank.status, 'rejected');
+    assert.strictEqual(rejectedBank.rejection_reason, 'Account holder name mismatch');
+
+    const approvedBank = await complianceService.approveBankAccount(bankRecord.id, 'admin-1');
+    assert.strictEqual(approvedBank.status, 'approved');
+    assert.strictEqual(approvedBank.rejection_reason, null);
+    console.log(`   ✅ Bank account lifecycle verified: masked (${complianceService.maskAccountNumber(bankRecord.account_number)}) -> rejected -> approved.`);
+
+    // TEST 8: Audit Log Recording & Retrieval
+    console.log('🧪 [TEST 8] Testing Security & Auth Audit Log Ledger...');
     const loginLog = auditLogService.logEvent({
       eventType: 'LOGIN',
       actorEmail: testEmail,
@@ -141,8 +233,8 @@ async function runTests() {
     assert(foundTimeout, 'SESSION_TIMEOUT event must exist in audit log');
     console.log(`   ✅ Audit ledger active with ${allLogs.length} events logged.`);
 
-    // TEST 7: Customer Support Desk Resolution Notes
-    console.log('🧪 [TEST 7] Testing Support Resolution Desk & Admin Notes...');
+    // TEST 9: Customer Support Desk Resolution Notes
+    console.log('🧪 [TEST 9] Testing Support Resolution Desk & Admin Notes...');
     const ticket = supportService.createTicket({
       userId: testUserId,
       userEmail: testEmail,
@@ -165,7 +257,7 @@ async function runTests() {
     assert(updatedTicket.adminResponse, 'Admin response must be saved');
     console.log(`   ✅ Support ticket ${ticket.id} marked Resolved with Admin Response.`);
 
-    console.log('\n🎉 ALL 7 COMPLIANCE & SECURITY SUITE TESTS PASSED PERFECTLY!\n');
+    console.log('\n🎉 ALL 9 COMPLIANCE, 3-DOC KYC, BANK APPROVAL & SECURITY TESTS PASSED PERFECTLY!\n');
   } finally {
     // Restore original JSON snapshots so test runs never pollute live data stores
     Object.entries(snapshots).forEach(([filePath, content]) => {

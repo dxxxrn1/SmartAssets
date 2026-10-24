@@ -420,6 +420,124 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        {/* ── PERSISTENT ACCOUNT VERIFICATION BANNER (Shown until verified) ──── */}
+        {user && user.verification_status !== "verified" && user.kycStatus !== "verified" && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate(SCREENS.VERIFY_ACCOUNT)}
+            activeOpacity={0.88}
+            style={{
+              marginBottom: 16,
+              borderRadius: 18,
+              padding: 14,
+              backgroundColor: "rgba(124, 58, 237, 0.12)",
+              borderWidth: 1.2,
+              borderColor: "rgba(124, 58, 237, 0.35)",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  backgroundColor: "#7C3AED",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name="shield-checkmark-outline" size={20} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13.5, fontWeight: "800", color: "#1E1B4B" }}>
+                  {user.kycStatus === "pending" || user.verification_status === "pending"
+                    ? "Verification Pending Admin Review"
+                    : user.kycStatus === "rejected" || user.verification_status === "rejected"
+                    ? "Action Needed: Re-upload KYC Document"
+                    : "Complete your verification"}
+                </Text>
+                <Text style={{ fontSize: 11.5, color: "#4C1D95", marginTop: 2 }}>
+                  Upload ID, Tax & Proof of Residence to unlock listing, deposits & withdrawals.
+                </Text>
+              </View>
+            </View>
+            <View
+              style={{
+                backgroundColor: "#7C3AED",
+                paddingHorizontal: 11,
+                paddingVertical: 7,
+                borderRadius: 10,
+              }}
+            >
+              <Text style={{ color: "#FFFFFF", fontSize: 11.5, fontWeight: "800" }}>
+                Verify &rarr;
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {/* ── PERSISTENT ACCOUNT VERIFICATION BANNER (Shown until verified) ──── */}
+        {user && user.verification_status !== "verified" && user.kycStatus !== "verified" && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate(SCREENS.VERIFY_ACCOUNT)}
+            activeOpacity={0.88}
+            style={{
+              marginBottom: 16,
+              borderRadius: 18,
+              padding: 14,
+              backgroundColor: "rgba(124, 58, 237, 0.12)",
+              borderWidth: 1.2,
+              borderColor: "rgba(124, 58, 237, 0.35)",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  backgroundColor: "#7C3AED",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name="shield-checkmark-outline" size={20} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13.5, fontWeight: "800", color: "#1E1B4B" }}>
+                  {user.kycStatus === "pending" || user.verification_status === "pending"
+                    ? "Verification Pending Admin Review"
+                    : user.kycStatus === "rejected" || user.verification_status === "rejected"
+                    ? "Action Needed: Re-upload KYC Document"
+                    : "Complete your verification"}
+                </Text>
+                <Text style={{ fontSize: 11.5, color: "#4C1D95", marginTop: 2 }}>
+                  Upload ID, Tax & Proof of Residence to unlock listing, deposits & withdrawals.
+                </Text>
+              </View>
+            </View>
+            <View
+              style={{
+                backgroundColor: "#7C3AED",
+                paddingHorizontal: 11,
+                paddingVertical: 7,
+                borderRadius: 10,
+              }}
+            >
+              <Text style={{ color: "#FFFFFF", fontSize: 11.5, fontWeight: "800" }}>
+                Verify &rarr;
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
         {/* ── PORTFOLIO VALUE CARD ────────────────────────────────────────────── */}
         <TouchableOpacity
           style={styles.portfolioCard}

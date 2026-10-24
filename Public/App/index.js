@@ -26,8 +26,14 @@ global.crypto.getRandomValues = function safeGetRandomValues(array) {
   return array;
 };
 
-if (typeof global.window !== 'undefined') {
-  global.window.crypto = global.crypto;
+if (typeof global.window !== 'undefined' && global.window) {
+  try {
+    if (!global.window.crypto) {
+      global.window.crypto = global.crypto;
+    }
+  } catch (_e) {
+    // In web browsers, window.crypto is a read-only getter
+  }
 }
 
 if (typeof global.Buffer === 'undefined') {

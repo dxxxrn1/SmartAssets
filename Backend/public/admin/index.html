@@ -1288,7 +1288,13 @@
       <div class="nav-label" style="margin-top: 10px;">Directory &amp; Trust</div>
       <li class="nav-item" data-view="verifications" onclick="navigate('verifications')">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138z"/></svg>
-        Verification
+        KYC Verification
+        <span class="nav-counter" id="badge-verifications-count">0</span>
+      </li>
+      <li class="nav-item" data-view="bank-accounts" onclick="navigate('bank-accounts')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+        Bank Accounts
+        <span class="nav-counter" id="badge-banks-count">0</span>
       </li>
       <li class="nav-item" data-view="users" onclick="navigate('users')">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
@@ -1349,12 +1355,15 @@
           Node Relayer :5000
         </div>
         <div class="admin-chip">
-          <div class="admin-avatar">AD</div>
+          <div class="admin-avatar" id="admin-chip-avatar">AD</div>
           <div class="admin-info">
-            <span class="admin-name">Admin Console</span>
-            <span class="admin-role">Super Administrator</span>
+            <span class="admin-name" id="admin-chip-name">Admin Console</span>
+            <span class="admin-role" id="admin-chip-role">role: admin</span>
           </div>
         </div>
+        <button class="btn btn-secondary btn-sm" onclick="adminLogout()" title="Sign out of Admin Session">
+          Sign Out
+        </button>
       </div>
     </header>
 
@@ -1750,41 +1759,118 @@
       <section id="view-verifications" class="view-panel">
         <div class="view-header">
           <div class="view-title-group">
-            <h1>Investor Verification &amp; KYC Desk</h1>
-            <div class="view-subtitle">Compliance screening for institutional buyers, accredited HNWI accounts, and high-value custodians.</div>
+            <h1>Account Verification (KYC) Review Desk</h1>
+            <div class="view-subtitle">Review user ID documents, Tax documents, and Proof of Residence (all 3 must be approved to verify an account).</div>
+          </div>
+          <div class="view-actions-group">
+            <button class="btn btn-secondary btn-sm" onclick="navigate('bank-accounts')">🏦 Review Bank Accounts &rarr;</button>
+            <button class="btn btn-primary btn-sm" onclick="loadVerifications(true)">Refresh Queue</button>
           </div>
         </div>
 
-        <!-- Mandatory Sprint Notice Banner -->
         <div class="notice-banner notice-green" style="background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.28);padding:14px 18px;border-radius:10px;margin-bottom:20px;display:flex;gap:12px;align-items:center;">
           <div style="font-size:20px;">🛡️</div>
           <div>
-            <strong style="color:var(--green);">SmartAssets FICA / KYC Compliance Queue:</strong> Review investor South African ID/Passports, SARS tax reference numbers, and 3-month proof of residence with verified banking details. Approving a dossier grants instant platform listing and fractional trading authorization.
+            <strong style="color:var(--green);">3-Document KYC Gatekeeper Rule:</strong> An account becomes <code>verified</code> only when all 3 documents (<strong>1. ID Document</strong>, <strong>2. Tax Document</strong>, and <strong>3. Proof of Residence</strong>) are uploaded and approved by an admin. Click <strong>Inspect &amp; Review 3 Docs</strong> on any user to approve or reject individual documents with a reason.
           </div>
         </div>
 
-        <!-- Verifications Table -->
+        <div class="controls-bar">
+          <div class="filter-input-wrap">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <input type="text" class="filter-input" id="verifications-search-input" placeholder="Search by user name, email, ID number, or dossier ID..." oninput="filterVerificationsTable()">
+          </div>
+          <select class="filter-select" id="verifications-status-filter" onchange="filterVerificationsTable()">
+            <option value="All">All Statuses (Pending &amp; History)</option>
+            <option value="pending">Pending Review</option>
+            <option value="verified">Verified (All 3 Docs Approved)</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+
         <div class="table-card">
           <div class="table-card-header">
-            <div class="table-card-title">Submitted FICA / KYC Compliance Dossiers</div>
-            <span class="pill pill-green">Live Compliance Queue</span>
+            <div class="table-card-title">User KYC Verification Queue &amp; History</div>
+            <span class="pill pill-green">3-Document Verification Engine</span>
           </div>
           <div class="table-responsive">
             <table>
               <thead>
                 <tr>
-                  <th>Dossier Reference</th>
+                  <th>Dossier / Date</th>
                   <th>Collector / Email</th>
-                  <th>SA ID / Passport</th>
-                  <th>SARS Tax Ref</th>
-                  <th>Proof of Residence</th>
+                  <th>1. ID Document</th>
+                  <th>2. Tax Document</th>
+                  <th>3. Proof of Residence</th>
                   <th>Bank Account</th>
-                  <th>KYC Status</th>
+                  <th>Overall Status</th>
                   <th>Compliance Actions</th>
                 </tr>
               </thead>
               <tbody id="verifications-tbody">
                 <tr><td colspan="8" class="td-muted" style="text-align: center; padding: 32px;">Loading compliance dossiers...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════════════════════ -->
+      <!-- VIEW 5B: BANK ACCOUNTS APPROVAL DESK                                -->
+      <!-- ════════════════════════════════════════════════════════════════════ -->
+      <section id="view-bank-accounts" class="view-panel">
+        <div class="view-header">
+          <div class="view-title-group">
+            <h1>Bank Account Approval Desk</h1>
+            <div class="view-subtitle">Separate withdrawal approval queue. Users can only withdraw funds to an admin-approved bank account.</div>
+          </div>
+          <div class="view-actions-group">
+            <button class="btn btn-secondary btn-sm" onclick="navigate('verifications')">&larr; KYC Documents Desk</button>
+            <button class="btn btn-primary btn-sm" onclick="loadBankAccounts(true)">Refresh Bank Accounts</button>
+          </div>
+        </div>
+
+        <div class="notice-banner notice-blue" style="margin-bottom:20px;">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+          <div>
+            <strong>Bank Account Security &amp; Masking Rule:</strong> Account numbers are masked (showing only the last 4 digits, e.g. <code>****4419</code>) in list views. Click <strong>Review Bank Details</strong> to inspect the full account number and approve or reject with a reason.
+          </div>
+        </div>
+
+        <div class="controls-bar">
+          <div class="filter-input-wrap">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <input type="text" class="filter-input" id="banks-search-input" placeholder="Search by account holder, bank name, or email..." oninput="filterBankAccountsTable()">
+          </div>
+          <select class="filter-select" id="banks-status-filter" onchange="filterBankAccountsTable()">
+            <option value="All">All Bank Statuses (Pending &amp; Reviewed)</option>
+            <option value="pending">Pending Approval</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+
+        <div class="table-card">
+          <div class="table-card-header">
+            <div class="table-card-title">Submitted User Bank Accounts (<span id="banks-filtered-count">0</span> accounts)</div>
+            <span class="pill pill-blue">Withdrawal Gatekeeper</span>
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Bank Record ID</th>
+                  <th>Collector / Email</th>
+                  <th>Account Holder</th>
+                  <th>Bank Name</th>
+                  <th>Account No. (Masked)</th>
+                  <th>Branch / Type</th>
+                  <th>Status</th>
+                  <th>Review Actions</th>
+                </tr>
+              </thead>
+              <tbody id="bank-accounts-tbody">
+                <tr><td colspan="8" class="td-muted" style="text-align: center; padding: 32px;">Loading bank accounts...</td></tr>
               </tbody>
             </table>
           </div>
@@ -2024,6 +2110,22 @@
     </div>
   </div>
 
+  <!-- ── MODAL: BANK ACCOUNT DETAIL & APPROVAL ─────────────────────────── -->
+  <div class="modal-overlay" id="modal-bank-account">
+    <div class="modal-container">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-bank-title">Bank Account Verification</div>
+        <button class="modal-close" onclick="closeModal('modal-bank-account')">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-bank-body">
+        <!-- Injected via openBankAccountModal(bankId) -->
+      </div>
+      <div class="modal-footer" id="modal-bank-footer">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('modal-bank-account')">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── MODAL: USER PROFILE INSPECTION ─────────────────────────────────── -->
   <div class="modal-overlay" id="modal-user">
     <div class="modal-container">
@@ -2055,11 +2157,40 @@
     ? (window.location.protocol + '//' + window.location.hostname + ':5000')
     : '';
 
+  const ADMIN_SESSION_KEY = 'smartassets_admin_session';
+
+  function getAdminSession() {
+    try {
+      const raw = localStorage.getItem(ADMIN_SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  window.adminLogout = function () {
+    const sess = getAdminSession();
+    if (sess && sess.token) {
+      fetch(API_BASE + '/api/admin/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + sess.token }
+      }).catch(function () {});
+    }
+    localStorage.removeItem(ADMIN_SESSION_KEY);
+    window.location.href = 'login.html';
+  };
+
   function apiFetch(url, options) {
     const fullUrl = (typeof url === 'string' && url.startsWith('/api'))
       ? (API_BASE + url)
       : url;
-    return fetch(fullUrl, options);
+    const opts = Object.assign({}, options || {});
+    opts.headers = Object.assign({}, opts.headers || {});
+    const sess = getAdminSession();
+    if (sess && sess.token && !opts.headers.Authorization) {
+      opts.headers.Authorization = 'Bearer ' + sess.token;
+    }
+    return fetch(fullUrl, opts);
   }
 
   function resolveImg(url) {
@@ -2083,6 +2214,8 @@
     tickets: [],
     users: [],
     verifications: [],
+    documents: [],
+    bankAccounts: [],
     activity: [],
     activeApiIndex: 0,
     apiEndpoints: [
@@ -2243,6 +2376,7 @@
       escrows: 'Escrow Custody & Settlement Oversight',
       tickets: 'Customer Support Desk',
       verifications: 'FICA / KYC Compliance Verification Desk',
+      'bank-accounts': 'Bank Account Approval Desk',
       users: 'Platform User Directory',
       activity: 'Chronological Operations Ledger',
       api: 'Live API Explorer & Diagnostics'
@@ -2265,7 +2399,10 @@
     } else if (viewName === 'tickets') {
       if (!STATE.tickets.length) loadTickets();
     } else if (viewName === 'verifications') {
-      if (!STATE.verifications.length) loadVerifications();
+      loadVerifications(true);
+    if (typeof window.loadBankAccounts === 'function') window.loadBankAccounts(true);
+    } else if (viewName === 'bank-accounts') {
+      loadBankAccounts(true);
     } else if (viewName === 'users') {
       if (!STATE.users.length) loadUsers();
     } else if (viewName === 'activity') {
@@ -2972,31 +3109,62 @@
       });
   };
 
-  // ── Verification & Compliance Desk ──
+  // ── Verification & Compliance Desk (Granular 3-Document + Full Dossier) ──
   window.loadVerifications = function (force) {
     const tbody = document.getElementById('verifications-tbody');
     if (tbody && (!STATE.verifications.length || force)) {
-      tbody.innerHTML = '<tr><td colspan="7" class="loading-state"><div class="spinner"></div>Loading verification queue...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="loading-state"><div class="spinner"></div>Loading verification queue...</td></tr>';
     }
     apiFetch('/api/admin/verifications')
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data.success) throw new Error(data.error || 'Failed to load verifications');
         STATE.verifications = data.verifications || [];
-        renderVerificationsTable(STATE.verifications);
+        STATE.documents = data.documents || [];
+        const bVerif = document.getElementById('badge-verifications-count');
+        if (bVerif) {
+          const pendingCnt = STATE.verifications.filter(function (v) { return v.kycStatus === 'pending'; }).length;
+          bVerif.textContent = pendingCnt;
+        }
+        window.filterVerificationsTable();
       })
       .catch(function (err) {
         console.error('loadVerifications error:', err);
         showToast('Error loading verifications: ' + err.message, 'error');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty-state text-red">Failed to load verification records.</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty-state text-red">Failed to load verification records.</td></tr>';
       });
   };
+
+  window.filterVerificationsTable = function () {
+    const searchVal = (document.getElementById('verifications-search-input')?.value || '').toLowerCase().trim();
+    const statusVal = document.getElementById('verifications-status-filter')?.value || 'All';
+
+    const filtered = STATE.verifications.filter(function (v) {
+      const matchSearch = !searchVal ||
+        (v.id && v.id.toLowerCase().includes(searchVal)) ||
+        (v.fullName && v.fullName.toLowerCase().includes(searchVal)) ||
+        (v.userEmail && v.userEmail.toLowerCase().includes(searchVal)) ||
+        (v.idNumber && v.idNumber.toLowerCase().includes(searchVal));
+      const matchStatus = statusVal === 'All' || v.kycStatus === statusVal;
+      return matchSearch && matchStatus;
+    });
+
+    renderVerificationsTable(filtered);
+  };
+
+  function renderDocMiniBadge(docObj, fallbackStatus) {
+    const st = (docObj && docObj.status) ? docObj.status : (fallbackStatus === 'verified' ? 'approved' : fallbackStatus);
+    if (st === 'approved') return '<span class="pill pill-green" style="font-size:10.5px;">✅ Approved</span>';
+    if (st === 'rejected') return '<span class="pill pill-red" style="font-size:10.5px;">❌ Rejected</span>';
+    if (st === 'pending') return '<span class="pill pill-amber" style="font-size:10.5px;">⏳ Pending</span>';
+    return '<span class="pill pill-muted" style="font-size:10.5px;">Not Uploaded</span>';
+  }
 
   function renderVerificationsTable(items) {
     const tbody = document.getElementById('verifications-tbody');
     if (!tbody) return;
     if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No verification dossiers in queue.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No verification dossiers match the current filter.</td></tr>';
       return;
     }
 
@@ -3004,13 +3172,17 @@
     items.forEach(function (v) {
       const isPending = (v.kycStatus === 'pending');
       const isVerified = (v.kycStatus === 'verified');
-      const bankText = v.bankingDetails ? (v.bankingDetails.bankName + ' · ' + (v.bankingDetails.accountNumber ? v.bankingDetails.accountNumber.slice(-4) : '••••')) : '<span class="text-muted text-xs">Unlinked</span>';
-      
+      const docs = v.documents || {};
+      const bank = v.bankAccount || v.bankingDetails || null;
+      const bankMasked = v.bankAccount
+        ? (v.bankAccount.bank_name + ' · ' + (v.bankAccount.account_number_masked || ('****' + String(v.bankAccount.account_number || '').slice(-4))) + ' [' + String(v.bankAccount.status || 'pending').toUpperCase() + ']')
+        : (v.bankingDetails ? (v.bankingDetails.bankName + ' · ****' + (v.bankingDetails.accountNumber ? v.bankingDetails.accountNumber.slice(-4) : '••••')) : '<span class="text-muted text-xs">Not Submitted</span>');
+
       let statusPillHtml = '';
       if (isVerified) {
         statusPillHtml = '<span class="pill pill-green">✅ Verified</span>';
       } else if (isPending) {
-        statusPillHtml = '<span class="pill pill-blue">⏳ Pending Review</span>';
+        statusPillHtml = '<span class="pill pill-amber">⏳ Pending Review</span>';
       } else if (v.kycStatus === 'rejected') {
         statusPillHtml = '<span class="pill pill-red">❌ Rejected</span>';
       } else {
@@ -3020,17 +3192,17 @@
       html += '<tr>' +
         '<td><span class="id-mono">' + escapeHtml(v.id) + '</span><br><span class="text-xs text-muted">' + formatDate(v.submittedAt) + '</span></td>' +
         '<td><strong>' + escapeHtml(v.fullName || 'Collector') + '</strong><br><span class="font-mono text-xs text-muted">' + escapeHtml(v.userEmail || '—') + '</span></td>' +
-        '<td><span class="font-mono text-xs">' + escapeHtml(v.idNumber || '—') + '</span></td>' +
-        '<td><span class="font-mono text-xs">' + escapeHtml(v.taxNumber || '—') + '</span></td>' +
-        '<td><span class="text-xs" style="max-width:180px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(v.residentialAddress) + '">' + escapeHtml(v.residentialAddress || '—') + '</span></td>' +
-        '<td><span class="font-mono text-xs">' + bankText + '</span></td>' +
+        '<td>' + renderDocMiniBadge(docs.id, v.kycStatus) + '<div class="font-mono text-xs text-muted" style="margin-top:3px;">' + escapeHtml(v.idNumber || 'ID Doc') + '</div></td>' +
+        '<td>' + renderDocMiniBadge(docs.tax, v.kycStatus) + '<div class="font-mono text-xs text-muted" style="margin-top:3px;">' + escapeHtml(v.taxNumber || 'Tax Doc') + '</div></td>' +
+        '<td>' + renderDocMiniBadge(docs.proof_of_residence, v.kycStatus) + '<div class="text-xs text-muted" style="margin-top:3px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(v.residentialAddress || 'Residence Doc') + '</div></td>' +
+        '<td><span class="font-mono text-xs">' + bankMasked + '</span></td>' +
         '<td>' + statusPillHtml + '</td>' +
         '<td>' +
-        '<div style="display:flex;gap:6px;align-items:center;">' +
-        '<button class="btn btn-secondary btn-sm" onclick="openVerificationModal(\'' + escapeHtml(v.id) + '\')">Inspect</button>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
+        '<button class="btn btn-primary btn-sm" onclick="openVerificationModal('' + escapeHtml(v.id) + '')">Inspect &amp; Review 3 Docs</button>' +
         (isPending ? (
-          '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveKycDossier(\'' + escapeHtml(v.id) + '\')">✅ Approve</button>' +
-          '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectKycDossier(\'' + escapeHtml(v.id) + '\')">❌ Reject</button>'
+          '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveKycDossier('' + escapeHtml(v.id) + '')">✅ Approve All</button>' +
+          '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectKycDossier('' + escapeHtml(v.id) + '')">❌ Reject</button>'
         ) : '') +
         '</div>' +
         '</td>' +
@@ -3044,42 +3216,94 @@
     if (!item) return;
 
     const titleEl = document.getElementById('modal-verification-title');
-    if (titleEl) titleEl.textContent = 'FICA / KYC Compliance Dossier: ' + item.id + ' — ' + (item.fullName || item.userEmail);
+    if (titleEl) titleEl.textContent = '3-Document KYC Review: ' + item.id + ' — ' + (item.fullName || item.userEmail);
+
+    const docs = item.documents || {};
+    const docSlots = [
+      {
+        key: 'id',
+        label: '1. ID Document (SA Smart ID / Passport)',
+        doc: docs.id,
+        fallbackUrl: item.idDocumentUrl,
+        metaText: item.idNumber ? ('ID No: ' + item.idNumber) : 'National Identity Document'
+      },
+      {
+        key: 'tax',
+        label: '2. Tax Document (SARS Tax Certificate)',
+        doc: docs.tax,
+        fallbackUrl: item.taxDocumentUrl,
+        metaText: item.taxNumber ? ('Tax Ref: ' + item.taxNumber) : 'SARS Tax Reference'
+      },
+      {
+        key: 'proof_of_residence',
+        label: '3. Proof of Residence (< 3 Months)',
+        doc: docs.proof_of_residence,
+        fallbackUrl: item.proofOfResidenceUrl,
+        metaText: item.residentialAddress || 'Utility Bill / Bank Statement'
+      }
+    ];
+
+    let docsGridHtml = '';
+    docSlots.forEach(function (slot) {
+      const d = slot.doc || {};
+      const docId = d.id || null;
+      const docStatus = d.status || (item.kycStatus === 'verified' ? 'approved' : item.kycStatus || 'pending');
+      const previewUrl = resolveImg(d.preview_url || d.file_path || slot.fallbackUrl);
+      const badgeHtml = renderDocMiniBadge({ status: docStatus }, item.kycStatus);
+
+      docsGridHtml += '<div style="background:var(--sidebar);padding:14px;border-radius:10px;border:1px solid var(--border);display:flex;flex-direction:column;justify-content:space-between;">' +
+        '<div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;">' +
+        '<span class="text-xs" style="font-weight:700;color:var(--text);">' + escapeHtml(slot.label) + '</span>' +
+        badgeHtml +
+        '</div>' +
+        '<div class="text-xs font-mono text-muted" style="margin-bottom:8px;">' + escapeHtml(slot.metaText) + '</div>' +
+        (previewUrl
+          ? ('<a href="' + escapeHtml(previewUrl) + '" target="_blank" title="Click to open signed document in new tab"><img src="' + escapeHtml(previewUrl) + '" style="width:100%;height:135px;object-fit:contain;background:#0b1120;border-radius:6px;border:1px solid var(--border);margin-bottom:8px;"/></a>')
+          : '<div class="text-xs text-muted" style="padding:45px 0;text-align:center;">No document uploaded</div>') +
+        (d.rejection_reason ? ('<div class="text-xs" style="color:#F87171;background:rgba(239,68,68,0.12);padding:6px 8px;border-radius:6px;margin-bottom:8px;"><strong>Rejected:</strong> ' + escapeHtml(d.rejection_reason) + '</div>') : '') +
+        '</div>' +
+        (docId ? (
+          '<div style="display:flex;gap:6px;margin-top:6px;">' +
+          '<button class="btn btn-sm" style="flex:1;background:#10B981;color:#fff;border-color:#10B981;font-size:11px;padding:6px 8px;" onclick="approveSingleKycDocument('' + escapeHtml(docId) + '', '' + escapeHtml(item.id) + '')">✅ Approve Doc</button>' +
+          '<button class="btn btn-sm" style="flex:1;background:#EF4444;color:#fff;border-color:#EF4444;font-size:11px;padding:6px 8px;" onclick="rejectSingleKycDocument('' + escapeHtml(docId) + '', '' + escapeHtml(item.id) + '')">❌ Reject Doc</button>' +
+          '</div>'
+        ) : '') +
+        '</div>';
+    });
 
     const bodyEl = document.getElementById('modal-verification-body');
     if (bodyEl) {
-      const bank = item.bankingDetails || {};
+      const bank = item.bankAccount || item.bankingDetails || {};
+      const bankId = item.bankAccount?.id || null;
+      const bankStatus = item.bankAccount?.status || (item.kycStatus === 'verified' ? 'approved' : 'pending');
+
       bodyEl.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">' +
         '<div class="data-field"><div class="data-label">Applicant Name</div><div class="data-val"><strong>' + escapeHtml(item.fullName || '—') + '</strong></div></div>' +
         '<div class="data-field"><div class="data-label">Email Address</div><div class="data-val font-mono text-xs">' + escapeHtml(item.userEmail || '—') + '</div></div>' +
-        '<div class="data-field"><div class="data-label">SA ID / Passport Number</div><div class="data-val font-mono text-xs">🇿🇦 ' + escapeHtml(item.idNumber || '—') + '</div></div>' +
-        '<div class="data-field"><div class="data-label">SARS Tax Reference Number</div><div class="data-val font-mono text-xs">🏛️ ' + escapeHtml(item.taxNumber || '—') + '</div></div>' +
-        '<div class="data-field" style="grid-column: span 2;"><div class="data-label">Residential Address (Proof of Residence)</div><div class="data-val">' + escapeHtml(item.residentialAddress || '—') + '</div></div>' +
+        '</div>' +
+
+        '<div class="data-label" style="margin-bottom:10px;color:var(--green);font-weight:700;">📄 Individual KYC Document Review (All 3 Must Be Approved for Account Verification)</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;margin-bottom:18px;">' +
+        docsGridHtml +
         '</div>' +
 
         '<div style="background:var(--card-header);padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:16px;">' +
-        '<div class="data-label" style="margin-bottom:8px;color:var(--blue);font-weight:700;">🏦 Verified Banking Details (For Withdrawals & Payouts)</div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+        '<div class="data-label" style="color:var(--blue);font-weight:700;margin:0;">🏦 Separate Bank Account Verification (Required for Withdrawals)</div>' +
+        (bankId ? (
+          '<div style="display:flex;gap:6px;align-items:center;">' +
+          renderStatusPill(bankStatus) +
+          '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;font-size:11px;padding:4px 8px;" onclick="approveBankAccount('' + escapeHtml(bankId) + '', '' + escapeHtml(item.id) + '')">✅ Approve Bank</button>' +
+          '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;font-size:11px;padding:4px 8px;" onclick="rejectBankAccount('' + escapeHtml(bankId) + '', '' + escapeHtml(item.id) + '')">❌ Reject Bank</button>' +
+          '</div>'
+        ) : '') +
+        '</div>' +
         '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">' +
-        '<div><div class="text-xs text-muted">Bank Name</div><strong>' + escapeHtml(bank.bankName || '—') + '</strong></div>' +
-        '<div><div class="text-xs text-muted">Account Holder</div><strong>' + escapeHtml(bank.accountHolder || item.fullName || '—') + '</strong></div>' +
-        '<div><div class="text-xs text-muted">Account Number</div><strong class="font-mono">' + escapeHtml(bank.accountNumber || '—') + '</strong></div>' +
-        '<div><div class="text-xs text-muted">Branch Code</div><strong class="font-mono">' + escapeHtml(bank.branchCode || '—') + '</strong></div>' +
-        '</div>' +
-        '</div>' +
-
-        '<div class="data-label" style="margin-bottom:10px;">Submitted Document Artifacts (3 Required FICA Items — Click Any Document to Enlarge)</div>' +
-        '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;margin-bottom:16px;">' +
-        '<div style="background:var(--sidebar);padding:12px;border-radius:8px;border:1px solid var(--border);text-align:center;">' +
-        '<div class="text-xs text-muted" style="margin-bottom:6px;font-weight:700;">1. SA Smart ID / Passport</div>' +
-        (item.idDocumentUrl ? ('<a href="' + escapeHtml(resolveImg(item.idDocumentUrl)) + '" target="_blank"><img src="' + escapeHtml(resolveImg(item.idDocumentUrl)) + '" style="width:100%;height:130px;object-fit:contain;background:#0b1120;border-radius:6px;border:1px solid var(--border);"/></a>') : '<div class="text-xs text-muted" style="padding:40px 0;">Document on file</div>') +
-        '</div>' +
-        '<div style="background:var(--sidebar);padding:12px;border-radius:8px;border:1px solid var(--border);text-align:center;">' +
-        '<div class="text-xs text-muted" style="margin-bottom:6px;font-weight:700;">2. SARS Tax Notice (IT150)</div>' +
-        (item.taxDocumentUrl ? ('<a href="' + escapeHtml(resolveImg(item.taxDocumentUrl)) + '" target="_blank"><img src="' + escapeHtml(resolveImg(item.taxDocumentUrl)) + '" style="width:100%;height:130px;object-fit:contain;background:#0b1120;border-radius:6px;border:1px solid var(--border);"/></a>') : '<div class="text-xs text-muted" style="padding:40px 0;">Document on file</div>') +
-        '</div>' +
-        '<div style="background:var(--sidebar);padding:12px;border-radius:8px;border:1px solid var(--border);text-align:center;">' +
-        '<div class="text-xs text-muted" style="margin-bottom:6px;font-weight:700;">3. Proof of Residence (&lt; 3 mo)</div>' +
-        (item.proofOfResidenceUrl ? ('<a href="' + escapeHtml(resolveImg(item.proofOfResidenceUrl)) + '" target="_blank"><img src="' + escapeHtml(resolveImg(item.proofOfResidenceUrl)) + '" style="width:100%;height:130px;object-fit:contain;background:#0b1120;border-radius:6px;border:1px solid var(--border);"/></a>') : '<div class="text-xs text-muted" style="padding:40px 0;">Document on file</div>') +
+        '<div><div class="text-xs text-muted">Bank Name</div><strong>' + escapeHtml(bank.bank_name || bank.bankName || '—') + '</strong></div>' +
+        '<div><div class="text-xs text-muted">Account Holder</div><strong>' + escapeHtml(bank.account_holder || bank.accountHolder || item.fullName || '—') + '</strong></div>' +
+        '<div><div class="text-xs text-muted">Full Account Number</div><strong class="font-mono">' + escapeHtml(bank.account_number_full || bank.account_number || bank.accountNumber || '—') + '</strong></div>' +
+        '<div><div class="text-xs text-muted">Branch &amp; Type</div><strong class="font-mono">' + escapeHtml((bank.branch_code || bank.branchCode || '—') + ' · ' + (bank.account_type || 'Current')) + '</strong></div>' +
         '</div>' +
         '</div>' +
 
@@ -3089,19 +3313,72 @@
 
     const modalFooter = document.querySelector('#modal-verification .modal-footer');
     if (modalFooter) {
-      modalFooter.innerHTML = '<button class="btn btn-secondary btn-sm" onclick="closeModal(\'modal-verification\')">Close Dossier</button>' +
-        (item.kycStatus === 'pending' ? (
-          '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectKycDossier(\'' + escapeHtml(item.id) + '\')">❌ Reject KYC (with reason)</button>' +
-          '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveKycDossier(\'' + escapeHtml(item.id) + '\')">✅ Approve KYC</button>'
-        ) : (item.kycStatus === 'verified' ? (
-          '<span class="pill pill-green" style="margin-left:auto;">✅ FICA Verified User</span>'
-        ) : (
-          '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveKycDossier(\'' + escapeHtml(item.id) + '\')">✅ Re-Approve KYC</button>'
-        )));
+      modalFooter.innerHTML = '<button class="btn btn-secondary btn-sm" onclick="closeModal('modal-verification')">Close Dossier</button>' +
+        '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectKycDossier('' + escapeHtml(item.id) + '')">❌ Reject Full Dossier (with reason)</button>' +
+        '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveKycDossier('' + escapeHtml(item.id) + '')">✅ Approve All 3 Docs &amp; Verify Account</button>';
     }
 
     const modal = document.getElementById('modal-verification');
     if (modal) modal.classList.add('open');
+  };
+
+  window.approveSingleKycDocument = function (docId, vId) {
+    apiFetch('/api/admin/documents/' + encodeURIComponent(docId) + '/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.success) throw new Error(data.error || 'Failed to approve document');
+        showToast('✅ ' + (data.message || 'Document approved!'), 'success');
+        apiFetch('/api/admin/verifications')
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.success) {
+              STATE.verifications = d.verifications || [];
+              STATE.documents = d.documents || [];
+              window.filterVerificationsTable();
+              if (vId) window.openVerificationModal(vId);
+            }
+          });
+        if (typeof window.loadUsers === 'function') window.loadUsers(true);
+        loadOverview();
+      })
+      .catch(function (err) {
+        showToast('Error approving document: ' + err.message, 'error');
+      });
+  };
+
+  window.rejectSingleKycDocument = function (docId, vId) {
+    const reason = prompt('Enter the rejection reason for this document (required — shown to the user so they can re-upload):', 'Document image is blurry or expired. Please upload a clear, valid copy.');
+    if (!reason || !reason.trim()) return;
+
+    apiFetch('/api/admin/documents/' + encodeURIComponent(docId) + '/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason.trim() })
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.success) throw new Error(data.error || 'Failed to reject document');
+        showToast('❌ ' + (data.message || 'Document rejected.'), 'error');
+        apiFetch('/api/admin/verifications')
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.success) {
+              STATE.verifications = d.verifications || [];
+              STATE.documents = d.documents || [];
+              window.filterVerificationsTable();
+              if (vId) window.openVerificationModal(vId);
+            }
+          });
+        if (typeof window.loadUsers === 'function') window.loadUsers(true);
+        loadOverview();
+      })
+      .catch(function (err) {
+        showToast('Error rejecting document: ' + err.message, 'error');
+      });
   };
 
   window.approveKycDossier = function (verificationId) {
@@ -3146,6 +3423,163 @@
       .catch(function (err) {
         console.error('rejectKycDossier error:', err);
         showToast('Error: ' + err.message, 'error');
+      });
+  };
+
+  // ── Bank Accounts Approval Desk ──
+  window.loadBankAccounts = function (force) {
+    const tbody = document.getElementById('bank-accounts-tbody');
+    if (tbody && (!STATE.bankAccounts.length || force)) {
+      tbody.innerHTML = '<tr><td colspan="8" class="loading-state"><div class="spinner"></div>Loading bank accounts...</td></tr>';
+    }
+    apiFetch('/api/admin/bank-accounts')
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.success) throw new Error(data.error || 'Failed to fetch bank accounts');
+        STATE.bankAccounts = data.bankAccounts || [];
+        const bBanks = document.getElementById('badge-banks-count');
+        if (bBanks) {
+          const pendingCnt = STATE.bankAccounts.filter(function (b) { return b.status === 'pending'; }).length;
+          bBanks.textContent = pendingCnt;
+        }
+        window.filterBankAccountsTable();
+      })
+      .catch(function (err) {
+        console.error('loadBankAccounts error:', err);
+        showToast('Error loading bank accounts: ' + err.message, 'error');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty-state text-red">Failed to load bank accounts.</td></tr>';
+      });
+  };
+
+  window.filterBankAccountsTable = function () {
+    const searchVal = (document.getElementById('banks-search-input')?.value || '').toLowerCase().trim();
+    const statusVal = document.getElementById('banks-status-filter')?.value || 'All';
+
+    const filtered = STATE.bankAccounts.filter(function (b) {
+      const matchSearch = !searchVal ||
+        (b.id && b.id.toLowerCase().includes(searchVal)) ||
+        (b.account_holder && b.account_holder.toLowerCase().includes(searchVal)) ||
+        (b.bank_name && b.bank_name.toLowerCase().includes(searchVal)) ||
+        (b.userEmail && b.userEmail.toLowerCase().includes(searchVal)) ||
+        (b.fullName && b.fullName.toLowerCase().includes(searchVal));
+      const matchStatus = statusVal === 'All' || b.status === statusVal;
+      return matchSearch && matchStatus;
+    });
+
+    const countEl = document.getElementById('banks-filtered-count');
+    if (countEl) countEl.textContent = filtered.length;
+
+    const tbody = document.getElementById('bank-accounts-tbody');
+    if (!tbody) return;
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No bank accounts match the current filter.</td></tr>';
+      return;
+    }
+
+    let html = '';
+    filtered.forEach(function (b) {
+      const isPending = b.status === 'pending';
+      html += '<tr>' +
+        '<td><span class="id-mono">' + escapeHtml(b.id) + '</span><br><span class="text-xs text-muted">' + formatDate(b.created_at) + '</span></td>' +
+        '<td><strong>' + escapeHtml(b.fullName || b.account_holder || 'Collector') + '</strong><br><span class="font-mono text-xs text-muted">' + escapeHtml(b.userEmail || '—') + '</span></td>' +
+        '<td><strong>' + escapeHtml(b.account_holder) + '</strong></td>' +
+        '<td><span class="pill pill-blue">' + escapeHtml(b.bank_name) + '</span></td>' +
+        '<td><span class="font-mono">' + escapeHtml(b.account_number_masked || ('****' + String(b.account_number || '').slice(-4))) + '</span></td>' +
+        '<td><span class="font-mono text-xs">' + escapeHtml(b.branch_code) + ' · ' + escapeHtml(b.account_type || 'Current') + '</span></td>' +
+        '<td>' + renderStatusPill(b.status) + (b.rejection_reason ? '<div class="text-xs text-red" style="margin-top:3px;">' + escapeHtml(b.rejection_reason) + '</div>' : '') + '</td>' +
+        '<td>' +
+        '<div style="display:flex;gap:6px;align-items:center;">' +
+        '<button class="btn btn-secondary btn-sm" onclick="openBankAccountModal('' + escapeHtml(b.id) + '')">Review Details</button>' +
+        (isPending ? (
+          '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveBankAccount('' + escapeHtml(b.id) + '')">✅ Approve</button>' +
+          '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectBankAccount('' + escapeHtml(b.id) + '')">❌ Reject</button>'
+        ) : '') +
+        '</div>' +
+        '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+  };
+
+  window.openBankAccountModal = function (bankId) {
+    const b = STATE.bankAccounts.find(function (item) { return item.id === bankId; });
+    if (!b) return;
+
+    const titleEl = document.getElementById('modal-bank-title');
+    if (titleEl) titleEl.textContent = 'Bank Account Review: ' + b.bank_name + ' (' + b.account_holder + ')';
+
+    const bodyEl = document.getElementById('modal-bank-body');
+    if (bodyEl) {
+      bodyEl.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">' +
+        '<div class="data-field"><div class="data-label">Account Holder Name</div><div class="data-val"><strong>' + escapeHtml(b.account_holder) + '</strong></div></div>' +
+        '<div class="data-field"><div class="data-label">Collector Email</div><div class="data-val font-mono text-xs">' + escapeHtml(b.userEmail || '—') + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Bank Name</div><div class="data-val"><span class="pill pill-blue">' + escapeHtml(b.bank_name) + '</span></div></div>' +
+        '<div class="data-field"><div class="data-label">Account Type</div><div class="data-val">' + escapeHtml(b.account_type || 'Cheque / Current') + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Full Account Number (Unmasked for Review)</div><div class="data-val font-mono" style="font-size:15px;font-weight:700;color:var(--green);">' + escapeHtml(b.account_number_full || b.account_number) + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Branch / Routing Code</div><div class="data-val font-mono">' + escapeHtml(b.branch_code) + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Approval Status</div><div class="data-val">' + renderStatusPill(b.status) + '</div></div>' +
+        '<div class="data-field"><div class="data-label">Submitted At</div><div class="data-val text-xs">' + formatDate(b.created_at) + '</div></div>' +
+        '</div>' +
+        (b.rejection_reason ? ('<div class="banner banner-warning" style="background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.28);color:#EF4444;"><strong>Rejection Reason:</strong> ' + escapeHtml(b.rejection_reason) + '</div>') : '');
+    }
+
+    const footerEl = document.getElementById('modal-bank-footer');
+    if (footerEl) {
+      footerEl.innerHTML = '<button class="btn btn-secondary btn-sm" onclick="closeModal('modal-bank-account')">Close</button>' +
+        '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectBankAccount('' + escapeHtml(b.id) + '')">❌ Reject Bank Account (with reason)</button>' +
+        '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveBankAccount('' + escapeHtml(b.id) + '')">✅ Approve Bank Account for Withdrawals</button>';
+    }
+
+    const modal = document.getElementById('modal-bank-account');
+    if (modal) modal.classList.add('open');
+  };
+
+  window.approveBankAccount = function (bankId, reopenVerifId) {
+    apiFetch('/api/admin/bank-accounts/' + encodeURIComponent(bankId) + '/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.success) throw new Error(data.error || 'Failed to approve bank account');
+        showToast('✅ ' + (data.message || 'Bank account approved!'), 'success');
+        window.closeModal('modal-bank-account');
+        window.loadBankAccounts(true);
+        window.loadVerifications(true);
+        if (reopenVerifId) {
+          setTimeout(function () { window.openVerificationModal(reopenVerifId); }, 250);
+        }
+        if (typeof window.loadUsers === 'function') window.loadUsers(true);
+      })
+      .catch(function (err) {
+        showToast('Error approving bank account: ' + err.message, 'error');
+      });
+  };
+
+  window.rejectBankAccount = function (bankId, reopenVerifId) {
+    const reason = prompt('Enter the rejection reason for this bank account (required):', 'Account holder name does not match verified ID document.');
+    if (!reason || !reason.trim()) return;
+
+    apiFetch('/api/admin/bank-accounts/' + encodeURIComponent(bankId) + '/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason.trim() })
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.success) throw new Error(data.error || 'Failed to reject bank account');
+        showToast('❌ ' + (data.message || 'Bank account rejected.'), 'error');
+        window.closeModal('modal-bank-account');
+        window.loadBankAccounts(true);
+        window.loadVerifications(true);
+        if (reopenVerifId) {
+          setTimeout(function () { window.openVerificationModal(reopenVerifId); }, 250);
+        }
+        if (typeof window.loadUsers === 'function') window.loadUsers(true);
+      })
+      .catch(function (err) {
+        showToast('Error rejecting bank account: ' + err.message, 'error');
       });
   };
 
@@ -3472,9 +3906,20 @@
       });
   };
 
-  // ── Initial Boot ──
+  // ── Initial Boot & Admin Route Protection ──
   document.addEventListener('DOMContentLoaded', function () {
+    const sess = getAdminSession();
+    if (sess && sess.admin) {
+      const nameEl = document.getElementById('admin-chip-name');
+      const roleEl = document.getElementById('admin-chip-role');
+      const avEl = document.getElementById('admin-chip-avatar');
+      if (nameEl) nameEl.textContent = sess.admin.fullName || sess.admin.email || 'Admin Console';
+      if (roleEl) roleEl.textContent = 'role: ' + (sess.admin.role || 'admin');
+      if (avEl && sess.admin.email) avEl.textContent = sess.admin.email.slice(0, 2).toUpperCase();
+    }
     window.navigate('overview');
+    window.loadVerifications(true);
+    window.loadBankAccounts(true);
   });
 
 })();

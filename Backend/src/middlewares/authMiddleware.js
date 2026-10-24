@@ -1,7 +1,8 @@
 // ─── Authentication Middleware ───────────────────────────────────────────────
 // Validates Supabase JWT access tokens from the Authorization header,
 // enforces cryptographic token expiration, checks against revoked session tokens,
-// and enforces compliance suspension locks.
+// enforces compliance suspension locks, and provides server-side KYC, Bank Approval,
+// and Admin role enforcement middlewares.
 
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
@@ -151,9 +152,276 @@ async function optionalAuth(req, _res, next) {
   next();
 }
 
+// ─── Admin Session Token Helpers ─────────────────────────────────────────────
+const ADMIN_SECRET = process.env.ADMIN_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'smartassets-admin-hmac-secret-2026';
+
+// Configured fallback admin emails (used alongside profiles.role === 'admin')
+const CONFIGURED_ADMIN_EMAILS = new Set(
+  [
+    'admin@smartassets.io',
+    'admin@smartassets.co.za',
+    'compliance@smartassets.io',
+    'darrenforster3@gmail.com',
+    ...(process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()) : []),
+  ].filter(Boolean)
+);
+
+function createAdminToken(adminPayload) {
+  const crypto = require('crypto');
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const nowSec = Math.floor(Date.now() / 1000);
+  const body = Buffer.from(
+    JSON.stringify({
+      sub: adminPayload.id || 'admin-user',
+      email: adminPayload.email,
+      fullName: adminPayload.fullName || 'Compliance Officer',
+      role: 'admin',
+      iat: nowSec,
+      exp: nowSec + 12 * 60 * 60, // 12 hours
+    })
+  ).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', ADMIN_SECRET)
+    .update(`${header}.${body}`)
+    .digest('base64url');
+  return `${header}.${body}.${signature}`;
+}
+
+function verifyAdminToken(token) {
+  try {
+    if (!token || typeof token !== 'string') return null;
+    if (isTokenRevoked(token)) return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const crypto = require('crypto');
+    const expectedSig = crypto
+      .createHmac('sha256', ADMIN_SECRET)
+      .update(`${parts[0]}.${parts[1]}`)
+      .digest('base64url');
+    if (parts[2] !== expectedSig) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    if (payload.exp && Math.floor(Date.now() / 1000) >= payload.exp) return null;
+    if (payload.role !== 'admin') return null;
+    return payload;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function isUserAdmin(user) {
+  if (!user) return false;
+  try {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (!error && profile && profile.role) {
+      if (profile.role === 'admin') return true;
+      if (user.email && CONFIGURED_ADMIN_EMAILS.has(String(user.email).toLowerCase())) {
+        return true;
+      }
+      return false;
+    }
+  } catch (_) {
+    // Fallback if profiles.role column has not been migrated yet
+  }
+  if (user.user_metadata?.role === 'admin' || user.app_metadata?.role === 'admin') {
+    return true;
+  }
+  if (user.email && CONFIGURED_ADMIN_EMAILS.has(String(user.email).toLowerCase())) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Middleware: requireVerified
+ * Checks `profiles.verification_status === 'verified'` (and hybrid compliance store),
+ * otherwise returns HTTP 403.
+ */
+async function requireVerified(req, res, next) {
+  try {
+    if (!req.user || !req.user.id) {
+      return sendError(res, 401, 'Unauthorized: Authentication required.', 'NO_TOKEN');
+    }
+
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+
+    // 1. Check hybrid compliance bundle (checks both individual 3-doc rule & dossier status)
+    const bundle = await complianceService.getVerificationStatusBundle(userId, userEmail);
+    let isVerified = bundle && bundle.verification_status === 'verified';
+
+    // 2. Also check Supabase `profiles.verification_status` directly if not yet verified in local store
+    if (!isVerified) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('verification_status')
+          .eq('id', userId)
+          .maybeSingle();
+        if (profile && profile.verification_status === 'verified') {
+          isVerified = true;
+        }
+      } catch (_) {}
+    }
+
+    if (!isVerified) {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        verification_status: bundle?.verification_status || 'unverified',
+        error:
+          'Account verification required. You must upload and get all 3 verification documents (ID Document, Tax Document, and Proof of Residence) approved by an admin before performing this action.',
+      });
+    }
+
+    req.verificationBundle = bundle;
+    next();
+  } catch (err) {
+    console.error('requireVerified middleware error:', err);
+    return sendError(res, 500, 'Failed to verify account compliance status.');
+  }
+}
+
+/**
+ * Middleware: requireApprovedBank
+ * Checks that the user has at least one `bank_accounts` row with `status = 'approved'`,
+ * otherwise returns HTTP 403.
+ */
+async function requireApprovedBank(req, res, next) {
+  try {
+    if (!req.user || !req.user.id) {
+      return sendError(res, 401, 'Unauthorized: Authentication required.', 'NO_TOKEN');
+    }
+
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+
+    let hasApprovedBank = false;
+    let bankRecord = complianceService.getUserBankAccount(userId, userEmail);
+
+    if (bankRecord && bankRecord.status === 'approved') {
+      hasApprovedBank = true;
+    }
+
+    // Also query Supabase `bank_accounts` table
+    if (!hasApprovedBank) {
+      try {
+        const { data: sbBank } = await supabase
+          .from('bank_accounts')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('status', 'approved')
+          .limit(1)
+          .maybeSingle();
+        if (sbBank && sbBank.status === 'approved') {
+          hasApprovedBank = true;
+          bankRecord = sbBank;
+        }
+      } catch (_) {}
+    }
+
+    if (!hasApprovedBank) {
+      return res.status(403).json({
+        success: false,
+        code: 'BANK_APPROVAL_REQUIRED',
+        bank_status: bankRecord?.status || 'not_submitted',
+        error:
+          'Approved bank account required. Please submit your bank details and wait for admin approval before withdrawing funds.',
+      });
+    }
+
+    req.approvedBankAccount = bankRecord;
+    next();
+  } catch (err) {
+    console.error('requireApprovedBank middleware error:', err);
+    return sendError(res, 500, 'Failed to verify approved bank account status.');
+  }
+}
+
+/**
+ * Middleware: requireAdmin
+ * Checks `profiles.role === 'admin'` (or verified admin session token), else returns 403.
+ */
+async function requireAdmin(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        code: 'ADMIN_AUTH_REQUIRED',
+        error: 'Access denied. Admin authentication token is required.',
+      });
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token || isTokenRevoked(token)) {
+      return res.status(401).json({
+        success: false,
+        code: 'ADMIN_SESSION_INVALID',
+        error: 'Access denied. Admin session is invalid or expired.',
+      });
+    }
+
+    // 1. Check HMAC-signed admin session token from POST /api/admin/auth/login
+    const adminPayload = verifyAdminToken(token);
+    if (adminPayload && adminPayload.role === 'admin') {
+      req.admin = {
+        id: adminPayload.sub,
+        email: adminPayload.email,
+        fullName: adminPayload.fullName || 'Compliance Admin',
+        role: 'admin',
+      };
+      req.user = req.admin;
+      return next();
+    }
+
+    // 2. Otherwise validate Supabase JWT and check `profiles.role === 'admin'`
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      return res.status(401).json({
+        success: false,
+        code: 'ADMIN_SESSION_EXPIRED',
+        error: 'Access denied. Invalid or expired session token.',
+      });
+    }
+
+    const adminAllowed = await isUserAdmin(user);
+    if (!adminAllowed) {
+      return res.status(403).json({
+        success: false,
+        code: 'ADMIN_REQUIRED',
+        error: 'Access denied. Admin privileges required (profiles.role must be "admin").',
+      });
+    }
+
+    req.admin = {
+      id: user.id,
+      email: user.email,
+      fullName: user.user_metadata?.full_name || 'Compliance Admin',
+      role: 'admin',
+    };
+    req.user = user;
+    return next();
+  } catch (err) {
+    console.error('requireAdmin middleware error:', err);
+    return sendError(res, 500, 'Internal admin authorization error.');
+  }
+}
+
 module.exports = {
   requireAuth,
   optionalAuth,
+  requireVerified,
+  requireApprovedBank,
+  requireAdmin,
+  createAdminToken,
+  verifyAdminToken,
+  isUserAdmin,
+  CONFIGURED_ADMIN_EMAILS,
   revokeToken,
   isTokenRevoked,
   parseJwtPayload,

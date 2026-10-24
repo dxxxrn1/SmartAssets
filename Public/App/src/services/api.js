@@ -856,3 +856,63 @@ export async function logSessionTimeoutApi(email = null, userId = null) {
     return { success: true };
   }
 }
+
+/**
+ * Upload a single verification document (id | tax | proof_of_residence).
+ * @param {{ docType: 'id'|'tax'|'proof_of_residence', fileData: string, fileName?: string, mimeType?: string, metaValue?: string }} payload
+ * @param {string} token
+ */
+export async function uploadVerificationDocApi(payload, token) {
+  return apiRequest(
+    '/verification/documents',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        doc_type: payload.docType || payload.doc_type,
+        file_data: payload.fileData || payload.file_data,
+        file_name: payload.fileName || payload.file_name,
+        mime_type: payload.mimeType || payload.mime_type,
+        meta_value: payload.metaValue || payload.meta_value,
+      }),
+    },
+    token
+  );
+}
+
+/**
+ * Fetch the user's 3 document slots + overall verification_status + bank_account status.
+ * @param {string} token
+ */
+export async function getVerificationStatusApi(token) {
+  return apiRequest('/verification/status', { method: 'GET' }, token);
+}
+
+/**
+ * Submit or update user's bank account details for withdrawal approval.
+ * @param {{ accountHolder: string, bankName: string, accountNumber: string, branchCode: string, accountType?: string }} bankData
+ * @param {string} token
+ */
+export async function submitBankAccountApi(bankData, token) {
+  return apiRequest(
+    '/bank-accounts',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        account_holder: bankData.accountHolder || bankData.account_holder,
+        bank_name: bankData.bankName || bankData.bank_name,
+        account_number: bankData.accountNumber || bankData.account_number,
+        branch_code: bankData.branchCode || bankData.branch_code,
+        account_type: bankData.accountType || bankData.account_type || 'Cheque / Current',
+      }),
+    },
+    token
+  );
+}
+
+/**
+ * Get the user's current bank account approval status.
+ * @param {string} token
+ */
+export async function getBankAccountApi(token) {
+  return apiRequest('/bank-accounts', { method: 'GET' }, token);
+}
