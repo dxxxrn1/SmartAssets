@@ -1875,10 +1875,10 @@ export default function ListAssetScreen({ navigation, route }) {
         <KycGatekeeperModal
           visible={kycGatekeeperVisible}
           onClose={() => setKycGatekeeperVisible(false)}
+          navigation={navigation}
           isSuspended={Boolean(user?.isSuspended)}
-          onCompleteVerification={() =>
-            navigation.navigate(SCREENS.PROFILE, { openKyc: true })
-          }
+          kycStatus={user?.verification_status || user?.kycStatus || "unverified"}
+          actionTitle="List an Item for Sale"
         />
       </SafeAreaView>
     </View>

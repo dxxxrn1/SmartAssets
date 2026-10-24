@@ -19,6 +19,7 @@
     "@reactvision/react-viro": "^3.0.3",
     "@reactvision/viro-web-renderer": "^1.0.1",
     "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.1",
     "ethers": "^6.17.0",
     "expo": "~57.0.31",
     "expo-camera": "~57.0.6",
@@ -41,7 +42,9 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-web": "^0.21.2",
-    "react-native-webview": "13.16.1"
+    "react-native-webview": "13.16.1",
+    "react-native-worklets": "0.10.1",
+    "readable-stream": "^4.8.0"
   },
   "private": true
 }

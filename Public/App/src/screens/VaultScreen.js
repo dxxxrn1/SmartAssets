@@ -218,6 +218,8 @@ export default function VaultScreen({ navigation }) {
 
   const { user, token, logout } = useAuth();
   const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
+  const [gatekeeperRequireBankOnly, setGatekeeperRequireBankOnly] = useState(false);
+  const [gatekeeperActionTitle, setGatekeeperActionTitle] = useState("Transact");
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -720,7 +722,18 @@ export default function VaultScreen({ navigation }) {
   };
 
   const handleWithdraw = async () => {
-    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+    const isVerified = user?.verification_status === 'verified' || user?.kycStatus === 'verified';
+    const hasApprovedBank = user?.bankStatus === 'approved' || user?.bankAccount?.status === 'approved';
+    if (user && (!isVerified || user.isSuspended)) {
+      setGatekeeperRequireBankOnly(false);
+      setGatekeeperActionTitle("Withdraw Funds");
+      setKycGatekeeperVisible(true);
+      return;
+    }
+    if (user && !hasApprovedBank) {
+      setGatekeeperRequireBankOnly(true);
+      setGatekeeperActionTitle("Withdraw Funds");
+      setWithdrawModalVisible(false);
       setKycGatekeeperVisible(true);
       return;
     }
@@ -952,7 +965,16 @@ export default function VaultScreen({ navigation }) {
             <View style={styles.heroActionRow}>
               <TouchableOpacity
                 style={styles.depositActionBtn}
-                onPress={() => setDepositModalVisible(true)}
+                onPress={() => {
+                  const isVerified = user?.verification_status === "verified" || user?.kycStatus === "verified";
+                  if (!isVerified || user?.isSuspended) {
+                    setGatekeeperRequireBankOnly(false);
+                    setGatekeeperActionTitle("Deposit Funds");
+                    setKycGatekeeperVisible(true);
+                    return;
+                  }
+                  setDepositModalVisible(true);
+                }}
                 activeOpacity={0.85}
               >
                 <Feather
@@ -966,7 +988,23 @@ export default function VaultScreen({ navigation }) {
 
               <TouchableOpacity
                 style={styles.withdrawActionBtn}
-                onPress={() => setWithdrawModalVisible(true)}
+                onPress={() => {
+                  const isVerified = user?.verification_status === "verified" || user?.kycStatus === "verified";
+                  const hasApprovedBank = user?.bankStatus === "approved" || user?.bankAccount?.status === "approved";
+                  if (!isVerified || user?.isSuspended) {
+                    setGatekeeperRequireBankOnly(false);
+                    setGatekeeperActionTitle("Withdraw Funds");
+                    setKycGatekeeperVisible(true);
+                    return;
+                  }
+                  if (!hasApprovedBank) {
+                    setGatekeeperRequireBankOnly(true);
+                    setGatekeeperActionTitle("Withdraw Funds");
+                    setKycGatekeeperVisible(true);
+                    return;
+                  }
+                  setWithdrawModalVisible(true);
+                }}
                 activeOpacity={0.85}
               >
                 <Feather
@@ -1573,10 +1611,12 @@ export default function VaultScreen({ navigation }) {
       <KycGatekeeperModal
         visible={kycGatekeeperVisible}
         onClose={() => setKycGatekeeperVisible(false)}
+        navigation={navigation}
         isSuspended={Boolean(user?.isSuspended)}
-        onCompleteVerification={() =>
-          navigation.navigate(SCREENS.PROFILE, { openKyc: true })
-        }
+        kycStatus={user?.verification_status || user?.kycStatus || "unverified"}
+        bankStatus={user?.bankStatus || user?.bankAccount?.status || "not_submitted"}
+        requireBankOnly={gatekeeperRequireBankOnly}
+        actionTitle={gatekeeperActionTitle}
       />
     </SafeAreaView>
   </View>

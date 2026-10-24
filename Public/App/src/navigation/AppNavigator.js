@@ -30,6 +30,8 @@ import ProvenanceScreen  from '../screens/ProvenanceScreen';
 import HealthReportScreen from '../screens/HealthReportScreen';
 import CheckoutScreen    from '../screens/CheckoutScreen';
 import VerificationScreen from '../screens/VerificationScreen';
+import VerifyAccountScreen from '../screens/VerifyAccountScreen';
+import BankDetailsScreen from '../screens/BankDetailsScreen';
 import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
 import ProfileScreen     from '../screens/ProfileScreen';
 import ProfileAnalyticsScreen from '../screens/ProfileAnalyticsScreen';
@@ -77,8 +79,6 @@ function extractResetToken(url) {
 }
 
 // ── Modern Floating Tab Bar Palette ──────────────────────────────────────────
-// Selection color matches the signature cyan/blue from the Home top container gradient:
-// ['#7C3AED', '#5B36F5', '#2563EB', '#00C2FF']
 const ACTIVE_TAB = '#00C2FF';          // Luminous Cyan / Electric Blue
 const INACTIVE_TAB = 'rgba(255, 255, 255, 0.65)'; // Translucent White
 
@@ -95,7 +95,6 @@ const TAB_ORDER = [SCREENS.HOME, SCREENS.SEARCH, SCREENS.LIST_ASSET, SCREENS.INV
 // ── Custom floating tab bar ───────────────────────────────────────────────────
 function CustomTabBar({ state, navigation, isDark }) {
   const insets = useSafeAreaInsets();
-  // Safe bottom offset ensuring floating pill sits gracefully above home indicator / navigation bar
   const bottomMargin = Math.max(insets.bottom, Platform.OS === 'android' ? 16 : 14);
 
   return (
@@ -118,7 +117,7 @@ function CustomTabBar({ state, navigation, isDark }) {
           maxWidth: 460,
           borderRadius: 32,
           borderWidth: 1.2,
-          borderColor: 'rgba(255, 255, 255, 0.22)', // Translucent subtle glass border
+          borderColor: 'rgba(255, 255, 255, 0.22)',
           shadowColor: '#0f45c4ff',
           shadowOffset: { width: 0, height: 8 },
           shadowOpacity: 0.2,
@@ -126,7 +125,7 @@ function CustomTabBar({ state, navigation, isDark }) {
           elevation: 8,
           overflow: 'hidden',
           position: 'relative',
-          backgroundColor: 'rgba(15, 21, 45, 0.22)', // Highly transparent sheer glass (see-through)
+          backgroundColor: 'rgba(15, 21, 45, 0.22)',
           ...(Platform.OS === 'web'
             ? {
                 backdropFilter: 'blur(16px) saturate(180%)',
@@ -137,7 +136,6 @@ function CustomTabBar({ state, navigation, isDark }) {
             : {}),
         }}
       >
-        {/* Very Subtle Sheer Glass Gradient Overlay */}
         <LinearGradient
           colors={[
             'rgba(255, 255, 255, 0.14)',
@@ -149,7 +147,6 @@ function CustomTabBar({ state, navigation, isDark }) {
           style={[StyleSheet.absoluteFillObject, { pointerEvents: 'none' }]}
         />
 
-        {/* Top edge glossy light reflection line */}
         <View
           style={{
             position: 'absolute',
@@ -162,7 +159,6 @@ function CustomTabBar({ state, navigation, isDark }) {
           }}
         />
 
-        {/* Content Row */}
         <View
           style={{
             flexDirection: 'row',
@@ -177,7 +173,7 @@ function CustomTabBar({ state, navigation, isDark }) {
             const focused = state.index === idx;
             const isFAB = route.name === SCREENS.LIST_ASSET;
             const iconName = focused ? cfg.active : cfg.inactive;
-            const tabColor = cfg.color || '#1D4ED8'; // Deep blue / configured color
+            const tabColor = cfg.color || '#1D4ED8';
 
             const onPress = () => {
               const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
@@ -238,7 +234,6 @@ function CustomTabBar({ state, navigation, isDark }) {
                 }}
                 activeOpacity={0.75}
               >
-                {/* Active Pill Indicator Bar above icon */}
                 {focused && (
                   <View
                     style={{
@@ -283,8 +278,6 @@ function CustomTabBar({ state, navigation, isDark }) {
 function MainTabs({ isDark, toggleTheme }) {
   return (
     <Tab.Navigator
-      // unmountOnBlur: true prevents inactive tab screens from rendering on web,
-      // which fixes duplicate floating elements.
       screenOptions={{
         headerShown: false,
         unmountOnBlur: true,
@@ -322,7 +315,6 @@ export default function Navigation() {
   const { isDark, toggleTheme } = useTheme();
   const { isAuthenticated, sessionRestored } = useAuth();
 
-  // Listen for Supabase password-recovery deep link
   useEffect(() => {
     async function handleUrl(rawUrl) {
       const token = extractResetToken(rawUrl);
@@ -445,6 +437,14 @@ export default function Navigation() {
 
             <Stack.Screen name={SCREENS.VERIFICATION}>
               {(props) => <VerificationScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.VERIFY_ACCOUNT}>
+              {(props) => <VerifyAccountScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.BANK_DETAILS}>
+              {(props) => <BankDetailsScreen {...props} isDark={isDark} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.ESCROW_TRACKER}>

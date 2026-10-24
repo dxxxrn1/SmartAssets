@@ -18,7 +18,7 @@
     "userId": "9140495b-22a3-4df4-9c6d-5a7f649e1710",
     "userEmail": "kgomotso.mabena@smartassets.co.za",
     "fullName": "Kgomotso Mabena",
-    "kycStatus": "pending",
+    "kycStatus": "verified",
     "accountStatus": "active",
     "isSuspended": false,
     "bankingDetails": {
@@ -27,13 +27,14 @@
       "accountNumber": "62819203918",
       "branchCode": "250655"
     },
-    "updatedAt": "2026-10-23T16:23:39.693Z"
+    "updatedAt": "2026-10-24T18:38:27.685Z",
+    "rejectionReason": null
   },
   "usr-demo-02": {
     "userId": "usr-demo-02",
     "userEmail": "naledi.khumalo@smartassets.co.za",
     "fullName": "Naledi Khumalo",
-    "kycStatus": "pending",
+    "kycStatus": "rejected",
     "accountStatus": "active",
     "isSuspended": false,
     "bankingDetails": {
@@ -42,6 +43,7 @@
       "accountNumber": "1589204918",
       "branchCode": "470010"
     },
-    "updatedAt": "2026-10-23T18:10:00.000Z"
+    "updatedAt": "2026-10-24T18:38:24.743Z",
+    "rejectionReason": "Proof of residence document is older than 3 months. Please upload a recent municipal utility bill."
   }
 }

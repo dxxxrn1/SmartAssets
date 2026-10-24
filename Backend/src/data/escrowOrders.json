@@ -114,15 +114,15 @@
     "amountEth": "0.0104",
     "paymentMethod": "wallet",
     "paymentRail": "Ethereum Sepolia Web3",
-    "status": "payment_secured",
-    "currentStep": 1,
+    "status": "in_transit",
+    "currentStep": 2,
     "totalSteps": 4,
     "depositTxHash": "0xc95c09bfa0a5352e17b0eb7329fb40ab03a90b44ab158625415c3a3d5357a380",
     "etherscanUrl": "https://sepolia.etherscan.io/tx/0x465c401450c35e889b29fde78c8b8f6563027c895f7244eff6fe478e0e2d1488",
     "escrowContractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
     "sellerAddress": "0x71C3A5b67B7840131498B1aB55938B237F026a76",
     "createdAt": "2026-09-18T13:42:33.979Z",
-    "updatedAt": "2026-09-18T13:42:33.979Z",
+    "updatedAt": "2026-10-24T18:32:14.674Z",
     "timeline": [
       {
         "step": 1,
@@ -135,8 +135,9 @@
       {
         "step": 2,
         "title": "Physical Asset in Transit to Vault",
-        "description": "Seller prepares collectible for insured armored courier dispatch to SmartAssets Custody Center.",
-        "completed": false
+        "description": "Dispatched via insured secure courier",
+        "completed": true,
+        "timestamp": "2026-10-24T18:32:14.674Z"
       },
       {
         "step": 3,

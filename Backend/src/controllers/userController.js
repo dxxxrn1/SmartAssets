@@ -1,5 +1,6 @@
 // ─── User Data Controller ───────────────────────────────────────────────────
-// Manages strictly user-isolated portfolio and vault holdings.
+// Manages strictly user-isolated portfolio, vault holdings, KYC verification documents,
+// and bank account approval workflows.
 
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
@@ -290,7 +291,13 @@ async function getProfile(req, res) {
     const dob = userMeta.dob || '';
     const phone = userMeta.phone || '';
     const createdAt = authUser?.created_at || profile?.created_at || new Date().toISOString();
+
     const comp = complianceService.getUserCompliance(userId, email);
+    const verificationBundle = await complianceService.getVerificationStatusBundle(userId, email, req);
+    const effectiveVerificationStatus =
+      profile?.verification_status === 'verified'
+        ? 'verified'
+        : verificationBundle.verification_status || comp.kycStatus || 'unverified';
 
     return res.status(200).json({
       success: true,
@@ -305,11 +312,16 @@ async function getProfile(req, res) {
         dob,
         phone,
         createdAt,
-        kycStatus: comp.kycStatus || (walletAddress ? 'verified' : 'unverified'),
+        role: profile?.role || 'user',
+        verification_status: effectiveVerificationStatus,
+        kycStatus: effectiveVerificationStatus,
         accountStatus: comp.accountStatus || 'active',
         isSuspended: comp.isSuspended || false,
         suspensionReason: comp.suspensionReason || null,
         bankingDetails: comp.bankingDetails || null,
+        bankAccount: verificationBundle.bank_account || null,
+        bankStatus: verificationBundle.bank_account?.status || 'not_submitted',
+        verificationDocuments: verificationBundle.documents || null,
       },
     });
   } catch (err) {
@@ -455,8 +467,13 @@ async function deposit(req, res) {
     if (comp && comp.isSuspended) {
       return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
     }
-    if (comp && comp.kycStatus !== 'verified') {
-      return sendError(res, 403, 'KYC Verification Required: You must submit your FICA compliance pack and be approved before depositing funds.');
+    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    if (!bundle || bundle.verification_status !== 'verified') {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        error: 'KYC Verification Required: You must upload and get all 3 verification documents (ID, Tax, Proof of Residence) approved before depositing funds.',
+      });
     }
     const { amount, method, reference, notes } = req.body;
 
@@ -485,7 +502,7 @@ async function deposit(req, res) {
 }
 
 // ── POST /api/user/withdraw ──────────────────────────────────────────────────
-// Withdraws funds from user's vault balance
+// Withdraws funds from user's vault balance (requires verified account + approved bank account)
 async function withdraw(req, res) {
   try {
     const userId = req.user.id;
@@ -493,28 +510,51 @@ async function withdraw(req, res) {
     if (comp && comp.isSuspended) {
       return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
     }
-    if (comp && comp.kycStatus !== 'verified') {
-      return sendError(res, 403, 'KYC Verification Required: You must submit your FICA compliance pack and be approved before withdrawing funds.');
+    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    if (!bundle || bundle.verification_status !== 'verified') {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        error: 'KYC Verification Required: You must upload and get all 3 verification documents approved before withdrawing funds.',
+      });
     }
+
+    const approvedBank = req.approvedBankAccount || complianceService.getUserBankAccount(userId, req.user?.email);
+    if (!approvedBank || approvedBank.status !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        code: 'BANK_APPROVAL_REQUIRED',
+        error: 'Approved bank account required. Please submit your bank details and wait for admin approval before withdrawing funds.',
+      });
+    }
+
     const { amount, method, bankDetails, walletAddress, notes } = req.body;
 
     if (!amount || Number(amount) <= 0) {
       return sendError(res, 400, 'Please enter a valid withdrawal amount greater than R0.');
     }
 
+    const effectiveBankDetails = bankDetails || {
+      bankName: approvedBank.bank_name,
+      accountHolder: approvedBank.account_holder,
+      accountNumber: approvedBank.account_number,
+      branchCode: approvedBank.branch_code,
+      accountType: approvedBank.account_type,
+    };
+
     const vaultTxService = require('../services/vaultTransactionService');
     const result = await vaultTxService.withdrawFunds({
       userId,
       amount: Number(amount),
-      method,
-      bankDetails,
+      method: method || 'bank_transfer',
+      bankDetails: effectiveBankDetails,
       walletAddress,
       notes,
     });
 
     return res.status(200).json({
       success: true,
-      message: `Successfully processed withdrawal of ${vaultTxService.formatZar(amount)}!`,
+      message: `Successfully processed withdrawal of ${vaultTxService.formatZar(amount)} to your approved ${approvedBank.bank_name} account!`,
       ...result,
     });
   } catch (err) {
@@ -651,8 +691,6 @@ async function getAnalytics(req, res) {
       percentage: portfolioValueNum > 0 ? Math.round((val / portfolioValueNum) * 100) : 0,
     }));
 
-    // If no holdings in vault yet, keep breakdown empty so frontend shows real empty state
-    // rather than fake placeholder numbers
     if (categoryBreakdown.length === 0) {
       categoryBreakdown = [];
     }
@@ -772,8 +810,7 @@ async function getAnalytics(req, res) {
   }
 }
 
-
-// ── POST /api/user/kyc-submit ────────────────────────────────────────────────
+// ── POST /api/user/kyc-submit (Legacy Dossier Pack Submission) ───────────────
 async function submitKyc(req, res) {
   try {
     const userId = req.user.id;
@@ -831,10 +868,19 @@ async function getKycStatus(req, res) {
     const userId = req.user.id;
     const userEmail = req.user.email;
     const compliance = complianceService.getUserCompliance(userId, userEmail);
+    const bundle = await complianceService.getVerificationStatusBundle(userId, userEmail, req);
 
     return res.status(200).json({
       success: true,
-      compliance,
+      compliance: {
+        ...compliance,
+        verification_status: bundle.verification_status,
+        kycStatus: bundle.verification_status,
+        documents: bundle.documents,
+        bankAccount: bundle.bank_account,
+        bankStatus: bundle.bank_account?.status || 'not_submitted',
+      },
+      ...bundle,
     });
   } catch (err) {
     console.error('getKycStatus error:', err);
@@ -842,9 +888,153 @@ async function getKycStatus(req, res) {
   }
 }
 
+// ── POST /verification/documents ─────────────────────────────────────────────
+// Uploads a single KYC verification document (id | tax | proof_of_residence)
+async function uploadVerificationDocument(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const fullName =
+      req.user.user_metadata?.full_name || req.body.fullName || req.user.email?.split('@')[0] || 'SmartAssets Collector';
+
+    const docType = req.body.doc_type || req.body.docType;
+    const fileData = req.body.file_data || req.body.fileData || req.body.documentUrl || req.body.base64;
+    const fileName = req.body.file_name || req.body.fileName || `${docType}_document.jpg`;
+    const mimeType = req.body.mime_type || req.body.mimeType || null;
+    const metaValue = req.body.meta_value || req.body.metaValue || null;
+
+    if (!docType) {
+      return sendError(res, 400, 'doc_type is required ("id", "tax", or "proof_of_residence").');
+    }
+
+    const docRecord = await complianceService.uploadVerificationDocument({
+      userId,
+      userEmail,
+      fullName,
+      docType,
+      fileData,
+      fileName,
+      mimeType,
+      metaValue,
+    });
+
+    auditLogService.logEvent({
+      eventType: 'KYC_DOC_UPLOAD',
+      category: 'Compliance',
+      actorEmail: userEmail,
+      actorId: userId,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Mobile App',
+      description: `Uploaded ${docRecord.doc_type} verification document (${docRecord.id}). Status set to pending review.`,
+      status: 'Pending Review',
+    });
+
+    const bundle = await complianceService.getVerificationStatusBundle(userId, userEmail, req);
+
+    return res.status(200).json({
+      success: true,
+      message: `${docRecord.doc_type.replace(/_/g, ' ').toUpperCase()} uploaded and queued for admin review.`,
+      document: docRecord,
+      ...bundle,
+    });
+  } catch (err) {
+    console.error('uploadVerificationDocument error:', err);
+    return sendError(res, 400, err.message || 'Failed to upload verification document.');
+  }
+}
+
+// ── GET /verification/status ─────────────────────────────────────────────────
+// Returns the user's 3 document slots + overall verification_status + bank account status
+async function getVerificationStatus(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const bundle = await complianceService.getVerificationStatusBundle(userId, userEmail, req);
+
+    return res.status(200).json({
+      success: true,
+      ...bundle,
+    });
+  } catch (err) {
+    console.error('getVerificationStatus error:', err);
+    return sendError(res, 500, 'Failed to fetch verification status.');
+  }
+}
+
+// ── POST /bank-accounts ──────────────────────────────────────────────────────
+// Submits or updates the user's bank account details for withdrawal approval
+async function submitBankAccount(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const fullName =
+      req.user.user_metadata?.full_name || req.body.fullName || req.user.email?.split('@')[0] || 'SmartAssets Collector';
+
+    const accountHolder = req.body.account_holder || req.body.accountHolder;
+    const bankName = req.body.bank_name || req.body.bankName;
+    const accountNumber = req.body.account_number || req.body.accountNumber;
+    const branchCode = req.body.branch_code || req.body.branchCode;
+    const accountType = req.body.account_type || req.body.accountType || 'Cheque / Current';
+
+    const bankRecord = await complianceService.submitBankAccount({
+      userId,
+      userEmail,
+      fullName,
+      accountHolder,
+      bankName,
+      accountNumber,
+      branchCode,
+      accountType,
+    });
+
+    auditLogService.logEvent({
+      eventType: 'BANK_ACCOUNT_SUBMIT',
+      category: 'Compliance',
+      actorEmail: userEmail,
+      actorId: userId,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Mobile App',
+      description: `Submitted bank account (${bankRecord.bank_name} ${bankRecord.account_number_masked}) for withdrawal approval.`,
+      status: 'Pending Review',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Bank account details submitted! An administrator will review and approve your bank account before withdrawals are enabled.',
+      bank_account: bankRecord,
+    });
+  } catch (err) {
+    console.error('submitBankAccount error:', err);
+    return sendError(res, 400, err.message || 'Failed to submit bank account details.');
+  }
+}
+
+// ── GET /bank-accounts ───────────────────────────────────────────────────────
+// Returns the authenticated user's bank account status
+async function getBankAccount(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const bankAccount = complianceService.getUserBankAccount(userId, userEmail);
+
+    return res.status(200).json({
+      success: true,
+      bank_account: bankAccount,
+      status: bankAccount?.status || 'not_submitted',
+    });
+  } catch (err) {
+    console.error('getBankAccount error:', err);
+    return sendError(res, 500, 'Failed to fetch bank account details.');
+  }
+}
+
 module.exports = {
   submitKyc,
   getKycStatus,
+  uploadVerificationDocument,
+  getVerificationStatus,
+  submitBankAccount,
+  getBankAccount,
   getVault,
   addHolding,
   seedStarterHoldings,
@@ -858,5 +1048,3 @@ module.exports = {
   getSupportTickets,
   getAnalytics,
 };
-
-
