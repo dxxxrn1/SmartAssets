@@ -18,11 +18,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import {
   getBankAccountApi,
   submitBankAccountApi,
 } from '../services/api';
-import { getTheme } from '../constants/theme';
+import { useColors } from '../constants/theme';
 
 const SA_BANKS = [
   { name: 'FNB', branch: '250655' },
@@ -35,9 +36,10 @@ const SA_BANKS = [
 
 const ACCOUNT_TYPES = ['Cheque / Current', 'Savings', 'Transmission'];
 
-export default function BankDetailsScreen({ navigation, isDark }) {
+export default function BankDetailsScreen({ navigation }) {
+  const { isDark } = useTheme();
   const { user, token, updateProfileData } = useAuth();
-  const t = getTheme(isDark);
+  const t = useColors(isDark);
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);

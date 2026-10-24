@@ -254,8 +254,8 @@ const SEED_VERIFICATIONS = [
   {
     id: 'KYC-ZA-2026-100',
     userId: '47a8f198-06e0-4eb7-b0ec-617b30318091',
-    userEmail: 'darrenforster3@gmail.com',
-    fullName: 'Darren Forster',
+    userEmail: 'sipho.demo@smartassets.co.za',
+    fullName: 'Sipho Demo Collector',
     idNumber: '9805145089082',
     idDocumentUrl: '/uploads/kyc/KYC-ZA-2026-100_id.svg',
     taxNumber: '9048192834',
@@ -264,7 +264,7 @@ const SEED_VERIFICATIONS = [
     proofOfResidenceUrl: '/uploads/kyc/KYC-ZA-2026-100_residence.svg',
     bankingDetails: {
       bankName: 'Standard Bank',
-      accountHolder: 'Darren Forster',
+      accountHolder: 'Sipho Demo Collector',
       accountNumber: '10184921234',
       branchCode: '051001',
       accountType: 'Cheque / Current',
@@ -415,13 +415,7 @@ function initStorage() {
     if (verificationsMap.size === 0) {
       seedInitialVerifications();
     } else {
-      const hasPrimary = Array.from(verificationsMap.values()).some(
-        (v) => v.userId === '47a8f198-06e0-4eb7-b0ec-617b30318091'
-      );
-      if (!hasPrimary) {
-        const primarySeed = ensureAuthenticDocuments({ ...SEED_VERIFICATIONS[0] });
-        verificationsMap.set(primarySeed.id, primarySeed);
-      }
+// Primary seed injection removed for clean real user isolation
     }
 
     if (fs.existsSync(USER_STATUS_FILE)) {
@@ -1573,28 +1567,7 @@ function getUserCompliance(userId, userEmail = null) {
     }
   }
 
-  if (
-    userEmail &&
-    (userEmail.toLowerCase().includes('demo') ||
-      userEmail.toLowerCase().includes('collector@') ||
-      userEmail.toLowerCase() === 'darrenforster3@gmail.com')
-  ) {
-    return {
-      userId,
-      userEmail,
-      kycStatus: 'verified',
-      accountStatus: 'active',
-      isSuspended: false,
-      bankAccountStatus: 'approved',
-      bankingDetails: {
-        bankName: 'Standard Bank',
-        accountHolder: 'Darren Forster',
-        accountNumber: '10184921234',
-        branchCode: '051001',
-        status: 'approved',
-      },
-    };
-  }
+// Hardcoded user verified bypass removed - new users start unverified
 
   return {
     userId,

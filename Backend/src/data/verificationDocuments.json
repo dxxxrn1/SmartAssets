@@ -1,47 +1,5 @@
 [
   {
-    "id": "DOC-KYC-ZA-2026-100-id",
-    "dossierId": "KYC-ZA-2026-100",
-    "user_id": "47a8f198-06e0-4eb7-b0ec-617b30318091",
-    "user_email": "darrenforster3@gmail.com",
-    "full_name": "Darren Forster",
-    "doc_type": "id",
-    "file_path": "/uploads/kyc/KYC-ZA-2026-100_id.svg",
-    "status": "approved",
-    "rejection_reason": null,
-    "reviewed_by": "Admin Compliance Operations",
-    "reviewed_at": "2026-09-25T09:00:00.000Z",
-    "created_at": "2026-09-25T08:30:00.000Z"
-  },
-  {
-    "id": "DOC-KYC-ZA-2026-100-tax",
-    "dossierId": "KYC-ZA-2026-100",
-    "user_id": "47a8f198-06e0-4eb7-b0ec-617b30318091",
-    "user_email": "darrenforster3@gmail.com",
-    "full_name": "Darren Forster",
-    "doc_type": "tax",
-    "file_path": "/uploads/kyc/KYC-ZA-2026-100_tax.svg",
-    "status": "approved",
-    "rejection_reason": null,
-    "reviewed_by": "Admin Compliance Operations",
-    "reviewed_at": "2026-09-25T09:00:00.000Z",
-    "created_at": "2026-09-25T08:30:00.000Z"
-  },
-  {
-    "id": "DOC-KYC-ZA-2026-100-proof_of_residence",
-    "dossierId": "KYC-ZA-2026-100",
-    "user_id": "47a8f198-06e0-4eb7-b0ec-617b30318091",
-    "user_email": "darrenforster3@gmail.com",
-    "full_name": "Darren Forster",
-    "doc_type": "proof_of_residence",
-    "file_path": "/uploads/kyc/KYC-ZA-2026-100_residence.svg",
-    "status": "approved",
-    "rejection_reason": null,
-    "reviewed_by": "Admin Compliance Operations",
-    "reviewed_at": "2026-09-25T09:00:00.000Z",
-    "created_at": "2026-09-25T08:30:00.000Z"
-  },
-  {
     "id": "DOC-KYC-ZA-2026-101-id",
     "dossierId": "KYC-ZA-2026-101",
     "user_id": "9140495b-22a3-4df4-9c6d-5a7f649e1710",
@@ -166,5 +124,47 @@
     "reviewed_by": "Admin Compliance Operations",
     "reviewed_at": "2026-10-24T19:28:04.821Z",
     "created_at": "2026-10-24T19:28:04.810Z"
+  },
+  {
+    "id": "DOC-KYC-ZA-2026-100-id",
+    "dossierId": "KYC-ZA-2026-100",
+    "user_id": "demo-user-sipho",
+    "user_email": "sipho.demo@smartassets.co.za",
+    "full_name": "Sipho Demo Collector",
+    "doc_type": "id",
+    "file_path": "/uploads/kyc/KYC-ZA-2026-100_id.svg",
+    "status": "pending",
+    "rejection_reason": null,
+    "reviewed_by": null,
+    "reviewed_at": null,
+    "created_at": "2026-09-25T08:30:00.000Z"
+  },
+  {
+    "id": "DOC-KYC-ZA-2026-100-tax",
+    "dossierId": "KYC-ZA-2026-100",
+    "user_id": "demo-user-sipho",
+    "user_email": "sipho.demo@smartassets.co.za",
+    "full_name": "Sipho Demo Collector",
+    "doc_type": "tax",
+    "file_path": "/uploads/kyc/KYC-ZA-2026-100_tax.svg",
+    "status": "pending",
+    "rejection_reason": null,
+    "reviewed_by": null,
+    "reviewed_at": null,
+    "created_at": "2026-09-25T08:30:00.000Z"
+  },
+  {
+    "id": "DOC-KYC-ZA-2026-100-proof_of_residence",
+    "dossierId": "KYC-ZA-2026-100",
+    "user_id": "demo-user-sipho",
+    "user_email": "sipho.demo@smartassets.co.za",
+    "full_name": "Sipho Demo Collector",
+    "doc_type": "proof_of_residence",
+    "file_path": "/uploads/kyc/KYC-ZA-2026-100_residence.svg",
+    "status": "pending",
+    "rejection_reason": null,
+    "reviewed_by": null,
+    "reviewed_at": null,
+    "created_at": "2026-09-25T08:30:00.000Z"
   }
 ]

@@ -174,3 +174,5 @@ const dark = {
 export const useColors = (isDark = false) => {
   return isDark ? dark : light;
 };
+
+export const getTheme = useColors;

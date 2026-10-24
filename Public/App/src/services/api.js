@@ -49,10 +49,12 @@ export let API_BASE_URL = getBaseUrl();
 
 function getFallbackBaseUrls() {
   const candidates = [
+    process.env.EXPO_PUBLIC_API_BASE_URL,
+    'http://10.250.193.0:5000/api',
     API_BASE_URL,
     getMetroLanBaseUrl(),
+    'http://192.168.0.178:5000/api',
     'http://10.10.0.23:5000/api',
-    process.env.EXPO_PUBLIC_API_BASE_URL,
     Platform.OS === 'android' ? 'http://10.0.2.2:5000/api' : 'http://localhost:5000/api',
   ].filter(Boolean);
   return [...new Set(candidates)];

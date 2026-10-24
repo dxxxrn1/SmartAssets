@@ -30,6 +30,7 @@ import {
 } from "../services/api";
 import useLinkedWallet from "../hooks/useLinkedWallet";
 import InstallMetaMaskModal from "../components/InstallMetaMaskModal";
+import { SCREENS } from "../constants/navigation";
 
 // Helper to filter out synthetic MetaMask strings and raw hex addresses from user name fields
 const isWalletOrMetaMaskString = (str) => {
@@ -851,94 +852,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
           </View>
         </View>
 
-        {/* ── Persistent Account Verification & Bank Approval Hub ── */}
-        <View
-          style={{
-            backgroundColor: isDark ? "#131A2F" : "#FFFFFF",
-            borderRadius: 16,
-            padding: 16,
-            marginBottom: 16,
-            borderWidth: 1.2,
-            borderColor:
-              kycStatus === "verified"
-                ? "rgba(16, 185, 129, 0.4)"
-                : "rgba(124, 92, 252, 0.45)",
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <View
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 11,
-                  backgroundColor:
-                    kycStatus === "verified"
-                      ? "rgba(16, 185, 129, 0.15)"
-                      : "rgba(124, 92, 252, 0.15)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons
-                  name={kycStatus === "verified" ? "checkmark-done-circle" : "shield-checkmark-outline"}
-                  size={20}
-                  color={kycStatus === "verified" ? "#10B981" : "#7C5CFC"}
-                />
-              </View>
-              <View>
-                <Text style={{ fontSize: 15, fontWeight: "800", color: isDark ? "#F8FAFC" : "#0F172A" }}>
-                  {kycStatus === "verified" ? "Account Verified (3/3 Docs)" : "Complete your verification"}
-                </Text>
-                <Text style={{ fontSize: 12, color: isDark ? "#94A3B8" : "#64748B" }}>
-                  {kycStatus === "verified"
-                    ? "Authorized to list items and deposit funds"
-                    : "Required to list items, deposit, or withdraw funds"}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
-            <TouchableOpacity
-              onPress={() => navigation.navigate(SCREENS.VERIFY_ACCOUNT)}
-              style={{
-                flex: 1,
-                backgroundColor: "#7C5CFC",
-                paddingVertical: 11,
-                borderRadius: 11,
-                alignItems: "center",
-                justifyContent: "center",
-                flexDirection: "row",
-                gap: 6,
-              }}
-            >
-              <Ionicons name="document-attach-outline" size={16} color="#FFFFFF" />
-              <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "800" }}>
-                Verify Account (3 Docs)
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => navigation.navigate(SCREENS.BANK_DETAILS)}
-              style={{
-                flex: 1,
-                backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "#EDE9FE",
-                paddingVertical: 11,
-                borderRadius: 11,
-                alignItems: "center",
-                justifyContent: "center",
-                flexDirection: "row",
-                gap: 6,
-              }}
-            >
-              <Ionicons name="card-outline" size={16} color="#7C5CFC" />
-              <Text style={{ color: "#7C5CFC", fontSize: 12.5, fontWeight: "800" }}>
-                Bank Details
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        
 
         {/* ── Web3 Settlement Wallet Card ── */}
         <View

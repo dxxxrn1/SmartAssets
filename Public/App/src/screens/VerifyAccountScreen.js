@@ -21,13 +21,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import {
   getVerificationStatusApi,
   uploadVerificationDocApi,
   resolveImageUrl,
 } from '../services/api';
 import { SCREENS } from '../constants/navigation';
-import { getTheme } from '../constants/theme';
+import { useColors } from '../constants/theme';
 
 const DOC_SLOTS = [
   {
@@ -56,9 +57,10 @@ const DOC_SLOTS = [
   },
 ];
 
-export default function VerifyAccountScreen({ navigation, isDark }) {
+export default function VerifyAccountScreen({ navigation }) {
+  const { isDark } = useTheme();
   const { user, token, updateProfileData } = useAuth();
-  const t = getTheme(isDark);
+  const t = useColors(isDark);
 
   const [loading, setLoading] = useState(true);
   const [uploadingSlot, setUploadingSlot] = useState(null);
