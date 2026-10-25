@@ -677,14 +677,14 @@ export async function createEscrowApi(escrowPayload, token) {
 }
 
 /**
- * Get live status and timeline of an escrow order.
+ * Get live status and timeline of an escrow order (protected by role authorization).
  */
-export async function getEscrowOrderApi(orderId) {
-  return apiRequest(`/escrow/order/${orderId}`, { method: "GET" });
+export async function getEscrowOrderApi(orderId, token) {
+  return apiRequest(`/escrow/order/${orderId}`, { method: "GET" }, token);
 }
 
 /**
- * Release escrow funds to seller upon delivery/inspection confirmation.
+ * Release escrow funds to seller upon delivery and buyer acceptance.
  */
 export async function releaseEscrowApi(orderId, token) {
   return apiRequest(
@@ -698,7 +698,7 @@ export async function releaseEscrowApi(orderId, token) {
 }
 
 /**
- * Refund escrow funds to buyer if asset fails inspection.
+ * Refund escrow funds to buyer (authorized by seller or admin).
  */
 export async function refundEscrowApi(orderId, reason, token) {
   return apiRequest(
@@ -712,14 +712,32 @@ export async function refundEscrowApi(orderId, reason, token) {
 }
 
 /**
- * Progress escrow order through its verification stages (Step 2 or 3).
+ * Open an auditable dispute on an escrow order.
  */
-export async function progressEscrowStepApi(orderId, step, note, token) {
+export async function disputeEscrowApi(orderId, reason, evidence, token) {
+  return apiRequest(
+    "/escrow/dispute",
+    {
+      method: "POST",
+      body: JSON.stringify({ orderId, reason, evidence }),
+    },
+    token,
+  );
+}
+
+/**
+ * Progress escrow order through its verification stages.
+ */
+export async function progressEscrowStepApi(orderId, step, details = {}, token) {
+  const payload = typeof details === "string"
+    ? { orderId, step, note: details }
+    : { orderId, step, ...details };
+
   return apiRequest(
     "/escrow/progress",
     {
       method: "POST",
-      body: JSON.stringify({ orderId, step, note }),
+      body: JSON.stringify(payload),
     },
     token,
   );

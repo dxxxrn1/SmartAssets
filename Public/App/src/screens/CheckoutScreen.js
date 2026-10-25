@@ -21,6 +21,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { ethers } from 'ethers';
 import { useAuth } from '../context/AuthContext';
 import { useLinkedWallet } from '../hooks/useLinkedWallet';
 import KycGatekeeperModal from '../components/KycGatekeeperModal';
@@ -147,7 +148,7 @@ export default function CheckoutScreen({ navigation, route }) {
       .catch(() => {});
   }, []);
 
-  // ── Open MetaMask Mobile App Deep Link ─────────────────────────────────────
+  // ── Open MetaMask Mobile App Deep Link with deposit() calldata ────────────
   const handleOpenMetaMask = async () => {
     const isInstalled = await isMetaMaskAppInstalled();
     if (!isInstalled && Platform.OS !== 'web') {
@@ -156,8 +157,24 @@ export default function CheckoutScreen({ navigation, route }) {
     }
 
     const weiValue = BigInt(Math.round(parseFloat(ethAmount) * 1e18)).toString(16);
-    const deepLink = `https://metamask.app.link/send/${rates.escrowAddress}?value=${weiValue}`;
-    const nativeScheme = `ethereum:${rates.escrowAddress}?value=${weiValue}`;
+    const clientOrderId = Math.floor(100000 + Math.random() * 900000);
+    const sellerAddr = asset?.seller_address || asset?.user_wallet || rates.escrowAddress;
+    const assetTokenId = Math.abs(parseInt(String(asset?.token_id || asset?.tokenId || 1).replace(/[^0-9]/g, ''), 10)) || 1;
+
+    let calldata = '';
+    try {
+      const escrowIface = new ethers.Interface([
+        'function deposit(uint256 orderId, address seller, uint256 assetTokenId) payable'
+      ]);
+      calldata = escrowIface.encodeFunctionData('deposit', [clientOrderId, sellerAddr, assetTokenId]);
+    } catch (_e) {}
+
+    const deepLink = calldata
+      ? `https://metamask.app.link/dapp/${rates.escrowAddress}?data=${calldata}&value=${weiValue}`
+      : `https://metamask.app.link/send/${rates.escrowAddress}?value=${weiValue}`;
+    const nativeScheme = calldata
+      ? `ethereum:${rates.escrowAddress}?data=${calldata}&value=${weiValue}`
+      : `ethereum:${rates.escrowAddress}?value=${weiValue}`;
 
     try {
       const canOpen = await Linking.canOpenURL(nativeScheme);
@@ -261,26 +278,26 @@ export default function CheckoutScreen({ navigation, route }) {
 
         let paymentIntentId = null;
         let stripePaymentMethodId = null;
-        let stripeStatus = null;
 
-        if (publishableKey) {
-          const intentRes = await createPaymentIntentApi(
-            {
-              amountGbp: total,
-              assetId: asset.id,
-              assetName: asset.name,
-              currency: 'gbp',
-            },
-            token
-          );
+        // Initialize PaymentIntent
+        const intentRes = await createPaymentIntentApi(
+          {
+            amountGbp: total,
+            assetId: asset.id,
+            assetName: asset.name,
+            currency: 'zar',
+          },
+          token
+        );
 
-          if (!intentRes?.success || !intentRes.clientSecret) {
-            throw new Error(intentRes?.error || 'Failed to initialize card payment session.');
-          }
+        if (!intentRes?.success || !intentRes.clientSecret) {
+          throw new Error(intentRes?.error || 'Failed to initialize card payment session.');
+        }
 
-          const clientSecret = intentRes.clientSecret;
-          paymentIntentId = intentRes.paymentIntentId;
+        const clientSecret = intentRes.clientSecret;
+        paymentIntentId = intentRes.paymentIntentId;
 
+        if (publishableKey && !paymentIntentId.startsWith('pi_sandbox_')) {
           const expParts = cardForm.expiry.split('/');
           let expYear = parseInt(expParts[1], 10);
           if (expYear < 100) expYear += 2000;
@@ -296,13 +313,8 @@ export default function CheckoutScreen({ navigation, route }) {
           stripePaymentMethodId = pm.id;
 
           const confirmation = await confirmStripePayment(publishableKey, clientSecret, pm.id);
-          stripeStatus = confirmation.status;
-
           if (confirmation.status !== 'succeeded') {
-            Alert.alert(
-              'Payment Processing',
-              `Payment status: ${confirmation.status}. Your order has been recorded and will be fulfilled once payment clears.`
-            );
+            throw new Error(`Card payment not completed (Status: ${confirmation.status}). Please check card details or funds.`);
           }
         }
 
@@ -313,6 +325,7 @@ export default function CheckoutScreen({ navigation, route }) {
             assetCategory: asset.category,
             paymentMethod: 'card',
             paymentDetails: {
+              paymentIntentId,
               stripePaymentIntentId: paymentIntentId,
               stripePaymentMethodId,
               stripeMode: mode,
@@ -338,8 +351,17 @@ export default function CheckoutScreen({ navigation, route }) {
         // WALLET / BANK FLOW
         let paymentDetails = {};
         if (selectedPayment === 'wallet') {
+          const trimmedTxHash = walletTxHash.trim();
+          if (!trimmedTxHash) {
+            Alert.alert(
+              'Transaction Hash Required',
+              'Please open MetaMask, send the escrow deposit transaction, and paste the transaction hash (0x...) to confirm payment.'
+            );
+            setPurchasing(false);
+            return;
+          }
           paymentDetails = {
-            txHash: walletTxHash.trim() || undefined,
+            txHash: trimmedTxHash,
             walletAddress: linkedWallet || user?.walletAddress || user?.wallet_address || undefined,
             ethAmount,
           };

@@ -26,6 +26,7 @@ import {
   getMyEscrowOrdersApi,
   releaseEscrowApi,
   refundEscrowApi,
+  disputeEscrowApi,
   progressEscrowStepApi,
   resolveImageUrl,
 } from "../services/api";
@@ -33,7 +34,7 @@ import { SCREENS } from "../constants/navigation";
 
 export default function EscrowTrackerScreen({ navigation, route, isDark }) {
   const c = useColors(isDark);
-  const { token } = useAuth();
+  const { user, token } = useAuth();
   const orderId = route?.params?.orderId || "ORD-892104";
   const initialAsset = route?.params?.asset || {};
 
@@ -42,19 +43,22 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
   const [releasing, setReleasing] = useState(false);
   const [progressing, setProgressing] = useState(false);
   const [refunding, setRefunding] = useState(false);
+  const [disputing, setDisputing] = useState(false);
 
   useEffect(() => {
     fetchOrder();
-  }, [orderId]);
+  }, [orderId, token]);
 
   const fetchOrder = () => {
-    getEscrowOrderApi(orderId)
+    getEscrowOrderApi(orderId, token)
       .then((res) => {
         if (res?.success && res.order) {
           setOrder(res.order);
         }
       })
-      .catch((err) => console.warn("Escrow fetch warning:", err.message))
+      .catch((err) => {
+        console.warn("Escrow fetch warning:", err.message);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -71,19 +75,20 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
           onPress: async () => {
             setReleasing(true);
             try {
-              const res = await releaseEscrowApi(order?.orderId, token);
+              const res = await releaseEscrowApi(order?.orderId || orderId, token);
               if (res?.success && res.order) {
                 setOrder(res.order);
                 Alert.alert(
                   "Funds Released",
-                  "Escrow payout completed on Ethereum Sepolia. The NFT Certificate of Authenticity is now permanently finalized.",
+                  "Escrow payout completed and verified. The Certificate of Authenticity is now permanently finalized.",
                 );
+              } else {
+                throw new Error(res?.error || "Release was not confirmed by the server.");
               }
             } catch (err) {
-              Alert.alert("Notice", err.message || "Escrow funds released.");
-              if (order) {
-                setOrder({ ...order, status: "released", currentStep: 4 });
-              }
+              Alert.alert("Release Failed", err.message || "Failed to release escrow funds.");
+              // Do NOT optimistically mark released on error — refresh from server
+              fetchOrder();
             } finally {
               setReleasing(false);
             }
@@ -94,13 +99,13 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
   };
 
   // ── Advance Step (Courier Transit or Appraiser Inspection) ──
-  const handleProgressStep = async (nextStep, note) => {
+  const handleProgressStep = async (nextStep, note, extra = {}) => {
     setProgressing(true);
     try {
       const res = await progressEscrowStepApi(
-        order?.orderId,
+        order?.orderId || orderId,
         nextStep,
-        note,
+        { note, ...extra },
         token,
       );
       if (res?.success && res.order) {
@@ -108,15 +113,20 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
         Alert.alert(
           "Stage Updated",
           nextStep === 2
-            ? "Insured armored courier has picked up the collectible and is en route to SmartAssets Custody Center."
-            : "Authenticity appraisal and physical inspection successfully completed by Horological Institute.",
+            ? "Insured armored courier dispatch recorded."
+            : nextStep === 3
+            ? "Authenticity appraisal and physical inspection completed."
+            : nextStep === 4
+            ? "Physical delivery confirmed."
+            : "Buyer accepted collectible condition.",
         );
+      } else {
+        throw new Error(res?.error || "Stage update not confirmed by server.");
       }
     } catch (err) {
-      Alert.alert("Notice", err.message || "Stage update applied.");
-      if (order) {
-        setOrder({ ...order, currentStep: nextStep });
-      }
+      Alert.alert("Update Failed", err.message || "Stage update failed.");
+      // Do NOT optimistically advance step on error — refresh from server
+      fetchOrder();
     } finally {
       setProgressing(false);
     }
@@ -126,53 +136,79 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
   const handleDispute = () => {
     Alert.alert(
       "SmartAssets Buyer Protection",
-      "If you have not received the asset or if the physical condition does not match the certificate, your funds remain 100% locked in the smart contract escrow.",
+      "If you have not received the asset or if physical condition does not match the certificate, your funds remain 100% locked in escrow custody.",
       [
         { text: "Back", style: "cancel" },
         {
-          text: "Request Appraiser Review",
+          text: "Open Official Dispute",
+          style: "destructive",
           onPress: () => {
-            handleProgressStep(
-              3,
-              "Appraiser expedited inspection review requested by buyer.",
+            Alert.alert(
+              "Open Dispute",
+              "Enter reason for dispute. This will freeze escrow release until arbitrated by the compliance team.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Submit Dispute",
+                  style: "destructive",
+                  onPress: async () => {
+                    setDisputing(true);
+                    try {
+                      const res = await disputeEscrowApi(
+                        order?.orderId || orderId,
+                        "Buyer raised dispute: Item discrepancy / delivery issue.",
+                        "Initial buyer dispute claim",
+                        token
+                      );
+                      if (res?.success && res.order) {
+                        setOrder(res.order);
+                        Alert.alert("Dispute Opened", "Escrow funds frozen pending resolution.");
+                      }
+                    } catch (err) {
+                      Alert.alert("Dispute Failed", err.message || "Could not open dispute.");
+                      fetchOrder();
+                    } finally {
+                      setDisputing(false);
+                    }
+                  },
+                },
+              ]
             );
           },
         },
         {
-          text: "Cancel & Full Refund",
+          text: "Authorize Full Refund",
           style: "destructive",
           onPress: () => {
             Alert.alert(
               "Confirm Escrow Refund",
-              "This will cancel the order and refund 100% of the locked funds back to your wallet on Ethereum Sepolia.",
+              "This will execute a refund of 100% of the locked funds back to the buyer's rail.",
               [
                 { text: "Cancel", style: "cancel" },
                 {
-                  text: "Yes, Refund My Funds",
+                  text: "Yes, Execute Refund",
                   style: "destructive",
                   onPress: async () => {
                     setRefunding(true);
                     try {
                       const res = await refundEscrowApi(
-                        orderId,
-                        "Buyer canceled transaction before delivery confirmation.",
+                        order?.orderId || orderId,
+                        "Canceled or failed physical inspection.",
                         token,
                       );
                       if (res?.success && res.order) {
                         setOrder(res.order);
                         Alert.alert(
                           "Refund Completed",
-                          "100% of escrow funds have been refunded to your wallet on Ethereum Sepolia.",
+                          "100% of escrow funds refunded to the buyer.",
                         );
                       }
                     } catch (err) {
                       Alert.alert(
-                        "Notice",
-                        err.message || "Escrow refund processed.",
+                        "Refund Failed",
+                        err.message || "Escrow refund could not be completed.",
                       );
-                      if (order) {
-                        setOrder({ ...order, status: "refunded" });
-                      }
+                      fetchOrder();
                     } finally {
                       setRefunding(false);
                     }
@@ -398,6 +434,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                   handleProgressStep(
                     2,
                     "Armored courier BRK-8921 dispatched to Custody Center.",
+                    { carrier: "Brink's Armored Courier", trackingNumber: "BRK-892104" }
                   )
                 }
                 disabled={progressing}
@@ -419,7 +456,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                         color: c.primary,
                       }}
                     >
-                      Dispatch Insured Courier (Simulate Step 2)
+                      Seller Records Shipment (Carrier & Tracking)
                     </Text>
                   </>
                 )}
@@ -435,7 +472,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                 onPress={() =>
                   handleProgressStep(
                     3,
-                    "Dr. William Chen verified serial number & authenticity.",
+                    "Certified Horologist verified serial number & authenticity.",
                   )
                 }
                 disabled={progressing}
@@ -457,23 +494,98 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                         color: c.primary,
                       }}
                     >
-                      Appraiser Inspection Pass (Simulate Step 3)
+                      Appraiser Confirms Inspection (Step 3)
                     </Text>
                   </>
                 )}
               </TouchableOpacity>
             )}
 
-            {currentStep >= 3 && (
+            {currentStep === 3 && (
+              <TouchableOpacity
+                style={[
+                  styles.simBtn,
+                  { backgroundColor: c.cardLight, borderColor: c.primary },
+                ]}
+                onPress={() =>
+                  handleProgressStep(
+                    4,
+                    "Physical collectible delivered to recipient vault.",
+                  )
+                }
+                disabled={progressing}
+              >
+                {progressing ? (
+                  <ActivityIndicator size="small" color={c.primary} />
+                ) : (
+                  <>
+                    <Feather
+                      name="package"
+                      size={14}
+                      color={c.primary}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "700",
+                        color: c.primary,
+                      }}
+                    >
+                      Confirm Physical Delivery (Step 4)
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+
+            {currentStep === 4 && order?.status !== 'accepted' && (
+              <TouchableOpacity
+                style={[
+                  styles.simBtn,
+                  { backgroundColor: c.cardLight, borderColor: c.green },
+                ]}
+                onPress={() =>
+                  handleProgressStep(
+                    5,
+                    "Buyer verified and accepted collectible condition.",
+                  )
+                }
+                disabled={progressing}
+              >
+                {progressing ? (
+                  <ActivityIndicator size="small" color={c.green} />
+                ) : (
+                  <>
+                    <Feather
+                      name="award"
+                      size={14}
+                      color={c.green}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "700",
+                        color: c.green,
+                      }}
+                    >
+                      Buyer Accepts Condition & Quality (Step 5)
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+
+            {order?.status === 'accepted' && (
               <View
                 style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
               >
-                <Feather name="check" size={14} color={c.green} />
+                <Feather name="check-circle" size={14} color={c.green} />
                 <Text
                   style={{ fontSize: 12, color: c.green, fontWeight: "600" }}
                 >
-                  Inspection Passed! Collectible ready for buyer delivery
-                  confirmation.
+                  Buyer accepted condition! Ready for seller payout release.
                 </Text>
               </View>
             )}
@@ -708,20 +820,85 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
               Escrow Refunded — Return to Vault
             </Text>
           </TouchableOpacity>
-        ) : !isReleased ? (
+        ) : order?.status === 'disputed' ? (
+          <View style={{ gap: 8 }}>
+            <View style={[styles.actionBtn, { backgroundColor: "#F59E0B" }]}>
+              <Text style={styles.actionBtnText}>
+                Dispute Active — Escrow Funds Frozen
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { borderColor: "#EF4444" }]}
+              onPress={handleDispute}
+            >
+              <Text style={{ color: "#EF4444", fontSize: 12, fontWeight: "600", textAlign: "center" }}>
+                View Dispute Terms or Request Settlement Refund
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : order?.status === 'accepted' ? (
           <View style={{ gap: 8 }}>
             <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: c.primary }]}
+              style={[styles.actionBtn, { backgroundColor: c.green }]}
               onPress={handleReleaseFunds}
-              disabled={releasing || refunding}
+              disabled={releasing}
             >
               {releasing ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
                 <Text style={styles.actionBtnText}>
-                  Confirm Delivery & Release Funds
+                  Release Payout to Seller
                 </Text>
               )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { borderColor: "#EF444440" }]}
+              onPress={handleDispute}
+              disabled={releasing}
+            >
+              <Text style={{ color: "#EF4444", fontSize: 12, fontWeight: "600", textAlign: "center" }}>
+                Having an issue? Open Official Dispute
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : !isReleased ? (
+          <View style={{ gap: 8 }}>
+            <TouchableOpacity
+              style={[
+                styles.actionBtn,
+                {
+                  backgroundColor: ['delivered', 'in_inspection'].includes(order?.status)
+                    ? c.primary
+                    : c.cardLight,
+                  borderColor: c.border,
+                  borderWidth: 1,
+                },
+              ]}
+              onPress={() => {
+                if (order?.status === 'delivered' || order?.status === 'in_inspection') {
+                  handleProgressStep(5, "Buyer confirmed receipt and accepted condition.");
+                } else if (order?.status === 'in_transit') {
+                  handleProgressStep(4, "Collectible delivered to recipient.");
+                }
+              }}
+              disabled={['payment_secured'].includes(order?.status) || progressing}
+            >
+              <Text
+                style={[
+                  styles.actionBtnText,
+                  {
+                    color: ['delivered', 'in_inspection', 'in_transit'].includes(order?.status)
+                      ? '#FFFFFF'
+                      : c.muted,
+                  },
+                ]}
+              >
+                {order?.status === 'delivered' || order?.status === 'in_inspection'
+                  ? 'Accept Collectible Condition'
+                  : order?.status === 'in_transit'
+                  ? 'Confirm Delivery Receipt'
+                  : 'Funds Secured — Awaiting Shipment'}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -737,7 +914,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                   textAlign: "center",
                 }}
               >
-                Having an issue? Request Appraiser Audit or Full Refund
+                Having an issue? Open Dispute or Request Refund
               </Text>
             </TouchableOpacity>
           </View>

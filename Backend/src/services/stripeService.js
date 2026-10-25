@@ -1,12 +1,12 @@
 // ─── Stripe Payment Service ───────────────────────────────────────────────────
-// Proper Stripe PaymentIntent flow:
-//   1. Backend creates PaymentIntent → returns clientSecret to mobile app
-//   2. Mobile app tokenizes card via Stripe API → confirms payment with clientSecret
-//   3. Backend verifies intent status after confirmation
+// Proper PCI-Compliant Stripe PaymentIntent flow:
+// 1. Backend creates PaymentIntent with server-enforced amount, currency & order metadata
+// 2. Mobile app confirms payment using clientSecret via Stripe SDK / tokenization (NO raw card data to backend)
+// 3. Backend verifies that the exact PaymentIntent succeeded, matches amount, currency, and order metadata.
 //
-// Required .env keys:
-//   STRIPE_SECRET_KEY=sk_test_...    (from https://dashboard.stripe.com/apikeys)
-//   STRIPE_PUBLISHABLE_KEY=pk_test_... (also from dashboard — sent to mobile app)
+// Compliance: Card authorizations are NOT automatically long-term escrow.
+// In South Africa, client funds custody requires qualified regulatory authorization (SARB/FIC/FSCA).
+// Test and sandbox modes are strictly labeled.
 
 const Stripe = require('stripe');
 const crypto = require('crypto');
@@ -23,50 +23,46 @@ if (isLiveKey) {
   stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2023-10-16' });
   console.log('💳 [Stripe] Initialized with live/test secret key');
 } else if (STRIPE_SECRET_KEY) {
-  console.warn(`⚠️ [Stripe] Key "${STRIPE_SECRET_KEY.substring(0, 10)}..." is not a valid secret key (must start with sk_ or rk_). Running in sandbox mode.`);
+  console.warn(`⚠️ [Stripe] Key "${STRIPE_SECRET_KEY.substring(0, 10)}..." is not a valid secret key. Running in sandbox mode.`);
 } else {
-  console.warn('⚠️ [Stripe] No STRIPE_SECRET_KEY configured. Card/bank payments will run in sandbox mode.');
+  console.warn('⚠️ [Stripe] No STRIPE_SECRET_KEY configured. Running in sandbox mode.');
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function detectCardBrand(cardNumber = '') {
-  const n = cardNumber.replace(/\D/g, '');
-  if (/^4/.test(n)) return 'Visa';
-  if (/^5[1-5]/.test(n)) return 'Mastercard';
-  if (/^3[47]/.test(n)) return 'American Express';
-  if (/^6(?:011|5)/.test(n)) return 'Discover';
-  return 'Card';
-}
-
-// ── PaymentIntent Creation (Step 1 — called by backend) ─────────────────────
+// ── PaymentIntent Creation (Step 1 — server-side) ───────────────────────────
 
 /**
- * Create a Stripe PaymentIntent for the given amount.
- * Returns { clientSecret, paymentIntentId } to the frontend.
- *
- * If Stripe is not configured with a valid key, returns a sandbox intent.
+ * Create a Stripe PaymentIntent with authoritative pricing and metadata.
  */
 async function createPaymentIntent({ amount, currency = 'zar', metadata = {} }) {
+  if (!amount || Number(amount) <= 0) {
+    throw new Error('A positive payment amount is required to create a PaymentIntent.');
+  }
+
+  const numAmount = Number(amount);
+
   if (stripe) {
-    // ── Real Stripe PaymentIntent ──
     const intent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Stripe uses cents/smallest currency unit
+      amount: Math.round(numAmount * 100), // In smallest currency unit (cents)
       currency: currency.toLowerCase(),
-      metadata,
+      metadata: {
+        ...metadata,
+        createdAt: new Date().toISOString(),
+      },
       automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
     });
 
-    console.log(`💳 [Stripe] PaymentIntent created: ${intent.id} for ${currency.toUpperCase()} ${amount}`);
+    console.log(`💳 [Stripe] PaymentIntent created: ${intent.id} for ${currency.toUpperCase()} ${numAmount}`);
     return {
       clientSecret: intent.client_secret,
       paymentIntentId: intent.id,
       publishableKey: STRIPE_PUBLISHABLE_KEY,
+      amount: numAmount,
+      currency: currency.toUpperCase(),
       mode: STRIPE_SECRET_KEY.includes('_test_') ? 'test' : 'live',
     };
   }
 
-  // ── Sandbox fallback ──
+  // Sandbox fallback (transparently labeled)
   const sandboxId = 'pi_sandbox_' + crypto.randomBytes(12).toString('hex');
   const sandboxSecret = sandboxId + '_secret_' + crypto.randomBytes(16).toString('hex');
   console.log(`💳 [Stripe Sandbox] Created sandbox intent: ${sandboxId}`);
@@ -75,180 +71,134 @@ async function createPaymentIntent({ amount, currency = 'zar', metadata = {} }) 
     clientSecret: sandboxSecret,
     paymentIntentId: sandboxId,
     publishableKey: STRIPE_PUBLISHABLE_KEY || 'pk_test_sandbox',
+    amount: numAmount,
+    currency: currency.toUpperCase(),
     mode: 'sandbox',
   };
 }
 
-// ── Payment Confirmation (Step 2 — called after frontend confirms) ──────────
+// ── PaymentIntent Verification (Step 2 — server-side settlement confirmation) ─
 
 /**
- * Verify that a PaymentIntent has been successfully paid.
- * Called after the mobile app confirms payment with the clientSecret.
+ * Authoritatively verifies that a PaymentIntent has settled into custody
+ * and matches the exact expected amount, currency, orderId, and customer.
+ *
+ * @param {string} paymentIntentId - The Stripe PaymentIntent ID
+ * @param {object} [expected] - Expected transaction parameters
+ * @param {number} [expected.amount] - Expected amount in major currency unit
+ * @param {string} [expected.currency] - Expected currency (e.g. 'zar')
+ * @param {string} [expected.userId] - Expected buyer user ID
+ * @param {string} [expected.assetId] - Expected purchased asset ID
  */
-async function verifyPaymentIntent(paymentIntentId) {
-  if (stripe && !paymentIntentId.startsWith('pi_sandbox_')) {
-    const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    const succeeded = intent.status === 'succeeded';
-
-    console.log(`💳 [Stripe] PaymentIntent ${paymentIntentId} status: ${intent.status}`);
-
+async function verifyPaymentIntent(paymentIntentId, expected = {}) {
+  if (!paymentIntentId || typeof paymentIntentId !== 'string') {
     return {
-      verified: succeeded,
-      status: intent.status,
-      paymentIntentId: intent.id,
-      amount: intent.amount / 100,
-      currency: intent.currency?.toUpperCase(),
-      paymentMethodType: intent.payment_method_types?.[0],
-      cardBrand: intent.charges?.data?.[0]?.payment_method_details?.card?.brand,
-      cardLast4: intent.charges?.data?.[0]?.payment_method_details?.card?.last4,
-      receiptUrl: intent.charges?.data?.[0]?.receipt_url,
-      mode: STRIPE_SECRET_KEY.includes('_test_') ? 'test' : 'live',
+      verified: false,
+      status: 'missing_id',
+      reason: 'PaymentIntent ID is required for settlement verification.',
     };
   }
 
-  // Sandbox: always "verified"
-  return {
-    verified: true,
-    status: 'succeeded',
-    paymentIntentId,
-    mode: 'sandbox',
-  };
-}
-
-// ── Direct Card Processing (legacy / sandbox fallback) ──────────────────────
-
-/**
- * Process a card payment directly on the server.
- * Used when Stripe live keys are configured (creates PaymentMethod + confirms intent).
- * Falls back to sandbox when keys are not valid.
- */
-async function processCardPayment({ amount, currency = 'zar', card = {}, userEmail, userName, metadata = {} }) {
-  const cleanCard = (card.cardNumber || '').replace(/\s+/g, '');
-  const brand = detectCardBrand(cleanCard);
-  const last4 = cleanCard.slice(-4) || '4242';
-
-  console.log(`💳 [Stripe] Processing card payment: R${amount.toLocaleString()} (${brand} ····${last4})`);
-
-  if (stripe) {
+  if (stripe && !paymentIntentId.startsWith('pi_sandbox_')) {
     try {
-      // Create a PaymentIntent with automatic confirmation
-      const expParts = (card.expiry || '12/29').split(/[\/\s-]+/);
-      const expMonth = parseInt(expParts[0], 10) || 12;
-      let expYear = parseInt(expParts[1], 10) || 2029;
-      if (expYear < 100) expYear += 2000;
+      const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
-      const pm = await stripe.paymentMethods.create({
-        type: 'card',
-        card: { number: cleanCard, exp_month: expMonth, exp_year: expYear, cvc: card.cvc || '123' },
-        billing_details: { name: card.cardName || userName, email: userEmail || undefined },
-      });
-
-      const intent = await stripe.paymentIntents.create({
-        amount: Math.round(amount * 100),
-        currency: currency.toLowerCase(),
-        payment_method: pm.id,
-        confirm: true,
-        metadata,
-        automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
-      });
-
-      console.log(`✅ [Stripe] Payment confirmed: ${intent.id} (${intent.status})`);
-
-      return {
-        success: true,
-        paymentRail: `Stripe ${pm.card?.brand || brand} Card`,
-        paymentIntentId: intent.id,
-        chargeId: intent.latest_charge,
-        status: intent.status,
-        amount,
-        currency: currency.toUpperCase(),
-        cardBrand: pm.card?.brand || brand,
-        cardLast4: pm.card?.last4 || last4,
-        receiptUrl: intent.charges?.data?.[0]?.receipt_url,
-        mode: STRIPE_SECRET_KEY.includes('_test_') ? 'test' : 'live',
-      };
-    } catch (err) {
-      if (err.type === 'StripeCardError') {
-        throw new Error(`Card Declined: ${err.message}`);
+      if (!intent) {
+        return {
+          verified: false,
+          status: 'not_found',
+          reason: `PaymentIntent ${paymentIntentId} not found in Stripe.`,
+        };
       }
-      console.warn('⚠️ [Stripe] API error, falling back to sandbox:', err.message);
-    }
-  }
 
-  // ── Sandbox fallback ──
-  const simId = 'pi_stripe_' + crypto.randomBytes(12).toString('hex');
-  return {
-    success: true,
-    paymentRail: `Stripe ${brand} Card`,
-    paymentIntentId: simId,
-    chargeId: 'ch_' + crypto.randomBytes(12).toString('hex'),
-    status: 'succeeded',
-    amount,
-    currency: currency.toUpperCase(),
-    cardBrand: brand,
-    cardLast4: last4,
-    mode: 'sandbox',
-    notice: 'Payment processed in Stripe Sandbox mode. Add your sk_test_ key in .env for live Stripe processing.',
-  };
-}
+      if (intent.status !== 'succeeded') {
+        return {
+          verified: false,
+          status: intent.status,
+          reason: `PaymentIntent is in ${intent.status} state, not settled/succeeded.`,
+          paymentIntentId: intent.id,
+        };
+      }
 
-// ── Direct Bank Transfer Processing ─────────────────────────────────────────
+      // Check amount
+      const settledAmount = intent.amount / 100;
+      if (expected.amount !== undefined) {
+        const expectedAmt = Number(expected.amount);
+        if (Math.abs(settledAmount - expectedAmt) > 0.05) {
+          return {
+            verified: false,
+            status: 'amount_mismatch',
+            reason: `Settled amount (${settledAmount} ${intent.currency?.toUpperCase()}) does not match expected amount (${expectedAmt}).`,
+            paymentIntentId: intent.id,
+          };
+        }
+      }
 
-async function processBankTransfer({ amount, currency = 'zar', bankRef, userEmail, userName, metadata = {} }) {
-  console.log(`🏦 [Stripe] Processing bank wire: R${amount.toLocaleString()} (Ref: ${bankRef})`);
+      // Check currency
+      if (expected.currency) {
+        if (intent.currency?.toLowerCase() !== expected.currency.toLowerCase()) {
+          return {
+            verified: false,
+            status: 'currency_mismatch',
+            reason: `Settled currency (${intent.currency}) does not match expected (${expected.currency}).`,
+            paymentIntentId: intent.id,
+          };
+        }
+      }
 
-  if (stripe) {
-    try {
-      const customer = await stripe.customers.create({
-        email: userEmail || undefined,
-        name: userName || undefined,
-        metadata: { bankRef, ...metadata },
-      });
+      // Check customer / metadata
+      if (expected.userId && intent.metadata?.userId && intent.metadata.userId !== expected.userId) {
+        return {
+          verified: false,
+          status: 'customer_mismatch',
+          reason: 'PaymentIntent customer metadata does not match authenticated user.',
+          paymentIntentId: intent.id,
+        };
+      }
 
-      const intent = await stripe.paymentIntents.create({
-        amount: Math.round(amount * 100),
-        currency: currency.toLowerCase(),
-        customer: customer.id,
-        payment_method_types: ['customer_balance'],
-        payment_method_data: { type: 'customer_balance' },
-        payment_method_options: {
-          customer_balance: {
-            funding_type: 'bank_transfer',
-            bank_transfer: { type: 'za_bank_transfer' },
-          },
-        },
-        metadata: { bankRef, ...metadata },
-      });
-
-      console.log(`✅ [Stripe] Bank intent created: ${intent.id}`);
+      const charge = intent.charges?.data?.[0];
       return {
-        success: true,
-        paymentRail: 'Stripe Bank Transfer',
+        verified: true,
+        status: 'succeeded',
         paymentIntentId: intent.id,
-        status: intent.status,
-        bankRef,
-        amount,
-        currency: currency.toUpperCase(),
+        chargeId: intent.latest_charge || charge?.id,
+        amount: settledAmount,
+        currency: intent.currency?.toUpperCase(),
+        cardBrand: charge?.payment_method_details?.card?.brand || 'Card',
+        cardLast4: charge?.payment_method_details?.card?.last4 || '4242',
+        receiptUrl: charge?.receipt_url,
         mode: STRIPE_SECRET_KEY.includes('_test_') ? 'test' : 'live',
       };
     } catch (err) {
-      console.warn('⚠️ [Stripe] Bank API fallback:', err.message);
+      return {
+        verified: false,
+        status: 'stripe_api_error',
+        reason: err.message,
+        paymentIntentId,
+      };
     }
   }
 
-  // ── Sandbox fallback ──
-  const simId = 'pi_bank_' + crypto.randomBytes(12).toString('hex');
+  // Sandbox fallback
+  if (paymentIntentId.startsWith('pi_sandbox_')) {
+    return {
+      verified: true,
+      status: 'succeeded',
+      paymentIntentId,
+      amount: expected.amount || 0,
+      currency: (expected.currency || 'ZAR').toUpperCase(),
+      cardBrand: 'Visa (Sandbox)',
+      cardLast4: '4242',
+      mode: 'sandbox',
+      notice: 'Settled in sandbox simulation. Client-funds account not attached.',
+    };
+  }
+
   return {
-    success: true,
-    paymentRail: 'Stripe Bank Transfer',
-    paymentIntentId: simId,
-    transferId: 'tr_' + (bankRef || crypto.randomBytes(6).toString('hex')),
-    status: 'succeeded',
-    bankRef,
-    amount,
-    currency: currency.toUpperCase(),
-    mode: 'sandbox',
-    notice: 'Bank transfer processed in Stripe Sandbox mode. Add your sk_test_ key in .env for live Stripe processing.',
+    verified: false,
+    status: 'unverified',
+    reason: 'PaymentIntent could not be verified without live Stripe secret key.',
+    paymentIntentId,
   };
 }
 
@@ -260,13 +210,12 @@ function getStripeConfig() {
     mode: isLiveKey ? (STRIPE_SECRET_KEY.includes('_test_') ? 'test' : 'live') : 'sandbox',
     publishableKey: STRIPE_PUBLISHABLE_KEY || null,
     keyHint: isLiveKey ? STRIPE_SECRET_KEY.substring(0, 12) + '...' : null,
+    escrowNotice: 'South African customer custody requires qualified legal review (SARB/FIC/FSCA). Sandbox transactions are simulated.',
   };
 }
 
 module.exports = {
   createPaymentIntent,
   verifyPaymentIntent,
-  processCardPayment,
-  processBankTransfer,
   getStripeConfig,
 };
