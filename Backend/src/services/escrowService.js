@@ -1,59 +1,17 @@
 // ─── Escrow Service ───────────────────────────────────────────────────────────
 // Centralized escrow domain logic and persistent storage manager.
-// Manages the complete lifecycle:
-// 1. Payment Secured in Smart Contract
-// 2. Physical Collectible In Transit to Vault
-// 3. Expert Authentication & Inspection
-// 4. Release to Seller & NFT Delivery / Full Refund to Buyer
+// Interacts with Web3 smart contract and Supabase escrow_orders table.
+// Zero local JSON file storage or fabricated demo fallbacks.
 
-const fs = require('fs');
-const path = require('path');
+const supabase = require('../connection/supabaseClient');
 const web3Service = require('./web3Service');
 const { saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
 
-const DATA_DIR = path.resolve(__dirname, '../data');
-const ESCROW_FILE = path.join(DATA_DIR, 'escrowOrders.json');
-
-// In-memory cache backed by persistent file
+// In-memory runtime cache for fast lookups
 const ordersMap = new Map();
 
-function initStorage() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (fs.existsSync(ESCROW_FILE)) {
-      const data = JSON.parse(fs.readFileSync(ESCROW_FILE, 'utf8'));
-      if (Array.isArray(data)) {
-        data.forEach((order) => {
-          if (order && order.orderId) {
-            ordersMap.set(order.orderId, order);
-          }
-        });
-      }
-    }
-  } catch (err) {
-    console.warn('⚠️ [EscrowService] Storage initialization warning:', err.message);
-  }
-}
-
-function persistOrders() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    const ordersArray = Array.from(ordersMap.values());
-    fs.writeFileSync(ESCROW_FILE, JSON.stringify(ordersArray, null, 2), 'utf8');
-  } catch (err) {
-    console.error('❌ [EscrowService] Failed to persist escrow orders:', err.message);
-  }
-}
-
-// Initialize on module load
-initStorage();
-
 /**
- * Creates a new escrow order and locks deposit.
+ * Creates a new escrow order and locks deposit on-chain and in Supabase.
  */
 async function createEscrowOrder({
   orderId,
@@ -87,12 +45,11 @@ async function createEscrowOrder({
   const etherscanUrl = onChainLock.etherscanUrl || `https://sepolia.etherscan.io/tx/${txHash}`;
   const now = new Date().toISOString();
 
-  // Ensure base64 image is converted to static on-disk file to prevent JSON store bloat
   const cleanImage = saveBase64Image(assetImage, `ord_${finalOrderId}`) || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
 
   const escrowOrder = {
     orderId: finalOrderId,
-    buyerId: buyerId || 'anonymous-buyer',
+    buyerId: buyerId || null,
     buyerAddress: buyerAddress || null,
     assetId: assetId || null,
     assetName: assetName || 'Luxury Collectible',
@@ -143,73 +100,38 @@ async function createEscrowOrder({
   };
 
   ordersMap.set(finalOrderId, escrowOrder);
-  persistOrders();
+
+  // Sync to Supabase escrow_orders table
+  try {
+    await supabase.from('escrow_orders').upsert({
+      id: finalOrderId,
+      order_id: finalOrderId,
+      buyer_id: buyerId && buyerId.includes('-') ? buyerId : null,
+      asset_name: escrowOrder.assetName,
+      asset_category: escrowOrder.assetCategory,
+      asset_image: cleanImage,
+      amount_zar: zarVal,
+      amount_eth: Number(ethVal),
+      status: escrowOrder.status,
+      payment_method: escrowOrder.paymentMethod,
+      tx_hash: txHash,
+      timeline: escrowOrder.timeline,
+      created_at: now,
+      updated_at: now,
+    }, { onConflict: 'order_id' });
+  } catch (_e) {}
 
   console.log(`🔒 [EscrowService] Created escrow order ${finalOrderId} for ${zarVal} ZAR (${ethVal} ETH)`);
   return escrowOrder;
 }
 
 /**
- * Fetch an escrow order by ID.
+ * Fetch an escrow order by ID. Never fabricates a demo order when missing.
  */
 function getEscrowOrder(orderId, req = null) {
-  let order = ordersMap.get(orderId);
+  const order = ordersMap.get(orderId);
   if (!order) {
-    // Generate default verified demo order if requested for a mock ID
-    const zarVal = 28500;
-    const ethVal = '11.4000';
-    const simulatedDepositHash = '0x3a8b4f2c1d9e7a5b6c8d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b';
-
-    order = {
-      orderId,
-      assetName: 'Verified Collectible',
-      assetCategory: 'Luxury Watch',
-      assetImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
-      amountZar: zarVal,
-      amountGbp: zarVal,
-      amountEth: ethVal,
-      paymentMethod: 'wallet',
-      paymentRail: 'Ethereum Sepolia Web3',
-      status: 'payment_secured',
-      currentStep: 1,
-      totalSteps: 4,
-      depositTxHash: simulatedDepositHash,
-      etherscanUrl: `https://sepolia.etherscan.io/tx/${simulatedDepositHash}`,
-      escrowContractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
-      sellerAddress: '0x71C3A5b67B7840131498B1aB55938B237F026a76',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      timeline: [
-        {
-          step: 1,
-          title: 'Payment Secured in Smart Contract',
-          description: `${ethVal} Sepolia ETH locked in Escrow Contract. Protected from withdrawal until inspection passes.`,
-          timestamp: new Date().toISOString(),
-          txHash: simulatedDepositHash,
-          completed: true,
-        },
-        {
-          step: 2,
-          title: 'Physical Asset in Transit to Vault',
-          description: 'Insured courier dispatch in progress to London Custody Center.',
-          completed: false,
-        },
-        {
-          step: 3,
-          title: 'Authentication & Physical Inspection',
-          description: 'Condition grading and authenticity appraisal.',
-          completed: false,
-        },
-        {
-          step: 4,
-          title: 'Funds Released to Seller & NFT Delivered',
-          description: 'Automatic settlement on-chain.',
-          completed: false,
-        },
-      ],
-    };
-    ordersMap.set(orderId, order);
-    persistOrders();
+    return null;
   }
   return {
     ...order,
@@ -249,8 +171,6 @@ function getAllEscrowOrders(req = null) {
 
 /**
  * Progress escrow order through its custody stages.
- * step 2: In Transit
- * step 3: In Inspection
  */
 async function progressEscrowStep(orderId, targetStep, note) {
   const order = ordersMap.get(orderId);
@@ -280,14 +200,20 @@ async function progressEscrowStep(orderId, targetStep, note) {
     order.timeline[2].timestamp = now;
     if (note) order.timeline[2].description = note;
 
-    // Call on-chain confirmInspection
     const inspectTx = await web3Service.confirmInspectionOnChain({ orderId });
     order.timeline[2].txHash = inspectTx.txHash;
   }
 
   order.updatedAt = now;
   ordersMap.set(orderId, order);
-  persistOrders();
+
+  try {
+    await supabase.from('escrow_orders').update({
+      status: order.status,
+      timeline: order.timeline,
+      updated_at: now,
+    }).eq('order_id', orderId);
+  } catch (_e) {}
 
   return order;
 }
@@ -308,7 +234,6 @@ async function releaseEscrow(orderId) {
     throw new Error('Cannot release funds for an order that has already been refunded.');
   }
 
-  // Call on-chain release
   const releaseTx = await web3Service.releaseEscrowOnChain({ orderId });
   const now = new Date().toISOString();
 
@@ -319,7 +244,6 @@ async function releaseEscrow(orderId) {
   order.releasedAt = now;
   order.updatedAt = now;
 
-  // Mark all timeline steps completed
   order.timeline.forEach((t) => {
     t.completed = true;
   });
@@ -327,7 +251,14 @@ async function releaseEscrow(orderId) {
   order.timeline[3].timestamp = now;
 
   ordersMap.set(orderId, order);
-  persistOrders();
+
+  try {
+    await supabase.from('escrow_orders').update({
+      status: 'released',
+      timeline: order.timeline,
+      updated_at: now,
+    }).eq('order_id', orderId);
+  } catch (_e) {}
 
   console.log(`✅ [EscrowService] Released escrow funds for ${orderId} on-chain! Tx: ${releaseTx.txHash}`);
   return order;
@@ -349,7 +280,6 @@ async function refundEscrow(orderId, reason) {
     throw new Error('Cannot refund an order whose funds have already been released to the seller.');
   }
 
-  // Call on-chain refund
   const refundTx = await web3Service.refundEscrowOnChain({ orderId });
   const now = new Date().toISOString();
 
@@ -361,7 +291,14 @@ async function refundEscrow(orderId, reason) {
   order.updatedAt = now;
 
   ordersMap.set(orderId, order);
-  persistOrders();
+
+  try {
+    await supabase.from('escrow_orders').update({
+      status: 'refunded',
+      timeline: order.timeline,
+      updated_at: now,
+    }).eq('order_id', orderId);
+  } catch (_e) {}
 
   console.log(`↩️ [EscrowService] Refunded escrow funds for ${orderId} on-chain! Tx: ${refundTx.txHash}`);
   return order;
@@ -376,4 +313,3 @@ module.exports = {
   releaseEscrow,
   refundEscrow,
 };
-

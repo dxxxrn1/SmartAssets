@@ -55,159 +55,11 @@ const formatZAR = (val, fallback = "R0") => {
 };
 const formatGBP = formatZAR;
 
-// ── Default Seed Data for 3-Tab Asset-First Vault Redesign ────────────────────
-const DEFAULT_PERSONAL_ITEMS = [
-  {
-    id: "personal-keyboard",
-    name: "Logi MX Mechanical Wireless Keyboard",
-    category: "Electronics",
-    image: "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&q=80",
-    initialValue: 150,
-    initialValueFormatted: "R150",
-    liveMarketValue: 132,
-    liveMarketValueFormatted: "R132",
-    badgeText: "-12% Market Depreciation",
-    badgeType: "negative",
-    ownership: "100% Owned",
-    certId: "ERC-721 #4811",
-    condition: "Mint Condition",
-  },
-  {
-    id: "personal-converse",
-    name: "Vintage Converse Chuck 70 High Top",
-    category: "Apparel & Sneakers",
-    image: "https://images.unsplash.com/photo-1607522370275-f14206abe5d3?w=600&q=80",
-    initialValue: 120,
-    initialValueFormatted: "R120",
-    liveMarketValue: 137,
-    liveMarketValueFormatted: "R137",
-    badgeText: "+14% Market Gain",
-    badgeType: "positive",
-    ownership: "100% Owned",
-    certId: "ERC-721 #4920",
-    condition: "Deadstock In Box",
-  },
-  {
-    id: "personal-cable",
-    name: "Custom Braided Coiled Aviator Cable",
-    category: "Accessories",
-    image: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&q=80",
-    initialValue: 65,
-    initialValueFormatted: "R65",
-    liveMarketValue: 58,
-    liveMarketValueFormatted: "R58",
-    badgeText: "-10.8% Wear & Tear",
-    badgeType: "negative",
-    ownership: "100% Owned",
-    certId: "ERC-721 #4732",
-    condition: "Excellent",
-  },
-];
+// ── Empty Default Collections for Vault (Populated dynamically from Supabase) ─
+const DEFAULT_PERSONAL_ITEMS = [];
+const DEFAULT_FRACTIONAL_ITEMS = [];
+const DEFAULT_ACTIVITY_LOG = [];
 
-const DEFAULT_FRACTIONAL_ITEMS = [
-  {
-    id: "fraction-rolex",
-    name: "Rolex Submariner Date 126610LN",
-    category: "Watches",
-    image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80",
-    sharesOwned: 2,
-    sharePrice: 100,
-    sharePriceFormatted: "R100/sh",
-    myStake: 200,
-    myStakeFormatted: "R200",
-    returnPct: "+12.4% Return",
-    returnType: "positive",
-    poolValuation: "R18,500",
-    totalShares: 185,
-    fundingPct: 77,
-  },
-  {
-    id: "fraction-jordan",
-    name: "1985 Air Jordan 1 Chicago (OG Mint)",
-    category: "Sneakers",
-    image: "https://images.unsplash.com/photo-1552346154-21d32810aba3?w=600&q=80",
-    sharesOwned: 2,
-    sharePrice: 100,
-    sharePriceFormatted: "R100/sh",
-    myStake: 200,
-    myStakeFormatted: "R200",
-    returnPct: "+12.4% Return",
-    returnType: "positive",
-    poolValuation: "R25,000",
-    totalShares: 250,
-    fundingPct: 88,
-  },
-];
-
-const DEFAULT_ACTIVITY_LOG = [
-  {
-    id: "act-1",
-    type: "certificate",
-    title: "ERC-721 Sepolia Certificate Mint",
-    assetName: "Vintage Converse Chuck 70 High Top",
-    hash: "0x71c93a84b0179a6d9128f731a55938b237f026a76",
-    hashDisplay: "0x71c...9a",
-    timestamp: "Today, 11:24 AM",
-    status: "Verified & Minted",
-    network: "Sepolia Testnet",
-    icon: "diamond-outline",
-    badgeColor: "#7C3AED",
-  },
-  {
-    id: "act-3",
-    type: "escrow_deposit",
-    title: "Escrow Deposit Confirmed",
-    assetName: "Escrow Wallet Balance",
-    hash: "0x85d968be446ec1f77d10bea80de7e491f7d6573988448e2cffafa12d243f53b9",
-    hashDisplay: "0x85d...b9",
-    amount: "+R250",
-    timestamp: "16 Oct, 14:10 PM",
-    status: "Escrow Protected",
-    network: "SmartAssets Escrow v2",
-    icon: "shield-checkmark-outline",
-    badgeColor: "#2563EB",
-  },
-  {
-    id: "act-4",
-    type: "certificate",
-    title: "ERC-721 Sepolia Certificate Mint",
-    assetName: "Logi MX Mechanical Wireless Keyboard",
-    hash: "0x71cb842e1284a0149021e89a42105820bb3219a",
-    hashDisplay: "0x71c...9a",
-    timestamp: "15 Oct, 10:15 AM",
-    status: "Verified & Minted",
-    network: "Sepolia Testnet",
-    icon: "diamond-outline",
-    badgeColor: "#7C3AED",
-  },
-  {
-    id: "act-5",
-    type: "fractional_escrow",
-    title: "Fractional Share Escrow Lock",
-    assetName: "2 Shares • Rolex Submariner Date",
-    hash: "0x3a82ef499120ab0192ca840131498b1ab55938b2",
-    hashDisplay: "0x3a8...b2",
-    amount: "R200 Locked",
-    timestamp: "14 Oct, 18:20 PM",
-    status: "Contract Escrow",
-    network: "Sepolia Testnet",
-    icon: "lock-closed-outline",
-    badgeColor: "#F59E0B",
-  },
-  {
-    id: "act-6",
-    type: "certificate",
-    title: "ERC-721 Sepolia Certificate Mint",
-    assetName: "Custom Braided Coiled Aviator Cable",
-    hash: "0x71ce18420fa284102948bbcd09124802148719a",
-    hashDisplay: "0x71c...9a",
-    timestamp: "13 Oct, 09:30 AM",
-    status: "Verified & Minted",
-    network: "Sepolia Testnet",
-    icon: "diamond-outline",
-    badgeColor: "#7C3AED",
-  },
-];
 
 export default function VaultScreen({ navigation }) {
   const { width: screenWidth } = useWindowDimensions();
@@ -224,22 +76,22 @@ export default function VaultScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState("personal"); // 'personal' | 'fractions' | 'log'
-  const [personalItems, setPersonalItems] = useState(DEFAULT_PERSONAL_ITEMS);
-  const [fractionalItems, setFractionalItems] = useState(DEFAULT_FRACTIONAL_ITEMS);
-  const [activityLog, setActivityLog] = useState(DEFAULT_ACTIVITY_LOG);
-  const [escrowCash, setEscrowCash] = useState(250);
+  const [personalItems, setPersonalItems] = useState([]);
+  const [fractionalItems, setFractionalItems] = useState([]);
+  const [activityLog, setActivityLog] = useState([]);
+  const [escrowCash, setEscrowCash] = useState(0);
 
   const [holdings, setHoldings] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({
-    availableBalanceFormatted: "R250",
-    availableBalanceNum: 250,
-    portfolioValueFormatted: "R827",
-    portfolioValueNum: 827,
-    totalValueFormatted: "R1,077",
-    totalValueNum: 1077,
-    totalCount: 5,
-    gainText: "+12.4% YTD",
+    availableBalanceFormatted: "R0",
+    availableBalanceNum: 0,
+    portfolioValueFormatted: "R0",
+    portfolioValueNum: 0,
+    totalValueFormatted: "R0",
+    totalValueNum: 0,
+    totalCount: 0,
+    gainText: "0.0% YTD",
   });
 
   // Dynamic Financial Math for Headline

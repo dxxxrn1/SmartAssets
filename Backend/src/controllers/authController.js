@@ -75,6 +75,7 @@ async function register(req, res) {
       return sendError(res, status, authError.message);
     }
 
+    // Create profile in Supabase profiles table
     try {
       const { error: profileError } = await supabase
         .from('profiles')
@@ -83,15 +84,22 @@ async function register(req, res) {
             id: authData.user.id,
             full_name: fullName.trim(),
             email: cleanEmail,
+            balance: 0,
+            role: 'user',
+            verification_status: 'unverified',
           },
           { onConflict: 'id' }
         );
 
       if (profileError) {
-        console.warn('Profile table sync warning:', profileError.message);
+        console.error('❌ [AuthController] Profile creation failed:', profileError.message);
+        await supabase.auth.admin.deleteUser(authData.user.id).catch(() => {});
+        return sendError(res, 500, `Failed to create user profile: ${profileError.message}`);
       }
     } catch (err) {
-      console.warn('Profile sync exception:', err.message);
+      console.error('❌ [AuthController] Profile creation exception:', err.message);
+      await supabase.auth.admin.deleteUser(authData.user.id).catch(() => {});
+      return sendError(res, 500, `Profile creation error: ${err.message}`);
     }
 
     // Initialize user compliance profile
@@ -220,7 +228,7 @@ async function login(req, res) {
         walletAddress,
         avatarUrl,
         avatar_url: avatarUrl,
-        kycStatus: compliance.kycStatus || (walletAddress ? 'verified' : 'unverified'),
+        kycStatus: (compliance && compliance.kycStatus === 'verified') ? 'verified' : (profile?.verification_status === 'verified' ? 'verified' : 'unverified'),
         accountStatus: compliance.accountStatus || 'active',
         isSuspended: compliance.isSuspended || false,
         bankingDetails: compliance.bankingDetails || null,
@@ -364,7 +372,7 @@ async function linkWallet(req, res) {
         walletAddress: cleanAddress,
         avatarUrl: freshProfile?.avatar_url || req.user.user_metadata?.avatar_url || null,
         avatar_url: freshProfile?.avatar_url || req.user.user_metadata?.avatar_url || null,
-        kycStatus: compliance?.kycStatus || 'verified',
+        kycStatus: (compliance && compliance.kycStatus === 'verified') ? 'verified' : (freshProfile?.verification_status === 'verified' ? 'verified' : 'unverified'),
         accountStatus: compliance?.accountStatus || 'active',
         isSuspended: compliance?.isSuspended || false,
         bankingDetails: compliance?.bankingDetails || null,
@@ -482,7 +490,7 @@ async function walletLogin(req, res) {
         walletAddress: cleanAddress,
         avatarUrl: profile.avatar_url,
         avatar_url: profile.avatar_url,
-        kycStatus: compliance?.kycStatus || 'verified',
+        kycStatus: (compliance && compliance.kycStatus === 'verified') ? 'verified' : (profile?.verification_status === 'verified' ? 'verified' : 'unverified'),
         accountStatus: compliance?.accountStatus || 'active',
         isSuspended: false,
         bankingDetails: compliance?.bankingDetails || null,

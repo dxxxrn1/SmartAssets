@@ -1,6 +1,5 @@
 // ─── SmartAssets Backend — Express Server ─────────────────────────────────────
 // Entry point: sets up Express with Helmet security, CORS, JSON parsing, and mounts API routes.
-
 const express = require('express');
 const cors = require('cors');
 let helmet;
@@ -10,8 +9,8 @@ try {
   console.warn('⚠️ [Helmet] helmet package not found. Using custom securityHeaders middleware.');
 }
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -91,7 +90,9 @@ app.use('/api/user', userRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/payments', paymentRoutes);
 app.use('/api/escrow', escrowRoutes);
+app.use('/escrow', escrowRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/admin', adminRoutes);
 app.use('/api/models', modelRoutes);

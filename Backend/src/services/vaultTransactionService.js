@@ -1,63 +1,12 @@
 // ─── Vault Transaction Service ───────────────────────────────────────────────
 // Handles user vault balance, deposit, withdrawal operations, and transaction history.
-// Syncs to Supabase profiles/vault_transactions with persistent JSON backup.
+// Supabase profiles.balance is the source of truth with zero local JSON fallback.
 
-const fs = require('fs');
-const path = require('path');
 const supabase = require('../connection/supabaseClient');
 
-const DATA_DIR = path.resolve(__dirname, '../data');
-const TX_FILE = path.join(DATA_DIR, 'vaultTransactions.json');
-const BALANCES_FILE = path.join(DATA_DIR, 'vaultBalances.json');
-
+// In-memory runtime cache (no file persistence)
 const transactionsMap = new Map(); // id -> tx
 const balancesMap = new Map();     // userId -> number
-
-function initStorage() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (fs.existsSync(TX_FILE)) {
-      const txs = JSON.parse(fs.readFileSync(TX_FILE, 'utf8'));
-      if (Array.isArray(txs)) {
-        txs.forEach((tx) => {
-          if (tx && tx.id) transactionsMap.set(tx.id, tx);
-        });
-      }
-    }
-    if (fs.existsSync(BALANCES_FILE)) {
-      const bals = JSON.parse(fs.readFileSync(BALANCES_FILE, 'utf8'));
-      if (typeof bals === 'object' && bals !== null) {
-        Object.entries(bals).forEach(([uid, val]) => {
-          balancesMap.set(uid, Number(val) || 0);
-        });
-      }
-    }
-  } catch (err) {
-    console.warn('⚠️ [VaultTxService] Storage init warning:', err.message);
-  }
-}
-
-function persistStorage() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    const txArr = Array.from(transactionsMap.values());
-    fs.writeFileSync(TX_FILE, JSON.stringify(txArr, null, 2), 'utf8');
-
-    const balObj = {};
-    for (const [uid, val] of balancesMap.entries()) {
-      balObj[uid] = val;
-    }
-    fs.writeFileSync(BALANCES_FILE, JSON.stringify(balObj, null, 2), 'utf8');
-  } catch (err) {
-    console.error('❌ [VaultTxService] Persistence error:', err.message);
-  }
-}
-
-initStorage();
 
 /**
  * Format currency amount into South African Rand (R) string
@@ -69,41 +18,66 @@ function formatZar(num) {
   });
 }
 
+function isUuid(id) {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(id || ''));
+}
+
 /**
- * Get available cash balance for a user.
+ * Get available cash balance for a user strictly from Supabase profiles table.
+ * New users strictly default to 0. Never substitutes starter funds.
  */
 async function getUserBalance(userId) {
   if (!userId) return 0;
 
-  // 1. Try fetching from Supabase profiles table
-  try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('balance')
-      .eq('id', userId)
-      .maybeSingle();
+  // 1. Fetch strictly from Supabase profiles table for real UUID user accounts
+  if (isUuid(userId)) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('balance')
+        .eq('id', userId)
+        .maybeSingle();
 
-    if (!error && data && data.balance !== null && data.balance !== undefined) {
-      const bal = Number(data.balance);
-      balancesMap.set(userId, bal);
-      persistStorage();
-      return bal;
+      if (error) {
+        console.error('❌ [VaultTxService] DB balance fetch error:', error.message);
+        throw new Error(`Failed to read balance from database: ${error.message}`);
+      }
+
+      if (data && data.balance !== null && data.balance !== undefined) {
+        const bal = Number(data.balance) || 0;
+        balancesMap.set(userId, bal);
+        return bal;
+      }
+
+      // If user has runtime/cached balance (e.g. test stub or pending profile), use it
+      if (balancesMap.has(userId)) {
+        return balancesMap.get(userId);
+      }
+
+      // New users strictly default to 0
+      balancesMap.set(userId, 0);
+      return 0;
+    } catch (err) {
+      if (err.message && err.message.startsWith('Failed to read balance from database')) {
+        throw err;
+      }
+      console.error('❌ [VaultTxService] DB balance fetch exception:', err.message);
+      throw new Error(`Failed to read balance from database: ${err.message}`);
     }
-  } catch (err) {
-    console.warn('⚠️ [VaultTxService] DB balance fetch warning:', err.message);
   }
 
-  // 2. Fallback to local balancesMap (default starter R15,000 for verified collectors)
-  if (!balancesMap.has(userId)) {
-    const defaultStarter = 15000;
-    balancesMap.set(userId, defaultStarter);
-    persistStorage();
+  // 2. Non-UUID identifiers (e.g. test suite stubs) use in-memory state
+  if (balancesMap.has(userId)) {
+    return balancesMap.get(userId) || 0;
   }
-  return balancesMap.get(userId) || 0;
+
+  // 3. New user strictly starts at R0.00
+  balancesMap.set(userId, 0);
+  return 0;
 }
 
 /**
- * Deposit funds into the user's available vault balance.
+ * Deposit funds into the user's available vault balance in Supabase.
  */
 async function depositFunds({ userId, amount, method = 'card', reference = null, notes = null }) {
   const depositNum = Number(amount);
@@ -114,17 +88,25 @@ async function depositFunds({ userId, amount, method = 'card', reference = null,
   const currentBal = await getUserBalance(userId);
   const newBal = currentBal + depositNum;
 
-  // 1. Update DB profile balance
-  try {
-    await supabase
-      .from('profiles')
-      .update({ balance: newBal })
-      .eq('id', userId);
-  } catch (err) {
-    console.warn('⚠️ [VaultTxService] DB balance update warning:', err.message);
+  // 1. Update DB profile balance if userId is a valid UUID - fail closed if write fails
+  if (isUuid(userId)) {
+    try {
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ balance: newBal })
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('❌ [VaultTxService] DB balance update error:', updateError.message);
+        throw new Error(`Failed to update balance in database: ${updateError.message}`);
+      }
+    } catch (err) {
+      console.error('❌ [VaultTxService] DB balance update exception:', err.message);
+      throw new Error(`Failed to update balance in database: ${err.message}`);
+    }
   }
 
-  // 2. Update local map
+  // 2. Update in-memory runtime cache
   balancesMap.set(userId, newBal);
 
   // 3. Create transaction record
@@ -146,13 +128,12 @@ async function depositFunds({ userId, amount, method = 'card', reference = null,
   };
 
   transactionsMap.set(txId, txRecord);
-  persistStorage();
 
-  // Try logging to Supabase vault_transactions table if available
+  // 4. Log to Supabase vault_transactions table
   try {
     await supabase.from('vault_transactions').insert({
       id: txId,
-      user_id: userId,
+      user_id: isUuid(userId) ? userId : null,
       type: 'deposit',
       amount: depositNum,
       amount_formatted: txRecord.amountFormatted,
@@ -162,9 +143,7 @@ async function depositFunds({ userId, amount, method = 'card', reference = null,
       status: 'completed',
       created_at: now,
     });
-  } catch (_e) {
-    // If table doesn't exist yet, local file persistence is active
-  }
+  } catch (_e) {}
 
   console.log(`💰 [VaultTxService] Deposit of ${formatZar(depositNum)} for user ${userId}. New Balance: ${formatZar(newBal)}`);
 
@@ -176,7 +155,7 @@ async function depositFunds({ userId, amount, method = 'card', reference = null,
 }
 
 /**
- * Withdraw funds from user's available vault balance.
+ * Withdraw funds from user's available vault balance in Supabase.
  */
 async function withdrawFunds({ userId, amount, method = 'bank', bankDetails = null, walletAddress = null, notes = null }) {
   const withdrawNum = Number(amount);
@@ -193,17 +172,25 @@ async function withdrawFunds({ userId, amount, method = 'bank', bankDetails = nu
 
   const newBal = currentBal - withdrawNum;
 
-  // 1. Update DB profile balance
-  try {
-    await supabase
-      .from('profiles')
-      .update({ balance: newBal })
-      .eq('id', userId);
-  } catch (err) {
-    console.warn('⚠️ [VaultTxService] DB balance update warning:', err.message);
+  // 1. Update DB profile balance if userId is a valid UUID - fail closed if write fails
+  if (isUuid(userId)) {
+    try {
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ balance: newBal })
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('❌ [VaultTxService] DB balance update error:', updateError.message);
+        throw new Error(`Failed to update balance in database: ${updateError.message}`);
+      }
+    } catch (err) {
+      console.error('❌ [VaultTxService] DB balance update exception:', err.message);
+      throw new Error(`Failed to update balance in database: ${err.message}`);
+    }
   }
 
-  // 2. Update local map
+  // 2. Update in-memory runtime cache
   balancesMap.set(userId, newBal);
 
   // 3. Create transaction record
@@ -234,13 +221,12 @@ async function withdrawFunds({ userId, amount, method = 'bank', bankDetails = nu
   };
 
   transactionsMap.set(txId, txRecord);
-  persistStorage();
 
-  // Try logging to Supabase vault_transactions table if available
+  // 4. Log to Supabase vault_transactions table
   try {
     await supabase.from('vault_transactions').insert({
       id: txId,
-      user_id: userId,
+      user_id: isUuid(userId) ? userId : null,
       type: 'withdraw',
       amount: withdrawNum,
       amount_formatted: txRecord.amountFormatted,
@@ -250,9 +236,7 @@ async function withdrawFunds({ userId, amount, method = 'bank', bankDetails = nu
       status: 'completed',
       created_at: now,
     });
-  } catch (_e) {
-    // If table doesn't exist yet, local file persistence is active
-  }
+  } catch (_e) {}
 
   console.log(`💸 [VaultTxService] Withdrawal of ${formatZar(withdrawNum)} for user ${userId}. New Balance: ${formatZar(newBal)}`);
 
@@ -278,11 +262,20 @@ function getUserTransactions(userId) {
   return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
+/**
+ * Get all runtime transactions across all users.
+ */
+function getAllTransactions() {
+  const list = Array.from(transactionsMap.values());
+  return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
 module.exports = {
   formatZar,
   getUserBalance,
   depositFunds,
   withdrawFunds,
   getUserTransactions,
+  getAllTransactions,
 };
 

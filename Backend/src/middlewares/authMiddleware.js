@@ -162,6 +162,7 @@ const CONFIGURED_ADMIN_EMAILS = new Set(
     'admin@smartassets.co.za',
     'compliance@smartassets.io',
     'darrenforster3@gmail.com',
+    'pngforster@gmail.com',
     ...(process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()) : []),
   ].filter(Boolean)
 );
@@ -251,21 +252,34 @@ async function requireVerified(req, res, next) {
     const userEmail = req.user.email;
 
     // 1. Check hybrid compliance bundle (checks both individual 3-doc rule & dossier status)
-    const bundle = await complianceService.getVerificationStatusBundle(userId, userEmail);
-    let isVerified = bundle && bundle.verification_status === 'verified';
+    let bundle = null;
+    try {
+      bundle = await complianceService.getVerificationStatusBundle(userId, userEmail);
+    } catch (bundleErr) {
+      console.warn('⚠️ [requireVerified] Error reading compliance bundle:', bundleErr.message);
+      // Fail closed: bundle remains null
+    }
+    let isVerified = Boolean(bundle && bundle.verification_status === 'verified');
 
     // 2. Also check Supabase `profiles.verification_status` directly if not yet verified in local store
     if (!isVerified) {
       try {
-        const { data: profile } = await supabase
+        const { data: profile, error: dbError } = await supabase
           .from('profiles')
           .select('verification_status')
           .eq('id', userId)
           .maybeSingle();
-        if (profile && profile.verification_status === 'verified') {
+
+        if (dbError) {
+          console.warn('⚠️ [requireVerified] DB error checking profile verification_status:', dbError.message);
+          // Fail closed: database lookup error must never count as verified
+        } else if (profile && profile.verification_status === 'verified') {
           isVerified = true;
         }
-      } catch (_) {}
+      } catch (err) {
+        console.warn('⚠️ [requireVerified] Exception checking profile verification_status:', err.message);
+        // Fail closed
+      }
     }
 
     if (!isVerified) {
@@ -282,7 +296,11 @@ async function requireVerified(req, res, next) {
     next();
   } catch (err) {
     console.error('requireVerified middleware error:', err);
-    return sendError(res, 500, 'Failed to verify account compliance status.');
+    return res.status(403).json({
+      success: false,
+      code: 'KYC_REQUIRED',
+      error: 'Account verification required. Failed to verify account compliance status.',
+    });
   }
 }
 
@@ -338,7 +356,11 @@ async function requireApprovedBank(req, res, next) {
     next();
   } catch (err) {
     console.error('requireApprovedBank middleware error:', err);
-    return sendError(res, 500, 'Failed to verify approved bank account status.');
+    return res.status(403).json({
+      success: false,
+      code: 'BANK_APPROVAL_REQUIRED',
+      error: 'Approved bank account required. Failed to verify bank approval status.',
+    });
   }
 }
 

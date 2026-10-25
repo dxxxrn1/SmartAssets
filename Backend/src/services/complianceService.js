@@ -12,11 +12,6 @@ const supabase = require('../connection/supabaseClient');
 const auditLogService = require('./auditLogService');
 const { saveBase64Image, normalizeImageUrl, KYC_UPLOADS_DIR } = require('../utils/imageHandler');
 
-const DATA_DIR = path.resolve(__dirname, '../data');
-const VERIFICATIONS_FILE = path.join(DATA_DIR, 'kycVerifications.json');
-const USER_STATUS_FILE = path.join(DATA_DIR, 'userStatus.json');
-const DOCUMENTS_FILE = path.join(DATA_DIR, 'verificationDocuments.json');
-const BANK_ACCOUNTS_FILE = path.join(DATA_DIR, 'bankAccounts.json');
 
 const verificationsMap = new Map();
 const userStatusMap = new Map();
@@ -250,86 +245,7 @@ function ensureAuthenticDocuments(record) {
   return record;
 }
 
-const SEED_VERIFICATIONS = [
-  {
-    id: 'KYC-ZA-2026-100',
-    userId: '47a8f198-06e0-4eb7-b0ec-617b30318091',
-    userEmail: 'sipho.demo@smartassets.co.za',
-    fullName: 'Sipho Demo Collector',
-    idNumber: '9805145089082',
-    idDocumentUrl: '/uploads/kyc/KYC-ZA-2026-100_id.svg',
-    taxNumber: '9048192834',
-    taxDocumentUrl: '/uploads/kyc/KYC-ZA-2026-100_tax.svg',
-    residentialAddress: '18 Maude Street, Sandton Central, Johannesburg, 2196',
-    proofOfResidenceUrl: '/uploads/kyc/KYC-ZA-2026-100_residence.svg',
-    bankingDetails: {
-      bankName: 'Standard Bank',
-      accountHolder: 'Sipho Demo Collector',
-      accountNumber: '10184921234',
-      branchCode: '051001',
-      accountType: 'Cheque / Current',
-      status: 'approved',
-    },
-    kycStatus: 'verified',
-    rejectionReason: null,
-    submittedAt: '2026-09-25T08:30:00.000Z',
-    reviewedAt: '2026-09-25T09:00:00.000Z',
-    reviewedBy: 'Admin Compliance Operations',
-    notes: 'South African Smart ID Card, SARS IT150 Tax Notice, and Sandton Municipal Utility Bill verified.',
-  },
-  {
-    id: 'KYC-ZA-2026-101',
-    userId: '9140495b-22a3-4df4-9c6d-5a7f649e1710',
-    userEmail: 'kgomotso.mabena@smartassets.co.za',
-    fullName: 'Kgomotso Mabena',
-    idNumber: '9311085192086',
-    idDocumentUrl: '/uploads/kyc/KYC-ZA-2026-101_id.svg',
-    taxNumber: '9481029381',
-    taxDocumentUrl: '/uploads/kyc/KYC-ZA-2026-101_tax.svg',
-    residentialAddress: '44 Victoria Road, Clifton, Cape Town, 8005',
-    proofOfResidenceUrl: '/uploads/kyc/KYC-ZA-2026-101_residence.svg',
-    bankingDetails: {
-      bankName: 'FNB',
-      accountHolder: 'Kgomotso Mabena',
-      accountNumber: '62819203918',
-      branchCode: '250655',
-      accountType: 'Cheque / Current',
-      status: 'pending',
-    },
-    kycStatus: 'pending',
-    rejectionReason: null,
-    submittedAt: '2026-10-23T16:23:39.693Z',
-    reviewedAt: null,
-    reviewedBy: null,
-    notes: 'South African Smart ID Card + City of Cape Town Rates Account (< 30 days) + SARS Tax Notice.',
-  },
-  {
-    id: 'KYC-ZA-2026-102',
-    userId: 'usr-demo-02',
-    userEmail: 'naledi.khumalo@smartassets.co.za',
-    fullName: 'Naledi Khumalo',
-    idNumber: '9108220194088',
-    idDocumentUrl: '/uploads/kyc/KYC-ZA-2026-102_id.svg',
-    taxNumber: '9120938472',
-    taxDocumentUrl: '/uploads/kyc/KYC-ZA-2026-102_tax.svg',
-    residentialAddress: '12 West Road South, Morningside, Sandton, 2196',
-    proofOfResidenceUrl: '/uploads/kyc/KYC-ZA-2026-102_residence.svg',
-    bankingDetails: {
-      bankName: 'Capitec',
-      accountHolder: 'Naledi Khumalo',
-      accountNumber: '1589204918',
-      branchCode: '470010',
-      accountType: 'Savings',
-      status: 'pending',
-    },
-    kycStatus: 'pending',
-    rejectionReason: null,
-    submittedAt: '2026-10-23T18:10:00.000Z',
-    reviewedAt: null,
-    reviewedBy: null,
-    notes: 'SA Smart ID Card + Sandton Municipal Utility Statement + SARS IT150 Tax Confirmation.',
-  },
-];
+const SEED_VERIFICATIONS = [];
 
 function isUnitTestUser(userId, email) {
   const uid = String(userId || '').toLowerCase();
@@ -395,129 +311,9 @@ function syncDossierToGranularStores(v) {
   }
 }
 
-function initStorage() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-
-    if (fs.existsSync(VERIFICATIONS_FILE)) {
-      const data = JSON.parse(fs.readFileSync(VERIFICATIONS_FILE, 'utf8'));
-      if (Array.isArray(data) && data.length > 0) {
-        data.forEach((v) => {
-          if (v && v.id && !isUnitTestUser(v.userId, v.userEmail)) {
-            verificationsMap.set(v.id, ensureAuthenticDocuments(v));
-          }
-        });
-      }
-    }
-
-    if (verificationsMap.size === 0) {
-      seedInitialVerifications();
-    } else {
-// Primary seed injection removed for clean real user isolation
-    }
-
-    if (fs.existsSync(USER_STATUS_FILE)) {
-      const statuses = JSON.parse(fs.readFileSync(USER_STATUS_FILE, 'utf8'));
-      if (typeof statuses === 'object' && statuses !== null) {
-        Object.entries(statuses).forEach(([userId, statusObj]) => {
-          if (!isUnitTestUser(userId, statusObj?.userEmail)) {
-            userStatusMap.set(userId, statusObj);
-          }
-        });
-      }
-    }
-
-    if (fs.existsSync(DOCUMENTS_FILE)) {
-      const docs = JSON.parse(fs.readFileSync(DOCUMENTS_FILE, 'utf8'));
-      if (Array.isArray(docs)) {
-        docs.forEach((d) => {
-          if (d && d.id && !isUnitTestUser(d.user_id, d.user_email)) {
-            documentsMap.set(d.id, d);
-          }
-        });
-      }
-    }
-
-    if (fs.existsSync(BANK_ACCOUNTS_FILE)) {
-      const banks = JSON.parse(fs.readFileSync(BANK_ACCOUNTS_FILE, 'utf8'));
-      if (Array.isArray(banks)) {
-        banks.forEach((b) => {
-          if (b && b.id && !isUnitTestUser(b.user_id, b.user_email)) {
-            bankAccountsMap.set(b.id, b);
-          }
-        });
-      }
-    }
-
-    // Ensure granular documents and bank accounts are populated for seeded dossiers
-    for (const v of verificationsMap.values()) {
-      syncDossierToGranularStores(v);
-      if (v.userId && !userStatusMap.has(v.userId)) {
-        userStatusMap.set(v.userId, {
-          userId: v.userId,
-          userEmail: v.userEmail,
-          fullName: v.fullName,
-          kycStatus: v.kycStatus,
-          accountStatus: 'active',
-          isSuspended: false,
-          bankingDetails: v.bankingDetails,
-          updatedAt: v.reviewedAt || v.submittedAt,
-        });
-      }
-    }
-
-    persistAll();
-  } catch (err) {
-    console.warn('⚠️ [ComplianceService] Storage initialization warning:', err.message);
-  }
-}
-
-function seedInitialVerifications() {
-  SEED_VERIFICATIONS.forEach((v) => {
-    const cleanV = ensureAuthenticDocuments({ ...v });
-    verificationsMap.set(cleanV.id, cleanV);
-    syncDossierToGranularStores(cleanV);
-    userStatusMap.set(cleanV.userId, {
-      userId: cleanV.userId,
-      userEmail: cleanV.userEmail,
-      fullName: cleanV.fullName,
-      kycStatus: cleanV.kycStatus,
-      accountStatus: 'active',
-      isSuspended: false,
-      bankingDetails: cleanV.bankingDetails,
-      updatedAt: cleanV.reviewedAt || cleanV.submittedAt,
-    });
-  });
-  persistAll();
-}
-
 function persistAll() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    const verifArray = Array.from(verificationsMap.values());
-    fs.writeFileSync(VERIFICATIONS_FILE, JSON.stringify(verifArray, null, 2), 'utf8');
-
-    const statusObj = {};
-    for (const [uid, stat] of userStatusMap.entries()) {
-      statusObj[uid] = stat;
-    }
-    fs.writeFileSync(USER_STATUS_FILE, JSON.stringify(statusObj, null, 2), 'utf8');
-
-    const docsArray = Array.from(documentsMap.values());
-    fs.writeFileSync(DOCUMENTS_FILE, JSON.stringify(docsArray, null, 2), 'utf8');
-
-    const banksArray = Array.from(bankAccountsMap.values());
-    fs.writeFileSync(BANK_ACCOUNTS_FILE, JSON.stringify(banksArray, null, 2), 'utf8');
-  } catch (err) {
-    console.error('❌ [ComplianceService] Failed to persist compliance data:', err.message);
-  }
+  // Pure in-memory / Supabase sync - zero local JSON file persistence
 }
-
-initStorage();
 
 /**
  * Recomputes a user's overall verification_status from their 3 individual document slots:

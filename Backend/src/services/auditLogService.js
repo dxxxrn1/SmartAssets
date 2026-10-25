@@ -1,116 +1,15 @@
 // ─── SmartAssets Audit Log Service ──────────────────────────────────────────
 // High-fidelity security audit ledger capturing auth events, session timeouts,
 // KYC state transitions, and administrative account suspensions.
+// Supabase admin_audit_logs is the source of truth with zero local JSON fallback.
 
-const fs = require('fs');
-const path = require('path');
+const supabase = require('../connection/supabaseClient');
 
-const DATA_DIR = path.resolve(__dirname, '../data');
-const AUDIT_LOG_FILE = path.join(DATA_DIR, 'auditLogs.json');
-
-const logs = [];
-
-// Seed initial historical audit logs
-const INITIAL_LOGS = [
-  {
-    id: 'SEC-LOG-98102',
-    timestamp: new Date(Date.now() - 3600 * 1000 * 3).toISOString(),
-    eventType: 'LOGIN',
-    category: 'Authentication',
-    actorEmail: 'henrik.vanderbilt@smartassets.io',
-    actorId: 'usr-demo-01',
-    ip: '197.89.201.14',
-    device: 'Mobile (iOS 17.5 / Expo Native)',
-    description: 'Successful user authentication via password.',
-    status: 'Success',
-  },
-  {
-    id: 'SEC-LOG-98103',
-    timestamp: new Date(Date.now() - 3600 * 1000 * 4).toISOString(),
-    eventType: 'KYC_SUBMIT',
-    category: 'Compliance',
-    actorEmail: 'henrik.vanderbilt@smartassets.io',
-    actorId: 'usr-demo-01',
-    ip: '197.89.201.14',
-    device: 'Mobile (iOS 17.5 / Expo Native)',
-    description: 'Submitted FICA compliance pack: SA ID, SARS Tax, Utility Bill, FNB Bank details.',
-    status: 'Pending Review',
-  },
-  {
-    id: 'SEC-LOG-98104',
-    timestamp: new Date(Date.now() - 3600 * 1000 * 11).toISOString(),
-    eventType: 'LOGIN',
-    category: 'Authentication',
-    actorEmail: 'naledi.khumalo@smartassets.io',
-    actorId: 'usr-demo-02',
-    ip: '105.186.44.89',
-    device: 'Mobile (Android 14 / Expo Native)',
-    description: 'Successful user authentication via password.',
-    status: 'Success',
-  },
-  {
-    id: 'SEC-LOG-98105',
-    timestamp: new Date(Date.now() - 3600 * 1000 * 12).toISOString(),
-    eventType: 'KYC_SUBMIT',
-    category: 'Compliance',
-    actorEmail: 'naledi.khumalo@smartassets.io',
-    actorId: 'usr-demo-02',
-    ip: '105.186.44.89',
-    device: 'Mobile (Android 14 / Expo Native)',
-    description: 'Submitted FICA compliance pack: Passport, SARS Ref, Address Proof, Standard Bank.',
-    status: 'Pending Review',
-  },
-  {
-    id: 'SEC-LOG-98106',
-    timestamp: new Date(Date.now() - 3600 * 1000 * 24).toISOString(),
-    eventType: 'KYC_APPROVED',
-    category: 'Compliance',
-    actorEmail: 'sophie.moreau@smartassets.io',
-    actorId: 'usr-demo-03',
-    ip: '127.0.0.1:5000',
-    device: 'Admin Portal Console',
-    description: 'KYC Dossier KYC-ZA-2026-098 approved by Admin Compliance Operations.',
-    status: 'Approved',
-  },
-];
-
-function initLogs() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (fs.existsSync(AUDIT_LOG_FILE)) {
-      const data = JSON.parse(fs.readFileSync(AUDIT_LOG_FILE, 'utf8'));
-      if (Array.isArray(data) && data.length > 0) {
-        logs.push(...data);
-      } else {
-        logs.push(...INITIAL_LOGS);
-        persistLogs();
-      }
-    } else {
-      logs.push(...INITIAL_LOGS);
-      persistLogs();
-    }
-  } catch (err) {
-    console.warn('⚠️ [AuditLogService] Init warning:', err.message);
-  }
-}
-
-function persistLogs() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(AUDIT_LOG_FILE, JSON.stringify(logs, null, 2), 'utf8');
-  } catch (err) {
-    console.error('❌ [AuditLogService] Failed to persist audit logs:', err.message);
-  }
-}
-
-initLogs();
+// In-memory runtime buffer for fast reads
+const memoryLogs = [];
 
 /**
- * Record a security or compliance audit event
+ * Record a security or compliance audit event into Supabase admin_audit_logs
  */
 function logEvent({
   eventType,
@@ -126,8 +25,8 @@ function logEvent({
   const entry = {
     id: logId,
     timestamp: new Date().toISOString(),
-    eventType, // 'LOGIN' | 'LOGOUT' | 'SESSION_TIMEOUT' | 'KYC_SUBMIT' | 'KYC_APPROVED' | 'KYC_REJECTED' | 'ACCOUNT_SUSPENDED' | 'ACCOUNT_REACTIVATED'
-    category: category || (eventType.startsWith('KYC') ? 'Compliance' : 'Authentication'),
+    eventType,
+    category: category || (eventType && eventType.startsWith('KYC') ? 'Compliance' : 'Authentication'),
     actorEmail: actorEmail || 'system@smartassets.io',
     actorId: actorId || 'system',
     ip: ip || '127.0.0.1',
@@ -136,21 +35,58 @@ function logEvent({
     status,
   };
 
-  logs.unshift(entry); // newest first
-  if (logs.length > 200) {
-    logs.pop(); // keep last 200 logs
+  memoryLogs.unshift(entry);
+  if (memoryLogs.length > 200) {
+    memoryLogs.pop();
   }
 
-  persistLogs();
+  // Insert into Supabase admin_audit_logs table
+  supabase
+    .from('admin_audit_logs')
+    .insert({
+      admin_email: entry.actorEmail,
+      action: entry.eventType,
+      target_type: entry.category,
+      target_id: logId,
+      reason: description,
+    })
+    .then(() => {})
+    .catch(() => {});
+
   console.log(`🛡️ [AuditLog] [${entry.eventType}] ${entry.actorEmail} - ${entry.description}`);
   return entry;
 }
 
 /**
- * Retrieve all audit logs
+ * Retrieve audit logs strictly from Supabase admin_audit_logs table.
+ * Returns empty array if no logs exist. Never synthesizes fake logs.
  */
-function getAllLogs(limit = 100) {
-  return logs.slice(0, limit);
+async function getAllLogs(limit = 100) {
+  try {
+    const { data, error } = await supabase
+      .from('admin_audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data.map((d) => ({
+        id: d.id,
+        timestamp: d.created_at,
+        eventType: d.action,
+        category: d.target_type || 'Security',
+        actorEmail: d.admin_email || 'admin@smartassets.co.za',
+        actorId: d.admin_id || d.target_user_id || 'system',
+        description: d.reason || `${d.action} on ${d.target_type}`,
+        status: 'Success',
+      }));
+    }
+  } catch (err) {
+    console.warn('⚠️ [AuditLogService] DB log query warning:', err.message);
+  }
+
+  // Return in-memory logs or empty list
+  return memoryLogs.slice(0, limit);
 }
 
 module.exports = {

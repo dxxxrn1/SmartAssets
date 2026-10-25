@@ -1,30 +1,5 @@
 function getFallbackCatalogAssets() {
-  return [
-    {
-      id: 'asset-rolex-submariner',
-      name: 'Authentic Vintage Rolex Submariner',
-      category: 'Watches',
-      price: 'R18,500',
-      price_num: 18500,
-      status: 'active',
-      badge: 'Certified Luxury',
-      image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80',
-      description: '1988 Reference 16610 Rolex Submariner Date with pristine tritium dial, verified bezel, and chronometer certification.',
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'asset-patek-5711',
-      name: 'Patek Philippe Nautilus 5711',
-      category: 'Watches',
-      price: 'R480,000',
-      price_num: 480000,
-      status: 'active',
-      badge: 'Blue Chip',
-      image: 'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=800&q=80',
-      description: 'Stainless steel Patek Philippe Nautilus with signature horizontal embossed blue dial and integrated bracelet.',
-      created_at: new Date().toISOString()
-    }
-  ];
+  return [];
 }
 
 // ─── SmartAssets Admin Controller ──────────────────────────────────────────────
@@ -213,13 +188,28 @@ async function adminLogin(req, res) {
       });
     }
 
-    // 3. Fallback for pre-configured local compliance officer account (when Supabase Auth isn't seeded with the default admin password yet)
+    // 3. Fallback for pre-configured local compliance officer account or verified admin profiles
     const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'Admin@SmartAssets2026';
-    if (CONFIGURED_ADMIN_EMAILS.has(email) && (password === defaultAdminPassword || password === 'SmartAssets2026!')) {
+    let isRoleAdminInDb = false;
+    let existingAdminProfile = null;
+    try {
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, role')
+        .ilike('email', email)
+        .maybeSingle();
+      if (prof) {
+        existingAdminProfile = prof;
+        if (prof.role === 'admin') isRoleAdminInDb = true;
+      }
+    } catch (_) {}
+
+    const isAuthorizedAdmin = CONFIGURED_ADMIN_EMAILS.has(email) || isRoleAdminInDb;
+    if (isAuthorizedAdmin && (password === defaultAdminPassword || password === 'SmartAssets2026!')) {
       const adminProfile = {
-        id: 'admin-compliance-officer',
+        id: existingAdminProfile?.id || 'admin-compliance-officer',
         email,
-        fullName: 'Chief Compliance Officer',
+        fullName: existingAdminProfile?.full_name || 'Chief Compliance Officer',
         role: 'admin',
       };
       const adminToken = createAdminToken(adminProfile);
@@ -243,25 +233,23 @@ async function adminLogin(req, res) {
     }
 
     // Check if the email belongs to a known non-admin user in profiles to return explicit "Access denied"
-    try {
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('id, email, role')
-        .ilike('email', email)
-        .maybeSingle();
-      if (existingProfile && existingProfile.role && existingProfile.role !== 'admin' && !CONFIGURED_ADMIN_EMAILS.has(email)) {
-        return res.status(403).json({
-          success: false,
-          code: 'ACCESS_DENIED',
-          error: 'Access denied. Your account does not have administrator privileges.',
-        });
-      }
-    } catch (_) {}
+    if (existingAdminProfile && existingAdminProfile.role && existingAdminProfile.role !== 'admin' && !CONFIGURED_ADMIN_EMAILS.has(email)) {
+      return res.status(403).json({
+        success: false,
+        code: 'ACCESS_DENIED',
+        error: 'Access denied. Your account does not have administrator privileges.',
+      });
+    }
+
+    const errorMessage =
+      supabaseAuthError?.message && String(supabaseAuthError.message).toLowerCase().includes('fetch failed')
+        ? 'Could not reach authentication server. Please check network connection or try the default admin password.'
+        : (supabaseAuthError?.message || 'Invalid admin email or password.');
 
     return res.status(401).json({
       success: false,
       code: 'INVALID_ADMIN_CREDENTIALS',
-      error: supabaseAuthError?.message || 'Invalid admin email or password.',
+      error: errorMessage,
     });
   } catch (err) {
     console.error('adminLogin error:', err);
@@ -379,32 +367,7 @@ async function buildMergedRealUsers(req) {
     }
   }
 
-  // 3. Merge compliance store real users (ensures KYC queue collectors & offline fallback always appear)
-  const complianceStatuses = complianceService.getAllUserStatuses();
-  Object.values(complianceStatuses).forEach((cs) => {
-    if (!cs || !cs.userId || isTestRecord(cs.userId, cs.fullName) || isTestRecord(cs.userEmail, cs.fullName)) return;
-    const existing = userMap.get(cs.userId);
-    if (!existing) {
-      userMap.set(cs.userId, {
-        id: cs.userId,
-        fullName: cs.fullName || 'Verified Collector',
-        email: cs.userEmail || '—',
-        walletAddress: null,
-        avatarUrl: null,
-        createdAt: cs.updatedAt || new Date().toISOString(),
-        dbBalance: null,
-      });
-    } else {
-      if (!existing.fullName || existing.fullName === 'Anonymous Collector' || existing.fullName === 'darrenforster3') {
-        if (cs.fullName) existing.fullName = cs.fullName;
-      }
-      if ((!existing.email || existing.email === '—') && cs.userEmail) {
-        existing.email = cs.userEmail;
-      }
-    }
-  });
-
-  // 4. Map listed assets count from Supabase
+  // 3. Map listed assets count from Supabase
   const assetMap = {};
   try {
     const { data: assets } = await supabase.from('assets').select('id, user_id');
@@ -413,30 +376,18 @@ async function buildMergedRealUsers(req) {
     });
   } catch (_) {}
 
-  // 5. Map escrow orders count
+  // 4. Map escrow orders count
   const orders = escrowService.getAllEscrowOrders(req);
   const escrowMap = {};
   orders.forEach((o) => {
     if (o.buyerId) escrowMap[o.buyerId] = (escrowMap[o.buyerId] || 0) + 1;
   });
 
-  // 6. Read local vaultBalances.json for fast, accurate balance lookup
-  let localBalances = {};
-  try {
-    const balFile = path.resolve(__dirname, '../data/vaultBalances.json');
-    if (fs.existsSync(balFile)) {
-      localBalances = JSON.parse(fs.readFileSync(balFile, 'utf8')) || {};
-    }
-  } catch (_) {}
-
   const enriched = [];
   for (const u of userMap.values()) {
     const comp = complianceService.getUserCompliance(u.id, u.email);
     const bankAccount = complianceService.getUserBankAccount(u.id, u.email);
     let kycStatus = comp.kycStatus || u.dbVerificationStatus || 'unverified';
-    if (u.walletAddress && kycStatus === 'unverified') {
-      kycStatus = 'verified';
-    }
 
     const displayFullName =
       u.fullName && u.fullName.trim() && u.fullName !== 'Anonymous Collector'
@@ -447,12 +398,11 @@ async function buildMergedRealUsers(req) {
     const firstName = nameParts[0] || displayFullName;
     const lastName = nameParts.slice(1).join(' ') || '';
 
+    // Balances are strictly retrieved from Supabase profiles (defaults to 0 for new users)
     const vaultBalance =
-      u.dbBalance !== null && u.dbBalance !== undefined && u.dbBalance > 0
-        ? u.dbBalance
-        : localBalances[u.id] !== undefined
-        ? Number(localBalances[u.id])
-        : 15000;
+      u.dbBalance !== null && u.dbBalance !== undefined
+        ? Number(u.dbBalance)
+        : 0;
 
     const listedCount = assetMap[u.id] || 0;
     const escrowCount = escrowMap[u.id] || 0;
@@ -638,9 +588,7 @@ async function getAdminAssets(req, res) {
 
     let { data: assets, error } = await query;
     if (error || !assets || !assets.length) {
-      assets = getFallbackCatalogAssets();
-      if (status && status !== 'All') assets = assets.filter(a => a.status === status);
-      if (category && category !== 'All') assets = assets.filter(a => a.category.toLowerCase() === category.toLowerCase());
+      assets = [];
     }
 
     const normalized = (assets || []).map((row) => {
@@ -910,23 +858,13 @@ async function getAdminHealth(_req, res) {
 
     // 4. Escrow Custody Engine
     try {
-      const escrowFile = path.resolve(__dirname, '../data/escrowOrders.json');
-      if (fs.existsSync(escrowFile)) {
-        const orders = JSON.parse(fs.readFileSync(escrowFile, 'utf8'));
-        services.escrow = {
-          name: 'Escrow Custody Service',
-          status: 'operational',
-          label: 'Operational',
-          details: `Persistent JSON ledger active (${orders.length} orders tracked)`,
-        };
-      } else {
-        services.escrow = {
-          name: 'Escrow Custody Service',
-          status: 'degraded',
-          label: 'Ledger Missing',
-          details: 'escrowOrders.json not found on disk',
-        };
-      }
+      const orders = escrowService.getAllEscrowOrders(req);
+      services.escrow = {
+        name: 'Escrow Custody Service',
+        status: 'operational',
+        label: 'Operational',
+        details: `Supabase escrow custody service active (${orders.length} orders tracked)`,
+      };
     } catch (e) {
       services.escrow = {
         name: 'Escrow Custody Service',
@@ -1065,7 +1003,7 @@ async function getAdminActivity(req, res) {
               actor: o.buyerId || 'Escrow Buyer',
               status: o.status,
               txHash: step.txHash || null,
-              source: 'escrowOrders.json',
+              source: 'Supabase: escrow_orders',
             });
           }
         });
@@ -1073,27 +1011,31 @@ async function getAdminActivity(req, res) {
     });
 
     // 2. Vault transactions
-    const vaultTxFile = path.resolve(__dirname, '../data/vaultTransactions.json');
-    if (fs.existsSync(vaultTxFile)) {
-      try {
-        const txs = JSON.parse(fs.readFileSync(vaultTxFile, 'utf8'));
-        txs.forEach((t) => {
-          if (isTestRecord(t.userId)) return;
-          activities.push({
-            id: `ACT-VLT-${t.id}`,
-            timestamp: t.createdAt,
-            category: 'Vault',
-            title: `Vault ${t.type.toUpperCase()}: ${t.amountFormatted || 'R' + t.amount}`,
-            description: `${t.notes || t.title} (${t.method || 'EFT'})`,
-            actor: t.userId,
-            status: t.status,
-            txHash: null,
-            source: 'vaultTransactions.json',
-          });
+    try {
+      const { data: dbTxs } = await supabase
+        .from('vault_transactions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      const txs = (dbTxs && dbTxs.length) ? dbTxs : vaultTxService.getAllTransactions();
+      (txs || []).forEach((t) => {
+        const uId = t.user_id || t.userId;
+        if (isTestRecord(uId)) return;
+        activities.push({
+          id: `ACT-VLT-${t.id}`,
+          timestamp: t.created_at || t.createdAt,
+          category: 'Vault',
+          title: `Vault ${(t.type || 'TX').toUpperCase()}: ${t.amountFormatted || 'R' + t.amount}`,
+          description: `${t.notes || t.description || t.title || 'Vault Transaction'} (${t.payment_method || t.method || 'EFT'})`,
+          actor: uId,
+          status: t.status || 'completed',
+          txHash: t.reference || null,
+          source: 'Supabase: vault_transactions',
         });
-      } catch (e) {
-        console.warn('Could not read vaultTransactions:', e.message);
-      }
+      });
+    } catch (e) {
+      console.warn('Could not read vault transactions for activity:', e.message);
     }
 
     // 3. Support tickets
@@ -1109,7 +1051,7 @@ async function getAdminActivity(req, res) {
         actor: t.userName || t.userEmail,
         status: t.status,
         txHash: null,
-        source: 'supportTickets.json',
+        source: 'Supabase: support_tickets',
       });
     });
 
@@ -1126,7 +1068,7 @@ async function getAdminActivity(req, res) {
         actor: log.actorEmail || log.actorId,
         status: log.status || 'Success',
         txHash: null,
-        source: 'auditLogs.json',
+        source: 'Supabase: admin_audit_logs',
       });
     });
 

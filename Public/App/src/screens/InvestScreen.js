@@ -31,7 +31,7 @@ import storage, { STORAGE_KEYS } from "../utils/storage";
 import { getMarketAssetsCache } from "../services/storage";
 
 // ── Currency Formatter (South African Rands R) ───────────────────────────────
-const formatZAR = (val, fallback = "R250") => {
+const formatZAR = (val, fallback = "R0") => {
   if (val === undefined || val === null || val === "") return fallback;
   if (typeof val === "string") {
     let str = val.trim();
@@ -54,121 +54,8 @@ const formatZAR = (val, fallback = "R250") => {
 };
 const formatGBP = formatZAR;
 
-// Fallback verified investment offerings with authentic metrics
-const DEFAULT_OFFERINGS = [
-  {
-    id: "offering-submariner",
-    name: "Authentic Vintage Rolex Submariner",
-    category: "WATCHES",
-    filterCat: "Watches",
-    image:
-      "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80",
-    price: "R18,500",
-    share_price: "R100",
-    shares: 185,
-    total_shares: 185,
-    totalShares: 185,
-    shares_sold: 142,
-    sharesSold: 142,
-    funded_pct: 77,
-  },
-  {
-    id: "offering-1",
-    name: "Rolex Daytona 116500LN",
-    category: "WATCHES",
-    filterCat: "Watches",
-    image:
-      "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=600&q=80",
-    price: "R34,500",
-    share_price: "R100",
-    shares: 345,
-    total_shares: 345,
-    totalShares: 345,
-    shares_sold: 282,
-    sharesSold: 282,
-    funded_pct: 82,
-  },
-  {
-    id: "offering-2",
-    name: "1967 Ferrari 330 GTC",
-    category: "CARS",
-    filterCat: "Cars",
-    image:
-      "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=600&q=80",
-    price: "R890,000",
-    share_price: "R250",
-    shares: 3560,
-    total_shares: 3560,
-    totalShares: 3560,
-    shares_sold: 2314,
-    sharesSold: 2314,
-    funded_pct: 65,
-  },
-  {
-    id: "offering-3",
-    name: "Untitled, 1984 (Basquiat)",
-    category: "ART",
-    filterCat: "Art",
-    image:
-      "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=600&q=80",
-    price: "R124,000",
-    share_price: "R100",
-    shares: 1240,
-    total_shares: 1240,
-    totalShares: 1240,
-    shares_sold: 1100,
-    sharesSold: 1100,
-    funded_pct: 89,
-  },
-  {
-    id: "offering-4",
-    name: "Domaine de la Romanée-Conti 1990",
-    category: "WINE",
-    filterCat: "Wine",
-    image:
-      "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&q=80",
-    price: "R28,900",
-    share_price: "R50",
-    shares: 578,
-    total_shares: 578,
-    totalShares: 578,
-    shares_sold: 260,
-    sharesSold: 260,
-    funded_pct: 45,
-  },
-  {
-    id: "offering-5",
-    name: "Patek Philippe Nautilus 5711",
-    category: "WATCHES",
-    filterCat: "Watches",
-    image:
-      "https://images.unsplash.com/photo-1547996160-81dfa63595aa?w=600&q=80",
-    price: "R98,000",
-    share_price: "R200",
-    shares: 490,
-    total_shares: 490,
-    totalShares: 490,
-    shares_sold: 460,
-    sharesSold: 460,
-    funded_pct: 94,
-  },
-  {
-    id: "offering-6",
-    name: "Mayfair Prime Residence",
-    category: "REAL ESTATE",
-    filterCat: "Real Estate",
-    image:
-      "https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=600&q=80",
-    price: "R1,450,000",
-    share_price: "R500",
-    shares: 2900,
-    total_shares: 2900,
-    totalShares: 2900,
-    shares_sold: 1595,
-    sharesSold: 1595,
-    funded_pct: 55,
-  },
-];
+// Real verified investment offerings are loaded strictly from Supabase
+const DEFAULT_OFFERINGS = [];
 
 const WISHLIST_STORAGE_KEY = "@smartassets_wishlist";
 
@@ -176,12 +63,12 @@ export default function InvestScreen({ navigation }) {
   const { user, token } = useAuth();
   const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
   const [activeTab, setActiveTab] = useState("trading"); // 'trading' | 'wishlist'
-  const [offerings, setOfferings] = useState(DEFAULT_OFFERINGS);
+  const [offerings, setOfferings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [userHoldings, setUserHoldings] = useState([]);
   const [vaultSummary, setVaultSummary] = useState(null);
-  const [wishlistIds, setWishlistIds] = useState(["offering-1", "offering-5"]);
+  const [wishlistIds, setWishlistIds] = useState([]);
 
   // Load wishlist from storage on mount
   useEffect(() => {
@@ -205,8 +92,8 @@ export default function InvestScreen({ navigation }) {
     });
   }, []);
 
-  const [availableCash, setAvailableCash] = useState(250);
-  const [totalInvested, setTotalInvested] = useState(400);
+  const [availableCash, setAvailableCash] = useState(0);
+  const [totalInvested, setTotalInvested] = useState(0);
 
   // Load live market assets and user vault
   const loadData = useCallback(async () => {
@@ -237,10 +124,10 @@ export default function InvestScreen({ navigation }) {
         });
         setOfferings(mapped);
       } else {
-        setOfferings(DEFAULT_OFFERINGS);
+        setOfferings([]);
       }
     } catch (_) {
-      setOfferings(DEFAULT_OFFERINGS);
+      setOfferings([]);
     }
 
     try {
@@ -298,13 +185,13 @@ export default function InvestScreen({ navigation }) {
     loadData();
   };
 
-  // ── Financial Math: Total Invested & Available Cash (Always R250 Currency Formatted) ──
+  // ── Financial Math: Total Invested & Available Cash (R0 Currency Formatted Default) ──
   const totalInvestedFormatted = useMemo(() => {
-    return formatZAR(totalInvested, "R400");
+    return formatZAR(totalInvested, "R0");
   }, [totalInvested]);
 
   const availableCashFormatted = useMemo(() => {
-    return formatZAR(availableCash, "R250");
+    return formatZAR(availableCash, "R0");
   }, [availableCash]);
 
   // ── Dynamic Portfolio Allocation Breakdown ──────────────────────────────────

@@ -75,86 +75,8 @@ const formatSharePrice = (asset) => {
   return "R100/sh";
 };
 
-// Fallback verified opportunities matching Mockup 3 exactly
-const DEFAULT_OPPORTUNITIES = [
-  {
-    id: "opp-submariner",
-    name: "Authentic Vintage Rolex Submariner",
-    category: "WATCHES",
-    price: "R18,500",
-    confidence: "98% confidence",
-    gain: "+8.5%",
-    isVerified: true,
-    image:
-      "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80",
-  },
-  {
-    id: "opp-1",
-    name: "Rolex Daytona 116500LN",
-    category: "WATCHES",
-    price: "R34,500",
-    confidence: "96% confidence",
-    gain: "+12.4%",
-    isVerified: true,
-    image:
-      "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=600&q=80",
-  },
-  {
-    id: "opp-2",
-    name: "Untitled, 1984",
-    category: "ART",
-    price: "R124,000",
-    confidence: "91% confidence",
-    gain: "+6.8%",
-    isVerified: true,
-    image:
-      "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=600&q=80",
-  },
-  {
-    id: "opp-3",
-    name: "1967 Ferrari 330 GTC",
-    category: "CARS",
-    price: "R890,000",
-    confidence: "94% confidence",
-    gain: "+9.1%",
-    isVerified: true,
-    image:
-      "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=600&q=80",
-  },
-  {
-    id: "opp-4",
-    name: "Patek Philippe Nautilus 5711",
-    category: "WATCHES",
-    price: "R98,000",
-    confidence: "98% confidence",
-    gain: "+15.2%",
-    isVerified: true,
-    image:
-      "https://images.unsplash.com/photo-1547996160-81dfa63595aa?w=600&q=80",
-  },
-  {
-    id: "opp-5",
-    name: "Domaine de la Romanée-Conti 1990",
-    category: "WINE",
-    price: "R28,500",
-    confidence: "95% confidence",
-    gain: "+11.8%",
-    isVerified: true,
-    image:
-      "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&q=80",
-  },
-  {
-    id: "opp-6",
-    name: "1973 Porsche 911 Carrera RS",
-    category: "CARS",
-    price: "R450,000",
-    confidence: "93% confidence",
-    gain: "+8.4%",
-    isVerified: true,
-    image:
-      "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=600&q=80",
-  },
-];
+// Real verified market opportunities loaded strictly from Supabase
+const DEFAULT_OPPORTUNITIES = [];
 
 // ── Market Category Cards for Horizontal Carousel ────────────────────────────
 const MARKET_CATEGORY_CARDS = [

@@ -55,6 +55,20 @@ async function getRates(req, res) {
 async function createIntent(req, res) {
   try {
     const userId = req.user.id;
+    const complianceService = require('../services/complianceService');
+    const comp = complianceService.getUserCompliance(userId, req.user?.email);
+    if (comp && comp.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
+    }
+    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    if (!bundle || bundle.verification_status !== 'verified') {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        error: 'KYC Verification Required: You must upload and get all 3 verification documents approved before creating a payment intent.',
+      });
+    }
+
     const { amount, currency, assetId, assetName } = req.body;
 
     if (!amount || amount <= 0) {
@@ -93,8 +107,13 @@ async function processPayment(req, res) {
     if (comp && comp.isSuspended) {
       return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
     }
-    if (comp && comp.kycStatus !== 'verified') {
-      return sendError(res, 403, 'KYC Verification Required: You must submit your FICA compliance pack and be approved before making transactions.');
+    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    if (!bundle || bundle.verification_status !== 'verified') {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        error: 'KYC Verification Required: You must upload and get all 3 verification documents approved before making transactions.',
+      });
     }
     const userEmail = req.user.email || '';
     const userName = req.user.fullName || req.user.email?.split('@')[0] || 'Collector';

@@ -79,68 +79,9 @@ function ensureZarFormatted(val, fallbackNum = 0) {
   return `R${ grouped }`;
 }
 
-const DEFAULT_VAULT_MATCHES = [
-  {
-    id: "personal-keyboard",
-    name: "Logi MX Mechanical Wireless Keyboard",
-    category: "Electronics & Gadgets",
-    certId: "ERC-721 #4811",
-    hashDisplay: "0x71c...9a",
-    txHash: "0x71cb842e1284a0149021e89a42105820bb3219a",
-    price: "R132",
-    price_num: 132,
-    image: "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&q=80",
-    source: "PERSONAL_COLLECTION",
-  },
-  {
-    id: "personal-converse",
-    name: "Vintage Converse Chuck 70 High Top",
-    category: "Sneakers & Apparel",
-    certId: "ERC-721 #4920",
-    hashDisplay: "0x71c...9a",
-    txHash: "0x71c93a84b0179a6d9128f731a55938b237f026a76",
-    price: "R137",
-    price_num: 137,
-    image: "https://images.unsplash.com/photo-1607522370275-f14206abe5d3?w=600&q=80",
-    source: "PERSONAL_COLLECTION",
-  },
-  {
-    id: "personal-cable",
-    name: "Custom Braided Coiled Aviator Cable",
-    category: "Electronics & Gadgets",
-    certId: "ERC-721 #4732",
-    hashDisplay: "0x71c...9a",
-    txHash: "0x71ce18420fa284102948bbcd09124802148719a",
-    price: "R58",
-    price_num: 58,
-    image: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&q=80",
-    source: "PERSONAL_COLLECTION",
-  },
-  {
-    id: "fraction-rolex",
-    name: "Rolex Submariner Date 126610LN",
-    category: "Luxury Watch",
-    certId: "ERC-721 #4811",
-    hashDisplay: "0x3a8...b2",
-    txHash: "0x3a82ef499120ab0192ca840131498b1ab55938b2",
-    price: "R295 000",
-    price_num: 295000,
-    image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80",
-    source: "CO_OWNED_ASSETS",
-  },
-  {
-    id: "fraction-jordan",
-    name: "1985 Air Jordan 1 Chicago (OG Mint)",
-    category: "Sneakers & Apparel",
-    certId: "ERC-721 #4855",
-    hashDisplay: "0x71c...9a",
-    txHash: "0x71c45ef499120ab0192ca840131498b1ab55939a",
-    price: "R25 000",
-    price_num: 25000,
-    image: "https://images.unsplash.com/photo-1552346154-21d32810aba3?w=600&q=80",
-    source: "CO_OWNED_ASSETS",
-  },
-];
+// Genuine vault matches are collected dynamically from the user's authentic portfolio
+const DEFAULT_VAULT_MATCHES = [];
+
 
 export default function ScanAndKnowScreen({ navigation }) {
   const { token } = useAuth();

@@ -173,14 +173,16 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingVault, setLoadingVault] = useState(true);
   const [vaultSummary, setVaultSummary] = useState({
-    totalValueFormatted: "R1,077",
-    portfolioValueFormatted: "R1,077",
-    portfolioValueNum: 1077,
-    totalCount: 5,
-    categoriesCount: 4,
-    verifiedPct: 96,
-    annualGainFormatted: "+12.4% overall gain",
-    gainPct: "↑ 12.4%",
+    totalValueFormatted: "R0",
+    portfolioValueFormatted: "R0",
+    portfolioValueNum: 0,
+    availableBalanceFormatted: "R0",
+    availableBalanceNum: 0,
+    totalCount: 0,
+    categoriesCount: 0,
+    verifiedPct: 100,
+    annualGainFormatted: "0.0% overall gain",
+    gainPct: "0.0%",
   });
   const [vaultHoldings, setVaultHoldings] = useState([]);
 
@@ -199,18 +201,14 @@ export default function HomeScreen({ navigation }) {
       const personalList =
         Array.isArray(cachedPersonal) && cachedPersonal.length > 0
           ? cachedPersonal
-          : [
-              { initialValue: 150, liveMarketValue: 132 },
-              { initialValue: 120, liveMarketValue: 137 },
-              { initialValue: 65, liveMarketValue: 58 },
-            ];
+          : [];
 
       const fractionalList =
         Array.isArray(cachedFractions) && cachedFractions.length > 0
           ? cachedFractions
-          : [{ myStake: 200 }, { myStake: 200 }];
+          : [];
 
-      const cashNum = typeof cachedCash === "number" ? cachedCash : 250;
+      const cashNum = typeof cachedCash === "number" ? cachedCash : 0;
 
       const pTotal = personalList.reduce(
         (sum, it) =>
@@ -229,6 +227,8 @@ export default function HomeScreen({ navigation }) {
         portfolioValueFormatted: formatGBP(combinedTotalNum),
         portfolioValueNum: combinedTotalNum,
         totalValueFormatted: formatGBP(combinedTotalNum),
+        availableBalanceFormatted: formatGBP(cashNum),
+        availableBalanceNum: cashNum,
         totalCount: combinedCount,
       }));
 
@@ -250,6 +250,7 @@ export default function HomeScreen({ navigation }) {
         setVaultHoldings(res.holdings);
       }
       if (res?.summary) {
+        setVaultSummary(res.summary);
         await storage.setJSON(STORAGE_KEYS.VAULT, {
           summary: res.summary,
           holdings: res?.holdings,
@@ -558,7 +559,7 @@ export default function HomeScreen({ navigation }) {
             </View>
 
             <Text style={styles.portfolioValueNumber}>
-              {vaultSummary.portfolioValueFormatted || "R1,296,700"}
+              {vaultSummary.portfolioValueFormatted || "R0"}
             </Text>
 
             <View style={styles.gainRow}>
@@ -696,7 +697,9 @@ export default function HomeScreen({ navigation }) {
                 <Feather name="chevron-down" size={24} color="#7353EA" />
               </View>
               <Text style={styles.bubbleLabel}>AVAILABLE CASH</Text>
-              <Text style={styles.bubbleValue}>R250</Text>
+              <Text style={styles.bubbleValue}>
+                {vaultSummary.availableBalanceFormatted || "R0"}
+              </Text>
               <View style={styles.bubbleFooterRow}>
                 <Feather
                   name="plus-circle"

@@ -505,8 +505,13 @@ async function createAsset(req, res) {
     if (comp && comp.isSuspended) {
       return sendError(res, 403, 'Account Suspended by Compliance. Asset listings blocked.');
     }
-    if (comp && comp.kycStatus !== 'verified') {
-      return sendError(res, 403, 'KYC Verification Required: You must submit your FICA compliance pack and be approved before listing assets.');
+    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    if (!bundle || bundle.verification_status !== 'verified') {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        error: 'KYC Verification Required: You must upload and get all 3 verification documents approved before listing assets.',
+      });
     }
     const { name, category, askingPrice, year, condition, description, image, history, forceConfirmPrice } = req.body;
 
