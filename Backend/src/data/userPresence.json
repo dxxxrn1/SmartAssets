@@ -4,14 +4,14 @@
     "email": "pngforster@gmail.com",
     "fullName": "SmartAssets Administrator",
     "role": "admin",
-    "lastSeen": "2026-10-25T20:54:59.489Z",
-    "lastTimestamp": 1792961699489,
+    "lastSeen": "2026-10-25T21:03:56.243Z",
+    "lastTimestamp": 1792962236243,
     "status": "online",
     "ip": "127.0.0.1",
     "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
     "clientType": "Admin Console",
     "lastEndpoint": "/api/admin/auth/me",
-    "connectedSince": "2026-10-25T20:47:38.002Z"
+    "connectedSince": "2026-10-25T21:03:36.388Z"
   },
   {
     "userId": "a31c0642-e809-4690-bb29-c6ed4036c8cd",
