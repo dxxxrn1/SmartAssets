@@ -67,8 +67,9 @@ function extractImagesAndCleanDescription(description, primaryImage) {
  */
 async function getAssets(req, res) {
   try {
-    const { category, q } = req.query;
-    const isDefaultQuery = (!category || category === 'All') && (!q || !q.trim());
+    const { category, q, investmentsOnly } = req.query;
+    const onlyInvestments = investmentsOnly === 'true' || investmentsOnly === true;
+    const isDefaultQuery = (!category || category === 'All') && (!q || !q.trim()) && !onlyInvestments;
 
     if (isDefaultQuery && assetsCache && Date.now() - assetsCacheTime < ASSETS_CACHE_TTL) {
       return res.json({ success: true, assets: assetsCache, cached: true });
@@ -110,7 +111,7 @@ async function getAssets(req, res) {
     }
 
     // Map DB rows to the shape the frontend expects
-    const assets = (data || []).map((row) => {
+    let assets = (data || []).map((row) => {
       let rawPrimaryImage = row.image;
       if (
         (row.name && row.name.toLowerCase().includes('rolex submariner')) ||
@@ -127,6 +128,13 @@ async function getAssets(req, res) {
         return normalizeImageUrl(img, req);
       });
 
+      const allowInvestment = Boolean(row.allow_investment);
+      const totalShares = allowInvestment ? (Number(row.shares) || 100) : null;
+      const sharesSold = allowInvestment ? (Number(row.shares_sold) || 0) : 0;
+      const sharePrice = allowInvestment
+        ? (Number(row.share_price) || Math.round((Number(row.price_num) || 1000) / (totalShares || 100)))
+        : null;
+
       return {
         id: row.id,
         name: row.name,
@@ -142,9 +150,11 @@ async function getAssets(req, res) {
         images: normalizedImages,
         badge: row.badge || 'Verified',
         cert: row.cert || 'SmartAssets Verified',
-        shares: row.shares || 100,
-        sharesSold: row.shares_sold || 0,
-        sharePrice: row.share_price || Math.round((row.price_num || 1000) / 100),
+        allow_investment: allowInvestment,
+        allowInvestment: allowInvestment,
+        shares: totalShares,
+        sharesSold: sharesSold,
+        sharePrice: sharePrice,
         gain: row.gain || '+0.0%',
         // On-chain blockchain fields
         tokenId: row.token_id || null,
@@ -153,12 +163,18 @@ async function getAssets(req, res) {
         etherscanUrl: row.etherscan_url || (row.tx_hash ? `https://sepolia.etherscan.io/tx/${row.tx_hash}` : null),
         // Owner/Creator
         userId: row.user_id || null,
+        sellerId: row.seller_id || row.user_id || null,
+        currentOwnerId: row.current_owner_id || row.user_id || null,
         owner: row.user_id ? (profileMap.get(row.user_id) || `User ${String(row.user_id).slice(0, 8)}`) : (row.owner || 'Verified Seller'),
         // AI Fraud & Authenticity Verification
         aiScanScore: row.ai_scan_score ?? null,
         aiScanStatus: row.ai_scan_status || (row.badge === 'Verified' || row.badge === 'Verified On-Chain' ? 'passed' : null),
       };
     });
+
+    if (onlyInvestments) {
+      assets = assets.filter((a) => a.allowInvestment === true && (a.shares - a.sharesSold) > 0);
+    }
 
     if (isDefaultQuery) {
       assetsCache = assets;
@@ -319,6 +335,13 @@ async function getAssetById(req, res) {
       return normalizeImageUrl(img, req);
     });
 
+    const allowInvestment = Boolean(asset.allow_investment);
+    const totalShares = allowInvestment ? (Number(asset.shares) || 100) : null;
+    const sharesSold = allowInvestment ? (Number(asset.shares_sold) || 0) : 0;
+    const sharePrice = allowInvestment
+      ? (Number(asset.share_price) || Math.round((Number(asset.price_num) || 1000) / (totalShares || 100)))
+      : null;
+
     return res.json({
       success: true,
       asset: {
@@ -336,15 +359,19 @@ async function getAssetById(req, res) {
         images: normalizedImages,
         badge: asset.badge || 'Verified',
         cert: asset.cert || 'SmartAssets Verified',
-        shares: asset.shares || 100,
-        sharesSold: asset.shares_sold || 0,
-        sharePrice: asset.share_price || Math.round((asset.price_num || 1000) / 100),
+        allow_investment: allowInvestment,
+        allowInvestment: allowInvestment,
+        shares: totalShares,
+        sharesSold: sharesSold,
+        sharePrice: sharePrice,
         // On-chain blockchain fields
         tokenId: asset.token_id || null,
         txHash: asset.tx_hash || null,
         contractAddress: asset.contract_address || null,
         etherscanUrl: asset.etherscan_url || (asset.tx_hash ? `https://sepolia.etherscan.io/tx/${asset.tx_hash}` : null),
         userId: asset.user_id || null,
+        sellerId: asset.seller_id || asset.user_id || null,
+        currentOwnerId: asset.current_owner_id || asset.user_id || null,
         owner: sellerName,
         // AI Fraud & Authenticity Verification
         aiScanScore: asset.ai_scan_score ?? null,
@@ -588,6 +615,27 @@ async function createAsset(req, res) {
 
     console.log(`✅ [Blockchain] NFT Minted! Token ID: #${mintRes.tokenId}, Tx: ${mintRes.txHash}`);
 
+    const allowInvestment = req.body.allowInvestment === true || req.body.allowInvestment === 'true';
+    let totalShares = null;
+    let sharePrice = null;
+
+    if (allowInvestment) {
+      const parsedShares = parseInt(req.body.totalShares, 10);
+      totalShares = !isNaN(parsedShares) && parsedShares >= 2 ? parsedShares : 100;
+
+      const parsedSharePrice = parseFloat(String(req.body.sharePrice || '').replace(/[^0-9.]/g, ''));
+      sharePrice = !isNaN(parsedSharePrice) && parsedSharePrice > 0
+        ? parsedSharePrice
+        : Math.round(priceNum / totalShares);
+
+      if (totalShares < 2) {
+        return sendError(res, 400, 'Fractional investment requires at least 2 shares.');
+      }
+      if (sharePrice <= 0) {
+        return sendError(res, 400, 'Share price must be greater than zero.');
+      }
+    }
+
     // Base asset row compatible with current database schema
     const baseRow = {
       name: visionCheck.canonicalName || name,
@@ -602,6 +650,12 @@ async function createAsset(req, res) {
       cert: certNumber,
       status: 'active',
       user_id: userId,
+      seller_id: userId,
+      current_owner_id: userId,
+      allow_investment: allowInvestment,
+      shares: totalShares,
+      share_price: sharePrice,
+      shares_sold: 0,
       ai_scan_score: 0.02,
       ai_scan_status: 'passed',
     };
@@ -626,9 +680,17 @@ async function createAsset(req, res) {
       newAsset = retry.data;
       insertErr = retry.error;
 
-      // Second retry: if ai_scan columns also not in schema, strip them as well
+      // Second retry: if allow_investment or new columns not in schema cache, strip them
       if (insertErr && (insertErr.code === 'PGRST204' || insertErr.message?.includes('column'))) {
-        const { ai_scan_score, ai_scan_status, ...coreRow } = baseRow;
+        const { allow_investment, seller_id, current_owner_id, ...legacyRow } = baseRow;
+        retry = await supabase.from('assets').insert(legacyRow).select().single();
+        newAsset = retry.data;
+        insertErr = retry.error;
+      }
+
+      // Third retry: if ai_scan columns also not in schema, strip them as well
+      if (insertErr && (insertErr.code === 'PGRST204' || insertErr.message?.includes('column'))) {
+        const { ai_scan_score, ai_scan_status, allow_investment, seller_id, current_owner_id, ...coreRow } = baseRow;
         retry = await supabase.from('assets').insert(coreRow).select().single();
         newAsset = retry.data;
         insertErr = retry.error;
@@ -696,6 +758,13 @@ async function createAsset(req, res) {
       message: 'Asset listed and NFT Certificate minted on Ethereum Sepolia!',
       asset: {
         ...newAsset,
+        allow_investment: allowInvestment,
+        allowInvestment: allowInvestment,
+        shares: totalShares,
+        sharePrice: sharePrice,
+        sharesSold: 0,
+        sellerId: userId,
+        currentOwnerId: userId,
         smartTakeTitle: newAsset.smart_take_title || smartTakeTitle || null,
         smartTakeBody: newAsset.smart_take_body || smartTakeBody || null,
         tokenId: mintRes.tokenId,

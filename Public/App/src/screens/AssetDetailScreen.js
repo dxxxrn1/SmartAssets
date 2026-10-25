@@ -106,6 +106,7 @@ export default function AssetDetailScreen({ navigation, route }) {
   const isOwner = Boolean(
     user?.id && (user.id === asset.userId || user.id === asset.user_id),
   );
+  const isInvestmentEnabled = Boolean(asset.allow_investment || asset.allowInvestment);
 
   const handleOpenLiveRoomPreview = () => {
     const rawImage =
@@ -589,34 +590,53 @@ export default function AssetDetailScreen({ navigation, route }) {
                 </Text>
               </View>
 
-              <TouchableOpacity
-                style={styles.fractionalPill}
-                onPress={() => {
-                  navigation.navigate(SCREENS.CHECKOUT, {
-                    asset,
-                    isFractional: true,
-                  });
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={styles.fractionalPillBadge}>
-                  <Feather
-                    name="pie-chart"
-                    size={11}
-                    color="#6C47FF"
-                    style={{ marginRight: 4 }}
-                  />
-                  <Text style={styles.fractionalPillTitle}>
-                    FRACTIONAL SHARE
+              {isInvestmentEnabled ? (
+                <TouchableOpacity
+                  style={styles.fractionalPill}
+                  onPress={() => {
+                    navigation.navigate(SCREENS.CHECKOUT, {
+                      asset,
+                      isFractional: true,
+                    });
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.fractionalPillBadge}>
+                    <Feather
+                      name="pie-chart"
+                      size={11}
+                      color="#6C47FF"
+                      style={{ marginRight: 4 }}
+                    />
+                    <Text style={styles.fractionalPillTitle}>
+                      FRACTIONAL SHARE
+                    </Text>
+                  </View>
+                  <View style={styles.fractionalPriceRow}>
+                    <Text style={styles.fractionalPriceText}>
+                      {getFractionalSharePrice(asset)}
+                    </Text>
+                    <Text style={styles.fractionalBuyLink}>Buy shares →</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.wholeItemBadgeWrap}>
+                  <View style={styles.wholeItemBadgePill}>
+                    <Feather
+                      name="package"
+                      size={11}
+                      color="#059669"
+                      style={{ marginRight: 4 }}
+                    />
+                    <Text style={styles.wholeItemBadgeTitle}>
+                      WHOLE ITEM
+                    </Text>
+                  </View>
+                  <Text style={styles.wholeItemBadgeSubtitle}>
+                    100% Full Ownership
                   </Text>
                 </View>
-                <View style={styles.fractionalPriceRow}>
-                  <Text style={styles.fractionalPriceText}>
-                    {getFractionalSharePrice(asset)}
-                  </Text>
-                  <Text style={styles.fractionalBuyLink}>Buy shares →</Text>
-                </View>
-              </TouchableOpacity>
+              )}
             </View>
 
             {/* Real Market Comps Range (Instead of "AI Confidence") */}
@@ -1024,33 +1044,40 @@ export default function AssetDetailScreen({ navigation, route }) {
             <Text style={styles.healthReportText}>Health Report</Text>
           </TouchableOpacity>
 
+          {isInvestmentEnabled && (
+            <TouchableOpacity
+              style={styles.bottomSharesBtn}
+              onPress={() => {
+                navigation.navigate(SCREENS.CHECKOUT, {
+                  asset,
+                  isFractional: true,
+                });
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="pie-chart"
+                size={13}
+                color="#6C47FF"
+                style={{ marginRight: 4 }}
+              />
+              <Text style={styles.bottomSharesBtnText}>Shares</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
-            style={styles.bottomOfferBtn}
+            style={[styles.bottomOfferBtn, !isInvestmentEnabled && { flex: 1 }]}
             onPress={() => {
-              const shouldBeFractional = Boolean(
-                asset.shares ||
-                  asset.total_shares ||
-                  asset.isFractional ||
-                  asset.listingType === "fractional" ||
-                  asset.fractional
-              );
               navigation.navigate(SCREENS.CHECKOUT, {
                 asset,
-                isFractional: shouldBeFractional,
+                isFractional: false,
               });
             }}
             activeOpacity={0.85}
           >
             <View style={styles.bottomOfferGradient}>
               <Text style={styles.bottomOfferText}>
-                {asset.shares ||
-                asset.total_shares ||
-                asset.isFractional ||
-                asset.listingType === "fractional"
-                  ? "Buy Fractional Shares"
-                  : isOwner
-                  ? "Buy Shares (Your Listing)"
-                  : "Make an offer"}
+                {isOwner ? "View in Escrow" : "Buy Entire Item"}
               </Text>
               <Feather
                 name="arrow-right"
@@ -2190,8 +2217,24 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#0F172A",
   },
+  bottomSharesBtn: {
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: "#F3EEFF",
+    borderWidth: 1.5,
+    borderColor: "#D8C7FF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottomSharesBtnText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#6C47FF",
+  },
   bottomOfferBtn: {
-    flex: 1.3,
+    flex: 1.4,
     borderRadius: 16,
     overflow: "hidden",
     backgroundColor: "#6C47FF",
@@ -2724,5 +2767,31 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 2,
+  },
+  wholeItemBadgeWrap: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+  },
+  wholeItemBadgePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+  wholeItemBadgeTitle: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#059669",
+    letterSpacing: 0.5,
+  },
+  wholeItemBadgeSubtitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#15803D",
   },
 });

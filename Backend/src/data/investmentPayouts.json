@@ -1,0 +1,53 @@
+[
+  {
+    "id": "payout_61dbeg9ldk",
+    "asset_id": "asset-buyout-test-1792966834820",
+    "order_id": "ORD-BUYOUT-889",
+    "recipient_id": "investor-uuid-0003",
+    "recipient_role": "investor",
+    "shares_represented": 15,
+    "total_shares": 100,
+    "gross_sale_zar": 100000,
+    "net_distributable_zar": 97500,
+    "platform_fee_zar": 2500,
+    "payout_amount_zar": 14625,
+    "payout_amount_eth": 0,
+    "tx_hash": "0xbuyout_tx",
+    "status": "completed",
+    "created_at": "2026-10-25T22:20:35.402Z"
+  },
+  {
+    "id": "payout_qp5jf7rsn4",
+    "asset_id": "asset-buyout-test-1792966834820",
+    "order_id": "ORD-BUYOUT-889",
+    "recipient_id": "investor-uuid-0004",
+    "recipient_role": "investor",
+    "shares_represented": 10,
+    "total_shares": 100,
+    "gross_sale_zar": 100000,
+    "net_distributable_zar": 97500,
+    "platform_fee_zar": 2500,
+    "payout_amount_zar": 9750,
+    "payout_amount_eth": 0,
+    "tx_hash": "0xbuyout_tx",
+    "status": "completed",
+    "created_at": "2026-10-25T22:20:35.402Z"
+  },
+  {
+    "id": "payout_seller_f8bfax5xhu",
+    "asset_id": "asset-buyout-test-1792966834820",
+    "order_id": "ORD-BUYOUT-889",
+    "recipient_id": "seller-uuid-0001",
+    "recipient_role": "seller",
+    "shares_represented": 75,
+    "total_shares": 100,
+    "gross_sale_zar": 100000,
+    "net_distributable_zar": 97500,
+    "platform_fee_zar": 2500,
+    "payout_amount_zar": 73125,
+    "payout_amount_eth": 0,
+    "tx_hash": "0xbuyout_tx",
+    "status": "completed",
+    "created_at": "2026-10-25T22:20:35.402Z"
+  }
+]

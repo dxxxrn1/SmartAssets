@@ -15,6 +15,7 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -91,6 +92,8 @@ export default function ListAssetScreen({ navigation, route }) {
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
   const [destinationMode, setDestinationMode] = useState("personal"); // 'personal' | 'marketplace'
+  const [allowInvestment, setAllowInvestment] = useState(false); // Strictly defaults to false
+  const [totalShares, setTotalShares] = useState("100");
 
   // Mandatory 3-Step Pipeline States
   const [verifyingImage, setVerifyingImage] = useState(false);
@@ -123,6 +126,8 @@ export default function ListAssetScreen({ navigation, route }) {
     setSaved(false);
     setSubmitting(false);
     setDestinationMode("personal");
+    setAllowInvestment(false);
+    setTotalShares("100");
     setVerifyingImage(false);
     setAiVerified(false);
     setVerifiedAsset(null);
@@ -655,6 +660,11 @@ export default function ListAssetScreen({ navigation, route }) {
         description: form.description.trim(),
         askingPrice: form.askingPrice.trim(),
         image: form.images[0],
+        allowInvestment: Boolean(allowInvestment),
+        totalShares: allowInvestment ? (parseInt(totalShares, 10) || 100) : null,
+        sharePrice: allowInvestment
+          ? Math.round(priceNum / (parseInt(totalShares, 10) || 100))
+          : null,
         forceConfirmPrice: forceConfirm,
         smartTakeTitle: verifiedAsset?.smartTakeTitle || null,
         smartTakeBody: verifiedAsset?.smartTakeBody || null,
@@ -1368,7 +1378,7 @@ export default function ListAssetScreen({ navigation, route }) {
                           ]}
                           numberOfLines={1}
                         >
-                          List for Fractional Investment
+                          List on Marketplace
                         </Text>
                         {destinationMode === "marketplace" && (
                           <Feather
@@ -1389,23 +1399,70 @@ export default function ListAssetScreen({ navigation, route }) {
                           color="#7C3AED"
                         />
                         <Text style={styles.destinationInfoText}>
-                          Private Vault: Secured in 'My Collection' with an
-                          ERC-721 Sepolia provenance certificate. 0% public
-                          market listing fees.
+                          Private Vault: Stored in 'My Collection' with an
+                          ERC-721 Sepolia provenance certificate. Not listed for public sale.
                         </Text>
                       </View>
                     ) : (
-                      <View style={styles.destinationInfoPill}>
-                        <Ionicons
-                          name="trending-up"
-                          size={15}
-                          color="#2563EB"
-                        />
-                        <Text style={styles.destinationInfoText}>
-                          Marketplace Fractionalization: Generates an
-                          escrow-backed fractional offering on the public
-                          exchange with investor liquidity.
-                        </Text>
+                      <View style={{ gap: 10 }}>
+                        <View style={styles.destinationInfoPill}>
+                          <Ionicons
+                            name="cart-outline"
+                            size={15}
+                            color="#2563EB"
+                          />
+                          <Text style={styles.destinationInfoText}>
+                            Marketplace Whole-Item Sale: Offering the complete collectible for sale with full escrow protection.
+                          </Text>
+                        </View>
+
+                        {/* Fractional Investment Opt-In Toggle (Defaults to OFF) */}
+                        <View style={styles.investmentOptInCard}>
+                          <View style={styles.investmentOptInHeader}>
+                            <View style={{ flex: 1, marginRight: 12 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                                <Ionicons name="pie-chart" size={15} color="#7C3AED" />
+                                <Text style={styles.investmentOptInTitle}>Allow Fractional Investments</Text>
+                              </View>
+                              <Text style={styles.investmentOptInSub}>
+                                Allow other users to invest in fractional shares while keeping whole-item sale available.
+                              </Text>
+                            </View>
+                            <Switch
+                              value={allowInvestment}
+                              onValueChange={setAllowInvestment}
+                              trackColor={{ false: "#CBD5E1", true: "#8B5CF6" }}
+                              thumbColor={allowInvestment ? "#FFFFFF" : "#F8FAFC"}
+                            />
+                          </View>
+
+                          {allowInvestment && (
+                            <View style={styles.investmentConfigBox}>
+                              <View style={styles.investmentConfigRow}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.investmentConfigLabel}>TOTAL SHARES</Text>
+                                  <TextInput
+                                    style={styles.investmentConfigInput}
+                                    value={totalShares}
+                                    onChangeText={setTotalShares}
+                                    keyboardType="numeric"
+                                    placeholder="100"
+                                    placeholderTextColor="#94A3B8"
+                                  />
+                                </View>
+                                <View style={{ flex: 1, paddingLeft: 12 }}>
+                                  <Text style={styles.investmentConfigLabel}>EST. SHARE PRICE</Text>
+                                  <Text style={styles.investmentConfigVal}>
+                                    R{Math.round((parseFloat(String(form.askingPrice || "1000").replace(/[^0-9.]/g, "")) || 1000) / (parseInt(totalShares, 10) || 100)).toLocaleString("en-ZA")}
+                                  </Text>
+                                </View>
+                              </View>
+                              <Text style={styles.investmentNoteText}>
+                                💡 Rule: If the item is bought outright, all shareholders receive their pro-rata sale proceeds and you receive the remainder.
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                       </View>
                     )}
                   </View>
@@ -2794,5 +2851,72 @@ const styles = StyleSheet.create({
     color: "#475569",
     lineHeight: 16,
     flex: 1,
+  },
+  // ── Fractional Investment Opt-In Styles ──
+  investmentOptInCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    padding: 14,
+  },
+  investmentOptInHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  investmentOptInTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  investmentOptInSub: {
+    fontSize: 11,
+    color: "#64748B",
+    lineHeight: 16,
+  },
+  investmentConfigBox: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+  },
+  investmentConfigRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  investmentConfigLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#64748B",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  investmentConfigInput: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  investmentConfigVal: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#7C3AED",
+    paddingVertical: 8,
+  },
+  investmentNoteText: {
+    fontSize: 11,
+    color: "#7C3AED",
+    fontWeight: "600",
+    lineHeight: 16,
+    backgroundColor: "rgba(124, 58, 237, 0.08)",
+    padding: 8,
+    borderRadius: 8,
   },
 });

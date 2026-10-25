@@ -100,26 +100,38 @@ export default function InvestScreen({ navigation }) {
     try {
       const res = await getMarketAssets("All", "");
       if (res?.assets && Array.isArray(res.assets) && res.assets.length > 0) {
-        const mapped = res.assets.map((a, i) => {
-          const totalShares = Number(a.shares || a.total_shares || a.totalShares || 500);
-          const rawSold = Number(a.shares_sold ?? a.sharesSold);
-          const sharesSold = !isNaN(rawSold) && rawSold < totalShares
-            ? rawSold
-            : Math.round(totalShares * (0.35 + ((i * 7) % 30) / 100));
+        // Filter strictly for active listings with fractional investment explicitly enabled and shares available
+        const investable = res.assets.filter((a) => {
+          const isEnabled = Boolean(a.allow_investment || a.allowInvestment);
+          const isAvailable = a.status !== "sold";
+          const hasShares = Number(a.shares) > 0;
+          return isEnabled && isAvailable && hasShares;
+        });
+
+        const mapped = investable.map((a) => {
+          const totalShares = Number(a.shares || a.total_shares || a.totalShares || 100);
+          const sharesSold = Number(a.shares_sold ?? a.sharesSold ?? 0);
+          const remainingShares = Math.max(0, totalShares - sharesSold);
+          const sharePriceNum =
+            Number(a.share_price) ||
+            Number(a.sharePrice) ||
+            Math.round((Number(a.price_num) || 1000) / totalShares);
+
           return {
             ...a,
+            allow_investment: true,
+            allowInvestment: true,
             shares: totalShares,
             total_shares: totalShares,
             totalShares: totalShares,
             shares_sold: sharesSold,
             sharesSold: sharesSold,
-            share_price: a.share_price
-              ? formatZAR(a.share_price)
-              : a.sharePrice
-              ? formatZAR(a.sharePrice)
-              : "R100",
-            funded_pct:
-              a.fundedPct || Math.round((sharesSold / totalShares) * 100),
+            remaining_shares: remainingShares,
+            remainingShares: remainingShares,
+            share_price: formatZAR(sharePriceNum),
+            sharePrice: sharePriceNum,
+            sharePriceNum,
+            funded_pct: Math.min(100, Math.round((sharesSold / totalShares) * 100)),
           };
         });
         setOfferings(mapped);
@@ -261,14 +273,17 @@ export default function InvestScreen({ navigation }) {
       setKycGatekeeperVisible(true);
       return;
     }
-    const totalShares = Number(offering.shares || offering.total_shares || offering.totalShares || 500);
-    const sharesSold = Number(offering.sharesSold ?? offering.shares_sold ?? Math.round(totalShares * 0.45));
+    const totalShares = Number(offering.shares || offering.total_shares || offering.totalShares || 100);
+    const sharesSold = Number(offering.sharesSold ?? offering.shares_sold ?? 0);
     const sharePriceNum =
+      Number(offering.sharePriceNum) ||
       parseFloat(String(offering.share_price || offering.sharePrice || "").replace(/[^0-9.]/g, "")) || 100;
 
     navigation.navigate(SCREENS.CHECKOUT, {
       asset: {
         ...offering,
+        allow_investment: true,
+        allowInvestment: true,
         shares: totalShares,
         total_shares: totalShares,
         totalShares: totalShares,
@@ -281,104 +296,21 @@ export default function InvestScreen({ navigation }) {
     });
   };
 
-
   const handleSellShares = (offering) => {
     if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
       setKycGatekeeperVisible(true);
       return;
     }
     const sharePriceNum =
+      Number(offering.sharePriceNum) ||
       parseFloat(String(offering.share_price || "").replace(/[^0-9.]/g, "")) || 100;
 
     Alert.alert(
-      "Liquidate Shares",
-      `Would you like to liquidate 1 share of "${offering.name}" at fair oracle benchmark of R${sharePriceNum}? Proceeds will immediately credit your Escrow Wallet.`,
+      "Share Custody & Liquidity",
+      `Your shares in "${offering.name}" are registered in durable Vault custody at an oracle value of R${sharePriceNum}/share.\n\n` +
+      `When this collectible is bought outright, your full pro-rata share of the verified net proceeds will automatically credit directly to your Vault cash balance.`,
       [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: `Sell 1 Share (+R${sharePriceNum})`,
-          onPress: async () => {
-            const newCash = availableCash + sharePriceNum;
-            setAvailableCash(newCash);
-            await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, newCash);
-
-            const newInvested = Math.max(0, totalInvested - sharePriceNum);
-            setTotalInvested(newInvested);
-
-            // Adjust offering
-            setOfferings((prev) =>
-              prev.map((off) =>
-                off.id === offering.id
-                  ? {
-                      ...off,
-                      funded_pct: Math.max(10, (off.funded_pct || 75) - 1),
-                      shares_sold: Math.max(0, (off.shares_sold || 10) - 1),
-                    }
-                  : off
-              )
-            );
-
-            // Decrement Co-Owned Assets in storage
-            try {
-              const fractions = (await storage.getJSON(STORAGE_KEYS.CO_OWNED_ASSETS)) || [];
-              const foundIdx = fractions.findIndex(
-                (f) =>
-                  f.id === offering.id ||
-                  (f.name &&
-                    offering.name &&
-                    f.name.toLowerCase().includes(offering.name.toLowerCase()))
-              );
-              if (foundIdx >= 0) {
-                const updated = [...fractions];
-                const prevF = updated[foundIdx];
-                const newShares = Math.max(0, (prevF.sharesOwned || 1) - 1);
-                const newStake = Math.max(0, (prevF.myStake || sharePriceNum) - sharePriceNum);
-                if (newShares === 0) {
-                  updated.splice(foundIdx, 1);
-                } else {
-                  updated[foundIdx] = {
-                    ...prevF,
-                    sharesOwned: newShares,
-                    myStake: newStake,
-                    myStakeFormatted: `R${newStake.toLocaleString("en-ZA")}`,
-                  };
-                }
-                await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, updated);
-              }
-
-              // Append liquidation log to activity log
-              const existingLogs = (await storage.getJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG)) || [];
-              const newLog = {
-                id: "act-sell-" + Date.now(),
-                type: "fractional_escrow",
-                title: "Fractional Share Liquidation",
-                assetName: `1 Share • ${offering.name}`,
-                hash:
-                  "0x" +
-                  Array.from({ length: 40 }, () =>
-                    Math.floor(Math.random() * 16).toString(16)
-                  ).join(""),
-                hashDisplay:
-                  "0x" +
-                  Math.random().toString(16).substring(2, 6) +
-                  "..." +
-                  Math.random().toString(16).substring(2, 4),
-                amount: `+R${sharePriceNum}`,
-                timestamp: "Just now",
-                status: "Liquidated to Escrow",
-                network: "Sepolia Testnet",
-                icon: "cash-outline",
-                badgeColor: "#10B981",
-              };
-              await storage.setJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG, [newLog, ...existingLogs]);
-            } catch (_) {}
-
-            Alert.alert(
-              "Shares Liquidated",
-              `Sold 1 share of ${offering.name}. R${sharePriceNum} credited to your Escrow Wallet (New balance: R${newCash.toLocaleString()}).`
-            );
-          },
-        },
+        { text: "Got It", style: "default" },
       ]
     );
   };

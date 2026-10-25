@@ -469,12 +469,35 @@ async function buildMergedRealUsers(req) {
   return enriched;
 }
 
+let cachedOverviewPayload = null;
+let lastOverviewFetchTime = 0;
+const OVERVIEW_CACHE_TTL_MS = 15000; // 15-second TTL completely protects Supabase from rate limits
+
 /**
  * GET /api/admin/overview
  * Platform statistics and KPIs computed safely from existing DB & JSON stores.
  */
 async function getAdminOverview(req, res) {
   try {
+    const now = Date.now();
+    // Serve from memory cache if within 15 seconds, but refresh real-time presence live
+    if (cachedOverviewPayload && (now - lastOverviewFetchTime < OVERVIEW_CACHE_TTL_MS)) {
+      const livePresence = presenceService.getPresenceOverview(cachedOverviewPayload.realUsers || []);
+      return res.json({
+        success: true,
+        overview: {
+          ...cachedOverviewPayload.overview,
+          users: {
+            ...cachedOverviewPayload.overview.users,
+            onlineCount: livePresence.onlineCount,
+            idleCount: livePresence.idleCount,
+            offlineCount: livePresence.offlineCount,
+            onlineUsers: livePresence.onlineUsers,
+          },
+        },
+      });
+    }
+
     // 1. Fetch merged real users
     const realUsers = await buildMergedRealUsers(req);
 
@@ -532,7 +555,7 @@ async function getAdminOverview(req, res) {
     // 6. Real-time active & online collectors overview
     const presenceOverview = presenceService.getPresenceOverview(realUsers);
 
-    return res.json({
+    const overviewResponse = {
       success: true,
       overview: {
         users: {
@@ -577,7 +600,15 @@ async function getAdminOverview(req, res) {
         },
         timestamp: new Date().toISOString(),
       },
-    });
+    };
+
+    cachedOverviewPayload = {
+      overview: overviewResponse.overview,
+      realUsers,
+    };
+    lastOverviewFetchTime = Date.now();
+
+    return res.json(overviewResponse);
   } catch (err) {
     console.error('getAdminOverview error:', err);
     return sendError(res, 500, 'Failed to fetch admin overview.');

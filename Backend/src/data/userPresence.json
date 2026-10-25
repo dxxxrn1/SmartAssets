@@ -4,27 +4,41 @@
     "email": "pngforster@gmail.com",
     "fullName": "SmartAssets Administrator",
     "role": "admin",
-    "lastSeen": "2026-10-25T21:03:56.243Z",
-    "lastTimestamp": 1792962236243,
+    "lastSeen": "2026-10-25T21:54:54.048Z",
+    "lastTimestamp": 1792965294048,
     "status": "online",
     "ip": "127.0.0.1",
     "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
     "clientType": "Admin Console",
     "lastEndpoint": "/api/admin/auth/me",
-    "connectedSince": "2026-10-25T21:03:36.388Z"
+    "connectedSince": "2026-10-25T21:13:46.577Z"
   },
   {
     "userId": "a31c0642-e809-4690-bb29-c6ed4036c8cd",
     "email": "darrenforster3@gmail.com",
     "fullName": "Darren",
     "role": "authenticated",
-    "lastSeen": "2026-10-25T20:48:31.630Z",
-    "lastTimestamp": 1792961311630,
+    "lastSeen": "2026-10-25T23:19:04.435Z",
+    "lastTimestamp": 1792970344435,
+    "status": "online",
+    "ip": "10.10.0.53",
+    "device": "okhttp/4.12.0",
+    "clientType": "Mobile App",
+    "lastEndpoint": "/api/user/transactions",
+    "connectedSince": "2026-10-25T23:18:44.371Z"
+  },
+  {
+    "userId": "dcb60b5e-3fd0-410e-b009-cec8133c451f",
+    "email": "loops4png@gmail.com",
+    "fullName": "Dee",
+    "role": "authenticated",
+    "lastSeen": "2026-10-25T22:46:18.411Z",
+    "lastTimestamp": 1792968378411,
     "status": "online",
     "ip": "10.250.193.0",
     "device": "okhttp/4.12.0",
     "clientType": "Mobile App",
     "lastEndpoint": "/api/user/vault",
-    "connectedSince": "2026-10-25T20:48:18.631Z"
+    "connectedSince": "2026-10-25T22:33:03.770Z"
   }
 ]

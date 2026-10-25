@@ -12,6 +12,9 @@ const { sendError } = require('../utils/errorHandler');
 const web3Service = require('../services/web3Service');
 const stripeService = require('../services/stripeService');
 const escrowService = require('../services/escrowService');
+const investmentPositionService = require('../services/investmentPositionService');
+const vaultTransactionService = require('../services/vaultTransactionService');
+const notificationService = require('../services/notificationService');
 const { ethers } = require('ethers');
 
 // Current ZAR to ETH rate for checkout conversion (1 ETH ≈ R48,000)
@@ -142,17 +145,41 @@ async function processPayment(req, res) {
     let sharesToBuy = 0;
     let actualPriceZar = 0;
 
+    // 2. Resolve Seller Identity and Seller Address
+    const sellerId = asset?.seller_id || asset?.user_id || null;
+
+    // Rule: Prevent seller from purchasing their own listing
+    if (sellerId && String(sellerId) === String(userId)) {
+      return sendError(res, 400, 'Self-dealing Violation: You cannot purchase or invest in your own asset listing.');
+    }
+
+    // Rule: Reject purchases on already-sold items
+    if (asset && asset.status === 'sold') {
+      return sendError(res, 400, 'Asset has already been sold and is no longer available in the marketplace.');
+    }
+
     // Fractional Investment Rules
     if (isFractional) {
       if (!asset) {
         return sendError(res, 400, 'Target asset is required for fractional investment.');
       }
 
+      // Rule: Reject fractional investments if allow_investment is disabled
+      if (!asset.allow_investment) {
+        return sendError(
+          res,
+          400,
+          'Investment Rule Violation: Fractional investment is not enabled for this asset listing. You can purchase the whole item outright.'
+        );
+      }
+
       sharesToBuy = parseInt(req.body.sharesCount, 10);
-      const totalShares = asset.shares || 100;
-      const sharesSold = asset.shares_sold || 0;
-      const remainingShares = totalShares - sharesSold;
-      const sharePrice = Number(asset.share_price) || Math.round((asset.price_num || 1000) / totalShares);
+      const totalShares = Number(asset.shares || 100);
+      const activePositions = await investmentPositionService.getActivePositionsForAsset(asset.id);
+      const totalSharesSoldLedger = activePositions.reduce((acc, p) => acc + Number(p.shares_held), 0);
+      const sharesSold = Math.max(Number(asset.shares_sold || 0), totalSharesSoldLedger);
+      const remainingShares = Math.max(0, totalShares - sharesSold);
+      const sharePrice = Number(asset.share_price) || Math.round((Number(asset.price_num) || 1000) / totalShares);
 
       if (!sharesToBuy || sharesToBuy < 1) {
         return sendError(res, 400, 'Investment Rule Violation: Minimum investment is 1 share.');
@@ -165,20 +192,8 @@ async function processPayment(req, res) {
       }
 
       const maxAllowedPerInvestor = Math.max(1, Math.floor(totalShares * 0.25));
-      const { data: existingHoldings } = await supabase
-        .from('user_holdings')
-        .select('name')
-        .eq('user_id', userId);
-
-      let alreadyOwnedShares = 0;
-      if (existingHoldings) {
-        for (const h of existingHoldings) {
-          if (h.name && h.name.includes(asset.name)) {
-            const match = h.name.match(/\((\d+)\s+Shares\)/i);
-            if (match) alreadyOwnedShares += parseInt(match[1], 10);
-          }
-        }
-      }
+      const userPositions = activePositions.filter((p) => String(p.investor_id) === String(userId));
+      const alreadyOwnedShares = userPositions.reduce((acc, p) => acc + Number(p.shares_held), 0);
 
       if (alreadyOwnedShares + sharesToBuy > maxAllowedPerInvestor) {
         return sendError(
@@ -194,9 +209,6 @@ async function processPayment(req, res) {
 
       actualPriceZar = sharesToBuy * sharePrice;
     } else {
-      if (asset && asset.status === 'sold') {
-        return sendError(res, 400, 'Asset has already been sold and is no longer available in the marketplace.');
-      }
       actualPriceZar = asset?.price_num || Number(amountGbp) || 0;
     }
 
@@ -204,8 +216,6 @@ async function processPayment(req, res) {
       return sendError(res, 400, 'Invalid transaction amount.');
     }
 
-    // 2. Resolve Seller Identity and Seller Address
-    const sellerId = asset?.user_id || asset?.seller_id || null;
     let sellerAddress = asset?.seller_address || asset?.user_wallet || null;
 
     if (!sellerAddress && sellerId) {
@@ -375,8 +385,10 @@ async function processPayment(req, res) {
     // ── 5. ONLY AFTER ESCROW IS FUNDED: Update Inventory & Holdings ──
     const holdingName = isFractional ? `${assetName} (${sharesToBuy} Shares)` : assetName;
     const holdingType = isFractional ? 'fractional' : 'whole';
+    const transactionId = verifiedTxHash || verifiedPaymentIntentId || orderId;
 
     try {
+      // 5A. Insert holding in buyer's personal vault
       await supabase.from('user_holdings').insert({
         user_id: userId,
         name: holdingName,
@@ -391,23 +403,25 @@ async function processPayment(req, res) {
       });
 
       if (isFractional && asset?.id) {
+        // 5B. Fractional Investment Path: Record durable investor position
+        await investmentPositionService.recordInvestmentPosition({
+          assetId: asset.id,
+          investorId: userId,
+          sharesCount: sharesToBuy,
+          costBasisZar: actualPriceZar,
+          costBasisEth: ethVal,
+          orderId,
+          txHash: verifiedTxHash || null,
+        });
+
         const newSharesSold = (asset.shares_sold || 0) + sharesToBuy;
         const updateData = { shares_sold: newSharesSold };
         if (newSharesSold >= (asset.shares || 100)) {
           updateData.status = 'funded';
         }
         await supabase.from('assets').update(updateData).eq('id', asset.id);
-      } else if (!isFractional && asset?.id) {
-        await supabase.from('assets').update({ status: 'sold' }).eq('id', asset.id);
-      }
 
-      // Record Provenance Milestone
-      const transactionId = verifiedTxHash || verifiedPaymentIntentId || orderId;
-      if (asset?.id) {
-        const milestoneEvent = isFractional
-          ? `Fractional Investment: Acquired ${sharesToBuy} Shares (${((sharesToBuy / (asset.shares || 100)) * 100).toFixed(1)}% Co-Ownership)`
-          : `Ownership Transferred via ${paymentRailName} into Escrow`;
-
+        const milestoneEvent = `Fractional Investment: Acquired ${sharesToBuy} Shares (${((sharesToBuy / (asset.shares || 100)) * 100).toFixed(1)}% Co-Ownership)`;
         await supabase.from('asset_history').insert({
           asset_id: asset.id,
           year: String(new Date().getFullYear()),
@@ -424,6 +438,109 @@ async function processPayment(req, res) {
             event: milestoneEvent,
             party: `Buyer (${userId.substring(0, 8)})`,
             hash: transactionId,
+          });
+        }
+
+        // Notify investor & seller
+        await notificationService.sendNotification({
+          userId,
+          type: 'shares_purchased',
+          title: 'Investment Confirmed',
+          message: `You successfully acquired ${sharesToBuy} shares in "${assetName}". Registered to your Vault.`,
+          orderId,
+          assetId: asset.id,
+        });
+
+        if (sellerId) {
+          await notificationService.sendNotification({
+            userId: sellerId,
+            type: 'shares_sold',
+            title: 'Shares Sold on Marketplace',
+            message: `${sharesToBuy} shares of "${assetName}" were purchased by an investor.`,
+            orderId,
+            assetId: asset.id,
+          });
+        }
+      } else if (!isFractional && asset?.id) {
+        // 5C. Whole-Item Outright Purchase Path
+        if (asset.allow_investment) {
+          // Asset had fractional investment enabled — execute pro-rata buyout allocations
+          console.log(`🏦 [Payment] Outright purchase of fractionalized asset ${asset.id}. Distributing pro-rata buyout proceeds...`);
+          await investmentPositionService.processOutrightBuyoutAllocations({
+            asset,
+            buyerId: userId,
+            buyerName: req.user.fullName || req.user.email,
+            orderId,
+            grossSaleZar: actualPriceZar,
+            txHash: verifiedTxHash || null,
+            paymentRailName,
+          });
+        } else {
+          // Standard whole listing: update asset ownership to buyer while preserving original seller
+          await supabase
+            .from('assets')
+            .update({
+              status: 'sold',
+              current_owner_id: userId,
+              user_id: userId,
+              seller_id: sellerId || asset.user_id,
+              allow_investment: false,
+            })
+            .eq('id', asset.id);
+
+          // Credit seller net sale proceeds (2.5% fee deduction)
+          if (sellerId) {
+            const netProceeds = Math.round(actualPriceZar * 0.975);
+            try {
+              await vaultTransactionService.depositFunds({
+                userId: sellerId,
+                amount: netProceeds,
+                method: 'Marketplace Sale Proceeds',
+                reference: `SALE-${orderId}`,
+                notes: `Net proceeds for sale of "${assetName}" to ${req.user.fullName || req.user.email}.`,
+              });
+            } catch (vErr) {
+              console.warn('⚠️ [Payment] Seller vault credit warning:', vErr.message);
+            }
+
+            await notificationService.sendNotification({
+              userId: sellerId,
+              type: 'asset_sold',
+              title: 'Item Sold Outright — Proceeds Credited',
+              message: `Your listing "${assetName}" was purchased outright for R${actualPriceZar.toLocaleString('en-ZA')}. R${netProceeds.toLocaleString('en-ZA')} has been credited to your Vault.`,
+              orderId,
+              assetId: asset.id,
+            });
+          }
+
+          // Record Provenance
+          const wholeMilestone = `Ownership Transferred: Acquired 100% full ownership via ${paymentRailName}. Original seller: ${sellerId ? String(sellerId).slice(0, 8) : 'Verified Lister'}.`;
+          await supabase.from('asset_history').insert({
+            asset_id: asset.id,
+            year: String(new Date().getFullYear()),
+            event: wholeMilestone,
+            party: `Buyer (${req.user.fullName || req.user.email})`,
+            hash: transactionId,
+            tx_hash: verifiedTxHash || transactionId,
+            verified: true,
+          });
+
+          if (asset.token_id) {
+            web3Service.recordMilestoneOnChain(asset.token_id, {
+              year: new Date().getFullYear(),
+              event: wholeMilestone,
+              party: `Buyer (${userId.substring(0, 8)})`,
+              hash: transactionId,
+            });
+          }
+
+          await notificationService.sendNotification({
+            userId,
+            type: 'ownership_transferred',
+            title: 'Purchase Complete — Ownership Transferred',
+            message: `Congratulations! You now hold 100% verified ownership of "${assetName}". Secured in your Vault.`,
+            orderId,
+            assetId: asset.id,
           });
         }
       }

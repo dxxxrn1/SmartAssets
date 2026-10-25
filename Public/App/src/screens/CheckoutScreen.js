@@ -58,7 +58,10 @@ export default function CheckoutScreen({ navigation, route }) {
   const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
   const [installModalVisible, setInstallModalVisible] = useState(false);
   const asset = route?.params?.asset ?? {};
-  const isFractional = route?.params?.isFractional ?? false;
+  const isInvestmentEnabled = Boolean(asset.allow_investment || asset.allowInvestment);
+  const [isFractional, setIsFractional] = useState(
+    isInvestmentEnabled && Boolean(route?.params?.isFractional)
+  );
   const isOwner = Boolean(
     user?.id && (user.id === asset.userId || user.id === asset.user_id)
   );
@@ -591,7 +594,76 @@ export default function CheckoutScreen({ navigation, route }) {
             </View>
           </View>
 
-          {/* ── 2. Fractional Investment Configurator & Rules ── */}
+          {/* ── Purchase Mode Toggle: Buy Entire Item vs. Fractional Shares (When enabled) ── */}
+          {isInvestmentEnabled && (
+            <View style={styles.purchaseModeToggleCard}>
+              <View style={styles.purchaseModeToggleRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.purchaseModeTab,
+                    !isFractional && styles.purchaseModeTabActive,
+                  ]}
+                  onPress={() => setIsFractional(false)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="cube"
+                    size={15}
+                    color={!isFractional ? '#FFFFFF' : '#64748B'}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={[
+                      styles.purchaseModeTabText,
+                      !isFractional && styles.purchaseModeTabTextActive,
+                    ]}
+                  >
+                    Buy Entire Item
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.purchaseModeTab,
+                    isFractional && styles.purchaseModeTabActive,
+                  ]}
+                  onPress={() => setIsFractional(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="pie-chart"
+                    size={15}
+                    color={isFractional ? '#FFFFFF' : '#64748B'}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={[
+                      styles.purchaseModeTabText,
+                      isFractional && styles.purchaseModeTabTextActive,
+                    ]}
+                  >
+                    Fractional Shares
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* ── 2A. Full Ownership Physical Delivery Banner ── */}
+          {!isFractional && (
+            <View style={styles.wholeAssetBanner}>
+              <View style={styles.wholeAssetBadgeRow}>
+                <Ionicons name="shield-checkmark" size={16} color="#10B981" />
+                <Text style={styles.wholeAssetBadgeText}>100% FULL OWNERSHIP &bull; ESCROW SECURED</Text>
+              </View>
+              <Text style={styles.wholeAssetTitle}>Direct Physical Purchase</Text>
+              <Text style={styles.wholeAssetDesc}>
+                You are purchasing this physical collectible outright. Payment is locked safely in SmartAssets Custody Escrow until the item is couriered, inspected, and verified by you.
+              </Text>
+            </View>
+          )}
+
+          {/* ── 2B. Fractional Investment Configurator & Rules ── */}
           {isFractional && (
             <View style={styles.fractionalCard}>
               <View style={styles.fractionalHeaderRow}>
@@ -1151,6 +1223,73 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#6C47FF',
+  },
+
+  // Purchase Mode Toggle
+  purchaseModeToggleCard: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 16,
+    padding: 4,
+  },
+  purchaseModeToggleRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  purchaseModeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  purchaseModeTabActive: {
+    backgroundColor: '#6C47FF',
+    shadowColor: '#6C47FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  purchaseModeTabText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#64748B',
+  },
+  purchaseModeTabTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Whole Asset Physical Delivery Banner
+  wholeAssetBanner: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#BBF7D0',
+    borderRadius: 20,
+    padding: 16,
+    gap: 6,
+  },
+  wholeAssetBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  wholeAssetBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#10B981',
+    letterSpacing: 0.8,
+  },
+  wholeAssetTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#065F46',
+  },
+  wholeAssetDesc: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#047857',
   },
 
   // Fractional Configurator Card

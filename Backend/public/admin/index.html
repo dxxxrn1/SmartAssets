@@ -1772,6 +1772,8 @@
                   >Live FICA / KYC Queue</span
                 >
               </div>
+            </div>
+
             <div class="kpi-card" style="cursor: pointer;" onclick="navigate('users')" title="Click to view full collector directory">
               <div class="kpi-card-header">
                 <span class="kpi-title">Active Collectors</span>
@@ -6096,14 +6098,15 @@
             window.loadVerifications(true);
             window.loadBankAccounts(true);
 
-            // Background Real-Time Polling for Online Users and Dashboard Metrics
+            // Background Real-Time Polling for Online Users and Dashboard Metrics (30s gentle interval, pauses when tab hidden)
             setInterval(function () {
+              if (document.hidden) return;
               if (STATE.currentView === "overview") {
                 loadOverview();
               } else if (STATE.currentView === "users" && typeof window.loadUsers === "function") {
                 window.loadUsers();
               }
-            }, 15000);
+            }, 30000);
           } catch (netErr) {
             console.error("Backend auth check error:", netErr);
             if (typeof showToast === "function") {

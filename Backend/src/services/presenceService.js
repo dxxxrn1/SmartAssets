@@ -38,16 +38,36 @@ function loadPresenceFromDisk() {
   }
 }
 
+let saveTimer = null;
+
 /**
- * Persists in-memory presence data to disk.
+ * Persists in-memory presence data to disk only when content changes.
  */
 function savePresenceToDisk() {
   try {
     const list = Array.from(presenceCache.values());
-    fs.writeFileSync(PRESENCE_FILE, JSON.stringify(list, null, 2), 'utf8');
+    const json = JSON.stringify(list, null, 2);
+    if (fs.existsSync(PRESENCE_FILE)) {
+      try {
+        const current = fs.readFileSync(PRESENCE_FILE, 'utf8');
+        if (current.trim() === json.trim()) return; // Content unchanged, avoid touching disk / triggering watchers
+      } catch (_) {}
+    }
+    fs.writeFileSync(PRESENCE_FILE, json, 'utf8');
   } catch (err) {
     console.warn('⚠️ [presenceService] Failed to write userPresence.json:', err.message);
   }
+}
+
+/**
+ * Debounced persistence helper (max once every 30 seconds).
+ */
+function scheduleSaveToDisk() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    savePresenceToDisk();
+  }, 30000);
 }
 
 // Initial load
@@ -134,7 +154,7 @@ function recordActivity(userId, metadata = {}) {
   };
 
   presenceCache.set(userId, entry);
-  savePresenceToDisk();
+  scheduleSaveToDisk();
   return entry;
 }
 
