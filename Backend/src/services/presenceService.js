@@ -1,77 +1,19 @@
 // ─── SmartAssets User Presence & Online Tracking Service ─────────────────────
 // Real-time user presence tracking for the SmartAssets Operations & Admin Dashboard.
-// Tracks active collector sessions across Mobile App (Expo) and Web, calculates online/idle/offline
-// states with high-precision time windows, and persists state to userPresence.json.
+// Ephemeral in-memory RAM cache synchronized asynchronously with Supabase PostgreSQL (profiles.last_seen).
+// Strictly ZERO local JSON disk writes.
 
-const fs = require('fs');
-const path = require('path');
-
-const PRESENCE_FILE = path.resolve(__dirname, '../data/userPresence.json');
+let supabase = null;
+try {
+  supabase = require('../connection/supabaseClient');
+} catch (_) {}
 
 // Presence windows (in milliseconds)
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;   // 5 minutes = Online
 const IDLE_WINDOW_MS = 15 * 60 * 1000;    // 5 - 15 minutes = Away / Idle
 
-// In-memory cache for fast, zero-overhead lookups
-let presenceCache = new Map();
-
-/**
- * Loads persisted presence data from disk into the cache.
- */
-function loadPresenceFromDisk() {
-  try {
-    if (fs.existsSync(PRESENCE_FILE)) {
-      const raw = fs.readFileSync(PRESENCE_FILE, 'utf8');
-      if (raw && raw.trim()) {
-        const data = JSON.parse(raw);
-        if (Array.isArray(data)) {
-          data.forEach((entry) => {
-            if (entry && typeof entry.userId === 'string') {
-              presenceCache.set(entry.userId, entry);
-            }
-          });
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('⚠️ [presenceService] Failed to read userPresence.json:', err.message);
-  }
-}
-
-let saveTimer = null;
-
-/**
- * Persists in-memory presence data to disk only when content changes.
- */
-function savePresenceToDisk() {
-  try {
-    const list = Array.from(presenceCache.values());
-    const json = JSON.stringify(list, null, 2);
-    if (fs.existsSync(PRESENCE_FILE)) {
-      try {
-        const current = fs.readFileSync(PRESENCE_FILE, 'utf8');
-        if (current.trim() === json.trim()) return; // Content unchanged, avoid touching disk / triggering watchers
-      } catch (_) {}
-    }
-    fs.writeFileSync(PRESENCE_FILE, json, 'utf8');
-  } catch (err) {
-    console.warn('⚠️ [presenceService] Failed to write userPresence.json:', err.message);
-  }
-}
-
-/**
- * Debounced persistence helper (max once every 30 seconds).
- */
-function scheduleSaveToDisk() {
-  if (saveTimer) return;
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    savePresenceToDisk();
-  }, 30000);
-}
-
-// Initial load
-loadPresenceFromDisk();
+// Ephemeral in-memory cache for fast, zero-disk overhead lookups
+const presenceCache = new Map();
 
 /**
  * Computes current active presence status based on elapsed time.
@@ -125,7 +67,47 @@ function detectClientType(userAgent = '') {
 }
 
 /**
+ * Hydrates in-memory presence cache from Supabase profiles on boot.
+ */
+async function hydratePresenceFromSupabase() {
+  if (!supabase) return;
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, role, avatar_url, last_seen')
+      .not('last_seen', 'is', null)
+      .order('last_seen', { ascending: false })
+      .limit(50);
+
+    if (!error && Array.isArray(data)) {
+      data.forEach((user) => {
+        if (user && user.id && !presenceCache.has(user.id)) {
+          const ts = user.last_seen ? new Date(user.last_seen).getTime() : 0;
+          presenceCache.set(user.id, {
+            userId: user.id,
+            email: user.email || '—',
+            fullName: user.full_name || 'Collector',
+            role: user.role || 'user',
+            lastSeen: user.last_seen,
+            lastTimestamp: ts,
+            status: computeStatus({ lastTimestamp: ts }),
+            ip: '127.0.0.1',
+            device: 'SmartAssets Client',
+            clientType: 'Mobile App',
+            lastEndpoint: '/',
+            connectedSince: user.last_seen,
+          });
+        }
+      });
+    }
+  } catch (_e) {}
+}
+
+hydratePresenceFromSupabase().catch(() => {});
+
+/**
  * Records activity for a user (called upon request, login, or heartbeat).
+ * Stored strictly in RAM, synced asynchronously to Supabase profiles.
  * @param {string} userId
  * @param {object} metadata
  */
@@ -154,7 +136,17 @@ function recordActivity(userId, metadata = {}) {
   };
 
   presenceCache.set(userId, entry);
-  scheduleSaveToDisk();
+
+  // Sync last_seen to Supabase asynchronously without writing any local files
+  if (supabase && userId && !String(userId).startsWith('admin-')) {
+    supabase
+      .from('profiles')
+      .update({ last_seen: new Date(now).toISOString() })
+      .eq('id', userId)
+      .then(() => {})
+      .catch(() => {});
+  }
+
   return entry;
 }
 
@@ -172,7 +164,16 @@ function setUserOffline(userId, reason = 'logout') {
     existing.lastTimestamp = Date.now();
     existing.offlineReason = reason;
     presenceCache.set(userId, existing);
-    savePresenceToDisk();
+
+    // Sync to Supabase asynchronously
+    if (supabase && userId && !String(userId).startsWith('admin-')) {
+      supabase
+        .from('profiles')
+        .update({ last_seen: new Date().toISOString() })
+        .eq('id', userId)
+        .then(() => {})
+        .catch(() => {});
+    }
   }
 }
 
