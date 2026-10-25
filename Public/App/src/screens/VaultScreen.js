@@ -131,11 +131,11 @@ export default function VaultScreen({ navigation }) {
   const processHoldingsIntoTabs = useCallback(
     (serverHoldings, currentPersonal, currentFractions) => {
       if (!Array.isArray(serverHoldings) || serverHoldings.length === 0) {
-        return { personal: currentPersonal, fractional: currentFractions };
+        return { personal: [], fractional: [] };
       }
 
-      const mergedPersonal = [...currentPersonal];
-      const mergedFractional = [...currentFractions];
+      const mergedPersonal = [];
+      const mergedFractional = [];
 
       serverHoldings.forEach((h) => {
         const isFractional = h.asset_type === "fractional";
@@ -159,7 +159,7 @@ export default function VaultScreen({ navigation }) {
             myStakeFormatted: formatGBP(h.myStake || h.price_num || 100),
             returnPct:
               h.badgeText ||
-              (h.gain ? h.gain.split("<!--")[0].trim() : "+12.4% Return"),
+              (h.gain ? h.gain.split("<!--")[0].trim() : "+0.0% Return"),
             returnType: h.badgeType || (h.positive ? "positive" : "negative"),
             poolValuation: formatGBP((Number(h.price_num) || 100) * 100),
             totalShares: 100,
@@ -342,18 +342,22 @@ export default function VaultScreen({ navigation }) {
             setPersonalItems((prevP) => {
               setFractionalItems((prevF) => {
                 const { personal: mergedP, fractional: mergedF } =
-                  processHoldingsIntoTabs(h, prevP, prevF);
+                  processHoldingsIntoTabs(h, [], []);
                 storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, mergedP);
                 storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, mergedF);
                 return mergedF;
               });
               const { personal: mergedP } = processHoldingsIntoTabs(
                 h,
-                prevP,
-                fractionalItems
+                [],
+                []
               );
               return mergedP;
             });
+
+            const cashVal = typeof s.availableBalanceNum === 'number' ? s.availableBalanceNum : 0;
+            setEscrowCash(cashVal);
+            storage.setJSON(STORAGE_KEYS.ESCROW_CASH, cashVal);
 
             setSummary((prev) => ({
               ...prev,
@@ -503,11 +507,14 @@ export default function VaultScreen({ navigation }) {
           const s = res.summary || {};
           setHoldings(h);
           const { personal: mergedP, fractional: mergedF } =
-            processHoldingsIntoTabs(h, personalItems, fractionalItems);
+            processHoldingsIntoTabs(h, [], []);
           setPersonalItems(mergedP);
           setFractionalItems(mergedF);
           await storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, mergedP);
           await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, mergedF);
+          const cashVal = typeof s.availableBalanceNum === 'number' ? s.availableBalanceNum : 0;
+          setEscrowCash(cashVal);
+          await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, cashVal);
           await storage.setJSON(STORAGE_KEYS.VAULT, {
             holdings: h,
             summary: s,
@@ -808,7 +815,7 @@ export default function VaultScreen({ navigation }) {
                   style={{ marginRight: 4 }}
                 />
                 <Text style={styles.gainPillText}>
-                  +12.4% Overall Gain
+                  {summary.gainText || "+0.0% Overall Gain"}
                 </Text>
               </View>
             </View>
@@ -1196,7 +1203,7 @@ export default function VaultScreen({ navigation }) {
                             style={{ marginRight: 4 }}
                           />
                           <Text style={styles.pnlBadgeTextGain}>
-                            {item.returnPct || "+12.4% Return"}
+                            {item.returnPct || "+0.0% Return"}
                           </Text>
                         </View>
 

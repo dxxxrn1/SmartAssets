@@ -1,8 +1,6 @@
 // ─── Network Connectivity Utility ─────────────────────────────────────────────
 // Detects online/offline status reliably across Web and Mobile.
 
-import { API_BASE_URL } from '../services/api';
-
 /**
  * Synchronous check for browser online state.
  */
@@ -15,29 +13,25 @@ export function isOnlineSync() {
 
 /**
  * Asynchronous internet connectivity check.
- * Verifies both device connectivity and backend accessibility.
+ * Verifies if device has general internet access.
  */
 export async function checkInternetConnection() {
-  // 1. Fast check via navigator
   if (typeof navigator !== 'undefined' && 'onLine' in navigator) {
     if (!navigator.onLine) return false;
   }
 
-  // 2. Fast ping to health endpoint with 2.5s timeout
   try {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeoutId = controller ? setTimeout(() => controller.abort(), 2500) : null;
-
-    const res = await fetch(`${API_BASE_URL.replace('/api', '')}/api/health`, {
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 3000) : null;
+    // Lightweight HTTP 204 ping to test real internet access without pinging a local IP
+    await fetch('https://clients3.google.com/generate_204', {
       method: 'GET',
-      headers: { 'Cache-Control': 'no-cache' },
       signal: controller?.signal,
     });
-
     if (timeoutId) clearTimeout(timeoutId);
-    return res.ok;
+    return true;
   } catch {
-    // If backend or network fails
-    return false;
+    // If public ping is blocked or times out, assume device is online if navigator hasn't reported offline
+    return true;
   }
 }

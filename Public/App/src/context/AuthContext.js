@@ -135,6 +135,11 @@ export function AuthProvider({ children }) {
           setSessionExpiredMessage(pendingMsg);
           setSessionNotice(pendingMsg);
           await storage.removeItem(STORAGE_KEYS.SESSION_EXPIRED_MESSAGE);
+      await storage.removeItem(STORAGE_KEYS.PERSONAL_COLLECTION);
+      await storage.removeItem(STORAGE_KEYS.CO_OWNED_ASSETS);
+      await storage.removeItem(STORAGE_KEYS.ESCROW_CASH);
+      await storage.removeItem(STORAGE_KEYS.VAULT);
+      await storage.removeItem(STORAGE_KEYS.VAULT_ACTIVITY_LOG);
         }
 
         const savedSession = await storage.getJSON(STORAGE_KEYS.SESSION);
@@ -173,6 +178,10 @@ export function AuthProvider({ children }) {
             setToken(savedSession.token);
             lastActiveRef.current = now;
             await storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now));
+      await storage.removeItem(STORAGE_KEYS.PERSONAL_COLLECTION);
+      await storage.removeItem(STORAGE_KEYS.CO_OWNED_ASSETS);
+      await storage.removeItem(STORAGE_KEYS.ESCROW_CASH);
+      await storage.removeItem(STORAGE_KEYS.VAULT);
           } catch (valErr) {
             const msg = valErr?.message || '';
             if (
@@ -335,6 +344,10 @@ export function AuthProvider({ children }) {
         lastActiveAt: now,
       });
       await storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now));
+      await storage.removeItem(STORAGE_KEYS.PERSONAL_COLLECTION);
+      await storage.removeItem(STORAGE_KEYS.CO_OWNED_ASSETS);
+      await storage.removeItem(STORAGE_KEYS.ESCROW_CASH);
+      await storage.removeItem(STORAGE_KEYS.VAULT);
       return response;
     } finally {
       setLoading(false);
@@ -369,6 +382,10 @@ export function AuthProvider({ children }) {
         lastActiveAt: now,
       });
       await storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now));
+      await storage.removeItem(STORAGE_KEYS.PERSONAL_COLLECTION);
+      await storage.removeItem(STORAGE_KEYS.CO_OWNED_ASSETS);
+      await storage.removeItem(STORAGE_KEYS.ESCROW_CASH);
+      await storage.removeItem(STORAGE_KEYS.VAULT);
       return response;
     } finally {
       setLoading(false);
@@ -398,6 +415,10 @@ export function AuthProvider({ children }) {
           lastActiveAt: now,
         });
         await storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now));
+      await storage.removeItem(STORAGE_KEYS.PERSONAL_COLLECTION);
+      await storage.removeItem(STORAGE_KEYS.CO_OWNED_ASSETS);
+      await storage.removeItem(STORAGE_KEYS.ESCROW_CASH);
+      await storage.removeItem(STORAGE_KEYS.VAULT);
       }
       return response;
     } finally {
@@ -428,6 +449,10 @@ export function AuthProvider({ children }) {
           lastActiveAt: now,
         });
         await storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now));
+      await storage.removeItem(STORAGE_KEYS.PERSONAL_COLLECTION);
+      await storage.removeItem(STORAGE_KEYS.CO_OWNED_ASSETS);
+      await storage.removeItem(STORAGE_KEYS.ESCROW_CASH);
+      await storage.removeItem(STORAGE_KEYS.VAULT);
       }
       return response;
     } finally {
@@ -458,6 +483,11 @@ export function AuthProvider({ children }) {
       await storage.removeItem(STORAGE_KEYS.SESSION);
       await storage.removeItem(STORAGE_KEYS.LAST_ACTIVE_AT);
       await storage.removeItem(STORAGE_KEYS.SESSION_EXPIRED_MESSAGE);
+      await storage.removeItem(STORAGE_KEYS.PERSONAL_COLLECTION);
+      await storage.removeItem(STORAGE_KEYS.CO_OWNED_ASSETS);
+      await storage.removeItem(STORAGE_KEYS.ESCROW_CASH);
+      await storage.removeItem(STORAGE_KEYS.VAULT);
+      await storage.removeItem(STORAGE_KEYS.VAULT_ACTIVITY_LOG);
     } catch (e) {
       console.warn('[AuthContext] Error clearing session from storage:', e.message);
     }

@@ -5,10 +5,66 @@
 
 const supabase = require('../connection/supabaseClient');
 const web3Service = require('./web3Service');
-const { saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
+const { uploadImageToCloud, saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
 
-// In-memory runtime cache for fast lookups
+// In-memory runtime cache synced with Supabase escrow_orders
 const ordersMap = new Map();
+let hydrated = false;
+
+/**
+ * Hydrate ordersMap from Supabase escrow_orders table so all real escrow orders
+ * persist across server restarts and appear in Admin and User views.
+ */
+async function hydrateEscrowsFromSupabase() {
+  try {
+    const { data, error } = await supabase
+      .from('escrow_orders')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (!error && Array.isArray(data)) {
+      data.forEach((row) => {
+        const oid = row.order_id || row.id;
+        if (!oid) return;
+        if (!ordersMap.has(oid)) {
+          const timeline = Array.isArray(row.timeline) ? row.timeline : [];
+          const completedSteps = timeline.filter((t) => t.completed).length;
+          ordersMap.set(oid, {
+            orderId: oid,
+            buyerId: row.buyer_id || null,
+            sellerId: row.seller_id || null,
+            assetId: row.asset_id || null,
+            assetName: row.asset_name || 'Luxury Collectible',
+            assetCategory: row.asset_category || 'Luxury Asset',
+            assetImage: row.asset_image || null,
+            amountZar: Number(row.amount_zar) || 0,
+            amountGbp: Number(row.amount_gbp || row.amount_zar) || 0,
+            amountEth: Number(row.amount_eth) || 0,
+            paymentMethod: row.payment_method || 'wallet',
+            paymentRail:
+              row.payment_method === 'wallet'
+                ? 'Ethereum Sepolia Web3'
+                : row.payment_method === 'card'
+                ? 'Stripe Card'
+                : 'Stripe Wire',
+            status: row.status || 'payment_secured',
+            currentStep: Math.max(1, completedSteps || 1),
+            totalSteps: 4,
+            depositTxHash: row.tx_hash || null,
+            etherscanUrl: row.tx_hash ? `https://sepolia.etherscan.io/tx/${row.tx_hash}` : null,
+            timeline,
+            createdAt: row.created_at || new Date().toISOString(),
+            updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+          });
+        }
+      });
+      hydrated = true;
+    }
+  } catch (_) {}
+}
+
+hydrateEscrowsFromSupabase();
 
 /**
  * Creates a new escrow order and locks deposit on-chain and in Supabase.
@@ -16,6 +72,7 @@ const ordersMap = new Map();
 async function createEscrowOrder({
   orderId,
   buyerId,
+  sellerId,
   assetId,
   assetName,
   assetCategory,
@@ -45,11 +102,15 @@ async function createEscrowOrder({
   const etherscanUrl = onChainLock.etherscanUrl || `https://sepolia.etherscan.io/tx/${txHash}`;
   const now = new Date().toISOString();
 
-  const cleanImage = saveBase64Image(assetImage, `ord_${finalOrderId}`) || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
+  const cleanImage =
+    (await uploadImageToCloud(assetImage, 'assets', null, buyerId)) ||
+    saveBase64Image(assetImage, `ord_${finalOrderId}`) ||
+    'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
 
   const escrowOrder = {
     orderId: finalOrderId,
     buyerId: buyerId || null,
+    sellerId: sellerId || null,
     buyerAddress: buyerAddress || null,
     assetId: assetId || null,
     assetName: assetName || 'Luxury Collectible',
@@ -59,7 +120,13 @@ async function createEscrowOrder({
     amountGbp: zarVal,
     amountEth: ethVal,
     paymentMethod: paymentMethod || 'wallet',
-    paymentRail: paymentRail || (paymentMethod === 'wallet' ? 'Ethereum Sepolia Web3' : paymentMethod === 'card' ? 'Stripe Card' : 'Stripe Wire'),
+    paymentRail:
+      paymentRail ||
+      (paymentMethod === 'wallet'
+        ? 'Ethereum Sepolia Web3'
+        : paymentMethod === 'card'
+        ? 'Stripe Card'
+        : 'Stripe Wire'),
     status: 'payment_secured',
     currentStep: 1,
     totalSteps: 4,
@@ -103,22 +170,27 @@ async function createEscrowOrder({
 
   // Sync to Supabase escrow_orders table
   try {
-    await supabase.from('escrow_orders').upsert({
-      id: finalOrderId,
-      order_id: finalOrderId,
-      buyer_id: buyerId && buyerId.includes('-') ? buyerId : null,
-      asset_name: escrowOrder.assetName,
-      asset_category: escrowOrder.assetCategory,
-      asset_image: cleanImage,
-      amount_zar: zarVal,
-      amount_eth: Number(ethVal),
-      status: escrowOrder.status,
-      payment_method: escrowOrder.paymentMethod,
-      tx_hash: txHash,
-      timeline: escrowOrder.timeline,
-      created_at: now,
-      updated_at: now,
-    }, { onConflict: 'order_id' });
+    await supabase.from('escrow_orders').upsert(
+      {
+        id: finalOrderId,
+        order_id: finalOrderId,
+        buyer_id: buyerId && buyerId.includes('-') ? buyerId : null,
+        seller_id: sellerId && sellerId.includes('-') ? sellerId : null,
+        asset_id: assetId && String(assetId).includes('-') ? assetId : null,
+        asset_name: escrowOrder.assetName,
+        asset_category: escrowOrder.assetCategory,
+        asset_image: cleanImage,
+        amount_zar: zarVal,
+        amount_eth: Number(ethVal),
+        status: escrowOrder.status,
+        payment_method: escrowOrder.paymentMethod,
+        tx_hash: txHash,
+        timeline: escrowOrder.timeline,
+        created_at: now,
+        updated_at: now,
+      },
+      { onConflict: 'order_id' }
+    );
   } catch (_e) {}
 
   console.log(`🔒 [EscrowService] Created escrow order ${finalOrderId} for ${zarVal} ZAR (${ethVal} ETH)`);
@@ -129,6 +201,9 @@ async function createEscrowOrder({
  * Fetch an escrow order by ID. Never fabricates a demo order when missing.
  */
 function getEscrowOrder(orderId, req = null) {
+  if (!hydrated) {
+    hydrateEscrowsFromSupabase().catch(() => {});
+  }
   const order = ordersMap.get(orderId);
   if (!order) {
     return null;
@@ -143,6 +218,9 @@ function getEscrowOrder(orderId, req = null) {
  * Retrieve all orders for a specific buyer.
  */
 function getUserEscrowOrders(userId, req = null) {
+  if (!hydrated) {
+    hydrateEscrowsFromSupabase().catch(() => {});
+  }
   const result = [];
   for (const order of ordersMap.values()) {
     if (order.buyerId === userId) {
@@ -159,6 +237,9 @@ function getUserEscrowOrders(userId, req = null) {
  * Retrieve all orders in the system (Admin & Dispute console).
  */
 function getAllEscrowOrders(req = null) {
+  if (!hydrated) {
+    hydrateEscrowsFromSupabase().catch(() => {});
+  }
   const result = [];
   for (const order of ordersMap.values()) {
     result.push({
@@ -208,11 +289,14 @@ async function progressEscrowStep(orderId, targetStep, note) {
   ordersMap.set(orderId, order);
 
   try {
-    await supabase.from('escrow_orders').update({
-      status: order.status,
-      timeline: order.timeline,
-      updated_at: now,
-    }).eq('order_id', orderId);
+    await supabase
+      .from('escrow_orders')
+      .update({
+        status: order.status,
+        timeline: order.timeline,
+        updated_at: now,
+      })
+      .eq('order_id', orderId);
   } catch (_e) {}
 
   return order;
@@ -253,11 +337,14 @@ async function releaseEscrow(orderId) {
   ordersMap.set(orderId, order);
 
   try {
-    await supabase.from('escrow_orders').update({
-      status: 'released',
-      timeline: order.timeline,
-      updated_at: now,
-    }).eq('order_id', orderId);
+    await supabase
+      .from('escrow_orders')
+      .update({
+        status: 'released',
+        timeline: order.timeline,
+        updated_at: now,
+      })
+      .eq('order_id', orderId);
   } catch (_e) {}
 
   console.log(`✅ [EscrowService] Released escrow funds for ${orderId} on-chain! Tx: ${releaseTx.txHash}`);
@@ -293,11 +380,14 @@ async function refundEscrow(orderId, reason) {
   ordersMap.set(orderId, order);
 
   try {
-    await supabase.from('escrow_orders').update({
-      status: 'refunded',
-      timeline: order.timeline,
-      updated_at: now,
-    }).eq('order_id', orderId);
+    await supabase
+      .from('escrow_orders')
+      .update({
+        status: 'refunded',
+        timeline: order.timeline,
+        updated_at: now,
+      })
+      .eq('order_id', orderId);
   } catch (_e) {}
 
   console.log(`↩️ [EscrowService] Refunded escrow funds for ${orderId} on-chain! Tx: ${refundTx.txHash}`);
@@ -312,4 +402,5 @@ module.exports = {
   progressEscrowStep,
   releaseEscrow,
   refundEscrow,
+  hydrateEscrowsFromSupabase,
 };

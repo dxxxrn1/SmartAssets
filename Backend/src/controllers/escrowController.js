@@ -8,6 +8,7 @@
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const escrowService = require('../services/escrowService');
+const { isUserAdmin } = require('../middlewares/authMiddleware');
 
 /**
  * POST /api/escrow/create (protected — requireAuth)

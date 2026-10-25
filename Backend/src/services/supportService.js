@@ -1,11 +1,58 @@
 // ─── Support Service ─────────────────────────────────────────────────────────
 // Manages luxury platform user support inquiries, ticket lodging, and persistence.
-// Supabase support_tickets is the source of truth with zero local JSON fallback.
+// Supabase support_tickets is the source of truth with live cache synchronization.
 
 const supabase = require('../connection/supabaseClient');
 
-// In-memory runtime cache for fast lookups
+// In-memory runtime cache for fast lookups synced with Supabase
 const ticketsMap = new Map();
+let hydrated = false;
+
+/**
+ * Hydrates ticketsMap from Supabase support_tickets table on startup.
+ */
+async function hydrateTicketsFromSupabase() {
+  try {
+    const { data, error } = await supabase
+      .from('support_tickets')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (!error && Array.isArray(data)) {
+      data.forEach((row) => {
+        if (!row || !row.id) return;
+        if (!ticketsMap.has(row.id)) {
+          ticketsMap.set(row.id, {
+            id: row.id,
+            userId: row.user_id || null,
+            userEmail: row.user_email || 'collector@smartassets.io',
+            userName: row.user_name || 'Valued Collector',
+            category: row.category || 'General Inquiry',
+            subject: row.subject || 'Support Ticket',
+            message: row.message || '',
+            priority: row.priority || 'normal',
+            status: row.status || 'Open',
+            adminNotes: row.admin_notes || null,
+            resolutionNote: row.admin_notes || null,
+            createdAt: row.created_at || new Date().toISOString(),
+            updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+            responseEstimate: '2-4 hours',
+            assignedTeam:
+              row.category === 'Escrow & Payments'
+                ? 'Smart Contract Settlement Desk'
+                : row.category === 'Physical Verification'
+                ? 'Horology & Gemology Appraisal Lab'
+                : 'Luxury Concierge Team',
+          });
+        }
+      });
+      hydrated = true;
+    }
+  } catch (_) {}
+}
+
+hydrateTicketsFromSupabase();
 
 /**
  * Creates and logs a new support ticket into Supabase support_tickets.
@@ -37,7 +84,7 @@ function createTicket({ userId, userEmail, userName, category, subject, message,
 
   ticketsMap.set(ticketId, ticket);
 
-  // Sync to Supabase support_tickets table (fire-and-forget DB sync)
+  // Sync to Supabase support_tickets table
   try {
     Promise.resolve(
       supabase.from('support_tickets').insert({
@@ -64,6 +111,9 @@ function createTicket({ userId, userEmail, userName, category, subject, message,
  * Retrieves all tickets lodged by a specific user.
  */
 function getUserTickets(userId) {
+  if (!hydrated) {
+    hydrateTicketsFromSupabase().catch(() => {});
+  }
   const list = [];
   for (const t of ticketsMap.values()) {
     if (t.userId === userId) {
@@ -75,9 +125,11 @@ function getUserTickets(userId) {
 
 /**
  * Retrieves all tickets in the system (Admin support console).
- * Returns empty array if no tickets have been lodged. Never synthesizes fake tickets.
  */
 function getAllTickets() {
+  if (!hydrated) {
+    hydrateTicketsFromSupabase().catch(() => {});
+  }
   const list = Array.from(ticketsMap.values());
   return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
@@ -94,6 +146,7 @@ async function updateTicketStatus(ticketId, status, resolutionNote = null) {
   ticket.updatedAt = now;
   if (resolutionNote) {
     ticket.resolutionNote = resolutionNote;
+    ticket.adminNotes = resolutionNote;
     ticket.adminResponse = resolutionNote;
   }
   ticketsMap.set(ticketId, ticket);
@@ -122,4 +175,5 @@ module.exports = {
   getTicketById,
   getAllTickets,
   updateTicketStatus,
+  hydrateTicketsFromSupabase,
 };

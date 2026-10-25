@@ -22,7 +22,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
-import { getUserVault, resolveImageUrl } from "../services/api";
+import { getUserVault, getMarketAssets, resolveImageUrl } from "../services/api";
 import { SCREENS } from "../constants/navigation";
 import storage, { STORAGE_KEYS } from "../utils/storage";
 
@@ -75,56 +75,7 @@ const CATEGORY_CARDS = [
 ];
 
 // ── Curated "Assets worth watching" Mockup Data ──────────────────────────────
-const CURATED_ASSETS = [
-  {
-    id: "curated-1",
-    category: "WATCHES",
-    filterId: "watches",
-    name: "Rolex Daytona 116500LN",
-    price: "R34,500",
-    gain: "+12.4%",
-    isVerified: true,
-    image:
-      "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=600&q=80",
-    confidence: "96% confidence",
-  },
-  {
-    id: "curated-2",
-    category: "ART",
-    filterId: "art",
-    name: "Untitled, 1984",
-    price: "R124,000",
-    gain: "+6.8%",
-    isVerified: true,
-    image:
-      "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=600&q=80",
-    confidence: "91% confidence",
-  },
-  {
-    id: "curated-3",
-    category: "CARS",
-    filterId: "cars",
-    name: "1967 Ferrari 330 GTC",
-    price: "R890,000",
-    gain: "+9.1%",
-    isVerified: true,
-    image:
-      "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=600&q=80",
-    confidence: "94% confidence",
-  },
-  {
-    id: "curated-4",
-    category: "WINE",
-    filterId: "wine",
-    name: "Romanée-Conti Grand Cru 1990",
-    price: "R28,900",
-    gain: "+14.2%",
-    isVerified: true,
-    image:
-      "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&q=80",
-    confidence: "95% confidence",
-  },
-];
+const CURATED_ASSETS = [];
 
 // ── Smooth Sine-Wave Line Component (Web SVG or Native line segments) ────────
 const PortfolioWaveGraph = () => {
@@ -185,6 +136,7 @@ export default function HomeScreen({ navigation }) {
     gainPct: "0.0%",
   });
   const [vaultHoldings, setVaultHoldings] = useState([]);
+  const [marketMovers, setMarketMovers] = useState([]);
 
   // Fetch Vault Data with unified dynamic formula: personalTotal + fractionalTotal + escrowCash
   const loadVaultData = useCallback(async () => {
@@ -245,12 +197,23 @@ export default function HomeScreen({ navigation }) {
 
     try {
       setLoadingVault(true);
-      const res = await getUserVault(token);
+      const [res, marketRes] = await Promise.all([
+        getUserVault(token),
+        getMarketAssets('All', '').catch(() => null),
+      ]);
+      if (marketRes?.assets && Array.isArray(marketRes.assets) && marketRes.assets.length > 0) {
+        setMarketMovers(marketRes.assets);
+      }
       if (res?.holdings && Array.isArray(res.holdings)) {
         setVaultHoldings(res.holdings);
+        const pItems = res.holdings.filter((h) => h.asset_type !== 'fractional');
+        const fItems = res.holdings.filter((h) => h.asset_type === 'fractional');
+        await storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, pItems);
+        await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, fItems);
       }
       if (res?.summary) {
         setVaultSummary(res.summary);
+        await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, res.summary.availableBalanceNum || 0);
         await storage.setJSON(STORAGE_KEYS.VAULT, {
           summary: res.summary,
           holdings: res?.holdings,
@@ -480,65 +443,6 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         )}
 
-        {/* ── PERSISTENT ACCOUNT VERIFICATION BANNER (Shown until verified) ──── */}
-        {user && user.verification_status !== "verified" && user.kycStatus !== "verified" && (
-          <TouchableOpacity
-            onPress={() => navigation.navigate(SCREENS.VERIFY_ACCOUNT)}
-            activeOpacity={0.88}
-            style={{
-              marginBottom: 16,
-              borderRadius: 18,
-              padding: 14,
-              backgroundColor: "rgba(124, 58, 237, 0.12)",
-              borderWidth: 1.2,
-              borderColor: "rgba(124, 58, 237, 0.35)",
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-              <View
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 12,
-                  backgroundColor: "#7C3AED",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons name="shield-checkmark-outline" size={20} color="#FFFFFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13.5, fontWeight: "800", color: "#1E1B4B" }}>
-                  {user.kycStatus === "pending" || user.verification_status === "pending"
-                    ? "Verification Pending Admin Review"
-                    : user.kycStatus === "rejected" || user.verification_status === "rejected"
-                    ? "Action Needed: Re-upload KYC Document"
-                    : "Complete your verification"}
-                </Text>
-                <Text style={{ fontSize: 11.5, color: "#4C1D95", marginTop: 2 }}>
-                  Upload ID, Tax & Proof of Residence to unlock listing, deposits & withdrawals.
-                </Text>
-              </View>
-            </View>
-            <View
-              style={{
-                backgroundColor: "#7C3AED",
-                paddingHorizontal: 11,
-                paddingVertical: 7,
-                borderRadius: 10,
-              }}
-            >
-              <Text style={{ color: "#FFFFFF", fontSize: 11.5, fontWeight: "800" }}>
-                Verify &rarr;
-              </Text>
-            </View>
-          </TouchableOpacity>
-        )}
-
         {/* ── PORTFOLIO VALUE CARD ────────────────────────────────────────────── */}
         <TouchableOpacity
           style={styles.portfolioCard}
@@ -585,7 +489,7 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.portfolioStatsRow}>
               <View style={styles.portfolioStatCol}>
                 <Text style={styles.statNumber}>
-                  {vaultSummary.totalCount || 12}
+                  {vaultSummary.totalCount !== undefined ? vaultSummary.totalCount : 0}
                 </Text>
                 <Text style={styles.statLabel}>Assets</Text>
               </View>
@@ -594,7 +498,7 @@ export default function HomeScreen({ navigation }) {
 
               <View style={styles.portfolioStatCol}>
                 <Text style={styles.statNumber}>
-                  {vaultSummary.categoriesCount || 4}
+                  {vaultSummary.categoriesCount !== undefined ? vaultSummary.categoriesCount : 0}
                 </Text>
                 <Text style={styles.statLabel}>Categories</Text>
               </View>
@@ -603,7 +507,7 @@ export default function HomeScreen({ navigation }) {
 
               <View style={styles.portfolioStatCol}>
                 <Text style={styles.statNumber}>
-                  {vaultSummary.verifiedPct || 96}%
+                  {vaultSummary.totalCount ? (vaultSummary.verifiedPct || 100) : 100}%
                 </Text>
                 <Text style={styles.statLabel}>Verified</Text>
               </View>
@@ -634,6 +538,32 @@ export default function HomeScreen({ navigation }) {
               </Text>
             </View>
             <Feather name="camera" size={18} color="#FFFFFF" />
+          </LinearGradient>
+        </TouchableOpacity>
+
+        {/* ── VISION SCANNER / AR VIEW CTA ─────────────────────────────────────── */}
+        <TouchableOpacity
+          style={[styles.scanKnowCard, { marginTop: 0 }]}
+          onPress={() => navigation.navigate(SCREENS.AR_VIEWER)}
+          activeOpacity={0.9}
+        >
+          <LinearGradient
+            colors={["#1E1B4B", "#4C1D95", "#6D28D9"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.scanKnowGradient}
+          >
+            <View style={[styles.scanKnowIconWrap, { backgroundColor: "rgba(168,85,247,0.18)", borderColor: "rgba(168,85,247,0.4)" }]}>
+              <Ionicons name="cube-outline" size={22} color="#C084FC" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.scanKnowKicker, { color: "#E9D5FF" }]}>AI VISION • 3D SPATIAL</Text>
+              <Text style={styles.scanKnowTitle}>Vision Scanner</Text>
+              <Text style={styles.scanKnowSub} numberOfLines={1}>
+                AR camera preview & high-resolution 3D asset inspection
+              </Text>
+            </View>
+            <Ionicons name="eye-outline" size={19} color="#FFFFFF" />
           </LinearGradient>
         </TouchableOpacity>
 
@@ -867,7 +797,7 @@ export default function HomeScreen({ navigation }) {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.curatedCardsScroll}
           >
-            {CURATED_ASSETS.map((item) => (
+            {marketMovers.map((item) => (
               <TouchableOpacity
                 key={item.id}
                 style={styles.curatedCard}

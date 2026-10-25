@@ -1,12 +1,13 @@
 // ─── Vault Transaction Service ───────────────────────────────────────────────
 // Handles user vault balance, deposit, withdrawal operations, and transaction history.
-// Supabase profiles.balance is the source of truth with zero local JSON fallback.
+// Supabase profiles.balance and vault_transactions are the source of truth.
 
 const supabase = require('../connection/supabaseClient');
 
-// In-memory runtime cache (no file persistence)
+// In-memory runtime cache synced with Supabase
 const transactionsMap = new Map(); // id -> tx
 const balancesMap = new Map();     // userId -> number
+let hydrated = false;
 
 /**
  * Format currency amount into South African Rand (R) string
@@ -21,6 +22,48 @@ function formatZar(num) {
 function isUuid(id) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(id || ''));
 }
+
+/**
+ * Hydrate transactionsMap from Supabase vault_transactions table.
+ */
+async function hydrateTransactionsFromSupabase() {
+  try {
+    const { data, error } = await supabase
+      .from('vault_transactions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (!error && Array.isArray(data)) {
+      data.forEach((row) => {
+        if (!row || !row.id) return;
+        if (!transactionsMap.has(row.id)) {
+          const isDep = row.type === 'deposit';
+          transactionsMap.set(row.id, {
+            id: row.id,
+            userId: row.user_id,
+            type: row.type || 'deposit',
+            title: isDep ? 'Vault Cash Deposit' : 'Vault Cash Withdrawal',
+            amount: Number(row.amount) || 0,
+            amountFormatted:
+              row.amount_formatted ||
+              (isDep ? `+${formatZar(row.amount)}` : `-${formatZar(row.amount)}`),
+            method: row.method || 'Bank EFT',
+            reference: row.reference || null,
+            notes: row.notes || null,
+            status: row.status || 'completed',
+            positive: isDep,
+            createdAt: row.created_at || new Date().toISOString(),
+          });
+        }
+      });
+      hydrated = true;
+    }
+  } catch (_) {}
+}
+
+// Kick off initial hydration in background
+hydrateTransactionsFromSupabase();
 
 /**
  * Get available cash balance for a user strictly from Supabase profiles table.
@@ -49,12 +92,10 @@ async function getUserBalance(userId) {
         return bal;
       }
 
-      // If user has runtime/cached balance (e.g. test stub or pending profile), use it
       if (balancesMap.has(userId)) {
         return balancesMap.get(userId);
       }
 
-      // New users strictly default to 0
       balancesMap.set(userId, 0);
       return 0;
     } catch (err) {
@@ -252,13 +293,15 @@ async function withdrawFunds({ userId, amount, method = 'bank', bankDetails = nu
  */
 function getUserTransactions(userId) {
   if (!userId) return [];
+  if (!hydrated) {
+    hydrateTransactionsFromSupabase().catch(() => {});
+  }
   const list = [];
   for (const tx of transactionsMap.values()) {
     if (tx.userId === userId) {
       list.push(tx);
     }
   }
-  // Sort descending by created date
   return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
@@ -266,6 +309,9 @@ function getUserTransactions(userId) {
  * Get all runtime transactions across all users.
  */
 function getAllTransactions() {
+  if (!hydrated) {
+    hydrateTransactionsFromSupabase().catch(() => {});
+  }
   const list = Array.from(transactionsMap.values());
   return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
@@ -277,5 +323,5 @@ module.exports = {
   withdrawFunds,
   getUserTransactions,
   getAllTransactions,
+  hydrateTransactionsFromSupabase,
 };
-

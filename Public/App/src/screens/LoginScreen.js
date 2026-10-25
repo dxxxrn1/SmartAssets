@@ -86,7 +86,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     setError('');
 
     if (!isOnlineSync()) {
-      setError('No internet connection. Please connect to the internet to sign in.');
+      setError('No internet connection. Please connect to Wi-Fi or mobile data to sign in.');
       return;
     }
 
@@ -97,22 +97,16 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
 
     setLoading(true);
 
-    const isConnected = await checkInternetConnection();
-    if (!isConnected) {
-      setLoading(false);
-      setError('No internet connection. Please connect to the internet to sign in.');
-      return;
-    }
-
     try {
       await login(email.trim().toLowerCase(), password);
     } catch (err) {
       if (
         err?.message?.includes('Network') ||
         err?.message?.includes('Failed to fetch') ||
-        err?.message?.includes('Cannot connect')
+        err?.message?.includes('Cannot connect') ||
+        err?.message?.includes('ConnectException')
       ) {
-        setError('No internet connection. Please connect to the internet to sign in.');
+        setError(err.message || 'Cannot connect to SmartAssets backend. Please make sure your phone and PC are on the same Wi-Fi.');
       } else {
         setError(
           err?.message ||
@@ -123,6 +117,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       setLoading(false);
     }
   };
+
 
   // --------------------------------------------------
   // FORGOT PASSWORD

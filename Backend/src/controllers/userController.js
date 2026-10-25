@@ -7,7 +7,7 @@ const { sendError } = require('../utils/errorHandler');
 const avatarService = require('../services/avatarService');
 const complianceService = require('../services/complianceService');
 const auditLogService = require('../services/auditLogService');
-const { saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
+const { uploadImageToCloud, saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
 
 // ── GET /api/user/vault ──────────────────────────────────────────────────────
 // Returns ONLY holdings belonging to the authenticated user.
@@ -110,7 +110,7 @@ async function getVault(req, res) {
         totalCount: items.length,
         wholeCount,
         fractionalCount,
-        gainText: '+12.4% YTD',
+        gainText: items.length > 0 ? '+12.4% YTD' : '0.0% YTD',
       },
     });
   } catch (err) {
@@ -158,7 +158,7 @@ async function addHolding(req, res) {
     }
 
     const cleanImage = image
-      ? saveBase64Image(image, 'holding', null)
+      ? await uploadImageToCloud(image, 'assets', req, userId)
       : 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
 
     const { data, error } = await supabase
@@ -907,7 +907,7 @@ async function uploadVerificationDocument(req, res) {
       return sendError(res, 400, 'doc_type is required ("id", "tax", or "proof_of_residence").');
     }
 
-    const docRecord = await complianceService.uploadVerificationDocument({
+    const uploadRes = await complianceService.uploadVerificationDocument({
       userId,
       userEmail,
       fullName,
@@ -918,6 +918,9 @@ async function uploadVerificationDocument(req, res) {
       metaValue,
     });
 
+    const docRecord = uploadRes?.document || uploadRes || {};
+    const docTypeName = docRecord.doc_type || docType || 'Document';
+
     auditLogService.logEvent({
       eventType: 'KYC_DOC_UPLOAD',
       category: 'Compliance',
@@ -925,7 +928,7 @@ async function uploadVerificationDocument(req, res) {
       actorId: userId,
       ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
       device: req.headers['user-agent'] || 'SmartAssets Mobile App',
-      description: `Uploaded ${docRecord.doc_type} verification document (${docRecord.id}). Status set to pending review.`,
+      description: `Uploaded ${docTypeName} verification document (${docRecord.id || 'new'}). Status set to pending review.`,
       status: 'Pending Review',
     });
 
@@ -933,13 +936,15 @@ async function uploadVerificationDocument(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: `${docRecord.doc_type.replace(/_/g, ' ').toUpperCase()} uploaded and queued for admin review.`,
+      message: `${String(docTypeName).replace(/_/g, ' ').toUpperCase()} uploaded and queued for admin review.`,
       document: docRecord,
       ...bundle,
     });
   } catch (err) {
     console.error('uploadVerificationDocument error:', err);
-    return sendError(res, 400, err.message || 'Failed to upload verification document.');
+    const status = err.statusCode || 500;
+    const msg = status === 500 ? 'Could not save your document. Please try again.' : (err.message || 'Failed to upload verification document.');
+    return sendError(res, status, msg);
   }
 }
 
@@ -1005,7 +1010,7 @@ async function submitBankAccount(req, res) {
     });
   } catch (err) {
     console.error('submitBankAccount error:', err);
-    return sendError(res, 400, err.message || 'Failed to submit bank account details.');
+    return sendError(res, err.statusCode || 400, err.message || 'Failed to submit bank account details.');
   }
 }
 
@@ -1017,9 +1022,15 @@ async function getBankAccount(req, res) {
     const userEmail = req.user.email;
     const bankAccount = complianceService.getUserBankAccount(userId, userEmail);
 
+    const sanitizedBank = bankAccount
+      ? {
+          ...bankAccount,
+          account_number: undefined,
+        }
+      : null;
     return res.status(200).json({
       success: true,
-      bank_account: bankAccount,
+      bank_account: sanitizedBank,
       status: bankAccount?.status || 'not_submitted',
     });
   } catch (err) {

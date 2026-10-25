@@ -1,32 +1,54 @@
 // ─── Avatar Service ─────────────────────────────────────────────────────────
-// Stores and retrieves user profile pictures directly in the Supabase database
-// (profiles.avatar_url column) with resilient memory caching.
+// Uploads user profile pictures to Cloudinary (`smartassets/avatars`) and stores
+// the permanent URL in the Supabase database (`profiles.avatar_url` column).
 
 const supabase = require('../connection/supabaseClient');
+const { isCloudinaryConfigured, uploadPublicMedia } = require('../utils/cloudinary');
 
 const memoryCache = new Map();
 
 /**
- * Save an avatar for a user — stores the base64 data URI directly
- * in the profiles.avatar_url column in the database.
+ * Save an avatar for a user — uploads base64 data URIs to Cloudinary (`smartassets/avatars`)
+ * and stores the resulting URL in `profiles.avatar_url`.
  */
 async function saveUserAvatar(userId, avatarInput) {
   if (!userId || !avatarInput) return null;
 
-  memoryCache.set(userId, avatarInput);
+  let finalAvatarUrl = avatarInput;
+
+  // Upload base64 avatars to Cloudinary so DB stores a clean CDN URL
+  if (
+    typeof avatarInput === 'string' &&
+    avatarInput.startsWith('data:image/') &&
+    isCloudinaryConfigured()
+  ) {
+    try {
+      const cloudUrl = await uploadPublicMedia(avatarInput, 'avatars', {
+        userId,
+        publicId: `avatar_${userId}`,
+      });
+      if (cloudUrl) {
+        finalAvatarUrl = cloudUrl;
+        console.log(`☁️ [AvatarService] Uploaded avatar to Cloudinary for user ${userId}: ${cloudUrl}`);
+      }
+    } catch (cloudErr) {
+      console.warn('⚠️ [AvatarService] Cloudinary upload warning (storing directly in DB):', cloudErr.message);
+    }
+  }
+
+  memoryCache.set(userId, finalAvatarUrl);
 
   try {
     const { error } = await supabase
       .from('profiles')
-      .update({ avatar_url: avatarInput })
+      .update({ avatar_url: finalAvatarUrl })
       .eq('id', userId);
 
     if (error) {
-      // If profile row doesn't exist yet, try upsert
       const { error: upsertErr } = await supabase
         .from('profiles')
         .upsert(
-          { id: userId, avatar_url: avatarInput },
+          { id: userId, avatar_url: finalAvatarUrl },
           { onConflict: 'id', ignoreDuplicates: false }
         );
       if (upsertErr) {
@@ -34,16 +56,16 @@ async function saveUserAvatar(userId, avatarInput) {
       }
     }
 
-    console.log(`🖼️ [AvatarService] Saved avatar to DB for user ${userId} (${avatarInput.length} chars)`);
-    return avatarInput;
+    console.log(`🖼️ [AvatarService] Saved avatar to DB for user ${userId}`);
+    return finalAvatarUrl;
   } catch (err) {
     console.warn('⚠️ [AvatarService] DB Save exception (using memory cache):', err.message);
-    return avatarInput;
+    return finalAvatarUrl;
   }
 }
 
 /**
- * Get the stored avatar data URI for a user from the database.
+ * Get the stored avatar URL for a user from the database.
  */
 async function getUserAvatar(userId) {
   if (!userId) return null;

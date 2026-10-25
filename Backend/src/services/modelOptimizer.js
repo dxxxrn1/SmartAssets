@@ -5,7 +5,7 @@
 //   3. Resize textures to 1024x1024 max using sharp
 //   4. Count triangles and simplify with meshoptimizer if > 50,000 triangles
 //   5. Enforce target file size < 5 MB with single retry stronger pass
-//   6. NO Draco or Meshopt compression extensions applied (maintains standard GLTF/GLB compatibility)
+//   6. Upload optimized GLB to Cloudinary ('models_3d') & Supabase Storage ('models')
 
 const axios = require('axios');
 const { NodeIO } = require('@gltf-transform/core');
@@ -13,6 +13,7 @@ const { dedup, prune, textureCompress, simplify } = require('@gltf-transform/fun
 const { MeshoptSimplifier } = require('meshoptimizer');
 const sharp = require('sharp');
 const supabase = require('../connection/supabaseClient');
+const { isCloudinaryConfigured, uploadPublicMedia } = require('../utils/cloudinary');
 
 const MAX_TARGET_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB target
 const MAX_TRIANGLES = 50000;
@@ -108,14 +109,35 @@ async function optimizeGlbBuffer(inputBuffer, aggressive = false) {
 }
 
 /**
- * Upload a GLB buffer to Supabase Storage in the 'models' bucket.
+ * Upload a GLB buffer to Cloudinary ('models_3d') or Supabase Storage ('models' bucket).
  * @param {Buffer} buffer - Optimized GLB binary
  * @param {string} listingId - ID of the listing
  * @returns {Promise<string>} publicUrl
  */
 async function uploadToStorage(buffer, listingId) {
   const fileName = `listing_${listingId}_${Date.now()}.glb`;
+
+  // 1. Primary: Upload to Cloudinary ('smartassets/models_3d') if configured
+  if (isCloudinaryConfigured()) {
+    try {
+      const cloudUrl = await uploadPublicMedia(buffer, 'models_3d', {
+        resourceType: 'raw',
+        publicId: fileName,
+      });
+      if (cloudUrl) {
+        console.log(`☁️ [ModelOptimizer] Uploaded 3D GLB to Cloudinary: ${cloudUrl}`);
+        return cloudUrl;
+      }
+    } catch (cloudErr) {
+      console.warn('[ModelOptimizer] Cloudinary GLB upload warning, falling back to Supabase Storage:', cloudErr.message);
+    }
+  }
+
+  // 2. Secondary: Upload to Supabase Storage ('models' bucket)
   const storagePath = `listings/${fileName}`;
+  try {
+    await supabase.storage.createBucket('models', { public: true }).catch(() => {});
+  } catch (_) {}
 
   const { error: uploadErr } = await supabase.storage
     .from('models')
@@ -125,7 +147,7 @@ async function uploadToStorage(buffer, listingId) {
     });
 
   if (uploadErr) {
-    throw new Error(`Failed to upload optimized 3D model to Supabase storage: ${uploadErr.message}`);
+    throw new Error(`Failed to upload optimized 3D model to storage: ${uploadErr.message}`);
   }
 
   const { data: publicData } = supabase.storage.from('models').getPublicUrl(storagePath);
@@ -165,8 +187,8 @@ async function processAndSaveGlb(rawGlbUrl, listingId) {
     }
   }
 
-  // Upload to Supabase Storage 'models' bucket
-  console.log(`[ModelOptimizer] Uploading optimized GLB to Supabase Storage 'models' bucket...`);
+  // Upload to Cloud Storage
+  console.log(`[ModelOptimizer] Uploading optimized GLB to Cloud Storage...`);
   const publicUrl = await uploadToStorage(result.optimizedBuffer, listingId);
   console.log(`[ModelOptimizer] Upload complete! Public URL: ${publicUrl}`);
 

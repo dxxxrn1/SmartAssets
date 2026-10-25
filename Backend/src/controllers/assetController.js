@@ -10,7 +10,7 @@ const web3Service = require('../services/web3Service');
 const aiDetectionService = require('../services/aiDetectionService');
 const aiVisionGatekeeper = require('../services/aiVisionGatekeeper');
 const marketOracleService = require('../services/marketOracleService');
-const { saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
+const { uploadImageToCloud, saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
 const { sanitizePostgrestFilter } = require('../middlewares/securityMiddleware');
 
 // In-memory server cache to protect Supabase database egress from repetitive queries
@@ -255,30 +255,6 @@ async function getAssetById(req, res) {
           };
           historyTargetId = null;
         }
-      }
-    }
-
-    // 3. Third attempt: check built-in Vault seed items (e.g. personal-keyboard, fraction-rolex)
-    if (!asset && Array.isArray(aiVisionGatekeeper.BUILTIN_VAULT_ASSETS)) {
-      const builtin = aiVisionGatekeeper.BUILTIN_VAULT_ASSETS.find((b) => b.id === id);
-      if (builtin) {
-        asset = {
-          id: builtin.id,
-          name: builtin.name,
-          category: builtin.category,
-          price: builtin.price,
-          price_num: builtin.price_num,
-          year: 2023,
-          condition: 'Mint / Vault Custody',
-          description: 'Authenticated physical asset registered in SmartAssets Vault with ERC-721 Sepolia provenance certificate.',
-          image: builtin.image,
-          badge: 'Verified On-Chain',
-          cert: builtin.certId,
-          tx_hash: builtin.txHash,
-          shares: builtin.source === 'CO_OWNED_ASSETS' ? 100 : 1,
-          shares_sold: builtin.source === 'CO_OWNED_ASSETS' ? 77 : 1,
-          share_price: Math.max(100, Math.round((builtin.price_num || 1000) / 100)),
-        };
       }
     }
 
@@ -577,7 +553,7 @@ async function createAsset(req, res) {
     const certNumber = `SA-${catCode}-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     // Convert bulky base64 image into a lightweight static upload URL to prevent draining Supabase egress
-    const savedImageUrl = saveBase64Image(image, 'asset', req) || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
+    const savedImageUrl = (await uploadImageToCloud(image, 'assets', req, userId)) || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
 
     // Handle extra images and smartTake metadata if provided
     const smartTakeTitle = req.body.smartTakeTitle || visionCheck.smartTakeTitle || null;
@@ -585,8 +561,8 @@ async function createAsset(req, res) {
 
     let finalDescription = description || '';
     if (Array.isArray(req.body.images) && req.body.images.length > 0) {
-      const savedExtraImages = req.body.images
-        .map((img, idx) => saveBase64Image(img, `asset_extra_${idx}`, req))
+      const uploadedExtras = await Promise.all(req.body.images.map((img) => uploadImageToCloud(img, 'assets', req, userId))); const savedExtraImages = uploadedExtras
+
         .filter(Boolean);
       if (savedExtraImages.length > 0) {
         finalDescription = `${finalDescription}\n<!--images:${JSON.stringify(savedExtraImages)}-->`;

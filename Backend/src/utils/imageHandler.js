@@ -1,11 +1,11 @@
 // ─── Image Handler Utility ──────────────────────────────────────────────────
-// Safely converts raw base64 images into static on-disk files in /uploads/assets/
-// and dynamically normalizes image URLs to match the active host of incoming requests.
-// This prevents Supabase egress bloat and eliminates broken images across different IPs.
+// Primary public media upload pipeline via Cloudinary (`smartassets/assets`, `smartassets/avatars`, etc.)
+// with automatic content-hash deduplicated local fallback for offline test environments.
 
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { isCloudinaryConfigured, uploadPublicMedia } = require('./cloudinary');
 
 const UPLOADS_DIR = path.resolve(__dirname, '../../uploads/assets');
 const KYC_UPLOADS_DIR = path.resolve(__dirname, '../../uploads/kyc');
@@ -18,9 +18,37 @@ if (!fs.existsSync(KYC_UPLOADS_DIR)) {
 }
 
 /**
+ * Uploads a base64 image data URI or URL to Cloudinary (`smartassets/${folder}`).
+ * Falls back to local content-hash deduplicated file only if Cloudinary is offline/unconfigured.
+ */
+async function uploadImageToCloud(base64OrUrl, folder = 'assets', req = null, userId = null) {
+  if (!base64OrUrl || typeof base64OrUrl !== 'string') return base64OrUrl;
+
+  // Already a remote URL (Cloudinary or external HTTPS)
+  if (base64OrUrl.startsWith('http://') || base64OrUrl.startsWith('https://')) {
+    return base64OrUrl;
+  }
+
+  if (base64OrUrl.startsWith('data:image/') && isCloudinaryConfigured()) {
+    try {
+      const cloudUrl = await uploadPublicMedia(base64OrUrl, folder, {
+        userId: userId || req?.user?.id || null,
+      });
+      if (cloudUrl) {
+        console.log(`☁️ [Cloudinary] Uploaded public image to smartassets/${folder}: ${cloudUrl}`);
+        return cloudUrl;
+      }
+    } catch (cloudErr) {
+      console.warn(`⚠️ [Cloudinary] Upload warning (falling back to local storage): ${cloudErr.message}`);
+    }
+  }
+
+  return saveBase64Image(base64OrUrl, folder, req);
+}
+
+/**
  * Extracts and saves a base64 image data URI to static storage on disk.
  * Uses SHA-256 content-hash deduplication so the exact same image is never saved twice.
- * Returns relative path `/uploads/assets/<fileName>` or full URL if req is supplied.
  */
 function saveBase64Image(base64Str, prefix = 'asset', req = null) {
   if (!base64Str || typeof base64Str !== 'string') return base64Str;
@@ -35,7 +63,6 @@ function saveBase64Image(base64Str, prefix = 'asset', req = null) {
     const data = matches[2];
     const buffer = Buffer.from(data, 'base64');
 
-    // Content-hash deduplication: reuse file if identical image content already exists
     const hash = crypto.createHash('sha256').update(buffer).digest('hex').substring(0, 16);
     const cleanPrefix = String(prefix).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 20);
     const fileName = `${cleanPrefix}_${hash}.${ext}`;
@@ -43,6 +70,11 @@ function saveBase64Image(base64Str, prefix = 'asset', req = null) {
 
     if (!fs.existsSync(filePath)) {
       fs.writeFileSync(filePath, buffer);
+    }
+
+    // Also asynchronously mirror to Cloudinary if configured
+    if (isCloudinaryConfigured() && !cleanPrefix.startsWith('kyc')) {
+      uploadPublicMedia(base64Str, 'assets', { publicId: `${cleanPrefix}_${hash}` }).catch(() => {});
     }
 
     if (req) {
@@ -60,18 +92,21 @@ function saveBase64Image(base64Str, prefix = 'asset', req = null) {
 
 /**
  * Normalizes an image URL for client delivery.
- * Replaces any stale IPs or relative paths with the caller's active host.
- * CRITICAL: This is a read operation (GET) and MUST NEVER write files to disk.
+ * Preserves Cloudinary and HTTPS URLs directly; normalizes relative /uploads/ paths to active host.
  */
 function normalizeImageUrl(url, req = null) {
   if (!url || typeof url !== 'string') return url;
 
-  // Clean replacement for corrupted red bundler error screenshot
   if (url.includes('asset_6f80eb') || url.includes('b1tmz')) {
     return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
   }
 
-  // Offload large base64 data URIs to content-hash deduplicated static files
+  // Return Cloudinary or external HTTPS URLs untouched
+  if (url.startsWith('https://res.cloudinary.com/') || url.startsWith('https://')) {
+    return url;
+  }
+
+  // Offload large base64 data URIs
   if (url.startsWith('data:image/')) {
     if (url.length > 2000) {
       return saveBase64Image(url, 'asset', req);
@@ -80,7 +115,7 @@ function normalizeImageUrl(url, req = null) {
   }
 
   // Handle uploaded assets and KYC compliance documents
-  const uploadsMatch = url.match(/\/uploads\/(?:assets|kyc)\/[^"'\s?#]+/i);
+  const uploadsMatch = url.match(/\/uploads\/(?:assets|kyc|avatars)\/[^"'\s?#]+/i);
   if (uploadsMatch) {
     const assetPath = uploadsMatch[0];
     if (req) {
@@ -139,10 +174,10 @@ function purgeCachedBloat() {
   }
 }
 
-// Automatically purge legacy bloat on startup
 purgeCachedBloat();
 
 module.exports = {
+  uploadImageToCloud,
   saveBase64Image,
   normalizeImageUrl,
   normalizeAssetImages,

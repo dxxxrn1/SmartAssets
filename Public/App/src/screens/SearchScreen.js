@@ -37,7 +37,7 @@ export function clearSearchScreenCache() {
 }
 
 // ── Format Currency in South African Rands R ─────────────────────────────────
-const formatZAR = (val, fallback = "R34,500") => {
+const formatZAR = (val, fallback = "R0") => {
   if (val === undefined || val === null || val === "") return fallback;
   if (typeof val === "string" && val.startsWith("R")) return val;
   if (typeof val === "string" && val.startsWith("£")) {

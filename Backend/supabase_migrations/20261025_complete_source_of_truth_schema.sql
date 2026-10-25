@@ -220,3 +220,98 @@ BEGIN
     CREATE POLICY "Service role full access on tickets" ON public.support_tickets FOR ALL TO service_role USING (true) WITH CHECK (true);
   END IF;
 END $$;
+
+-- 11. VERIFICATION DOCUMENTS TABLE (Granular 3-Doc KYC)
+CREATE TABLE IF NOT EXISTS public.verification_documents (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id             UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  doc_type            TEXT NOT NULL CHECK (doc_type IN ('id', 'tax', 'proof_of_residence')),
+  file_path           TEXT NOT NULL,
+  storage_bucket_path TEXT,
+  meta_value          TEXT,
+  status              TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  rejection_reason    TEXT,
+  reviewed_by         TEXT,
+  reviewed_at         TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_user_doc_type UNIQUE (user_id, doc_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_verification_docs_user ON public.verification_documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_verification_docs_status ON public.verification_documents(status);
+
+-- 12. KYC DOCUMENTS TABLE (Alternative schema compatibility)
+CREATE TABLE IF NOT EXISTS public.kyc_documents (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id             UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  doc_type            TEXT NOT NULL,
+  file_path           TEXT,
+  storage_bucket_path TEXT,
+  meta_value          TEXT,
+  status              TEXT NOT NULL DEFAULT 'pending',
+  rejection_reason    TEXT,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_kyc_user_doc UNIQUE (user_id, doc_type)
+);
+
+-- 13. BANK ACCOUNTS TABLE (Withdrawal Approval Desk)
+CREATE TABLE IF NOT EXISTS public.bank_accounts (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id             UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  account_holder      TEXT NOT NULL,
+  bank_name           TEXT NOT NULL,
+  account_number      TEXT NOT NULL,
+  branch_code         TEXT NOT NULL,
+  account_type        TEXT DEFAULT 'Cheque / Current',
+  status              TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  rejection_reason    TEXT,
+  reviewed_by         TEXT,
+  reviewed_at         TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bank_accounts_user ON public.bank_accounts(user_id);
+
+-- 14. ADMIN AUDIT LOGS TABLE
+CREATE TABLE IF NOT EXISTS public.admin_audit_logs (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  admin_id            UUID,
+  admin_email         TEXT,
+  action              TEXT NOT NULL,
+  target_table        TEXT,
+  target_type         TEXT,
+  target_id           TEXT,
+  target_user_id      UUID,
+  reason              TEXT,
+  metadata            JSONB DEFAULT '{}'::jsonb,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.admin_audit_logs(action);
+
+-- GRANTS & RLS FOR NEW COMPLIANCE TABLES
+GRANT ALL ON TABLE public.verification_documents TO postgres, service_role, authenticated, anon;
+GRANT ALL ON TABLE public.kyc_documents TO postgres, service_role, authenticated, anon;
+GRANT ALL ON TABLE public.bank_accounts TO postgres, service_role, authenticated, anon;
+GRANT ALL ON TABLE public.admin_audit_logs TO postgres, service_role, authenticated, anon;
+
+ALTER TABLE public.verification_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.kyc_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bank_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_audit_logs ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Service role full access on verification_documents') THEN
+    CREATE POLICY "Service role full access on verification_documents" ON public.verification_documents FOR ALL TO service_role USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Service role full access on kyc_documents') THEN
+    CREATE POLICY "Service role full access on kyc_documents" ON public.kyc_documents FOR ALL TO service_role USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Service role full access on bank_accounts') THEN
+    CREATE POLICY "Service role full access on bank_accounts" ON public.bank_accounts FOR ALL TO service_role USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Service role full access on admin_audit_logs') THEN
+    CREATE POLICY "Service role full access on admin_audit_logs" ON public.admin_audit_logs FOR ALL TO service_role USING (true) WITH CHECK (true);
+  END IF;
+END $$;

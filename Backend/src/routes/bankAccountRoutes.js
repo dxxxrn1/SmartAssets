@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middlewares/authMiddleware');
+const { requireAuth, requireVerified } = require('../middlewares/authMiddleware');
 const {
   submitBankAccount,
   getBankAccount,
@@ -11,8 +11,8 @@ const {
 
 router.use(requireAuth);
 
-// POST /bank-accounts (submit bank account details for admin approval)
-router.post('/', submitBankAccount);
+// POST /bank-accounts (requires verified KYC account before submitting bank details for approval)
+router.post('/', requireVerified, submitBankAccount);
 
 // GET /bank-accounts (get current user's bank account status)
 router.get('/', getBankAccount);

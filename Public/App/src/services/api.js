@@ -1,7 +1,7 @@
 // ─── SmartAssets API Service ──────────────────────────────────────────────────
 // Handles all HTTP communication between the React Native app and the backend.
 
-import { Platform, NativeModules } from 'react-native';
+import { Platform, NativeModules } from "react-native";
 import {
   saveVaultCache,
   getVaultCache,
@@ -9,15 +9,20 @@ import {
   getMarketAssetsCache,
   saveUserProfile,
   getUserProfile,
-} from './storage';
+} from "./storage";
 
 // Extract the live LAN IP that Metro Bundler is serving from on physical mobile devices
 function getMetroLanBaseUrl() {
   try {
     const scriptURL = NativeModules?.SourceCode?.scriptURL;
-    if (scriptURL && typeof scriptURL === 'string') {
+    if (scriptURL && typeof scriptURL === "string") {
       const match = scriptURL.match(/^https?:\/\/([^/:]+)(?::\d+)?\//i);
-      if (match && match[1] && match[1] !== 'localhost' && match[1] !== '127.0.0.1') {
+      if (
+        match &&
+        match[1] &&
+        match[1] !== "localhost" &&
+        match[1] !== "127.0.0.1"
+      ) {
         return `http://${match[1]}:5000/api`;
       }
     }
@@ -25,38 +30,40 @@ function getMetroLanBaseUrl() {
   return null;
 }
 
-// ── Base URL — auto-detects live Metro LAN IP on physical mobile devices ──────
+/// ── Base URL — auto-detects live Metro LAN IP on physical mobile devices ──────
 export const getBaseUrl = () => {
-  if (Platform.OS === 'web') {
-    const host = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : 'localhost';
+  if (Platform.OS === "web") {
+    const host =
+      typeof window !== "undefined" && window.location?.hostname
+        ? window.location.hostname
+        : "localhost";
     return `http://${host}:5000/api`;
   }
-  // Prefer live Metro bundler LAN host on physical Android/iOS devices so Wi-Fi IP changes never break fetch
   const metroBase = getMetroLanBaseUrl();
-  if (metroBase) {
-    return metroBase;
-  }
-  if (process.env.EXPO_PUBLIC_API_BASE_URL) {
-    return process.env.EXPO_PUBLIC_API_BASE_URL.replace('10.10.0.18', '10.10.0.23');
-  }
-  if (Platform.OS === 'android') {
-    return 'http://10.10.0.23:5000/api';
-  }
-  return 'http://localhost:5000/api';
+  if (metroBase) return metroBase;
+  if (process.env.EXPO_PUBLIC_API_BASE_URL)
+    return process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (Platform.OS === "android") return "http://10.0.2.2:5000/api";
+  return "http://localhost:5000/api";
 };
 
 export let API_BASE_URL = getBaseUrl();
 
 function getFallbackBaseUrls() {
+  if (!__DEV__)
+    return [process.env.EXPO_PUBLIC_API_BASE_URL || API_BASE_URL].filter(
+      Boolean,
+    );
+
   const candidates = [
-    process.env.EXPO_PUBLIC_API_BASE_URL,
-    'http://10.250.193.0:5000/api',
-    API_BASE_URL,
-    getMetroLanBaseUrl(),
-    'http://192.168.0.178:5000/api',
-    'http://10.10.0.23:5000/api',
-    Platform.OS === 'android' ? 'http://10.0.2.2:5000/api' : 'http://localhost:5000/api',
+    API_BASE_URL, // 🚀 Try the one that last worked FIRST
+    getMetroLanBaseUrl(), // Then live Metro bundler IP
+    process.env.EXPO_PUBLIC_API_BASE_URL, // Then .env config
+    Platform.OS === "android"
+      ? "http://10.0.2.2:5000/api"
+      : "http://localhost:5000/api",
   ].filter(Boolean);
+
   return [...new Set(candidates)];
 }
 
@@ -66,16 +73,26 @@ export function setUnauthorizedHandler(callback) {
   onUnauthorizedCallback = callback;
 }
 
+const REQUEST_TIMEOUT_MS = 15000;
+
 // ── Generic request helper with automatic LAN host failover ──────────────────
 async function apiRequest(endpoint, options = {}, token = null) {
-  if (Platform.OS === 'web' && typeof navigator !== 'undefined' && !navigator.onLine) {
-    throw new Error('No internet connection. Please connect to the internet to continue.');
+  if (
+    Platform.OS === "web" &&
+    typeof navigator !== "undefined" &&
+    !navigator.onLine
+  ) {
+    throw new Error(
+      "No internet connection. Please connect to the internet to continue.",
+    );
   }
 
+  const { timeoutMs = REQUEST_TIMEOUT_MS, ...fetchOptions } = options;
+
   const headers = {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...options.headers,
+    ...fetchOptions.headers,
   };
 
   const candidates = getFallbackBaseUrls();
@@ -83,25 +100,36 @@ async function apiRequest(endpoint, options = {}, token = null) {
 
   for (const base of candidates) {
     const url = `${base}${endpoint}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
       const response = await fetch(url, {
-        ...options,
+        ...fetchOptions,
         headers,
+        signal: controller.signal,
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         // Trigger global 401 session expiration handler if not a standard login failure
         if (
           response.status === 401 &&
-          endpoint !== '/auth/login' &&
-          endpoint !== '/auth/register' &&
-          endpoint !== '/auth/wallet-login' &&
-          typeof onUnauthorizedCallback === 'function'
+          endpoint !== "/auth/login" &&
+          endpoint !== "/auth/register" &&
+          endpoint !== "/auth/wallet-login" &&
+          typeof onUnauthorizedCallback === "function"
         ) {
-          onUnauthorizedCallback(data.error || 'Your session has expired. Please log in again.');
+          onUnauthorizedCallback(
+            data.error || "Your session has expired. Please log in again.",
+          );
         }
 
-        const httpErr = new Error(data.rejectionReason || data.error || data.message || 'Something went wrong');
+        const httpErr = new Error(
+          data.rejectionReason ||
+            data.error ||
+            data.message ||
+            "Something went wrong",
+        );
         httpErr.isHttpResponse = true;
         httpErr.status = response.status;
         httpErr.code = data.code;
@@ -116,22 +144,32 @@ async function apiRequest(endpoint, options = {}, token = null) {
       if (error.isHttpResponse) {
         throw error;
       }
-      lastError = error;
+      lastError =
+        error.name === "AbortError"
+          ? new Error(`Request timed out after ${timeoutMs / 1000}s.`)
+          : error;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
   if (
-    lastError?.message === 'Network request failed' ||
-    lastError?.message?.includes('NetworkError') ||
-    lastError?.message?.includes('Failed to fetch') ||
-    lastError?.message?.includes('Host unreachable') ||
-    lastError?.message?.includes('NoRouteToHostException')
+    (lastError?.message || "").includes("ConnectException") ||
+    (lastError?.message || "").includes("Failed to connect") ||
+    (lastError?.message || "").includes("ECONNREFUSED") ||
+    (lastError?.message || "").includes("ETIMEDOUT") ||
+    (lastError?.message || "").includes("timed out") ||
+    lastError?.message === "Network request failed" ||
+    lastError?.message?.includes("NetworkError") ||
+    lastError?.message?.includes("Failed to fetch") ||
+    lastError?.message?.includes("Host unreachable") ||
+    lastError?.message?.includes("NoRouteToHostException")
   ) {
     throw new Error(
-      `Cannot connect to server at ${API_BASE_URL}. Make sure the backend is running on port 5000.`
+      `Cannot connect to SmartAssets backend (${API_BASE_URL}). Make sure your backend server is running ('npm run dev' in Backend) and your phone is on the same Wi-Fi.`,
     );
   }
-  throw lastError || new Error('Network error');
+  throw lastError || new Error("Network error");
 }
 
 // ── Auth API ─────────────────────────────────────────────────────────────────
@@ -141,8 +179,8 @@ async function apiRequest(endpoint, options = {}, token = null) {
  * @param {{ email: string, password: string, fullName: string }} params
  */
 export async function registerUser({ email, password, fullName }) {
-  return apiRequest('/auth/register', {
-    method: 'POST',
+  return apiRequest("/auth/register", {
+    method: "POST",
     body: JSON.stringify({ email, password, fullName }),
   });
 }
@@ -152,8 +190,8 @@ export async function registerUser({ email, password, fullName }) {
  * @param {{ email: string, password: string }} params
  */
 export async function loginUser({ email, password }) {
-  return apiRequest('/auth/login', {
-    method: 'POST',
+  return apiRequest("/auth/login", {
+    method: "POST",
     body: JSON.stringify({ email, password }),
   });
 }
@@ -163,8 +201,8 @@ export async function loginUser({ email, password }) {
  * @param {string} walletAddress
  */
 export async function getWalletNonceApi(walletAddress) {
-  return apiRequest('/auth/wallet/nonce', {
-    method: 'POST',
+  return apiRequest("/auth/wallet/nonce", {
+    method: "POST",
     body: JSON.stringify({ walletAddress }),
   });
 }
@@ -174,11 +212,18 @@ export async function getWalletNonceApi(walletAddress) {
  * @param {{ walletAddress: string, signature: string, nonce: string }} params
  * @param {string} token - User's JWT token
  */
-export async function linkWalletApi({ walletAddress, signature, nonce }, token) {
-  return apiRequest('/auth/wallet/link', {
-    method: 'POST',
-    body: JSON.stringify({ walletAddress, signature, nonce }),
-  }, token);
+export async function linkWalletApi(
+  { walletAddress, signature, nonce },
+  token,
+) {
+  return apiRequest(
+    "/auth/wallet/link",
+    {
+      method: "POST",
+      body: JSON.stringify({ walletAddress, signature, nonce }),
+    },
+    token,
+  );
 }
 
 /**
@@ -186,9 +231,10 @@ export async function linkWalletApi({ walletAddress, signature, nonce }, token) 
  * @param {string|{ walletAddress: string, signature?: string, nonce?: string }} params
  */
 export async function loginWithWalletApi(params) {
-  const payload = typeof params === 'string' ? { walletAddress: params } : params;
-  return apiRequest('/auth/wallet/login', {
-    method: 'POST',
+  const payload =
+    typeof params === "string" ? { walletAddress: params } : params;
+  return apiRequest("/auth/wallet/login", {
+    method: "POST",
     body: JSON.stringify(payload),
   });
 }
@@ -198,9 +244,13 @@ export async function loginWithWalletApi(params) {
  * @param {string} token
  */
 export async function unlinkWalletApi(token) {
-  return apiRequest('/auth/wallet/unlink', {
-    method: 'POST',
-  }, token);
+  return apiRequest(
+    "/auth/wallet/unlink",
+    {
+      method: "POST",
+    },
+    token,
+  );
 }
 
 /**
@@ -208,8 +258,8 @@ export async function unlinkWalletApi(token) {
  * @param {{ walletAddress: string, signature: string, nonce: string, email: string, fullName: string, password?: string }} params
  */
 export async function completeWalletProfileApi(params) {
-  return apiRequest('/auth/wallet/complete-profile', {
-    method: 'POST',
+  return apiRequest("/auth/wallet/complete-profile", {
+    method: "POST",
     body: JSON.stringify(params),
   });
 }
@@ -221,8 +271,8 @@ export const registerWalletApi = completeWalletProfileApi;
  * @param {{ email: string, redirectTo?: string }} params
  */
 export async function forgotPasswordApi({ email, redirectTo }) {
-  return apiRequest('/auth/forgot-password', {
-    method: 'POST',
+  return apiRequest("/auth/forgot-password", {
+    method: "POST",
     body: JSON.stringify({ email, redirectTo }),
   });
 }
@@ -232,8 +282,8 @@ export async function forgotPasswordApi({ email, redirectTo }) {
  * @param {{ accessToken: string, newPassword: string }} params
  */
 export async function resetPasswordApi({ accessToken, newPassword }) {
-  return apiRequest('/auth/reset-password', {
-    method: 'POST',
+  return apiRequest("/auth/reset-password", {
+    method: "POST",
     body: JSON.stringify({ accessToken, newPassword }),
   });
 }
@@ -244,9 +294,9 @@ export async function resetPasswordApi({ accessToken, newPassword }) {
  */
 export async function logoutUserApi(token) {
   try {
-    return await apiRequest('/auth/logout', { method: 'POST' }, token);
+    return await apiRequest("/auth/logout", { method: "POST" }, token);
   } catch (err) {
-    console.warn('[api] Backend logout warning:', err.message);
+    console.warn("[api] Backend logout warning:", err.message);
     return { success: true };
   }
 }
@@ -256,7 +306,7 @@ export async function logoutUserApi(token) {
  * @param {string} token
  */
 export async function verifySessionApi(token) {
-  return apiRequest('/auth/session', { method: 'GET' }, token);
+  return apiRequest("/auth/session", { method: "GET" }, token);
 }
 
 // ── User-Isolated Data API ───────────────────────────────────────────────────
@@ -290,14 +340,18 @@ export async function getUserVault(token, forceRefresh = false) {
     return clientVaultCache;
   }
 
-  if (!forceRefresh && inFlightVaultPromise && clientVaultCacheToken === token) {
+  if (
+    !forceRefresh &&
+    inFlightVaultPromise &&
+    clientVaultCacheToken === token
+  ) {
     return inFlightVaultPromise;
   }
 
   clientVaultCacheToken = token;
   inFlightVaultPromise = (async () => {
     try {
-      const data = await apiRequest('/user/vault', { method: 'GET' }, token);
+      const data = await apiRequest("/user/vault", { method: "GET" }, token);
       if (data?.success) {
         clientVaultCache = data;
         clientVaultCacheTime = Date.now();
@@ -337,23 +391,15 @@ export async function getUserVault(token, forceRefresh = false) {
 export async function addUserHolding(token, holdingData) {
   invalidateVaultCache();
   return apiRequest(
-    '/user/vault',
+    "/user/vault",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(holdingData),
     },
-    token
+    token,
   );
 }
 
-/**
- * Seed starter sample assets for user's personal portfolio demo
- * @param {string} token
- */
-export async function seedUserStarter(token) {
-  invalidateVaultCache();
-  return apiRequest('/user/seed-starter', { method: 'POST' }, token);
-}
 
 // ── Dynamic Marketplace & Provenance History API ────────────────────────────
 
@@ -374,19 +420,30 @@ export function invalidateMarketAssetsCache() {
  * @param {string} [searchQuery]
  * @param {boolean} [forceRefresh]
  */
-export async function getMarketAssets(category = 'All', searchQuery = '', forceRefresh = false) {
-  const isDefaultQuery = (!category || category === 'All') && (!searchQuery || !searchQuery.trim());
+export async function getMarketAssets(
+  category = "All",
+  searchQuery = "",
+  forceRefresh = false,
+) {
+  const isDefaultQuery =
+    (!category || category === "All") && (!searchQuery || !searchQuery.trim());
 
-  if (!forceRefresh && isDefaultQuery && clientMarketAssetsCache && (Date.now() - clientMarketAssetsCacheTime < CLIENT_MARKET_CACHE_TTL)) {
+  if (
+    !forceRefresh &&
+    isDefaultQuery &&
+    clientMarketAssetsCache &&
+    Date.now() - clientMarketAssetsCacheTime < CLIENT_MARKET_CACHE_TTL
+  ) {
     return { success: true, assets: clientMarketAssetsCache, cached: true };
   }
 
   try {
     const params = new URLSearchParams();
-    if (category && category !== 'All') params.append('category', category);
-    if (searchQuery && searchQuery.trim()) params.append('q', searchQuery.trim());
-    const qs = params.toString() ? `?${params.toString()}` : '';
-    const data = await apiRequest(`/assets${qs}`, { method: 'GET' });
+    if (category && category !== "All") params.append("category", category);
+    if (searchQuery && searchQuery.trim())
+      params.append("q", searchQuery.trim());
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    const data = await apiRequest(`/assets${qs}`, { method: "GET" });
 
     if (isDefaultQuery && data?.assets) {
       clientMarketAssetsCache = data.assets;
@@ -399,13 +456,15 @@ export async function getMarketAssets(category = 'All', searchQuery = '', forceR
     const cachedAssets = await getMarketAssetsCache();
     if (cachedAssets && cachedAssets.length > 0) {
       let filtered = cachedAssets;
-      if (category && category !== 'All') {
+      if (category && category !== "All") {
         filtered = filtered.filter((a) => a.category === category);
       }
       if (searchQuery && searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         filtered = filtered.filter(
-          (a) => a.name?.toLowerCase().includes(q) || a.category?.toLowerCase().includes(q)
+          (a) =>
+            a.name?.toLowerCase().includes(q) ||
+            a.category?.toLowerCase().includes(q),
         );
       }
       return {
@@ -423,7 +482,7 @@ export async function getMarketAssets(category = 'All', searchQuery = '', forceR
  * @param {string} assetId
  */
 export async function getAssetDetails(assetId) {
-  return apiRequest(`/assets/${assetId}`, { method: 'GET' });
+  return apiRequest(`/assets/${assetId}`, { method: "GET" });
 }
 
 /**
@@ -435,12 +494,13 @@ export async function getAssetDetails(assetId) {
 export async function createAssetApi(assetData, token) {
   invalidateMarketAssetsCache();
   return apiRequest(
-    '/assets',
+    "/assets",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(assetData),
+      timeoutMs: 60000,
     },
-    token
+    token,
   );
 }
 
@@ -454,12 +514,13 @@ export async function createAssetApi(assetData, token) {
  */
 export async function verifyAssetUploadApi(payload, token) {
   return apiRequest(
-    '/assets/verify-upload',
+    "/assets/verify-upload",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(payload),
+      timeoutMs: 60000,
     },
-    token
+    token,
   );
 }
 
@@ -468,13 +529,16 @@ export async function verifyAssetUploadApi(payload, token) {
  * @param {{ name: string, category?: string, condition?: string }} params
  * @param {string} [token]
  */
-export async function getMarketOracleApi({ name, category, condition }, token = null) {
+export async function getMarketOracleApi(
+  { name, category, condition },
+  token = null,
+) {
   const query = new URLSearchParams({
-    name: name || '',
-    category: category || '',
-    condition: condition || '',
+    name: name || "",
+    category: category || "",
+    condition: condition || "",
   }).toString();
-  return apiRequest(`/assets/market-oracle?${query}`, { method: 'GET' }, token);
+  return apiRequest(`/assets/market-oracle?${query}`, { method: "GET" }, token);
 }
 
 /**
@@ -484,12 +548,13 @@ export async function getMarketOracleApi({ name, category, condition }, token = 
  */
 export async function scanAndKnowApi(payload, token) {
   return apiRequest(
-    '/assets/scan-and-know',
+    "/assets/scan-and-know",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(payload),
+      timeoutMs: 60000,
     },
-    token
+    token,
   );
 }
 
@@ -499,7 +564,7 @@ export async function scanAndKnowApi(payload, token) {
  * Fetch live exchange rates (ZAR to Sepolia ETH), escrow address, and Stripe config.
  */
 export async function getPaymentRatesApi() {
-  return apiRequest('/payments/rates', { method: 'GET' });
+  return apiRequest("/payments/rates", { method: "GET" });
 }
 
 /**
@@ -510,9 +575,9 @@ export async function getPaymentRatesApi() {
  */
 export async function createPaymentIntentApi(data, token) {
   return apiRequest(
-    '/payments/create-intent',
-    { method: 'POST', body: JSON.stringify(data) },
-    token
+    "/payments/create-intent",
+    { method: "POST", body: JSON.stringify(data) },
+    token,
   );
 }
 
@@ -524,24 +589,26 @@ export async function createPaymentIntentApi(data, token) {
  * @returns {{ id: string, card: { brand, last4 } }} The Stripe PaymentMethod
  */
 export async function createStripePaymentMethod(publishableKey, card) {
-  const response = await fetch('https://api.stripe.com/v1/payment_methods', {
-    method: 'POST',
+  const response = await fetch("https://api.stripe.com/v1/payment_methods", {
+    method: "POST",
     headers: {
       Authorization: `Bearer ${publishableKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
+      "Content-Type": "application/x-www-form-urlencoded",
     },
     body: [
-      'type=card',
-      `card[number]=${card.number.replace(/\s+/g, '')}`,
+      "type=card",
+      `card[number]=${card.number.replace(/\s+/g, "")}`,
       `card[exp_month]=${card.exp_month}`,
       `card[exp_year]=${card.exp_year}`,
       `card[cvc]=${card.cvc}`,
-      card.name ? `billing_details[name]=${encodeURIComponent(card.name)}` : '',
-    ].filter(Boolean).join('&'),
+      card.name ? `billing_details[name]=${encodeURIComponent(card.name)}` : "",
+    ]
+      .filter(Boolean)
+      .join("&"),
   });
   const data = await response.json();
   if (data.error) {
-    throw new Error(data.error.message || 'Stripe card tokenization failed');
+    throw new Error(data.error.message || "Stripe card tokenization failed");
   }
   return data;
 }
@@ -553,19 +620,26 @@ export async function createStripePaymentMethod(publishableKey, card) {
  * @param {string} clientSecret - pi_xxx_secret_yyy from createPaymentIntent
  * @param {string} paymentMethodId - pm_xxx from createStripePaymentMethod
  */
-export async function confirmStripePayment(publishableKey, clientSecret, paymentMethodId) {
-  const intentId = clientSecret.split('_secret_')[0];
-  const response = await fetch(`https://api.stripe.com/v1/payment_intents/${intentId}/confirm`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${publishableKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
+export async function confirmStripePayment(
+  publishableKey,
+  clientSecret,
+  paymentMethodId,
+) {
+  const intentId = clientSecret.split("_secret_")[0];
+  const response = await fetch(
+    `https://api.stripe.com/v1/payment_intents/${intentId}/confirm`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${publishableKey}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: `payment_method=${paymentMethodId}`,
     },
-    body: `payment_method=${paymentMethodId}`,
-  });
+  );
   const data = await response.json();
   if (data.error) {
-    throw new Error(data.error.message || 'Stripe payment confirmation failed');
+    throw new Error(data.error.message || "Stripe payment confirmation failed");
   }
   return data;
 }
@@ -577,12 +651,12 @@ export async function confirmStripePayment(publishableKey, clientSecret, payment
  */
 export async function processPaymentApi(paymentData, token) {
   return apiRequest(
-    '/payments/process',
+    "/payments/process",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(paymentData),
     },
-    token
+    token,
   );
 }
 
@@ -593,12 +667,12 @@ export async function processPaymentApi(paymentData, token) {
  */
 export async function createEscrowApi(escrowPayload, token) {
   return apiRequest(
-    '/escrow/create',
+    "/escrow/create",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(escrowPayload),
     },
-    token
+    token,
   );
 }
 
@@ -606,7 +680,7 @@ export async function createEscrowApi(escrowPayload, token) {
  * Get live status and timeline of an escrow order.
  */
 export async function getEscrowOrderApi(orderId) {
-  return apiRequest(`/escrow/order/${orderId}`, { method: 'GET' });
+  return apiRequest(`/escrow/order/${orderId}`, { method: "GET" });
 }
 
 /**
@@ -614,12 +688,12 @@ export async function getEscrowOrderApi(orderId) {
  */
 export async function releaseEscrowApi(orderId, token) {
   return apiRequest(
-    '/escrow/release',
+    "/escrow/release",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ orderId }),
     },
-    token
+    token,
   );
 }
 
@@ -628,12 +702,12 @@ export async function releaseEscrowApi(orderId, token) {
  */
 export async function refundEscrowApi(orderId, reason, token) {
   return apiRequest(
-    '/escrow/refund',
+    "/escrow/refund",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ orderId, reason }),
     },
-    token
+    token,
   );
 }
 
@@ -642,12 +716,12 @@ export async function refundEscrowApi(orderId, reason, token) {
  */
 export async function progressEscrowStepApi(orderId, step, note, token) {
   return apiRequest(
-    '/escrow/progress',
+    "/escrow/progress",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ orderId, step, note }),
     },
-    token
+    token,
   );
 }
 
@@ -655,7 +729,7 @@ export async function progressEscrowStepApi(orderId, step, note, token) {
  * Retrieve all escrow orders for the logged-in user.
  */
 export async function getMyEscrowOrdersApi(token) {
-  return apiRequest('/escrow/my-orders', { method: 'GET' }, token);
+  return apiRequest("/escrow/my-orders", { method: "GET" }, token);
 }
 
 // ── User Profile & Account Management API ────────────────────────────────────
@@ -667,12 +741,12 @@ export async function getMyEscrowOrdersApi(token) {
  * Fetch aggregated analytics for authenticated user since joining.
  */
 export async function getUserAnalyticsApi(token) {
-  return apiRequest('/user/analytics', { method: 'GET' }, token);
+  return apiRequest("/user/analytics", { method: "GET" }, token);
 }
 
 export async function getUserProfileApi(token) {
   try {
-    const data = await apiRequest('/user/profile', { method: 'GET' }, token);
+    const data = await apiRequest("/user/profile", { method: "GET" }, token);
     if (data?.success && data?.profile) {
       saveUserProfile(data.profile).catch(() => {});
     }
@@ -691,12 +765,12 @@ export async function getUserProfileApi(token) {
  */
 export async function updateUserProfileApi(profileData, token) {
   return apiRequest(
-    '/user/profile',
+    "/user/profile",
     {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify(profileData),
     },
-    token
+    token,
   );
 }
 
@@ -704,7 +778,7 @@ export async function updateUserProfileApi(profileData, token) {
  * Permanently delete authenticated user's account and personal holdings.
  */
 export async function deleteAccountApi(token) {
-  return apiRequest('/user/account', { method: 'DELETE' }, token);
+  return apiRequest("/user/account", { method: "DELETE" }, token);
 }
 
 // ── Support Tickets API ──────────────────────────────────────────────────────
@@ -714,12 +788,12 @@ export async function deleteAccountApi(token) {
  */
 export async function lodgeSupportTicketApi(ticketData, token) {
   return apiRequest(
-    '/user/support',
+    "/user/support",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(ticketData),
     },
-    token
+    token,
   );
 }
 
@@ -727,7 +801,7 @@ export async function lodgeSupportTicketApi(ticketData, token) {
  * Get ticket history for authenticated user.
  */
 export async function getUserSupportTicketsApi(token) {
-  return apiRequest('/user/support', { method: 'GET' }, token);
+  return apiRequest("/user/support", { method: "GET" }, token);
 }
 
 // ── Vault Balance, Deposits & Withdrawals API ────────────────────────────────
@@ -739,12 +813,12 @@ export async function getUserSupportTicketsApi(token) {
 export async function depositFundsApi(depositData, token) {
   invalidateVaultCache();
   return apiRequest(
-    '/user/deposit',
+    "/user/deposit",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(depositData),
     },
-    token
+    token,
   );
 }
 
@@ -755,12 +829,12 @@ export async function depositFundsApi(depositData, token) {
 export async function withdrawFundsApi(withdrawData, token) {
   invalidateVaultCache();
   return apiRequest(
-    '/user/withdraw',
+    "/user/withdraw",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(withdrawData),
     },
-    token
+    token,
   );
 }
 
@@ -768,7 +842,7 @@ export async function withdrawFundsApi(withdrawData, token) {
  * Fetch all transaction records (deposits, withdrawals, payouts) for user.
  */
 export async function getVaultTransactionsApi(token) {
-  return apiRequest('/user/transactions', { method: 'GET' }, token);
+  return apiRequest("/user/transactions", { method: "GET" }, token);
 }
 
 /**
@@ -778,26 +852,24 @@ export async function getVaultTransactionsApi(token) {
  */
 export function resolveImageUrl(
   imageUri,
-  fallback = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800'
+  fallback = null,
 ) {
-  if (!imageUri || typeof imageUri !== 'string' || !imageUri.trim()) {
+  if (!imageUri || typeof imageUri !== "string" || !imageUri.trim()) {
     return fallback;
   }
-  // Clean replacement for corrupted red bundler error screenshot
-  if (imageUri.includes('asset_6f80eb') || imageUri.includes('b1tmz')) {
-    return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
-  }
-  if (imageUri.startsWith('data:image/')) return imageUri;
+  if (imageUri.startsWith("data:image/")) return imageUri;
 
-  const uploadsMatch = imageUri.match(/\/uploads\/(?:assets|kyc|avatars)\/[^"'\s?#]+/i);
+  const uploadsMatch = imageUri.match(
+    /\/uploads\/(?:assets|avatars)\/[^"'\s?#]+/i,
+  );
   if (uploadsMatch) {
-    const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+    const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, "");
     return `${baseOrigin}${uploadsMatch[0]}`;
   }
 
   // Also catch and rewrite any stale LAN IP URLs (e.g. 10.250.x.x:5000)
-  if (imageUri.includes(':5000/uploads/')) {
-    const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, '');
+  if (imageUri.includes(":5000/uploads/")) {
+    const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, "");
     return imageUri.replace(/^https?:\/\/[^/]+(:5000)?/, baseOrigin);
   }
 
@@ -811,12 +883,12 @@ export function resolveImageUrl(
  */
 export async function submitKycApi(kycData, token) {
   return apiRequest(
-    '/users/kyc-submit',
+    "/users/kyc-submit",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(kycData),
     },
-    token
+    token,
   );
 }
 
@@ -824,7 +896,7 @@ export async function submitKycApi(kycData, token) {
  * Retrieve user's KYC verification and compliance status.
  */
 export async function getKycStatusApi(token) {
-  return apiRequest('/users/kyc-status', { method: 'GET' }, token);
+  return apiRequest("/users/kyc-status", { method: "GET" }, token);
 }
 
 /**
@@ -833,12 +905,12 @@ export async function getKycStatusApi(token) {
 export async function logoutSessionApi(token, email = null) {
   try {
     return await apiRequest(
-      '/auth/logout',
+      "/auth/logout",
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ email }),
       },
-      token
+      token,
     );
   } catch (_) {
     return { success: true };
@@ -850,8 +922,8 @@ export async function logoutSessionApi(token, email = null) {
  */
 export async function logSessionTimeoutApi(email = null, userId = null) {
   try {
-    return await apiRequest('/auth/session-timeout', {
-      method: 'POST',
+    return await apiRequest("/auth/session-timeout", {
+      method: "POST",
       body: JSON.stringify({ email, userId }),
     });
   } catch (_) {
@@ -866,9 +938,9 @@ export async function logSessionTimeoutApi(email = null, userId = null) {
  */
 export async function uploadVerificationDocApi(payload, token) {
   return apiRequest(
-    '/verification/documents',
+    "/verification/documents",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({
         doc_type: payload.docType || payload.doc_type,
         file_data: payload.fileData || payload.file_data,
@@ -876,8 +948,9 @@ export async function uploadVerificationDocApi(payload, token) {
         mime_type: payload.mimeType || payload.mime_type,
         meta_value: payload.metaValue || payload.meta_value,
       }),
+      timeoutMs: 60000,
     },
-    token
+    token,
   );
 }
 
@@ -886,7 +959,7 @@ export async function uploadVerificationDocApi(payload, token) {
  * @param {string} token
  */
 export async function getVerificationStatusApi(token) {
-  return apiRequest('/verification/status', { method: 'GET' }, token);
+  return apiRequest("/verification/status", { method: "GET" }, token);
 }
 
 /**
@@ -896,18 +969,19 @@ export async function getVerificationStatusApi(token) {
  */
 export async function submitBankAccountApi(bankData, token) {
   return apiRequest(
-    '/bank-accounts',
+    "/bank-accounts",
     {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({
         account_holder: bankData.accountHolder || bankData.account_holder,
         bank_name: bankData.bankName || bankData.bank_name,
         account_number: bankData.accountNumber || bankData.account_number,
         branch_code: bankData.branchCode || bankData.branch_code,
-        account_type: bankData.accountType || bankData.account_type || 'Cheque / Current',
+        account_type:
+          bankData.accountType || bankData.account_type || "Cheque / Current",
       }),
     },
-    token
+    token,
   );
 }
 
@@ -916,5 +990,31 @@ export async function submitBankAccountApi(bankData, token) {
  * @param {string} token
  */
 export async function getBankAccountApi(token) {
-  return apiRequest('/bank-accounts', { method: 'GET' }, token);
+  return apiRequest("/bank-accounts", { method: "GET" }, token);
+}
+
+/**
+ * Uploads a public media file (photos, models, certificates, avatars) to Cloudinary via backend.
+ * @param {string} base64DataUri - The base64 data URI of the file
+ * @param {'assets'|'avatars'|'models_3d'|'certificates'} folder
+ * @param {string} token - Authenticated JWT
+ * @returns {Promise<string>} Public HTTPS Cloudinary URL
+ */
+export async function uploadPublicMediaApi(
+  base64DataUri,
+  folder = "assets",
+  token = null,
+) {
+  const res = await apiRequest(
+    "/uploads/public",
+    {
+      method: "POST",
+      body: JSON.stringify({ file: base64DataUri, folder }),
+      timeoutMs: 60000,
+    },
+    token,
+  );
+  const url = res?.url || res?.secure_url;
+  if (!url) throw new Error("Upload failed. No public URL returned by server.");
+  return url;
 }

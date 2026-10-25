@@ -197,22 +197,26 @@ async function login(req, res) {
     let fullName = data.user.user_metadata?.full_name || '';
     let walletAddress = data.user.user_metadata?.wallet_address || null;
     let avatarUrl = data.user.user_metadata?.avatar_url || null;
+    let userProfile = null;
 
     try {
-      const { data: profile } = await supabase
+      const { data: fetchedProfile, error: profileErr } = await supabase
         .from('profiles')
-        .select('full_name, wallet_address, avatar_url')
+        .select('full_name, wallet_address, avatar_url, verification_status')
         .eq('id', data.user.id)
         .maybeSingle();
 
-      if (profile?.full_name) {
-        fullName = profile.full_name;
-      }
-      if (profile?.wallet_address) {
-        walletAddress = profile.wallet_address;
-      }
-      if (profile?.avatar_url) {
-        avatarUrl = profile.avatar_url;
+      if (!profileErr && fetchedProfile) {
+        userProfile = fetchedProfile;
+        if (fetchedProfile.full_name) {
+          fullName = fetchedProfile.full_name;
+        }
+        if (fetchedProfile.wallet_address) {
+          walletAddress = fetchedProfile.wallet_address;
+        }
+        if (fetchedProfile.avatar_url) {
+          avatarUrl = fetchedProfile.avatar_url;
+        }
       }
     } catch (profileFetchErr) {
       console.warn('Profile fetch warning (using metadata):', profileFetchErr.message);
@@ -228,7 +232,7 @@ async function login(req, res) {
         walletAddress,
         avatarUrl,
         avatar_url: avatarUrl,
-        kycStatus: (compliance && compliance.kycStatus === 'verified') ? 'verified' : (profile?.verification_status === 'verified' ? 'verified' : 'unverified'),
+        kycStatus: (compliance && compliance.kycStatus === 'verified') ? 'verified' : (userProfile?.verification_status === 'verified' ? 'verified' : 'unverified'),
         accountStatus: compliance.accountStatus || 'active',
         isSuspended: compliance.isSuspended || false,
         bankingDetails: compliance.bankingDetails || null,

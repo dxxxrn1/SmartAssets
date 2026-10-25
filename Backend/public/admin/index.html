@@ -2868,7 +2868,7 @@
           </div>
           <button
             class="modal-close"
-            onclick="closeModal(\'modal-verification\')"
+            onclick="closeModal('modal-verification')"
           >
             &times;
           </button>
@@ -2879,7 +2879,7 @@
         <div class="modal-footer">
           <button
             class="btn btn-secondary btn-sm"
-            onclick="closeModal(\'modal-verification\')"
+            onclick="closeModal('modal-verification')"
           >
             Close Dossier
           </button>
@@ -2896,7 +2896,7 @@
           </div>
           <button
             class="modal-close"
-            onclick="closeModal(\'modal-bank-account\')"
+            onclick="closeModal('modal-bank-account')"
           >
             &times;
           </button>
@@ -2907,7 +2907,7 @@
         <div class="modal-footer" id="modal-bank-footer">
           <button
             class="btn btn-secondary btn-sm"
-            onclick="closeModal(\'modal-bank-account\')"
+            onclick="closeModal('modal-bank-account')"
           >
             Close
           </button>
@@ -4571,6 +4571,35 @@
           tbody.innerHTML = html;
         }
 
+        window.openKycDocSigned = function (docIdOrType) {
+          if (!docIdOrType) {
+            showToast("Document identifier is missing", "error");
+            return;
+          }
+          showToast("Loading secure signed document from Supabase...", "info");
+          apiFetch("/api/verification/documents/" + encodeURIComponent(docIdOrType) + "/url")
+            .then(function (res) {
+              if (res.status === 401) {
+                localStorage.removeItem(ADMIN_SESSION_KEY);
+                showToast("Admin session expired. Redirecting to login...", "error");
+                setTimeout(function() { window.location.href = "login.html"; }, 1500);
+                return null;
+              }
+              return res.json();
+            })
+            .then(function (data) {
+              if (!data) return;
+              if (data.success && data.url) {
+                window.open(data.url, "_blank");
+              } else {
+                showToast(data.error || "Document not found or inaccessible.", "error");
+              }
+            })
+            .catch(function (err) {
+              showToast("Error opening document: " + err.message, "error");
+            });
+        };
+
         window.openVerificationModal = function (vId) {
           const item = STATE.verifications.find(function (v) {
             return v.id === vId;
@@ -4624,9 +4653,28 @@
               (item.kycStatus === "verified"
                 ? "approved"
                 : item.kycStatus || "pending");
-            const previewUrl = resolveImg(
-              d.preview_url || d.file_path || slot.fallbackUrl,
-            );
+            const hasFile = Boolean(docId || d.file_path || d.preview_url || d.has_file);
+            const isPdf = String(d.file_path || "").toLowerCase().endsWith(".pdf") ||
+                          String(slot.fallbackUrl || "").toLowerCase().endsWith(".pdf") ||
+                          slot.key !== "id";
+            const docTarget = docId || slot.key;
+
+            let fileCardHtml = '<div class="text-xs text-muted" style="padding:45px 0;text-align:center;">No document uploaded</div>';
+            if (hasFile) {
+              if (isPdf) {
+                fileCardHtml = '<div onclick="openKycDocSigned(\'' + escapeHtml(docTarget) + '\')" style="cursor:pointer;background:#0b1120;border:1px solid var(--border);border-radius:8px;padding:26px 10px;text-align:center;margin-bottom:8px;transition:all 0.2s;" onmouseover="this.style.borderColor=\'#38BDF8\'" onmouseout="this.style.borderColor=\'var(--border)\'">' +
+                  '<div style="font-size:32px;margin-bottom:6px;">📄</div>' +
+                  '<div style="font-size:12px;font-weight:700;color:#38BDF8;">View PDF Document ↗</div>' +
+                  '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Click to open signed file</div>' +
+                  '</div>';
+              } else {
+                fileCardHtml = '<div onclick="openKycDocSigned(\'' + escapeHtml(docTarget) + '\')" style="cursor:pointer;background:#0b1120;border:1px solid var(--border);border-radius:8px;padding:26px 10px;text-align:center;margin-bottom:8px;transition:all 0.2s;" onmouseover="this.style.borderColor=\'#10B981\'" onmouseout="this.style.borderColor=\'var(--border)\'">' +
+                  '<div style="font-size:32px;margin-bottom:6px;">🖼️</div>' +
+                  '<div style="font-size:12px;font-weight:700;color:#10B981;">View Photo / Document ↗</div>' +
+                  '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Click to open signed photo</div>' +
+                  '</div>';
+              }
+            }
             const badgeHtml = renderDocMiniBadge(
               { status: docStatus },
               item.kycStatus,
@@ -4644,13 +4692,7 @@
               '<div class="text-xs font-mono text-muted" style="margin-bottom:8px;">' +
               escapeHtml(slot.metaText) +
               "</div>" +
-              (previewUrl
-                ? '<a href="' +
-                  escapeHtml(previewUrl) +
-                  '" target="_blank" title="Click to open signed document in new tab"><img src="' +
-                  escapeHtml(previewUrl) +
-                  '" style="width:100%;height:135px;object-fit:contain;background:#0b1120;border-radius:6px;border:1px solid var(--border);margin-bottom:8px;"/></a>'
-                : '<div class="text-xs text-muted" style="padding:45px 0;text-align:center;">No document uploaded</div>') +
+              fileCardHtml +
               (d.rejection_reason
                 ? '<div class="text-xs" style="color:#F87171;background:rgba(239,68,68,0.12);padding:6px 8px;border-radius:6px;margin-bottom:8px;"><strong>Rejected:</strong> ' +
                   escapeHtml(d.rejection_reason) +

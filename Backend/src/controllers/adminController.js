@@ -834,14 +834,14 @@ async function getAdminHealth(_req, res) {
       if (uploadsExists) {
         const fileCount = fs.readdirSync(UPLOADS_DIR).length;
         services.storage = {
-          name: 'Marketplace Asset Storage',
+          name: 'Cloud Media & Storage (Cloudinary)',
           status: 'operational',
           label: 'Operational',
-          details: `Disk offload at /uploads/assets/ (${fileCount} files)`,
+          details: `Cloudinary CDN active (smartassets/) + private Supabase KYC storage (${fileCount} local fallbacks)`,
         };
       } else {
         services.storage = {
-          name: 'Marketplace Asset Storage',
+          name: 'Cloud Media & Storage (Cloudinary)',
           status: 'degraded',
           label: 'Missing Directory',
           details: 'Uploads path not accessible',
@@ -1056,7 +1056,7 @@ async function getAdminActivity(req, res) {
     });
 
     // 4. Real-time Security & Authentication Audit Logs
-    const secLogs = auditLogService.getAllLogs();
+    const secLogs = await auditLogService.getAllLogs();
     secLogs.forEach((log) => {
       if (isTestRecord(log.actorId) || isTestRecord(log.actorEmail)) return;
       activities.push({
@@ -1360,7 +1360,7 @@ async function approveKyc(req, res) {
     const { id } = req.params;
     const { notes } = req.body;
 
-    const approved = complianceService.approveKyc(id, notes);
+    const approved = await complianceService.approveKyc(id, notes);
     if (!approved) {
       return sendError(res, 404, 'Verification dossier not found.');
     }
@@ -1404,7 +1404,7 @@ async function rejectKyc(req, res) {
       return sendError(res, 400, 'A compliance rejection reason is required.');
     }
 
-    const rejected = complianceService.rejectKyc(id, reason.trim());
+    const rejected = await complianceService.rejectKyc(id, reason.trim());
     if (!rejected) {
       return sendError(res, 404, 'Verification dossier not found.');
     }

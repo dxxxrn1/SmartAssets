@@ -21,6 +21,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const modelRoutes = require('./routes/modelRoutes');
 const verificationRoutes = require('./routes/verificationRoutes');
 const bankAccountRoutes = require('./routes/bankAccountRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
 const {
   requireAuth,
   requireVerified,
@@ -29,9 +30,22 @@ const {
 const { createAsset } = require('./controllers/assetController');
 const { deposit, withdraw } = require('./controllers/userController');
 const { securityHeaders, sqlInjectionProtection } = require('./middlewares/securityMiddleware');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// ── Timing Middleware (Terminal Latency Logs) ─────────────────────────────────
+app.use((req, res, next) => {
+  const t = Date.now();
+  res.on('finish', () => {
+    console.log(`⏱️ [${req.method}] ${req.originalUrl} ${res.statusCode} (${Date.now() - t}ms)`);
+  });
+  next();
+});
+
+// Trust proxy header for Render / cloud deployments
+app.set('trust proxy', 1);
 
 // ── Security Hardening (Helmet + Security Headers) ───────────────────────────
 app.disable('x-powered-by');
@@ -76,12 +90,77 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: '50mb' })); // Parse JSON request bodies (allows large base64 image/PDF uploads)
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.use(sqlInjectionProtection); // Intercept & block SQL injection attempts across query, params, body
+// ── Body Parser Limits (15MB for large media/doc uploads, 1MB for all standard routes) ──
+const uploadJson = express.json({ limit: '15mb' });
+const uploadUrlencoded = express.urlencoded({ limit: '15mb', extended: true });
+
+[
+  '/api/uploads',
+  '/api/verification',
+  '/verification',
+  '/api/assets',
+  '/api/user',
+  '/api/users',
+  '/api/list-item',
+  '/list-item',
+].forEach((p) => {
+  app.use(p, uploadJson);
+  app.use(p, uploadUrlencoded);
+});
+
+// Default strict 1MB body limit for standard unauthenticated/auth routes
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
+
+// ── Rate Limiting for Authentication Endpoints ─────────────────────────────────
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 30 : 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many authentication attempts. Please try again after 15 minutes.',
+  },
+});
+app.use('/api/auth', authLimiter);
+
+// ── SQL Injection Protection (Skips image upload routes to avoid CPU regex lags) ──
+app.use((req, res, next) => {
+  const p = req.originalUrl || req.url;
+  if (
+    p.startsWith('/api/uploads') ||
+    p.startsWith('/api/verification/documents') ||
+    p.startsWith('/verification/documents')
+  ) {
+    return next();
+  }
+  return sqlInjectionProtection(req, res, next);
+});
 
 // ── Static Files (Uploaded Avatars, Assets & Admin Console) ───────────────────
-app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
+// ── Static Files (Public Assets vs Protected KYC Documents) ──────────────────
+app.use('/uploads/assets', express.static(path.resolve(__dirname, '../uploads/assets')));
+app.use('/uploads/avatars', express.static(path.resolve(__dirname, '../uploads/avatars')));
+
+// Gated KYC storage: requires valid JWT and restricts access strictly to owner or admin
+app.use('/uploads/kyc', (req, res, next) => {
+  if (req.query?.token && !req.headers.authorization) {
+    req.headers.authorization = 'Bearer ' + req.query.token;
+  }
+  next();
+}, requireAuth, (req, res, next) => {
+  const file = req.path.replace(/^\//, '');
+  const userId = req.user.id;
+  const isOwner = file.startsWith(userId) || file.startsWith(String(userId).replace(/-/g, '_'));
+  const isAdmin = req.user.role === 'admin' || (req.user.user_metadata?.role === 'admin');
+  if (!isOwner && !isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: You are not authorized to view this compliance document.' });
+  }
+  next();
+}, express.static(path.resolve(__dirname, '../uploads/kyc')));
+
+app.use('/uploads', express.static(path.resolve(__dirname, '../uploads/assets')));
 app.use('/admin', express.static(path.resolve(__dirname, '../public/admin')));
 
 // ── API Routes ───────────────────────────────────────────────────────────────
@@ -96,6 +175,7 @@ app.use('/escrow', escrowRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/admin', adminRoutes);
 app.use('/api/models', modelRoutes);
+app.use('/api/uploads', uploadRoutes);
 
 // ── Verification & Bank Account Routes (both /api/... and root /... paths) ──
 app.use('/api/verification', verificationRoutes);

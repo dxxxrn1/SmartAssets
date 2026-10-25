@@ -52,9 +52,11 @@ if (typeof global.process.nextTick !== 'function') {
 }
 
 // Mock window and location for SDKs expecting browser-like environments
-if (typeof global.window === 'undefined') {
-  global.window = global;
-}
+try {
+  if (typeof global.window === 'undefined' || !global.window) {
+    global.window = global;
+  }
+} catch (_) {}
 
 // Event & CustomEvent polyfills for React Native (Hermes)
 if (typeof global.Event === 'undefined') {
@@ -65,7 +67,6 @@ if (typeof global.Event === 'undefined') {
     }
   };
 }
-global.window.Event = global.Event;
 
 if (typeof global.CustomEvent === 'undefined') {
   global.CustomEvent = function CustomEvent(type, eventInitDict) {
@@ -73,7 +74,11 @@ if (typeof global.CustomEvent === 'undefined') {
     this.detail = (eventInitDict && eventInitDict.detail) || null;
   };
 }
-global.window.CustomEvent = global.CustomEvent;
+
+if (typeof global.window === 'object' && global.window) {
+  try { global.window.Event = global.Event; } catch (_) {}
+  try { global.window.CustomEvent = global.CustomEvent; } catch (_) {}
+}
 
 // Mock Web Storage (localStorage & sessionStorage)
 const memoryStore = {};
@@ -104,8 +109,15 @@ if (typeof global.localStorage === 'undefined') {
 if (typeof global.sessionStorage === 'undefined') {
   global.sessionStorage = mockStorage;
 }
-global.window.localStorage = global.window.localStorage || global.localStorage;
-global.window.sessionStorage = global.window.sessionStorage || global.sessionStorage;
+
+if (typeof global.window === 'object' && global.window) {
+  try { global.window.localStorage = global.window.localStorage || global.localStorage; } catch (_) {}
+  try { global.window.sessionStorage = global.window.sessionStorage || global.sessionStorage; } catch (_) {}
+}
+if (typeof window === 'object' && window) {
+  try { window.localStorage = window.localStorage || global.localStorage; } catch (_) {}
+  try { window.sessionStorage = window.sessionStorage || global.sessionStorage; } catch (_) {}
+}
 
 // Mock document for browser-focused SDK submodules (SocketService, onboarding, etc.)
 if (typeof global.document === 'undefined' || !global.document) {

@@ -5,6 +5,7 @@
 // - Withdrawals require BOTH a verified account (3 KYC docs approved) AND an approved bank account
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -22,6 +23,7 @@ import { useTheme } from '../context/ThemeContext';
 import {
   getBankAccountApi,
   submitBankAccountApi,
+  getVerificationStatusApi,
 } from '../services/api';
 import { useColors } from '../constants/theme';
 
@@ -44,6 +46,7 @@ export default function BankDetailsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [bankRecord, setBankRecord] = useState(null);
+  const [isVerified, setIsVerified] = useState(false);
 
   const [accountHolder, setAccountHolder] = useState(user?.fullName || '');
   const [bankName, setBankName] = useState('FNB');
@@ -66,9 +69,22 @@ export default function BankDetailsScreen({ navigation }) {
     }
     try {
       setLoading(true);
-      const res = await getBankAccountApi(token);
-      if (res && res.success && res.bank_account) {
-        const b = res.bank_account;
+      const [bankRes, verifRes] = await Promise.all([
+        getBankAccountApi(token).catch(() => null),
+        getVerificationStatusApi(token).catch(() => null),
+      ]);
+
+      const verified =
+        verifRes?.verification_status === 'verified' ||
+        verifRes?.kycStatus === 'verified' ||
+        verifRes?.overall_status === 'verified' ||
+        verifRes?.status === 'verified' ||
+        user?.verificationStatus === 'verified' ||
+        user?.isVerified === true;
+      setIsVerified(Boolean(verified));
+
+      if (bankRes && bankRes.success && bankRes.bank_account) {
+        const b = bankRes.bank_account;
         setBankRecord(b);
         setAccountHolder(b.account_holder || user?.fullName || '');
         setBankName(b.bank_name || 'FNB');
@@ -81,11 +97,13 @@ export default function BankDetailsScreen({ navigation }) {
     } finally {
       setLoading(false);
     }
-  }, [token, user?.fullName]);
+  }, [token, user?.fullName, user?.verificationStatus, user?.isVerified]);
 
-  useEffect(() => {
-    loadBankDetails();
-  }, [loadBankDetails]);
+  useFocusEffect(
+    useCallback(() => {
+      loadBankDetails();
+    }, [loadBankDetails])
+  );
 
   const handleSelectBankPreset = (preset) => {
     setBankName(preset.name);
@@ -93,6 +111,13 @@ export default function BankDetailsScreen({ navigation }) {
   };
 
   const handleSubmit = async () => {
+    if (!isVerified) {
+      showAlert(
+        'Account Verification Required',
+        'You must complete and have your 3 FICA/KYC verification documents approved by compliance admin before you can link a payout bank account.'
+      );
+      return;
+    }
     if (!accountHolder.trim()) {
       showAlert('Missing Information', 'Please enter the account holder full name.');
       return;
@@ -456,26 +481,60 @@ export default function BankDetailsScreen({ navigation }) {
               })}
             </View>
 
+            {/* Unverified Account Warning Banner */}
+            {!isVerified && (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 10,
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  borderColor: 'rgba(239, 68, 68, 0.3)',
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  padding: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <Ionicons name="lock-closed" size={20} color="#EF4444" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#EF4444' }}>
+                    KYC Verification Required
+                  </Text>
+                  <Text style={{ fontSize: 11.5, color: t.textSecondary, marginTop: 2 }}>
+                    Your account must have all 3 KYC documents approved before bank account submission is enabled.
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <TouchableOpacity
-              disabled={submitting}
+              disabled={submitting || !isVerified}
               onPress={handleSubmit}
               style={{
-                backgroundColor: '#7C5CFC',
+                backgroundColor: !isVerified ? (isDark ? '#334155' : '#CBD5E1') : '#7C5CFC',
                 paddingVertical: 14,
                 borderRadius: 14,
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexDirection: 'row',
                 gap: 8,
+                opacity: !isVerified ? 0.7 : 1,
               }}
             >
               {submitting ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <>
-                  <Ionicons name="shield-checkmark-outline" size={18} color="#FFFFFF" />
+                  <Ionicons
+                    name={!isVerified ? 'lock-closed-outline' : 'shield-checkmark-outline'}
+                    size={18}
+                    color="#FFFFFF"
+                  />
                   <Text style={{ color: '#FFFFFF', fontSize: 14.5, fontWeight: '800' }}>
-                    {status === 'not_submitted'
+                    {!isVerified
+                      ? 'Locked • Complete KYC First'
+                      : status === 'not_submitted'
                       ? 'Submit Bank Account for Approval'
                       : 'Update & Resubmit Bank Account'}
                   </Text>

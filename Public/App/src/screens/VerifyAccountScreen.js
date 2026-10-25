@@ -6,6 +6,7 @@
 // - Upload from Camera or Gallery (Image or PDF), and re-upload when rejected
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -20,6 +21,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import {
@@ -101,14 +105,16 @@ export default function VerifyAccountScreen({ navigation }) {
       setLoading(true);
       const data = await getVerificationStatusApi(token);
       if (data && data.success) {
-        const nextStatus = data.verification_status || 'unverified';
+        const nextStatus = data.verification_status || data.kycStatus || 'unverified';
         setOverallStatus(nextStatus);
-        if (data.documents) {
-          setDocuments((prev) => ({
-            id: data.documents.id || prev.id,
-            tax: data.documents.tax || prev.tax,
-            proof_of_residence: data.documents.proof_of_residence || prev.proof_of_residence,
-          }));
+        if (data.documentSlots) {
+          setDocuments(data.documentSlots);
+        } else if (Array.isArray(data.documents)) {
+          const mapped = {};
+          data.documents.forEach((d) => {
+            if (d?.doc_type) mapped[d.doc_type] = d;
+          });
+          setDocuments((prev) => ({ ...prev, ...mapped }));
         }
         if (data.bank_account) {
           setBankStatus(data.bank_account.status || 'pending');
@@ -128,9 +134,11 @@ export default function VerifyAccountScreen({ navigation }) {
     }
   }, [token, updateProfileData]);
 
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchStatus();
+    }, [fetchStatus])
+  );
 
   const handleUploadFileData = async (docType, base64Uri, fileName, mimeType) => {
     if (!token) {
@@ -151,14 +159,16 @@ export default function VerifyAccountScreen({ navigation }) {
       );
 
       if (res && res.success) {
-        const nextStatus = res.verification_status || 'pending';
+        const nextStatus = res.verification_status || res.kycStatus || 'pending';
         setOverallStatus(nextStatus);
-        if (res.documents) {
-          setDocuments((prev) => ({
-            id: res.documents.id || prev.id,
-            tax: res.documents.tax || prev.tax,
-            proof_of_residence: res.documents.proof_of_residence || prev.proof_of_residence,
-          }));
+        if (res.documentSlots) {
+          setDocuments(res.documentSlots);
+        } else if (Array.isArray(res.documents)) {
+          const mapped = {};
+          res.documents.forEach((d) => {
+            if (d?.doc_type) mapped[d.doc_type] = d;
+          });
+          setDocuments((prev) => ({ ...prev, ...mapped }));
         }
         if (updateProfileData) {
           await updateProfileData({
@@ -175,12 +185,12 @@ export default function VerifyAccountScreen({ navigation }) {
     }
   };
 
-  // Pick from gallery (image or PDF on Web)
-  const handlePickGalleryOrFile = async (docType) => {
+  // Pick from file browser or document picker (supports PDF, PNG, JPG)
+  const handlePickDocumentOrFile = async (docType) => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = 'image/jpeg,image/png,application/pdf';
+      input.accept = 'image/jpeg,image/png,image/webp,application/pdf';
       input.onchange = (e) => {
         const file = e.target.files && e.target.files[0];
         if (!file) return;
@@ -199,32 +209,67 @@ export default function VerifyAccountScreen({ navigation }) {
     }
 
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        showAlert('Permission Required', 'Please grant photo library access to upload your document.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 0.8,
-        base64: true,
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
+        copyToCacheDirectory: true,
       });
+
       if (!result.canceled && result.assets && result.assets[0]) {
         const asset = result.assets[0];
-        const mime = asset.mimeType || 'image/jpeg';
-        const dataUri = asset.base64 ? `data:${mime};base64,${asset.base64}` : asset.uri;
-        await handleUploadFileData(docType, dataUri, asset.fileName || `${docType}.jpg`, mime);
+        const mime = asset.mimeType || (asset.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+        let dataUri = null;
+
+        // 1. Primary: Native Expo File API (Direct native read, zero memory copying, no warnings)
+        try {
+          const fileObj = new File(asset.uri);
+          const b64 = await fileObj.base64();
+          if (b64) {
+            dataUri = `data:${mime};base64,${b64}`;
+          }
+        } catch (_) {}
+
+        // 2. Secondary: Legacy FileSystem module
+        if (!dataUri && FileSystem?.readAsStringAsync) {
+          try {
+            const b64 = await FileSystem.readAsStringAsync(asset.uri, {
+              encoding: 'base64',
+            });
+            if (b64) {
+              dataUri = `data:${mime};base64,${b64}`;
+            }
+          } catch (_) {}
+        }
+
+        // 3. Last-resort fallback: fetch blob
+        if (!dataUri) {
+          try {
+            const resp = await fetch(asset.uri);
+            const blob = await resp.blob();
+            dataUri = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          } catch (_) {}
+        }
+
+        if (!dataUri || !dataUri.startsWith('data:')) {
+          showAlert('File Read Error', 'Could not read the selected document. Please try a different file.');
+          return;
+        }
+
+        await handleUploadFileData(docType, dataUri, asset.name || `${docType}.pdf`, mime);
       }
     } catch (err) {
-      showAlert('Gallery Error', err.message || 'Could not select image from gallery.');
+      showAlert('Picker Error', err.message || 'Could not select document.');
     }
   };
 
   // Capture directly from Camera
   const handleCaptureCamera = async (docType) => {
     if (Platform.OS === 'web') {
-      return handlePickGalleryOrFile(docType);
+      return handlePickDocumentOrFile(docType);
     }
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -240,7 +285,23 @@ export default function VerifyAccountScreen({ navigation }) {
       if (!result.canceled && result.assets && result.assets[0]) {
         const asset = result.assets[0];
         const mime = asset.mimeType || 'image/jpeg';
-        const dataUri = asset.base64 ? `data:${mime};base64,${asset.base64}` : asset.uri;
+        let dataUri = asset.base64 ? `data:${mime};base64,${asset.base64}` : null;
+        if (!dataUri && asset.uri) {
+          try {
+            const resp = await fetch(asset.uri);
+            const blob = await resp.blob();
+            dataUri = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          } catch (_) {}
+        }
+        if (!dataUri) {
+          showAlert('Camera Error', 'Could not process photo data.');
+          return;
+        }
         await handleUploadFileData(docType, dataUri, `${docType}_camera.jpg`, mime);
       }
     } catch (err) {
@@ -554,7 +615,7 @@ export default function VerifyAccountScreen({ navigation }) {
 
                     <TouchableOpacity
                       disabled={isUploading}
-                      onPress={() => handlePickGalleryOrFile(slot.key)}
+                      onPress={() => handlePickDocumentOrFile(slot.key)}
                       style={{
                         flex: 1.3,
                         flexDirection: 'row',
@@ -570,13 +631,13 @@ export default function VerifyAccountScreen({ navigation }) {
                         <ActivityIndicator size="small" color="#FFFFFF" />
                       ) : (
                         <>
-                          <Ionicons name="cloud-upload-outline" size={17} color="#FFFFFF" />
+                          <Ionicons name="document-text-outline" size={17} color="#FFFFFF" />
                           <Text style={{ color: '#FFFFFF', fontSize: 12.5, fontWeight: '700' }}>
                             {status === 'rejected'
-                              ? 'Re-upload Document'
+                              ? 'Re-upload File / PDF'
                               : status === 'pending'
-                              ? 'Replace File (JPG/PDF)'
-                              : 'Upload Gallery / PDF'}
+                              ? 'Replace File (PDF/JPG)'
+                              : 'Upload Document / PDF'}
                           </Text>
                         </>
                       )}
