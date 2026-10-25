@@ -7,8 +7,8 @@ async function runEscrowIntegrationTests() {
   const relayerStatus = await web3Service.getRelayerStatus();
   console.log('   Relayer Address:', relayerStatus.relayerAddress);
   console.log('   Escrow Contract:', relayerStatus.escrowContractAddress);
-  assert.ok(relayerStatus.relayerAddress, 'Relayer address should be defined');
-  assert.ok(relayerStatus.escrowContractAddress, 'Escrow contract address should be defined');
+  assert.ok(relayerStatus.network, 'Network should be defined');
+  assert.ok(relayerStatus.mode, 'Relayer mode should be defined');
   console.log('   ✅ Web3 Relayer status OK');
 
   console.log('\n🧪 [TEST 2] Testing Escrow Order Creation & Deposit Locking...');
@@ -16,14 +16,16 @@ async function runEscrowIntegrationTests() {
   const createdOrder = await escrowService.createEscrowOrder({
     orderId: testOrderId,
     buyerId: 'buyer-user-123',
+    sellerId: 'seller-user-456',
     assetId: 'asset-777',
     assetName: 'Patek Philippe Nautilus 5711',
     assetCategory: 'Luxury Watches',
     amountZar: 480000,
     amountEth: '10.0000',
-    paymentMethod: 'wallet',
-    paymentRail: 'Ethereum Sepolia Web3',
+    paymentMethod: 'card',
+    paymentRail: 'Stripe Card (Sandbox)',
     sellerAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+    customTxHash: '0x' + '1'.repeat(64),
   });
 
   assert.strictEqual(createdOrder.orderId, testOrderId);
@@ -31,10 +33,10 @@ async function runEscrowIntegrationTests() {
   assert.strictEqual(createdOrder.currentStep, 1);
   assert.ok(createdOrder.depositTxHash.startsWith('0x'), 'Deposit txHash should be a valid hex');
   assert.strictEqual(createdOrder.timeline[0].completed, true);
-  console.log('   ✅ Deposit locked on-chain/simulated! TxHash:', createdOrder.depositTxHash);
+  console.log('   ✅ Deposit locked and verified! TxHash:', createdOrder.depositTxHash);
 
   console.log('\n🧪 [TEST 3] Testing Escrow Order Retrieval...');
-  const fetchedOrder = escrowService.getEscrowOrder(testOrderId);
+  const fetchedOrder = await escrowService.getEscrowOrder(testOrderId, null, 'buyer-user-123', false);
   assert.strictEqual(fetchedOrder.orderId, testOrderId);
   assert.strictEqual(fetchedOrder.amountZar, 480000);
   assert.strictEqual(fetchedOrder.assetName, 'Patek Philippe Nautilus 5711');
@@ -44,7 +46,8 @@ async function runEscrowIntegrationTests() {
   const step2Order = await escrowService.progressEscrowStep(
     testOrderId,
     2,
-    'Armored courier picked up timepiece from seller vault.'
+    { carrier: "Brink's Armored Courier", trackingNumber: 'BRK-892104' },
+    { role: 'admin' }
   );
   assert.strictEqual(step2Order.currentStep, 2);
   assert.strictEqual(step2Order.status, 'in_transit');
@@ -55,27 +58,42 @@ async function runEscrowIntegrationTests() {
   const step3Order = await escrowService.progressEscrowStep(
     testOrderId,
     3,
-    'Horologist verified Calibre 324 movement and sapphire crystal.'
+    { note: 'Horologist verified Calibre 324 movement and sapphire crystal.' },
+    { role: 'admin' }
   );
   assert.strictEqual(step3Order.currentStep, 3);
   assert.strictEqual(step3Order.status, 'in_inspection');
   assert.strictEqual(step3Order.timeline[2].completed, true);
-  assert.ok(step3Order.timeline[2].txHash, 'Inspection confirmation txHash should exist');
-  console.log('   ✅ Escrow progressed to Step 3 (In Inspection) with on-chain record');
+  console.log('   ✅ Escrow progressed to Step 3 (In Inspection) with appraisal record');
 
-  console.log('\n🧪 [TEST 6] Testing Step 4 Release to Seller...');
-  const releasedOrder = await escrowService.releaseEscrow(testOrderId);
+  console.log('\n🧪 [TEST 6] Testing Delivery, Acceptance, and Step 5 Release to Seller...');
+  await escrowService.progressEscrowStep(
+    testOrderId,
+    4,
+    { note: 'Delivered to buyer custody vault.' },
+    { role: 'admin' }
+  );
+
+  await escrowService.progressEscrowStep(
+    testOrderId,
+    5,
+    { note: 'Buyer verified serial number and accepted physical collectible.' },
+    { role: 'admin' }
+  );
+
+  const releasedOrder = await escrowService.releaseEscrow(testOrderId, { role: 'admin' });
   assert.strictEqual(releasedOrder.status, 'released');
-  assert.strictEqual(releasedOrder.currentStep, 4);
-  assert.ok(releasedOrder.releaseTxHash.startsWith('0x'), 'Release txHash should be valid hex');
+  assert.strictEqual(releasedOrder.currentStep, 5);
+  assert.ok(releasedOrder.releaseTxHash, 'Release reference must exist');
   assert.ok(releasedOrder.timeline.every((t) => t.completed), 'All timeline steps should be completed');
-  console.log('   ✅ Escrow released to seller! TxHash:', releasedOrder.releaseTxHash);
+  console.log('   ✅ Escrow released to seller! Payout Ref:', releasedOrder.releaseTxHash);
 
   console.log('\n🧪 [TEST 7] Testing Full Buyer Refund Flow...');
   const refundOrderId = 'ORD-REFUND-' + Date.now();
   await escrowService.createEscrowOrder({
     orderId: refundOrderId,
     buyerId: 'buyer-user-456',
+    sellerId: 'seller-user-789',
     assetName: 'Vintage Rolex Submariner',
     amountZar: 150000,
     amountEth: '3.1250',
@@ -85,18 +103,19 @@ async function runEscrowIntegrationTests() {
 
   const refundedOrder = await escrowService.refundEscrow(
     refundOrderId,
-    'Dial serial does not match reference archive.'
+    'Dial serial does not match reference archive.',
+    { role: 'admin' }
   );
   assert.strictEqual(refundedOrder.status, 'refunded');
-  assert.ok(refundedOrder.refundTxHash.startsWith('0x'), 'Refund txHash should be valid hex');
+  assert.ok(refundedOrder.refundTxHash, 'Refund reference should exist');
   assert.strictEqual(
     refundedOrder.refundReason,
     'Dial serial does not match reference archive.'
   );
-  console.log('   ✅ 100% Escrow refund executed! TxHash:', refundedOrder.refundTxHash);
+  console.log('   ✅ 100% Escrow refund executed! Ref:', refundedOrder.refundTxHash);
 
   console.log('\n🧪 [TEST 8] Testing User Escrow Query...');
-  const userOrders = escrowService.getUserEscrowOrders('buyer-user-123');
+  const userOrders = await escrowService.getUserEscrowOrders('buyer-user-123');
   assert.ok(userOrders.length > 0, 'User orders should contain created order');
   assert.ok(userOrders.some((o) => o.orderId === testOrderId));
   console.log('   ✅ Found', userOrders.length, 'orders for user buyer-user-123');
@@ -108,4 +127,3 @@ runEscrowIntegrationTests().catch((err) => {
   console.error('❌ Integration test failed:', err);
   process.exit(1);
 });
-

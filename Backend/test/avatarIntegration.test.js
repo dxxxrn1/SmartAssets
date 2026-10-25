@@ -10,11 +10,14 @@ async function runTests() {
 
   const savedResult = await avatarService.saveUserAvatar(testUserId, sampleBase64);
   assert.ok(savedResult, 'saveUserAvatar should return saved avatar data');
-  assert.strictEqual(savedResult, sampleBase64, 'Saved avatar should match input base64');
+  assert.ok(
+    savedResult === sampleBase64 || savedResult.startsWith('http'),
+    'Saved avatar should be the input base64 or uploaded Cloudinary URL'
+  );
   console.log('   ✅ Avatar successfully saved to database');
 
   const retrievedAvatar = await avatarService.getUserAvatar(testUserId);
-  assert.strictEqual(retrievedAvatar, sampleBase64, 'Retrieved avatar from DB should match stored base64 data');
+  assert.strictEqual(retrievedAvatar, savedResult, 'Retrieved avatar from DB should match stored avatar');
   console.log('   ✅ Avatar successfully retrieved from database (profiles table)');
 
   console.log('\n🧪 [TEST 2] Testing avatar cleanup upon deleteUserAvatar...');

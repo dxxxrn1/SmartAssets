@@ -52,8 +52,12 @@ async function runTests() {
   });
   console.log('   Escrow assetImage stored:', escrowOrder.assetImage);
   assert(!escrowOrder.assetImage.startsWith('data:image/'), 'Escrow order should NOT store raw base64');
-  assert(escrowOrder.assetImage.includes('/uploads/assets/ord_ORD-TEST-IMG-'), 'Escrow order should store disk path');
-  // Clean up order image file
+  assert(
+    escrowOrder.assetImage.includes('/uploads/assets/ord_ORD-TEST-IMG-') ||
+    escrowOrder.assetImage.startsWith('http'),
+    'Escrow order should store disk path or CDN URL'
+  );
+  // Clean up order image file if on disk
   const escrowFileName = path.basename(escrowOrder.assetImage);
   const escrowFilePath = path.join(UPLOADS_DIR, escrowFileName);
   if (fs.existsSync(escrowFilePath)) fs.unlinkSync(escrowFilePath);

@@ -378,7 +378,7 @@ async function buildMergedRealUsers(req) {
   } catch (_) {}
 
   // 4. Map escrow orders count
-  const orders = escrowService.getAllEscrowOrders(req);
+  const orders = (await escrowService.getAllEscrowOrders(req)) || [];
   const escrowMap = {};
   orders.forEach((o) => {
     if (o.buyerId) escrowMap[o.buyerId] = (escrowMap[o.buyerId] || 0) + 1;
@@ -507,7 +507,7 @@ async function getAdminOverview(req, res) {
     const pendingAssets = assets.filter((a) => a.status === 'pending').length;
 
     // 3. Fetch escrow orders
-    const allOrders = escrowService.getAllEscrowOrders(req);
+    const allOrders = (await escrowService.getAllEscrowOrders(req)) || [];
     const activeEscrows = allOrders.filter(
       (o) => o.status === 'payment_secured' || o.status === 'in_transit' || o.status === 'in_inspection'
     );
@@ -685,7 +685,7 @@ async function updateAssetStatus(req, res) {
 async function getAdminEscrows(req, res) {
   try {
     const { status } = req.query;
-    let orders = escrowService.getAllEscrowOrders(req);
+    let orders = (await escrowService.getAllEscrowOrders(req)) || [];
 
     if (status && status !== 'All') {
       orders = orders.filter((o) => o.status === status);
@@ -873,7 +873,7 @@ async function getAdminHealth(_req, res) {
 
     // 4. Escrow Custody Engine
     try {
-      const orders = escrowService.getAllEscrowOrders(req);
+      const orders = (await escrowService.getAllEscrowOrders(req)) || [];
       services.escrow = {
         name: 'Escrow Custody Service',
         status: 'operational',
@@ -1004,7 +1004,7 @@ async function getAdminActivity(req, res) {
     const activities = [];
 
     // 1. Escrows milestones
-    const orders = escrowService.getAllEscrowOrders(req);
+    const orders = (await escrowService.getAllEscrowOrders(req)) || [];
     orders.forEach((o) => {
       if (Array.isArray(o.timeline)) {
         o.timeline.forEach((step) => {

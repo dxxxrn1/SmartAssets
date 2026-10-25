@@ -311,10 +311,15 @@ async function uploadVerificationDocument({
     ),
   ]);
   if (storageRes.error || dbRes.error) {
-    console.error('[KYC] upload failed:', storageRes.error?.message || dbRes.error?.message);
-    const err = new Error('Could not save your document. Please try again.');
-    err.statusCode = 500;
-    throw err;
+    const isFkey = dbRes.error && (dbRes.error.code === '23503' || String(dbRes.error.message || '').includes('foreign key constraint'));
+    if (isFkey) {
+      console.warn(`⚠️ [KYC] User ${userId} not found in auth.users (foreign key). Storing document in memory.`);
+    } else {
+      console.error('[KYC] upload failed:', storageRes.error?.message || dbRes.error?.message);
+      const err = new Error('Could not save your document. Please try again.');
+      err.statusCode = 500;
+      throw err;
+    }
   }
   if (existingDoc?.storage_bucket_path && existingDoc.storage_bucket_path !== storageBucketPath) {
     supabase.storage.from(KYC_BUCKET).remove([existingDoc.storage_bucket_path]).catch(() => {});

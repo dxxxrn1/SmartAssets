@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/main.js",
     "dev": "node --watch src/main.js",
-    "test": "node test/escrowIntegration.test.js && node test/avatarIntegration.test.js && node test/profileIntegration.test.js && node test/vaultIntegration.test.js && node test/adminAndImageIntegration.test.js && node test/modelIntegration.test.js && node test/security.test.js && node test/walletAuth.test.js && node test/transactionEligibilityAndPhantomBalance.test.js",
+    "test": "node test/escrowComprehensive.test.js && node test/escrowIntegration.test.js && node test/avatarIntegration.test.js && node test/profileIntegration.test.js && node test/vaultIntegration.test.js && node test/adminAndImageIntegration.test.js && node test/modelIntegration.test.js && node test/security.test.js && node test/walletAuth.test.js && node test/transactionEligibilityAndPhantomBalance.test.js",
     "test:tripo": "node scripts/testTripo.js"
   },
   "keywords": [],

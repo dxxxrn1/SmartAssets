@@ -802,8 +802,8 @@
       "artifacts": []
     },
     "C:\\Users\\malul\\DSW_GROUP_PROJECT\\SMART_ASSETS\\Blockchain\\contracts\\SmartAssetEscrow.sol": {
-      "lastModificationDate": 1789135111112,
-      "contentHash": "aa3f8dc287b186996bd415f06df66b3b",
+      "lastModificationDate": 1792957028684,
+      "contentHash": "05ad71b002aaebd3cd20e8cb6dc0cc6b",
       "sourceName": "contracts/SmartAssetEscrow.sol",
       "solcConfig": {
         "version": "0.8.24",
