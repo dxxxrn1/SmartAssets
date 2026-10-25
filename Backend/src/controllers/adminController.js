@@ -23,6 +23,7 @@ const supportService = require('../services/supportService');
 const complianceService = require('../services/complianceService');
 const auditLogService = require('../services/auditLogService');
 const vaultTxService = require('../services/vaultTransactionService');
+const presenceService = require('../services/presenceService');
 const { invalidateAssetsCache } = require('./assetController');
 const { normalizeImageUrl, UPLOADS_DIR } = require('../utils/imageHandler');
 const {
@@ -408,6 +409,7 @@ async function buildMergedRealUsers(req) {
     const escrowCount = escrowMap[u.id] || 0;
     const accountStatus = comp.accountStatus || 'active';
     const bankingDetails = comp.bankingDetails || null;
+    const presence = presenceService.getUserPresence(u.id);
 
     enriched.push({
       id: u.id,
@@ -453,6 +455,12 @@ async function buildMergedRealUsers(req) {
           : kycStatus === 'rejected'
           ? 'Rejected'
           : 'Unverified',
+      isOnline: presence.isOnline,
+      isIdle: presence.isIdle,
+      presenceStatus: presence.status,
+      lastSeen: presence.lastSeen,
+      lastSeenText: presence.lastSeenText,
+      clientType: presence.clientType,
     });
   }
 
@@ -521,11 +529,18 @@ async function getAdminOverview(req, res) {
     const allBankAccounts = await complianceService.getAllBankAccounts();
     const pendingBankAccounts = allBankAccounts.filter((b) => b.status === 'pending');
 
+    // 6. Real-time active & online collectors overview
+    const presenceOverview = presenceService.getPresenceOverview(realUsers);
+
     return res.json({
       success: true,
       overview: {
         users: {
           total: realUsers.length,
+          onlineCount: presenceOverview.onlineCount,
+          idleCount: presenceOverview.idleCount,
+          offlineCount: presenceOverview.offlineCount,
+          onlineUsers: presenceOverview.onlineUsers,
         },
         assets: {
           total: totalAssets,
@@ -1435,6 +1450,25 @@ async function rejectKyc(req, res) {
   }
 }
 
+/**
+ * GET /api/admin/users/online
+ * Dedicated endpoint returning real-time list of active online users.
+ */
+async function getAdminOnlineUsers(req, res) {
+  try {
+    const realUsers = await buildMergedRealUsers(req);
+    const presenceOverview = presenceService.getPresenceOverview(realUsers);
+    return res.json({
+      success: true,
+      ...presenceOverview,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('getAdminOnlineUsers error:', err);
+    return sendError(res, 500, 'Failed to fetch online users.');
+  }
+}
+
 module.exports = {
   adminLogin,
   getAdminMe,
@@ -1448,6 +1482,7 @@ module.exports = {
   getAdminTickets,
   updateAdminTicket,
   getAdminUsers,
+  getAdminOnlineUsers,
   updateUserStatus,
   getAdminActivity,
   getAdminVerifications,

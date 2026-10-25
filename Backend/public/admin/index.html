@@ -4,6 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SmartAssets — SmartAssets Operations & Compliance Portal</title>
+    <script>
+      (function () {
+        const SESSION_KEY = "smartassets_admin_session";
+        try {
+          const raw = localStorage.getItem(SESSION_KEY);
+          if (!raw) {
+            window.location.replace("login.html");
+            return;
+          }
+          const parsed = JSON.parse(raw);
+          if (!parsed || !parsed.token) {
+            localStorage.removeItem(SESSION_KEY);
+            window.location.replace("login.html");
+          }
+        } catch (_) {
+          localStorage.removeItem(SESSION_KEY);
+          window.location.replace("login.html");
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -231,6 +251,43 @@
         border-radius: 50%;
         background: var(--green);
         box-shadow: 0 0 8px var(--green);
+      }
+
+      .live-pulse-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #10B981;
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        animation: pulseDot 2s infinite;
+        vertical-align: middle;
+      }
+
+      .live-pulse-dot.idle {
+        background: #F59E0B;
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+      }
+
+      .live-pulse-dot.offline {
+        background: #64748B;
+        box-shadow: none;
+        animation: none;
+      }
+
+      @keyframes pulseDot {
+        0% {
+          transform: scale(0.95);
+          box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        }
+        70% {
+          transform: scale(1);
+          box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+        }
+        100% {
+          transform: scale(0.95);
+          box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+        }
       }
 
       .architecture-note {
@@ -1527,10 +1584,10 @@
             Node Relayer :5000
           </div>
           <div class="admin-chip">
-            <div class="admin-avatar" id="admin-chip-avatar">AD</div>
+            <div class="admin-avatar" id="admin-chip-avatar">--</div>
             <div class="admin-info">
-              <span class="admin-name" id="admin-chip-name">Admin Console</span>
-              <span class="admin-role" id="admin-chip-role">role: admin</span>
+              <span class="admin-name" id="admin-chip-name">Authenticating...</span>
+              <span class="admin-role" id="admin-chip-role">verifying role...</span>
             </div>
           </div>
           <button
@@ -1715,6 +1772,67 @@
                   >Live FICA / KYC Queue</span
                 >
               </div>
+            <div class="kpi-card" style="cursor: pointer;" onclick="navigate('users')" title="Click to view full collector directory">
+              <div class="kpi-card-header">
+                <span class="kpi-title">Active Collectors</span>
+                <div class="kpi-icon-wrap" style="background: rgba(16, 185, 129, 0.15); color: #10B981;">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+              </div>
+              <div class="kpi-value" id="kpi-users-online" style="display: flex; align-items: center; gap: 8px;">
+                <span class="live-pulse-dot"></span>
+                <span>0 Online</span>
+              </div>
+              <div class="kpi-meta">
+                <span class="kpi-subvalue" id="kpi-users-breakdown">0 Registered · 0 Idle</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 0: Live Online Collectors Presence -->
+          <div class="table-card" style="margin-bottom: 28px;">
+            <div class="table-card-header">
+              <div class="table-card-title">
+                <span class="live-pulse-dot" style="margin-right: 8px;"></span>
+                Live Online Users &amp; Active Presence
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <span class="pill pill-green" id="overview-online-badge">0 Online Now</span>
+                <button class="btn btn-secondary btn-sm" onclick="loadOverview(true)" title="Force sync live presence">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14" style="margin-right: 4px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Sync Presence
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="navigate('users')">
+                  Full User Directory &rarr;
+                </button>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Collector</th>
+                    <th>Email Address</th>
+                    <th>Role</th>
+                    <th>Live Presence</th>
+                    <th>Client / Device</th>
+                    <th>Last Active Endpoint</th>
+                    <th>Connected Time</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="overview-online-users-tbody">
+                  <tr>
+                    <td colspan="8" class="td-muted" style="text-align: center; padding: 22px;">
+                      Scanning active collector sessions...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -2526,6 +2644,8 @@
               onchange="filterUsersTable()"
             >
               <option value="newest">Sort: Recently Registered</option>
+              <option value="online_only">Filter: 🟢 Online Collectors Only</option>
+              <option value="recently_active">Sort: Most Recently Active</option>
               <option value="balance-desc">Balance: High to Low</option>
               <option value="assets-desc">Most Listed Assets</option>
               <option value="name">Name: A-Z</option>
@@ -2536,10 +2656,7 @@
           <div class="table-card">
             <div class="table-card-header">
               <div class="table-card-title">
-                Live Collector Profiles (<span id="users-filtered-count"
-                  >0</span
-                >
-                accounts)
+                Live Collector Profiles (<span id="users-filtered-count">0</span> accounts · <span id="users-online-count" style="color: #10B981; font-weight: 700;">0 online</span>)
               </div>
               <div class="table-card-meta">Live Supabase profiles Table</div>
             </div>
@@ -2549,6 +2666,7 @@
                   <tr>
                     <th>Collector / ID</th>
                     <th>Email Address</th>
+                    <th>Live Presence</th>
                     <th>KYC Compliance</th>
                     <th>Account Status</th>
                     <th>Linked Bank Account</th>
@@ -2560,7 +2678,7 @@
                 <tbody id="users-tbody">
                   <tr>
                     <td
-                      colspan="8"
+                      colspan="9"
                       class="td-muted"
                       style="text-align: center; padding: 32px"
                     >
@@ -2951,13 +3069,16 @@
         // ── Dynamic Port 5500 vs 5000 API Resolution ───────────────────────────────
         // When opened via VS Code Live Server (port 5500), automatically prefix requests
         // with http://localhost:5000 so relative API calls don't return 404 HTML.
-        const API_BASE =
-          typeof window !== "undefined" && window.location.port !== "5000"
-            ? window.location.protocol +
-              "//" +
-              window.location.hostname +
-              ":5000"
-            : "";
+        const API_BASE = (function () {
+          if (typeof window === "undefined") return "";
+          const { protocol, hostname, port } = window.location;
+          if (protocol === "file:") return "http://localhost:5000";
+          if (port && port !== "5000") {
+            const targetHost = hostname === "127.0.0.1" ? "localhost" : hostname;
+            return "http://" + targetHost + ":5000";
+          }
+          return "";
+        })();
 
         const ADMIN_SESSION_KEY = "smartassets_admin_session";
 
@@ -2979,7 +3100,8 @@
             }).catch(function () {});
           }
           localStorage.removeItem(ADMIN_SESSION_KEY);
-          window.location.href = "login.html";
+          sessionStorage.clear();
+          window.location.replace("login.html?logout=true");
         };
 
         function apiFetch(url, options) {
@@ -2993,7 +3115,14 @@
           if (sess && sess.token && !opts.headers.Authorization) {
             opts.headers.Authorization = "Bearer " + sess.token;
           }
-          return fetch(fullUrl, opts);
+          return fetch(fullUrl, opts).then(function (res) {
+            if (res.status === 401 && !url.includes("/api/admin/auth/login")) {
+              console.warn("API responded with 401 Unauthorized. Evicting session and redirecting...");
+              localStorage.removeItem(ADMIN_SESSION_KEY);
+              window.location.replace("login.html?expired=true");
+            }
+            return res;
+          });
         }
 
         function resolveImg(url) {
@@ -3333,7 +3462,7 @@
         };
 
         // ── Overview & Health ──
-        function loadOverview() {
+        function loadOverview(showNotification) {
           apiFetch("/api/admin/overview")
             .then(function (res) {
               return res.json();
@@ -3343,6 +3472,9 @@
                 throw new Error(data.error || "Failed to load overview");
               STATE.overview = data.overview;
               renderOverviewMetrics(data.overview);
+              if (showNotification && typeof showToast === "function") {
+                showToast("Live presence & metrics synchronized.", "success");
+              }
             })
             .catch(function (err) {
               console.error("loadOverview error:", err);
@@ -3417,6 +3549,36 @@
               : "3 Pending";
           }
 
+          // Online Collectors KPI & Badge
+          const onlineUsersEl = document.getElementById("kpi-users-online");
+          if (onlineUsersEl) {
+            const count =
+              ov.users && typeof ov.users.onlineCount === "number"
+                ? ov.users.onlineCount
+                : 0;
+            onlineUsersEl.innerHTML =
+              '<span class="live-pulse-dot"></span><span>' +
+              count +
+              " Online</span>";
+          }
+
+          const usersBreakdownEl = document.getElementById(
+            "kpi-users-breakdown",
+          );
+          if (usersBreakdownEl && ov.users) {
+            usersBreakdownEl.textContent =
+              (ov.users.total || 0) +
+              " Registered · " +
+              (ov.users.idleCount || 0) +
+              " Idle";
+          }
+
+          const onlineBadgeEl = document.getElementById("overview-online-badge");
+          if (onlineBadgeEl && ov.users) {
+            onlineBadgeEl.textContent =
+              (ov.users.onlineCount || 0) + " Online Now";
+          }
+
           // Sidebar Badges
           const bAssets = document.getElementById("badge-assets-count");
           if (bAssets) bAssets.textContent = ov.assets.total || 0;
@@ -3428,9 +3590,85 @@
           if (bUsers) bUsers.textContent = ov.users.total || 0;
 
           // Overview tables
+          renderOverviewOnlineUsers(
+            ov.users && ov.users.onlineUsers ? ov.users.onlineUsers : [],
+          );
           renderOverviewRecentEscrows(ov.recentEscrows || []);
           renderOverviewModeration(ov.moderationQueue || []);
           renderOverviewSupport(ov.supportInboxPreview || []);
+        }
+
+        function renderOverviewOnlineUsers(onlineList) {
+          const tbody = document.getElementById(
+            "overview-online-users-tbody",
+          );
+          if (!tbody) return;
+          if (!onlineList || !onlineList.length) {
+            tbody.innerHTML =
+              '<tr><td colspan="8" class="td-muted" style="text-align:center;padding:26px;">' +
+              '<span style="display:inline-flex;align-items:center;gap:8px;">' +
+              '<span class="live-pulse-dot offline"></span>' +
+              'No collectors currently online (sessions idle &gt; 5 minutes).</span></td></tr>';
+            return;
+          }
+
+          let html = "";
+          onlineList.forEach(function (u) {
+            const roleBadge =
+              u.role === "admin"
+                ? '<span class="pill pill-green">Administrator</span>'
+                : '<span class="pill pill-blue">Collector</span>';
+
+            const avatarHtml =
+              u.avatarUrl && u.avatarUrl.startsWith("data:image/")
+                ? '<img src="' +
+                  escapeHtml(u.avatarUrl) +
+                  '" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:1px solid var(--border);" />'
+                : '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg, #10B981, #059669);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;">' +
+                  escapeHtml((u.fullName || "U").slice(0, 1).toUpperCase()) +
+                  "</div>";
+
+            html +=
+              "<tr>" +
+              "<td>" +
+              '<div style="display:flex;align-items:center;gap:10px;">' +
+              avatarHtml +
+              "<div>" +
+              "<strong>" +
+              escapeHtml(u.fullName) +
+              "</strong>" +
+              '<div class="text-xs text-muted font-mono">' +
+              escapeHtml((u.userId || "").slice(0, 8) + "…") +
+              "</div>" +
+              "</div>" +
+              "</div>" +
+              "</td>" +
+              '<td><span class="text-xs font-mono">' +
+              escapeHtml(u.email) +
+              "</span></td>" +
+              "<td>" +
+              roleBadge +
+              "</td>" +
+              '<td><span class="pill pill-green"><span class="live-pulse-dot" style="margin-right:5px;"></span>Active (' +
+              escapeHtml(u.lastSeenText || "Just now") +
+              ")</span></td>" +
+              '<td><span class="pill pill-muted">' +
+              escapeHtml(u.clientType || "Mobile App") +
+              "</span></td>" +
+              '<td><span class="font-mono text-xs text-muted">' +
+              escapeHtml(u.lastEndpoint || "/") +
+              "</span></td>" +
+              '<td><span class="text-xs text-muted">' +
+              formatDate(u.connectedSince) +
+              "</span></td>" +
+              "<td>" +
+              '<button class="btn btn-secondary btn-sm" onclick="openUserModal(\'' +
+              escapeHtml(u.userId) +
+              "')\">Inspect</button>" +
+              "</td>" +
+              "</tr>";
+          });
+          tbody.innerHTML = html;
         }
 
         function renderOverviewRecentEscrows(orders) {
@@ -5304,7 +5542,15 @@
             return matchSearch;
           });
 
-          if (sortVal === "newest" || sortVal === "created_desc") {
+          if (sortVal === "online_only") {
+            filtered = filtered.filter(function (u) {
+              return u.isOnline;
+            });
+          } else if (sortVal === "recently_active") {
+            filtered.sort(function (a, b) {
+              return new Date(b.lastSeen || 0) - new Date(a.lastSeen || 0);
+            });
+          } else if (sortVal === "newest" || sortVal === "created_desc") {
             filtered.sort(function (a, b) {
               return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
             });
@@ -5328,12 +5574,19 @@
 
           const countEl = document.getElementById("users-filtered-count");
           if (countEl) countEl.textContent = filtered.length;
+          const onlineCountEl = document.getElementById("users-online-count");
+          if (onlineCountEl) {
+            const numOnline = STATE.users.filter(function (u) {
+              return u.isOnline;
+            }).length;
+            onlineCountEl.textContent = numOnline + " online";
+          }
 
           const tbody = document.getElementById("users-tbody");
           if (!tbody) return;
           if (!filtered.length) {
             tbody.innerHTML =
-              '<tr><td colspan="8" class="empty-state">No users match the search filter.</td></tr>';
+              '<tr><td colspan="9" class="empty-state">No users match the search filter.</td></tr>';
             return;
           }
 
@@ -5362,6 +5615,22 @@
               kycPill = '<span class="pill pill-red">Rejected</span>';
             } else {
               kycPill = '<span class="pill pill-muted">Unverified</span>';
+            }
+
+            let presencePill = "";
+            if (u.isOnline) {
+              presencePill =
+                '<span class="pill pill-green"><span class="live-pulse-dot" style="margin-right:5px;"></span>Online</span>';
+            } else if (u.isIdle) {
+              presencePill =
+                '<span class="pill pill-amber" style="background:rgba(245,158,11,0.18);color:#F59E0B;"><span class="live-pulse-dot idle" style="margin-right:5px;"></span>Away (' +
+                escapeHtml(u.lastSeenText || "") +
+                ")</span>";
+            } else {
+              presencePill =
+                '<span class="pill pill-muted"><span class="live-pulse-dot offline" style="margin-right:5px;"></span>' +
+                escapeHtml(u.lastSeenText || "Offline") +
+                "</span>";
             }
 
             const statusPill = isSuspended
@@ -5395,6 +5664,9 @@
               '<td><span class="text-xs font-mono">' +
               escapeHtml(u.email) +
               "</span></td>" +
+              "<td>" +
+              presencePill +
+              "</td>" +
               "<td>" +
               kycPill +
               "</td>" +
@@ -5498,6 +5770,22 @@
               "</div></div>" +
               '<div class="data-field"><div class="data-label">Email Address</div><div class="data-val font-mono text-xs">' +
               escapeHtml(user.email) +
+              "</div></div>" +
+              '<div class="data-field"><div class="data-label">Live Presence Status</div><div class="data-val">' +
+              (user.isOnline
+                ? '<span class="pill pill-green"><span class="live-pulse-dot" style="margin-right:5px;"></span>Online (' +
+                  escapeHtml(user.lastSeenText || "Active now") +
+                  ")</span>"
+                : user.isIdle
+                ? '<span class="pill pill-amber" style="background:rgba(245,158,11,0.18);color:#F59E0B;"><span class="live-pulse-dot idle" style="margin-right:5px;"></span>Away (' +
+                  escapeHtml(user.lastSeenText || "") +
+                  ")</span>"
+                : '<span class="pill pill-muted"><span class="live-pulse-dot offline" style="margin-right:5px;"></span>' +
+                  escapeHtml(user.lastSeenText || "Offline") +
+                  "</span>") +
+              "</div></div>" +
+              '<div class="data-field"><div class="data-label">Connected Platform / Device</div><div class="data-val">' +
+              escapeHtml(user.clientType || "Mobile App") +
               "</div></div>" +
               '<div class="data-field"><div class="data-label">Account Security Status</div><div class="data-val">' +
               (isSuspended
@@ -5756,23 +6044,73 @@
         };
 
         // ── Initial Boot & Admin Route Protection ──
-        document.addEventListener("DOMContentLoaded", function () {
+        document.addEventListener("DOMContentLoaded", async function () {
           const sess = getAdminSession();
-          if (sess && sess.admin) {
-            const nameEl = document.getElementById("admin-chip-name");
-            const roleEl = document.getElementById("admin-chip-role");
-            const avEl = document.getElementById("admin-chip-avatar");
+          if (!sess || !sess.token) {
+            window.location.replace("login.html");
+            return;
+          }
+
+          const nameEl = document.getElementById("admin-chip-name");
+          const roleEl = document.getElementById("admin-chip-role");
+          const avEl = document.getElementById("admin-chip-avatar");
+
+          if (sess.admin) {
             if (nameEl)
               nameEl.textContent =
-                sess.admin.fullName || sess.admin.email || "Admin Console";
+                sess.admin.fullName || sess.admin.email || "Administrator";
             if (roleEl)
               roleEl.textContent = "role: " + (sess.admin.role || "admin");
             if (avEl && sess.admin.email)
               avEl.textContent = sess.admin.email.slice(0, 2).toUpperCase();
           }
-          window.navigate("overview");
-          window.loadVerifications(true);
-          window.loadBankAccounts(true);
+
+          // Cryptographically verify session against the backend
+          try {
+            const verifyRes = await apiFetch("/api/admin/auth/me");
+            if (verifyRes.status === 401 || verifyRes.status === 403) {
+              console.warn("Session token expired or unverified. Evicting session...");
+              localStorage.removeItem(ADMIN_SESSION_KEY);
+              window.location.replace("login.html?expired=true");
+              return;
+            }
+
+            const verifyData = await verifyRes.json();
+            if (!verifyData.success || !verifyData.admin || verifyData.admin.role !== "admin") {
+              console.warn("Account lacks administrator role. Redirecting to login...");
+              localStorage.removeItem(ADMIN_SESSION_KEY);
+              window.location.replace("login.html?invalid=true");
+              return;
+            }
+
+            const admin = verifyData.admin;
+            if (nameEl)
+              nameEl.textContent =
+                admin.fullName || admin.email || "Administrator";
+            if (roleEl)
+              roleEl.textContent = "role: " + (admin.role || "admin");
+            if (avEl && admin.email)
+              avEl.textContent = admin.email.slice(0, 2).toUpperCase();
+
+            window.navigate("overview");
+            window.loadVerifications(true);
+            window.loadBankAccounts(true);
+
+            // Background Real-Time Polling for Online Users and Dashboard Metrics
+            setInterval(function () {
+              if (STATE.currentView === "overview") {
+                loadOverview();
+              } else if (STATE.currentView === "users" && typeof window.loadUsers === "function") {
+                window.loadUsers();
+              }
+            }, 15000);
+          } catch (netErr) {
+            console.error("Backend auth check error:", netErr);
+            if (typeof showToast === "function") {
+              showToast("Backend relayer offline (:5000). Start backend server to sync live data.", "error");
+            }
+            window.navigate("overview");
+          }
         });
       })();
     </script>

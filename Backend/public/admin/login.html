@@ -240,6 +240,21 @@
 
     <div id="login-alert" class="alert-box"></div>
 
+    <div id="active-session-banner" class="alert-box success" style="display: none; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); padding: 14px; border-radius: 12px; margin-bottom: 20px;">
+      <div style="font-weight: 700; color: #6EE7B7; margin-bottom: 4px;">Active Admin Session Detected</div>
+      <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;">
+        Currently authenticated as <strong id="active-admin-name" style="color: #F8FAFC;"></strong>.
+      </div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <a href="index.html" class="btn-quick" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; background: #10B981; color: #070B14; font-weight: 700; border: none; padding: 7px 14px; border-radius: 8px;">
+          Go to Operations Portal &rarr;
+        </a>
+        <button type="button" class="btn-quick" id="btn-switch-account" style="background: rgba(255, 255, 255, 0.08); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px;">
+          Sign In as Different Admin
+        </button>
+      </div>
+    </div>
+
     <form id="admin-login-form">
       <div class="form-group">
         <label class="form-label" for="admin-email">Admin Email Address</label>
@@ -296,31 +311,61 @@
 
     const SESSION_KEY = 'smartassets_admin_session';
 
-    // If already logged in with a valid admin session, verify and redirect
+    const alertBox = document.getElementById('login-alert');
+    function showAlert(msg, type = 'error') {
+      alertBox.textContent = msg;
+      alertBox.className = `alert-box ${type}`;
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('logout')) {
+      localStorage.removeItem(SESSION_KEY);
+      showAlert('Signed out of Administrator Console successfully.', 'success');
+    } else if (urlParams.has('expired')) {
+      localStorage.removeItem(SESSION_KEY);
+      showAlert('Administrator session has expired or is invalid. Please sign in.', 'error');
+    } else if (urlParams.has('invalid')) {
+      localStorage.removeItem(SESSION_KEY);
+      showAlert('Access denied: Account role is not admin.', 'error');
+    } else if (urlParams.has('switch')) {
+      localStorage.removeItem(SESSION_KEY);
+    }
+
+    document.getElementById('btn-switch-account')?.addEventListener('click', () => {
+      localStorage.removeItem(SESSION_KEY);
+      const banner = document.getElementById('active-session-banner');
+      if (banner) banner.style.display = 'none';
+      showAlert('Session cleared. Sign in with your admin credentials.', 'success');
+    });
+
+    // If already logged in with a valid admin session, verify and offer option to proceed or switch
     (async function checkExistingSession() {
+      if (urlParams.has('logout') || urlParams.has('expired') || urlParams.has('switch')) return;
       try {
         const raw = localStorage.getItem(SESSION_KEY);
         if (!raw) return;
         const parsed = JSON.parse(raw);
-        if (!parsed || !parsed.token) return;
+        if (!parsed || !parsed.token) {
+          localStorage.removeItem(SESSION_KEY);
+          return;
+        }
 
         const res = await fetch(`${API_BASE_URL}/api/admin/auth/me`, {
           headers: { Authorization: `Bearer ${parsed.token}` },
         });
         const data = await res.json();
         if (res.ok && data.success && data.admin?.role === 'admin') {
-          window.location.href = 'index.html';
+          const banner = document.getElementById('active-session-banner');
+          const nameSpan = document.getElementById('active-admin-name');
+          if (banner && nameSpan) {
+            nameSpan.textContent = data.admin.fullName || data.admin.email || 'Administrator';
+            banner.style.display = 'block';
+          }
         } else {
           localStorage.removeItem(SESSION_KEY);
         }
       } catch (_) {}
     })();
-
-    const alertBox = document.getElementById('login-alert');
-    function showAlert(msg, type = 'error') {
-      alertBox.textContent = msg;
-      alertBox.className = `alert-box ${type}`;
-    }
 
     document.getElementById('fill-demo-admin').addEventListener('click', () => {
       document.getElementById('admin-email').value = 'admin@smartassets.io';

@@ -8,6 +8,7 @@ const { sendError } = require('../utils/errorHandler');
 const avatarService = require('../services/avatarService');
 const complianceService = require('../services/complianceService');
 const auditLogService = require('../services/auditLogService');
+const presenceService = require('../services/presenceService');
 const { revokeToken } = require('../middlewares/authMiddleware');
 const {
   createNonceChallenge,
@@ -221,6 +222,16 @@ async function login(req, res) {
     } catch (profileFetchErr) {
       console.warn('Profile fetch warning (using metadata):', profileFetchErr.message);
     }
+
+    try {
+      presenceService.recordActivity(data.user.id, {
+        email: data.user.email,
+        fullName,
+        ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+        userAgent: req.headers['user-agent'],
+        endpoint: '/api/auth/login',
+      });
+    } catch (_) {}
 
     return res.status(200).json({
       success: true,
@@ -715,6 +726,12 @@ async function logout(req, res) {
     const email = req.user?.email || req.body?.email || 'collector@smartassets.io';
     const userId = req.user?.id || req.body?.userId || 'system';
 
+    if (userId && userId !== 'system') {
+      try {
+        presenceService.setUserOffline(userId, 'logout');
+      } catch (_) {}
+    }
+
     auditLogService.logEvent({
       eventType: 'LOGOUT',
       category: 'Authentication',
@@ -752,6 +769,12 @@ async function sessionTimeout(req, res) {
 
     const email = req.body?.email || req.user?.email || 'collector@smartassets.io';
     const userId = req.body?.userId || req.user?.id || 'system';
+
+    if (userId && userId !== 'system') {
+      try {
+        presenceService.setUserOffline(userId, 'inactivity_timeout');
+      } catch (_) {}
+    }
 
     auditLogService.logEvent({
       eventType: 'SESSION_TIMEOUT',

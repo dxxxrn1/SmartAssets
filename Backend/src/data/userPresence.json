@@ -1,0 +1,30 @@
+[
+  {
+    "userId": "2b3e8ac1-b5ac-474e-8cb4-269692fb5626",
+    "email": "pngforster@gmail.com",
+    "fullName": "SmartAssets Administrator",
+    "role": "admin",
+    "lastSeen": "2026-10-25T20:54:59.489Z",
+    "lastTimestamp": 1792961699489,
+    "status": "online",
+    "ip": "127.0.0.1",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+    "clientType": "Admin Console",
+    "lastEndpoint": "/api/admin/auth/me",
+    "connectedSince": "2026-10-25T20:47:38.002Z"
+  },
+  {
+    "userId": "a31c0642-e809-4690-bb29-c6ed4036c8cd",
+    "email": "darrenforster3@gmail.com",
+    "fullName": "Darren",
+    "role": "authenticated",
+    "lastSeen": "2026-10-25T20:48:31.630Z",
+    "lastTimestamp": 1792961311630,
+    "status": "online",
+    "ip": "10.250.193.0",
+    "device": "okhttp/4.12.0",
+    "clientType": "Mobile App",
+    "lastEndpoint": "/api/user/vault",
+    "connectedSince": "2026-10-25T20:48:18.631Z"
+  }
+]

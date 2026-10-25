@@ -62,8 +62,14 @@ async function adminGatekeeper(req, res, next) {
         role: 'admin',
       };
       req.user = user;
+      return next();
     }
-    return next();
+
+    return res.status(401).json({
+      success: false,
+      code: 'ADMIN_AUTH_REQUIRED',
+      error: 'Access denied. Administrator authentication token is required.',
+    });
   } catch (err) {
     console.error('adminGatekeeper error:', err);
     return res.status(500).json({ success: false, error: 'Admin authorization check failed.' });
@@ -96,6 +102,7 @@ router.get('/tickets', adminController.getAdminTickets);
 router.patch('/tickets/:id', adminController.updateAdminTicket);
 
 // User Directory & Profile Operations
+router.get('/users/online', adminController.getAdminOnlineUsers);
 router.get('/users', adminController.getAdminUsers);
 router.patch('/users/:id/status', adminController.updateUserStatus);
 router.post('/users/:id/suspend', adminController.updateUserStatus);

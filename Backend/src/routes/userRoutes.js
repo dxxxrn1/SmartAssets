@@ -61,4 +61,8 @@ router.get('/bank-accounts', getBankAccount);
 router.post('/support', lodgeSupport);
 router.get('/support', getSupportTickets);
 
+// Presence & Inactivity Heartbeat (automatically records online presence in requireAuth)
+router.get('/heartbeat', (req, res) => res.json({ success: true, online: true, serverTime: new Date().toISOString() }));
+router.post('/heartbeat', (req, res) => res.json({ success: true, online: true, serverTime: new Date().toISOString() }));
+
 module.exports = router;

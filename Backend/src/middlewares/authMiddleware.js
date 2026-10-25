@@ -7,6 +7,7 @@
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const complianceService = require('../services/complianceService');
+const presenceService = require('../services/presenceService');
 
 // In-memory revoked token set (stores token hash -> expiration timestamp)
 const revokedTokens = new Map();
@@ -124,6 +125,18 @@ async function requireAuth(req, res, next) {
     req.user = user;
     req.compliance = compliance;
     req.token = token;
+
+    try {
+      presenceService.recordActivity(user.id, {
+        email: user.email,
+        fullName: user.user_metadata?.full_name || user.user_metadata?.name || '',
+        role: user.role || 'user',
+        ip: req.ip || req.connection?.remoteAddress,
+        userAgent: req.headers['user-agent'],
+        endpoint: req.originalUrl,
+      });
+    } catch (_) {}
+
     next();
   } catch (err) {
     console.error('Auth middleware error:', err);
@@ -398,6 +411,17 @@ async function requireAdmin(req, res, next) {
         role: 'admin',
       };
       req.user = req.admin;
+      try {
+        presenceService.recordActivity(req.admin.id, {
+          email: req.admin.email,
+          fullName: req.admin.fullName,
+          role: 'admin',
+          ip: req.ip || req.connection?.remoteAddress,
+          userAgent: req.headers['user-agent'],
+          clientType: 'Admin Console',
+          endpoint: req.originalUrl,
+        });
+      } catch (_) {}
       return next();
     }
 
@@ -427,6 +451,17 @@ async function requireAdmin(req, res, next) {
       role: 'admin',
     };
     req.user = user;
+    try {
+      presenceService.recordActivity(req.admin.id, {
+        email: req.admin.email,
+        fullName: req.admin.fullName,
+        role: 'admin',
+        ip: req.ip || req.connection?.remoteAddress,
+        userAgent: req.headers['user-agent'],
+        clientType: 'Admin Console',
+        endpoint: req.originalUrl,
+      });
+    } catch (_) {}
     return next();
   } catch (err) {
     console.error('requireAdmin middleware error:', err);
