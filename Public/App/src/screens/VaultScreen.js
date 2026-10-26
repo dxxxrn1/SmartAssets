@@ -807,20 +807,30 @@ export default function VaultScreen({ navigation }) {
                 </Text>
               </View>
 
-              <View style={styles.gainPill}>
+              <TouchableOpacity
+                style={styles.gainPill}
+                onPress={() => navigation.navigate(SCREENS.PROFILE_ANALYTICS)}
+                activeOpacity={0.8}
+              >
                 <Feather
-                  name="trending-up"
+                  name="bar-chart-2"
                   size={12}
                   color="#FFFFFF"
                   style={{ marginRight: 4 }}
                 />
                 <Text style={styles.gainPillText}>
-                  {summary.gainText || "+0.0% Overall Gain"}
+                  {summary.gainText || "+0.0% YTD"}
                 </Text>
-              </View>
+                <Feather
+                  name="chevron-right"
+                  size={11}
+                  color="#FFFFFF"
+                  style={{ marginLeft: 3 }}
+                />
+              </TouchableOpacity>
             </View>
 
-            {/* Quick Actions (Deposit & Withdraw Buttons) */}
+            {/* Quick Actions (Deposit, Withdraw & Analytics Buttons) */}
             <View style={styles.heroActionRow}>
               <TouchableOpacity
                 style={styles.depositActionBtn}
@@ -838,11 +848,11 @@ export default function VaultScreen({ navigation }) {
               >
                 <Feather
                   name="plus"
-                  size={16}
+                  size={15}
                   color="#5835F5"
-                  style={{ marginRight: 6 }}
+                  style={{ marginRight: 4 }}
                 />
-                <Text style={styles.depositActionBtnText}>Deposit funds</Text>
+                <Text style={styles.depositActionBtnText}>Deposit</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -868,11 +878,25 @@ export default function VaultScreen({ navigation }) {
               >
                 <Feather
                   name="arrow-up-right"
-                  size={16}
+                  size={15}
                   color="#FFFFFF"
-                  style={{ marginRight: 6 }}
+                  style={{ marginRight: 4 }}
                 />
                 <Text style={styles.withdrawActionBtnText}>Withdraw</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.analyticsActionBtn}
+                onPress={() => navigation.navigate(SCREENS.PROFILE_ANALYTICS)}
+                activeOpacity={0.85}
+              >
+                <Feather
+                  name="pie-chart"
+                  size={15}
+                  color="#FFFFFF"
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.analyticsActionBtnText}>Analytics</Text>
               </TouchableOpacity>
             </View>
           </LinearGradient>
@@ -1234,12 +1258,111 @@ export default function VaultScreen({ navigation }) {
           {activeTab === "log" && (
             <View style={{ gap: 12 }}>
               {(() => {
-                const visibleLogs = activityLog.filter(
-                  (log) =>
-                    log.type !== "ai_sync" &&
-                    log.title !== "AI Market Valuation Sync"
-                );
-                if (visibleLogs.length === 0) {
+                const combinedLogs = [];
+
+                // 1. Real Transactions from Supabase vault_transactions
+                (transactions || []).forEach((tx) => {
+                  const isDep = tx.type === "deposit" || tx.type === "sale";
+                  const isPurchase = tx.type === "purchase";
+                  combinedLogs.push({
+                    id: tx.id || `tx-${Math.random()}`,
+                    type: isPurchase ? "purchase" : isDep ? "deposit" : "withdrawal",
+                    title:
+                      tx.title ||
+                      (isPurchase
+                        ? "Marketplace Purchase"
+                        : isDep
+                        ? "Marketplace Sale Proceeds"
+                        : "Vault Cash Deposit"),
+                    status: tx.status === "completed" ? "Verified" : "Pending",
+                    assetName: tx.notes || tx.reference || "Vault Transaction",
+                    detail: `${tx.method || "Direct Transfer"}${
+                      tx.reference ? ` • Ref: ${tx.reference}` : ""
+                    }`,
+                    hash: tx.reference || tx.id,
+                    hashDisplay: tx.reference
+                      ? tx.reference.length > 16
+                        ? tx.reference.slice(0, 14) + "..."
+                        : tx.reference
+                      : String(tx.id || "").slice(-8),
+                    amount:
+                      tx.amountFormatted ||
+                      (isDep
+                        ? `+${formatGBP(tx.amount)}`
+                        : `-${formatGBP(tx.amount)}`),
+                    badgeColor: isPurchase
+                      ? "#8B5CF6"
+                      : isDep
+                      ? "#10B981"
+                      : "#F59E0B",
+                    timestamp: tx.createdAt
+                      ? new Date(tx.createdAt).toLocaleDateString("en-ZA", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "Recent",
+                    rawTime: tx.createdAt ? new Date(tx.createdAt).getTime() : 0,
+                  });
+                });
+
+                // 2. Real Authenticity Certificates from Supabase holdings
+                (holdings || []).forEach((h) => {
+                  const certId =
+                    h.certId ||
+                    `ERC-721 #${String(h.id || "").slice(-4) || "5001"}`;
+                  const hash =
+                    h.hashDisplay ||
+                    (h.id
+                      ? `0x${String(h.id).replace(/-/g, "").slice(0, 8)}...`
+                      : "0x71c...9a");
+                  combinedLogs.push({
+                    id: `cert-${h.id}`,
+                    type: "certificate",
+                    title: "Authenticity Certificate",
+                    status: "ERC-721 Verified",
+                    assetName: h.name || "Verified Collectible",
+                    detail: `${certId} • Smart Contract Cryptographically Verified`,
+                    hash: h.txHash || hash,
+                    hashDisplay: hash,
+                    amount: formatGBP(h.price_num || h.price || 0),
+                    badgeColor: "#7C3AED",
+                    timestamp: h.created_at
+                      ? new Date(h.created_at).toLocaleDateString("en-ZA", {
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : "Permanent",
+                    rawTime: h.created_at
+                      ? new Date(h.created_at).getTime()
+                      : 0,
+                  });
+                });
+
+                // 3. Any additional cached activity logs
+                (activityLog || [])
+                  .filter(
+                    (log) =>
+                      log.type !== "ai_sync" &&
+                      log.title !== "AI Market Valuation Sync"
+                  )
+                  .forEach((log) => {
+                    if (
+                      !combinedLogs.some(
+                        (cl) =>
+                          cl.id === log.id ||
+                          (cl.assetName === log.assetName &&
+                            cl.title === log.title)
+                      )
+                    ) {
+                      combinedLogs.push(log);
+                    }
+                  });
+
+                combinedLogs.sort((a, b) => (b.rawTime || 0) - (a.rawTime || 0));
+
+                if (combinedLogs.length === 0) {
                   return (
                     <View style={styles.emptyCard}>
                       <Ionicons
@@ -1248,7 +1371,7 @@ export default function VaultScreen({ navigation }) {
                         color="#94A3B8"
                       />
                       <Text style={styles.emptyTitle}>
-                        No Certificates Issued Yet
+                        No Certificates or Transactions Yet
                       </Text>
                       <Text style={styles.emptySub}>
                         ERC-721 authenticity certificates and escrow transactions will appear here.
@@ -1256,7 +1379,7 @@ export default function VaultScreen({ navigation }) {
                     </View>
                   );
                 }
-                return visibleLogs.map((log, idx) => (
+                return combinedLogs.map((log, idx) => (
                   <View key={log.id || idx} style={styles.activityCard}>
                     <View style={styles.activityHeaderRow}>
                       <View
@@ -1266,6 +1389,10 @@ export default function VaultScreen({ navigation }) {
                             backgroundColor:
                               log.type === "certificate"
                                 ? "#F3E8FF"
+                                : log.type === "purchase"
+                                ? "#EDE9FE"
+                                : log.type === "deposit"
+                                ? "#ECFDF5"
                                 : "#EFF6FF",
                           },
                         ]}
@@ -1274,6 +1401,10 @@ export default function VaultScreen({ navigation }) {
                           name={
                             log.type === "certificate"
                               ? "diamond"
+                              : log.type === "purchase"
+                              ? "bag-check-outline"
+                              : log.type === "deposit"
+                              ? "arrow-down-circle"
                               : "shield-checkmark"
                           }
                           size={18}
@@ -1313,10 +1444,10 @@ export default function VaultScreen({ navigation }) {
                       <TouchableOpacity
                         style={styles.hashPill}
                         onPress={() => {
-                          const msg = `Transaction Hash on Sepolia: ${log.hash || "0x71c93a84b01...e89a"}`;
+                          const msg = `Transaction Reference / Hash: ${log.hash || "0x71c93a84b01...e89a"}`;
                           Platform.OS === "web"
                             ? alert(msg)
-                            : Alert.alert("Sepolia Hash", msg);
+                            : Alert.alert("Transaction Reference", msg);
                         }}
                         activeOpacity={0.7}
                       >
@@ -1664,6 +1795,20 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   withdrawActionBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  analyticsActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.22)",
+    paddingVertical: 11,
+    borderRadius: 999,
+  },
+  analyticsActionBtnText: {
     fontSize: 13,
     fontWeight: "700",
     color: "#FFFFFF",

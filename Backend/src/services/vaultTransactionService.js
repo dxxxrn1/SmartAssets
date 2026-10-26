@@ -24,6 +24,47 @@ function isUuid(id) {
 }
 
 /**
+ * Maps a Supabase vault_transactions DB row to a standardized transaction object.
+ */
+function mapDbRowToTx(row) {
+  const isDep = row.type === 'deposit' || row.type === 'sale';
+  const isPurchase = row.type === 'purchase';
+  let title = 'Vault Transaction';
+  if (row.type === 'deposit') {
+    title = (row.method && String(row.method).toLowerCase().includes('sale')) ||
+            (row.notes && String(row.notes).toLowerCase().includes('proceeds'))
+      ? 'Marketplace Sale Proceeds'
+      : 'Vault Cash Deposit';
+  } else if (row.type === 'withdraw') {
+    title = 'Vault Cash Withdrawal';
+  } else if (isPurchase) {
+    title = 'Marketplace Purchase';
+  } else if (row.type === 'sale') {
+    title = 'Marketplace Sale Proceeds';
+  }
+
+  const amt = Number(row.amount) || 0;
+  const formatted =
+    row.amount_formatted ||
+    (isDep ? `+${formatZar(amt)}` : `-${formatZar(amt)}`);
+
+  return {
+    id: row.id,
+    userId: row.user_id,
+    type: row.type || 'deposit',
+    title,
+    amount: amt,
+    amountFormatted: formatted,
+    method: row.method || 'Bank EFT',
+    reference: row.reference || null,
+    notes: row.notes || null,
+    status: row.status || 'completed',
+    positive: isDep,
+    createdAt: row.created_at || new Date().toISOString(),
+  };
+}
+
+/**
  * Hydrate transactionsMap from Supabase vault_transactions table.
  */
 async function hydrateTransactionsFromSupabase() {
@@ -37,25 +78,7 @@ async function hydrateTransactionsFromSupabase() {
     if (!error && Array.isArray(data)) {
       data.forEach((row) => {
         if (!row || !row.id) return;
-        if (!transactionsMap.has(row.id)) {
-          const isDep = row.type === 'deposit';
-          transactionsMap.set(row.id, {
-            id: row.id,
-            userId: row.user_id,
-            type: row.type || 'deposit',
-            title: isDep ? 'Vault Cash Deposit' : 'Vault Cash Withdrawal',
-            amount: Number(row.amount) || 0,
-            amountFormatted:
-              row.amount_formatted ||
-              (isDep ? `+${formatZar(row.amount)}` : `-${formatZar(row.amount)}`),
-            method: row.method || 'Bank EFT',
-            reference: row.reference || null,
-            notes: row.notes || null,
-            status: row.status || 'completed',
-            positive: isDep,
-            createdAt: row.created_at || new Date().toISOString(),
-          });
-        }
+        transactionsMap.set(row.id, mapDbRowToTx(row));
       });
       hydrated = true;
     }
@@ -289,7 +312,96 @@ async function withdrawFunds({ userId, amount, method = 'bank', bankDetails = nu
 }
 
 /**
- * Get all transactions for a user.
+ * Records a generic transaction (such as a marketplace purchase or sale)
+ * into Supabase vault_transactions table and updates in-memory state.
+ */
+async function recordTransaction({
+  id = null,
+  userId,
+  type = 'purchase',
+  amount,
+  amountFormatted = null,
+  method = 'Instant EFT / Card',
+  reference = null,
+  notes = null,
+  status = 'completed',
+  createdAt = null,
+}) {
+  const numAmount = Number(amount) || 0;
+  const now = createdAt || new Date().toISOString();
+  const txId = id || `TXN-${type.toUpperCase().slice(0, 3)}-${Math.floor(100000 + Math.random() * 900000)}`;
+  const isPositive = type === 'deposit' || type === 'sale';
+  const formatted =
+    amountFormatted ||
+    (isPositive ? `+${formatZar(numAmount)}` : `-${formatZar(numAmount)}`);
+
+  const txRecord = mapDbRowToTx({
+    id: txId,
+    user_id: userId,
+    type,
+    amount: numAmount,
+    amount_formatted: formatted,
+    method,
+    reference,
+    notes,
+    status,
+    created_at: now,
+  });
+
+  transactionsMap.set(txId, txRecord);
+
+  if (isUuid(userId)) {
+    try {
+      await supabase.from('vault_transactions').upsert(
+        {
+          id: txId,
+          user_id: userId,
+          type,
+          amount: numAmount,
+          amount_formatted: formatted,
+          method,
+          reference,
+          notes,
+          status,
+          created_at: now,
+        },
+        { onConflict: 'id' }
+      );
+    } catch (err) {
+      console.warn('⚠️ [VaultTxService] DB recordTransaction error:', err.message);
+    }
+  }
+
+  return txRecord;
+}
+
+/**
+ * Fetch fresh transactions for a specific user authoritatively from Supabase.
+ */
+async function fetchUserTransactions(userId) {
+  if (!userId) return [];
+  if (isUuid(userId)) {
+    try {
+      const { data, error } = await supabase
+        .from('vault_transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        data.forEach((row) => {
+          if (!row || !row.id) return;
+          transactionsMap.set(row.id, mapDbRowToTx(row));
+        });
+      }
+    } catch (_) {}
+  }
+
+  return getUserTransactions(userId);
+}
+
+/**
+ * Get all transactions for a user from in-memory cache (synchronous).
  */
 function getUserTransactions(userId) {
   if (!userId) return [];
@@ -321,6 +433,8 @@ module.exports = {
   getUserBalance,
   depositFunds,
   withdrawFunds,
+  recordTransaction,
+  fetchUserTransactions,
   getUserTransactions,
   getAllTransactions,
   hydrateTransactionsFromSupabase,

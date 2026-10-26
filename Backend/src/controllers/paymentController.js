@@ -388,19 +388,60 @@ async function processPayment(req, res) {
     const transactionId = verifiedTxHash || verifiedPaymentIntentId || orderId;
 
     try {
-      // 5A. Insert holding in buyer's personal vault
-      await supabase.from('user_holdings').insert({
-        user_id: userId,
-        name: holdingName,
-        category: assetCategory,
-        price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
-        price_num: actualPriceZar,
-        image: assetImage,
-        asset_type: holdingType,
-        gain: '+0.0%',
-        gain_pct: '0%',
-        positive: true,
-      });
+      // 5A. Insert or transfer holding into buyer's personal vault, removing it from seller's vault
+      if (!isFractional && sellerId && sellerId !== userId) {
+        const { data: existingSellerHoldings } = await supabase
+          .from('user_holdings')
+          .select('*')
+          .eq('user_id', sellerId)
+          .ilike('name', assetName)
+          .limit(1);
+
+        if (existingSellerHoldings && existingSellerHoldings.length > 0) {
+          // Reassign existing holding so NFT certificate metadata, token ID, and hashes transfer to the buyer
+          await supabase
+            .from('user_holdings')
+            .update({
+              user_id: userId,
+              price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+              price_num: actualPriceZar,
+            })
+            .eq('id', existingSellerHoldings[0].id);
+        } else {
+          await supabase.from('user_holdings').insert({
+            user_id: userId,
+            name: holdingName,
+            category: assetCategory,
+            price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+            price_num: actualPriceZar,
+            image: assetImage,
+            asset_type: holdingType,
+            gain: '+0.0%',
+            gain_pct: '0%',
+            positive: true,
+          });
+        }
+
+        // Guarantee that no duplicate or legacy holdings for this item remain in seller's vault
+        await supabase
+          .from('user_holdings')
+          .delete()
+          .eq('user_id', sellerId)
+          .ilike('name', assetName);
+      } else {
+        await supabase.from('user_holdings').insert({
+          user_id: userId,
+          name: holdingName,
+          category: assetCategory,
+          price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+          price_num: actualPriceZar,
+          image: assetImage,
+          asset_type: holdingType,
+          gain: '+0.0%',
+          gain_pct: '0%',
+          positive: true,
+        });
+      }
 
       if (isFractional && asset?.id) {
         // 5B. Fractional Investment Path: Record durable investor position
@@ -544,6 +585,26 @@ async function processPayment(req, res) {
           });
         }
       }
+
+      // 5D. Record Purchase Transaction in Buyer's Vault Ledger
+      try {
+        await vaultTransactionService.recordTransaction({
+          id: `TXN-PUR-${orderId}`,
+          userId,
+          type: 'purchase',
+          amount: actualPriceZar,
+          amountFormatted: `-${vaultTransactionService.formatZar(actualPriceZar)}`,
+          method: paymentRailName,
+          reference: orderId,
+          notes: isFractional
+            ? `Purchased ${sharesToBuy} fractional shares in "${assetName}"`
+            : `Purchased "${assetName}" (100% Outright Ownership)`,
+          status: 'completed',
+          createdAt: new Date().toISOString(),
+        });
+      } catch (txErr) {
+        console.warn('⚠️ [Payment] Buyer purchase transaction log warning:', txErr.message);
+      }
     } catch (mutationErr) {
       console.warn('⚠️ [Payment] Holding/Inventory update warning:', mutationErr.message);
     }
@@ -575,7 +636,8 @@ async function processPayment(req, res) {
       },
       escrowOrder,
     });
-  } catch (err) {
+  }
+  catch (err) {
     console.error('processPayment error:', err);
     return sendError(res, 500, err.message || 'Internal server error processing payment.');
   }

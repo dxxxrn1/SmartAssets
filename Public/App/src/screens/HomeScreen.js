@@ -22,7 +22,11 @@ import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
-import { getUserVault, getMarketAssets, resolveImageUrl } from "../services/api";
+import {
+  getUserVault,
+  getMarketAssets,
+  resolveImageUrl,
+} from "../services/api";
 import { SCREENS } from "../constants/navigation";
 import storage, { STORAGE_KEYS } from "../utils/storage";
 
@@ -49,28 +53,32 @@ const CATEGORY_CARDS = [
     name: "Watches",
     categoryKey: "Watches",
     dotColor: "#38BDF8", // Cyan dot
-    image: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=600&fit=crop&q=80",
+    image:
+      "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=600&fit=crop&q=80",
   },
   {
     id: "art",
     name: "Fine Art",
     categoryKey: "Art",
     dotColor: "#A855F7", // Purple dot
-    image: "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=600&fit=crop&q=80",
+    image:
+      "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=600&fit=crop&q=80",
   },
   {
     id: "cars",
     name: "Classic Cars",
     categoryKey: "Cars",
     dotColor: "#FB923C", // Orange dot
-    image: "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=600&fit=crop&q=80",
+    image:
+      "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=600&fit=crop&q=80",
   },
   {
     id: "wine",
     name: "Fine Wine",
     categoryKey: "Wine",
     dotColor: "#F472B6", // Pink dot
-    image: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&fit=crop&q=80",
+    image:
+      "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&fit=crop&q=80",
   },
 ];
 
@@ -165,11 +173,11 @@ export default function HomeScreen({ navigation }) {
       const pTotal = personalList.reduce(
         (sum, it) =>
           sum + (Number(it.liveMarketValue) || Number(it.initialValue) || 0),
-        0
+        0,
       );
       const fTotal = fractionalList.reduce(
         (sum, it) => sum + (Number(it.myStake) || 0),
-        0
+        0,
       );
       const combinedTotalNum = pTotal + fTotal + cashNum;
       const combinedCount = personalList.length + fractionalList.length;
@@ -199,21 +207,32 @@ export default function HomeScreen({ navigation }) {
       setLoadingVault(true);
       const [res, marketRes] = await Promise.all([
         getUserVault(token),
-        getMarketAssets('All', '').catch(() => null),
+        getMarketAssets("All", "").catch(() => null),
       ]);
-      if (marketRes?.assets && Array.isArray(marketRes.assets) && marketRes.assets.length > 0) {
+      if (
+        marketRes?.assets &&
+        Array.isArray(marketRes.assets) &&
+        marketRes.assets.length > 0
+      ) {
         setMarketMovers(marketRes.assets);
       }
       if (res?.holdings && Array.isArray(res.holdings)) {
         setVaultHoldings(res.holdings);
-        const pItems = res.holdings.filter((h) => h.asset_type !== 'fractional');
-        const fItems = res.holdings.filter((h) => h.asset_type === 'fractional');
+        const pItems = res.holdings.filter(
+          (h) => h.asset_type !== "fractional",
+        );
+        const fItems = res.holdings.filter(
+          (h) => h.asset_type === "fractional",
+        );
         await storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, pItems);
         await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, fItems);
       }
       if (res?.summary) {
         setVaultSummary(res.summary);
-        await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, res.summary.availableBalanceNum || 0);
+        await storage.setJSON(
+          STORAGE_KEYS.ESCROW_CASH,
+          res.summary.availableBalanceNum || 0,
+        );
         await storage.setJSON(STORAGE_KEYS.VAULT, {
           summary: res.summary,
           holdings: res?.holdings,
@@ -257,7 +276,9 @@ export default function HomeScreen({ navigation }) {
   };
 
   const rawFullName = user?.fullName || user?.full_name || user?.name || "";
-  const cleanFullName = !isWalletOrMetaMaskString(rawFullName) ? rawFullName.trim() : "";
+  const cleanFullName = !isWalletOrMetaMaskString(rawFullName)
+    ? rawFullName.trim()
+    : "";
   const rawEmail = user?.email || "";
   const cleanEmail = !isWalletOrMetaMaskString(rawEmail) ? rawEmail.trim() : "";
   const cleanFirstName =
@@ -286,7 +307,9 @@ export default function HomeScreen({ navigation }) {
           .map((n) => n[0])
           .slice(0, 2)
           .join("")
-      : (userName ? userName.slice(0, 2) : "SA")
+      : userName
+        ? userName.slice(0, 2)
+        : "SA"
   ).toUpperCase();
 
   return (
@@ -307,268 +330,398 @@ export default function HomeScreen({ navigation }) {
       />
 
       <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#976af0"
-            colors={["#976af0", "#00fbff"]}
-          />
-        }
-      >
-        {/* ── TOP APP BAR / BRAND HEADER ───────────────────────────────────────── */}
-        <View style={styles.appBar}>
-          {/* Logo & Brand Name */}
-          <View style={styles.brandGroup}>
-            <LinearGradient
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#976af0"
               colors={["#976af0", "#00fbff"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.logoBadge}
-            >
-              <Ionicons name="diamond" size={17} color="#FFFFFF" />
-            </LinearGradient>
-            <Text style={styles.brandTitle}>SmartAssets</Text>
+            />
+          }
+        >
+          {/* ── TOP APP BAR / BRAND HEADER ───────────────────────────────────────── */}
+          <View style={styles.appBar}>
+            {/* Logo & Brand Name */}
+            <View style={styles.brandGroup}>
+              <LinearGradient
+                colors={["#976af0", "#00fbff"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.logoBadge}
+              >
+                <Ionicons name="diamond" size={17} color="#FFFFFF" />
+              </LinearGradient>
+              <Text style={styles.brandTitle}>SmartAssets</Text>
+            </View>
+
+            {/* Right: Profile Avatar Icon (Add asset removed) */}
+            <View style={styles.appBarRight}>
+              <TouchableOpacity
+                style={styles.profileAvatarBtn}
+                onPress={() => navigation.navigate(SCREENS.PROFILE)}
+                activeOpacity={0.8}
+              >
+                {userPhoto ? (
+                  <Image
+                    source={{ uri: resolveImageUrl(userPhoto) }}
+                    style={styles.profileAvatarImg}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.profileAvatarFallback}>
+                    <Text style={styles.profileInitialsText}>
+                      {userInitials}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Right: Profile Avatar Icon (Add asset removed) */}
-          <View style={styles.appBarRight}>
+          {/* ── GREETING & ACTIVITY BAR ─────────────────────────────────────────── */}
+          <View style={styles.greetingRow}>
+            <View style={styles.greetingTextCol}>
+              <Text style={styles.greetingHelloText}>Good morning,</Text>
+              <Text style={styles.greetingUserNameText} numberOfLines={1}>
+                {userName}
+              </Text>
+              {/* <Text style={styles.greetingSubtitle} numberOfLines={1}>
+                Your collection gained R185 while you were away.
+              </Text> */}
+            </View>
+
             <TouchableOpacity
-              style={styles.profileAvatarBtn}
-              onPress={() => navigation.navigate(SCREENS.PROFILE)}
+              style={styles.activityPillBtn}
+              onPress={() => navigation.navigate(SCREENS.VAULT)}
               activeOpacity={0.8}
             >
-              {userPhoto ? (
-                <Image
-                  source={{ uri: resolveImageUrl(userPhoto) }}
-                  style={styles.profileAvatarImg}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={styles.profileAvatarFallback}>
-                  <Text style={styles.profileInitialsText}>{userInitials}</Text>
-                </View>
-              )}
+              <Ionicons
+                name="notifications-outline"
+                size={16}
+                color="#0F172A"
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.activityPillText}>Activity</Text>
             </TouchableOpacity>
           </View>
-        </View>
 
-        {/* ── GREETING & ACTIVITY BAR ─────────────────────────────────────────── */}
-        <View style={styles.greetingRow}>
-          <View style={styles.greetingTextCol}>
-            <Text style={styles.greetingHelloText}>Good morning,</Text>
-            <Text style={styles.greetingUserNameText} numberOfLines={1}>
-              {userName}
-            </Text>
-            <Text style={styles.greetingSubtitle} numberOfLines={1}>
-              Your collection gained R185 while you were away.
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.activityPillBtn}
-            onPress={() => navigation.navigate(SCREENS.VAULT)}
-            activeOpacity={0.8}
-          >
-            <Ionicons
-              name="notifications-outline"
-              size={16}
-              color="#0F172A"
-              style={{ marginRight: 6 }}
-            />
-            <Text style={styles.activityPillText}>Activity</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── PERSISTENT ACCOUNT VERIFICATION BANNER (Shown until verified) ──── */}
-        {user && user.verification_status !== "verified" && user.kycStatus !== "verified" && (
-          <TouchableOpacity
-            onPress={() => navigation.navigate(SCREENS.VERIFY_ACCOUNT)}
-            activeOpacity={0.88}
-            style={{
-              marginBottom: 16,
-              borderRadius: 18,
-              padding: 14,
-              backgroundColor: "rgba(124, 58, 237, 0.12)",
-              borderWidth: 1.2,
-              borderColor: "rgba(124, 58, 237, 0.35)",
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-              <View
+          {/* ── PERSISTENT ACCOUNT VERIFICATION BANNER (Shown until verified) ──── */}
+          {user &&
+            user.verification_status !== "verified" &&
+            user.kycStatus !== "verified" && (
+              <TouchableOpacity
+                onPress={() => navigation.navigate(SCREENS.VERIFY_ACCOUNT)}
+                activeOpacity={0.88}
                 style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 12,
-                  backgroundColor: "#7C3AED",
+                  marginBottom: 16,
+                  borderRadius: 18,
+                  padding: 14,
+                  backgroundColor: "rgba(124, 58, 237, 0.12)",
+                  borderWidth: 1.2,
+                  borderColor: "rgba(124, 58, 237, 0.35)",
+                  flexDirection: "row",
                   alignItems: "center",
-                  justifyContent: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
                 }}
               >
-                <Ionicons name="shield-checkmark-outline" size={20} color="#FFFFFF" />
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                    flex: 1,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 12,
+                      backgroundColor: "#7C3AED",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons
+                      name="shield-checkmark-outline"
+                      size={20}
+                      color="#FFFFFF"
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: 13.5,
+                        fontWeight: "800",
+                        color: "#1E1B4B",
+                      }}
+                    >
+                      {user.kycStatus === "pending" ||
+                      user.verification_status === "pending"
+                        ? "Verification Pending Admin Review"
+                        : user.kycStatus === "rejected" ||
+                            user.verification_status === "rejected"
+                          ? "Action Needed: Re-upload KYC Document"
+                          : "Complete your verification"}
+                    </Text>
+                    <Text
+                      style={{ fontSize: 11.5, color: "#4C1D95", marginTop: 2 }}
+                    >
+                      Upload ID, Tax & Proof of Residence to unlock listing,
+                      deposits & withdrawals.
+                    </Text>
+                  </View>
+                </View>
+                <View
+                  style={{
+                    backgroundColor: "#7C3AED",
+                    paddingHorizontal: 11,
+                    paddingVertical: 7,
+                    borderRadius: 10,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#FFFFFF",
+                      fontSize: 11.5,
+                      fontWeight: "800",
+                    }}
+                  >
+                    Verify &rarr;
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+          {/* ── PORTFOLIO VALUE CARD ────────────────────────────────────────────── */}
+          <TouchableOpacity
+            style={styles.portfolioCard}
+            activeOpacity={0.92}
+            onPress={() => navigation.navigate(SCREENS.VAULT)}
+          >
+            <LinearGradient
+              colors={["#7C3AED", "#5B36F5", "#2563EB", "#00C2FF"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0.85 }}
+              style={styles.portfolioCardGradient}
+            >
+              <View style={styles.portfolioHeader}>
+                <Text style={styles.portfolioLabel}>PORTFOLIO VALUE</Text>
+                <View style={styles.barChartBadge}>
+                  <Feather name="bar-chart-2" size={16} color="#FFFFFF" />
+                </View>
+              </View>
+
+              <Text style={styles.portfolioValueNumber}>
+                {vaultSummary.portfolioValueFormatted || "R0"}
+              </Text>
+
+              <View style={styles.gainRow}>
+                <View
+                  style={[
+                    styles.growthPill,
+                    { flexDirection: "row", alignItems: "center" },
+                  ]}
+                >
+                  <Feather
+                    name="trending-up"
+                    size={12}
+                    color="#FFFFFF"
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={styles.growthPillText}>8.4%</Text>
+                </View>
+                <Text style={styles.yearlyGainText}>+R185 this month</Text>
+              </View>
+
+              <PortfolioWaveGraph />
+
+              <View style={styles.portfolioStatsRow}>
+                <View style={styles.portfolioStatCol}>
+                  <Text style={styles.statNumber}>
+                    {vaultSummary.totalCount !== undefined
+                      ? vaultSummary.totalCount
+                      : 0}
+                  </Text>
+                  <Text style={styles.statLabel}>Assets</Text>
+                </View>
+
+                <View style={styles.statDivider} />
+
+                <View style={styles.portfolioStatCol}>
+                  <Text style={styles.statNumber}>
+                    {vaultSummary.categoriesCount !== undefined
+                      ? vaultSummary.categoriesCount
+                      : 0}
+                  </Text>
+                  <Text style={styles.statLabel}>Categories</Text>
+                </View>
+
+                <View style={styles.statDivider} />
+
+                <View style={styles.portfolioStatCol}>
+                  <Text style={styles.statNumber}>
+                    {vaultSummary.totalCount
+                      ? vaultSummary.verifiedPct || 100
+                      : 100}
+                    %
+                  </Text>
+                  <Text style={styles.statLabel}>Verified</Text>
+                </View>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* ── 2-COLUMN QUICK FINANCIAL STATUS BUBBLES ─────────────────────────── */}
+          <View style={styles.quickStatusRow}>
+            {/* Left Bubble: Available Cash (Lilac/Periwinkle Gradient) */}
+            <TouchableOpacity
+              style={styles.bubbleCardWrapper}
+              activeOpacity={0.88}
+              onPress={() =>
+                Alert.alert(
+                  "Top Up Cash",
+                  "Select an amount to deposit into your SmartAssets secure wallet balance.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Add R500",
+                      onPress: () =>
+                        Alert.alert("Success", "R500 deposited via Apple Pay."),
+                    },
+                  ],
+                )
+              }
+            >
+              <LinearGradient
+                colors={["#9E7BFA", "#7353EA"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0.2, y: 1 }}
+                style={styles.bubbleGradient}
+              >
+                <View style={styles.bubbleIconCircle}>
+                  <Feather name="chevron-down" size={24} color="#7353EA" />
+                </View>
+                <Text style={styles.bubbleLabel}>AVAILABLE CASH</Text>
+                <Text style={styles.bubbleValue}>
+                  {vaultSummary.availableBalanceFormatted || "R0"}
+                </Text>
+                <View style={styles.bubbleFooterRow}>
+                  <Feather
+                    name="plus-circle"
+                    size={12}
+                    color="#FFFFFF"
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={styles.bubbleSubText}>Top Up funds</Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* Right Bubble: AI Risk Score (Magenta/Pink Gradient) */}
+            <TouchableOpacity
+              style={styles.bubbleCardWrapper}
+              activeOpacity={0.88}
+              onPress={() =>
+                Alert.alert(
+                  "AI Risk Score: Low (96%)",
+                  "Your portfolio volatility is 96% optimal. Protected by Horological & Fine Art benchmark models.",
+                )
+              }
+            >
+              <LinearGradient
+                colors={["#B83DAE", "#DE4580"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0.2, y: 1 }}
+                style={styles.bubbleGradient}
+              >
+                <View style={styles.bubbleIconCircle}>
+                  <Feather name="chevron-up" size={24} color="#DE4580" />
+                </View>
+                <Text style={styles.bubbleLabel}>AI RISK SCORE</Text>
+                <Text style={styles.bubbleValue}>Low (96%)</Text>
+                <View style={styles.bubbleFooterRow}>
+                  <Ionicons
+                    name="shield-checkmark"
+                    size={12}
+                    color="#FFFFFF"
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={styles.bubbleSubText}>Verified • Safe</Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+          {/* ── SCAN & KNOW CAMERA CTA ──────────────────────────────────────────── */}
+          <TouchableOpacity
+            style={styles.scanKnowCard}
+            onPress={() => navigation.navigate(SCREENS.SCAN_AND_KNOW)}
+            activeOpacity={0.9}
+          >
+            <LinearGradient
+              colors={["#0F172A", "#1E1B4B", "#312E81"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.scanKnowGradient}
+            >
+              <View style={styles.scanKnowIconWrap}>
+                <Ionicons name="scan" size={22} color="#00C2FF" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13.5, fontWeight: "800", color: "#1E1B4B" }}>
-                  {user.kycStatus === "pending" || user.verification_status === "pending"
-                    ? "Verification Pending Admin Review"
-                    : user.kycStatus === "rejected" || user.verification_status === "rejected"
-                    ? "Action Needed: Re-upload KYC Document"
-                    : "Complete your verification"}
+                <Text style={styles.scanKnowKicker}>
+                  GEMINI VISION • ZAR ORACLE
                 </Text>
-                <Text style={{ fontSize: 11.5, color: "#4C1D95", marginTop: 2 }}>
-                  Upload ID, Tax & Proof of Residence to unlock listing, deposits & withdrawals.
+                <Text style={styles.scanKnowTitle}>Scan & Know</Text>
+                <Text style={styles.scanKnowSub} numberOfLines={1}>
+                  Identify, value in Rands, and match Sepolia certificates
                 </Text>
               </View>
-            </View>
-            <View
-              style={{
-                backgroundColor: "#7C3AED",
-                paddingHorizontal: 11,
-                paddingVertical: 7,
-                borderRadius: 10,
-              }}
-            >
-              <Text style={{ color: "#FFFFFF", fontSize: 11.5, fontWeight: "800" }}>
-                Verify &rarr;
-              </Text>
-            </View>
+              <Feather name="camera" size={18} color="#FFFFFF" />
+            </LinearGradient>
           </TouchableOpacity>
-        )}
 
-        {/* ── PORTFOLIO VALUE CARD ────────────────────────────────────────────── */}
-        <TouchableOpacity
-          style={styles.portfolioCard}
-          activeOpacity={0.92}
-          onPress={() => navigation.navigate(SCREENS.VAULT)}
-        >
-          <LinearGradient
-            colors={["#7C3AED", "#5B36F5", "#2563EB", "#00C2FF"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0.85 }}
-            style={styles.portfolioCardGradient}
+          {/* ── VISION SCANNER / AR VIEW CTA ─────────────────────────────────────── */}
+          <TouchableOpacity
+            style={[styles.scanKnowCard, { marginTop: 0 }]}
+            onPress={() => navigation.navigate(SCREENS.AR_VIEWER)}
+            activeOpacity={0.9}
           >
-            <View style={styles.portfolioHeader}>
-              <Text style={styles.portfolioLabel}>PORTFOLIO VALUE</Text>
-              <View style={styles.barChartBadge}>
-                <Feather name="bar-chart-2" size={16} color="#FFFFFF" />
-              </View>
-            </View>
-
-            <Text style={styles.portfolioValueNumber}>
-              {vaultSummary.portfolioValueFormatted || "R0"}
-            </Text>
-
-            <View style={styles.gainRow}>
+            <LinearGradient
+              colors={["#1E1B4B", "#4C1D95", "#6D28D9"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.scanKnowGradient}
+            >
               <View
                 style={[
-                  styles.growthPill,
-                  { flexDirection: "row", alignItems: "center" },
+                  styles.scanKnowIconWrap,
+                  {
+                    backgroundColor: "rgba(168,85,247,0.18)",
+                    borderColor: "rgba(168,85,247,0.4)",
+                  },
                 ]}
               >
-                <Feather
-                  name="trending-up"
-                  size={12}
-                  color="#FFFFFF"
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={styles.growthPillText}>8.4%</Text>
+                <Ionicons name="cube-outline" size={22} color="#C084FC" />
               </View>
-              <Text style={styles.yearlyGainText}>+R185 this month</Text>
-            </View>
-
-            <PortfolioWaveGraph />
-
-            <View style={styles.portfolioStatsRow}>
-              <View style={styles.portfolioStatCol}>
-                <Text style={styles.statNumber}>
-                  {vaultSummary.totalCount !== undefined ? vaultSummary.totalCount : 0}
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.scanKnowKicker, { color: "#E9D5FF" }]}>
+                  AI VISION • 3D SPATIAL
                 </Text>
-                <Text style={styles.statLabel}>Assets</Text>
-              </View>
-
-              <View style={styles.statDivider} />
-
-              <View style={styles.portfolioStatCol}>
-                <Text style={styles.statNumber}>
-                  {vaultSummary.categoriesCount !== undefined ? vaultSummary.categoriesCount : 0}
+                <Text style={styles.scanKnowTitle}>Vision Scanner</Text>
+                <Text style={styles.scanKnowSub} numberOfLines={1}>
+                  AR camera preview & high-resolution 3D asset inspection
                 </Text>
-                <Text style={styles.statLabel}>Categories</Text>
               </View>
-
-              <View style={styles.statDivider} />
-
-              <View style={styles.portfolioStatCol}>
-                <Text style={styles.statNumber}>
-                  {vaultSummary.totalCount ? (vaultSummary.verifiedPct || 100) : 100}%
-                </Text>
-                <Text style={styles.statLabel}>Verified</Text>
-              </View>
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
-
-        {/* ── SCAN & KNOW CAMERA CTA ──────────────────────────────────────────── */}
-        <TouchableOpacity
-          style={styles.scanKnowCard}
-          onPress={() => navigation.navigate(SCREENS.SCAN_AND_KNOW)}
-          activeOpacity={0.9}
-        >
-          <LinearGradient
-            colors={["#0F172A", "#1E1B4B", "#312E81"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.scanKnowGradient}
-          >
-            <View style={styles.scanKnowIconWrap}>
-              <Ionicons name="scan" size={22} color="#00C2FF" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.scanKnowKicker}>GEMINI VISION • ZAR ORACLE</Text>
-              <Text style={styles.scanKnowTitle}>Scan & Know</Text>
-              <Text style={styles.scanKnowSub} numberOfLines={1}>
-                Identify, value in Rands, and match Sepolia certificates
-              </Text>
-            </View>
-            <Feather name="camera" size={18} color="#FFFFFF" />
-          </LinearGradient>
-        </TouchableOpacity>
-
-        {/* ── VISION SCANNER / AR VIEW CTA ─────────────────────────────────────── */}
-        <TouchableOpacity
-          style={[styles.scanKnowCard, { marginTop: 0 }]}
-          onPress={() => navigation.navigate(SCREENS.AR_VIEWER)}
-          activeOpacity={0.9}
-        >
-          <LinearGradient
-            colors={["#1E1B4B", "#4C1D95", "#6D28D9"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.scanKnowGradient}
-          >
-            <View style={[styles.scanKnowIconWrap, { backgroundColor: "rgba(168,85,247,0.18)", borderColor: "rgba(168,85,247,0.4)" }]}>
-              <Ionicons name="cube-outline" size={22} color="#C084FC" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.scanKnowKicker, { color: "#E9D5FF" }]}>AI VISION • 3D SPATIAL</Text>
-              <Text style={styles.scanKnowTitle}>Vision Scanner</Text>
-              <Text style={styles.scanKnowSub} numberOfLines={1}>
-                AR camera preview & high-resolution 3D asset inspection
-              </Text>
-            </View>
-            <Ionicons name="eye-outline" size={19} color="#FFFFFF" />
-          </LinearGradient>
-        </TouchableOpacity>
-
+              <Ionicons name="eye-outline" size={19} color="#FFFFFF" />
+            </LinearGradient>
+          </TouchableOpacity>
+          {/* 
         {/* ── SLIM SMART INSIGHT BANNER ───────────────────────────────────────── */}
-        <TouchableOpacity
+          {/* <TouchableOpacity
           style={styles.slimInsightBanner}
           onPress={() => navigation.navigate(SCREENS.SEARCH)}
           activeOpacity={0.88}
@@ -594,264 +747,206 @@ export default function HomeScreen({ navigation }) {
               style={{ marginLeft: 3 }}
             />
           </View>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
-        {/* ── 2-COLUMN QUICK FINANCIAL STATUS BUBBLES ─────────────────────────── */}
-        <View style={styles.quickStatusRow}>
-          {/* Left Bubble: Available Cash (Lilac/Periwinkle Gradient) */}
+          {/* ── IN-APP AR SHOWROOM SPOTLIGHT BANNER ──────────────────────────────── */}
           <TouchableOpacity
-            style={styles.bubbleCardWrapper}
-            activeOpacity={0.88}
+            style={styles.arShowroomBanner}
             onPress={() =>
-              Alert.alert(
-                "Top Up Cash",
-                "Select an amount to deposit into your SmartAssets secure wallet balance.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Add R500",
-                    onPress: () =>
-                      Alert.alert("Success", "R500 deposited via Apple Pay."),
-                  },
-                ]
-              )
+              navigation.navigate(SCREENS.LIVE_ROOM_PREVIEW, {
+                imageUri:
+                  "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80",
+                title: "Velvet Lounge Chair",
+                listingId: "showcase-chair-3d",
+                glbUrl:
+                  "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/SheenChair/glTF-Binary/SheenChair.glb",
+                source: "ai_generated",
+                placement: "floor",
+                widthCm: 75,
+                heightCm: 85,
+                depthCm: 80,
+              })
             }
+            activeOpacity={0.92}
           >
             <LinearGradient
-              colors={["#9E7BFA", "#7353EA"]}
+              colors={["#0F172A", "#1E1B4B", "#172554"]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 0.2, y: 1 }}
-              style={styles.bubbleGradient}
+              end={{ x: 1, y: 1 }}
+              style={styles.arShowroomGradient}
             >
-              <View style={styles.bubbleIconCircle}>
-                <Feather name="chevron-down" size={24} color="#7353EA" />
-              </View>
-              <Text style={styles.bubbleLabel}>AVAILABLE CASH</Text>
-              <Text style={styles.bubbleValue}>
-                {vaultSummary.availableBalanceFormatted || "R0"}
-              </Text>
-              <View style={styles.bubbleFooterRow}>
-                <Feather
-                  name="plus-circle"
-                  size={12}
-                  color="#FFFFFF"
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={styles.bubbleSubText}>Top Up funds</Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* Right Bubble: AI Risk Score (Magenta/Pink Gradient) */}
-          <TouchableOpacity
-            style={styles.bubbleCardWrapper}
-            activeOpacity={0.88}
-            onPress={() =>
-              Alert.alert(
-                "AI Risk Score: Low (96%)",
-                "Your portfolio volatility is 96% optimal. Protected by Horological & Fine Art benchmark models."
-              )
-            }
-          >
-            <LinearGradient
-              colors={["#B83DAE", "#DE4580"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0.2, y: 1 }}
-              style={styles.bubbleGradient}
-            >
-              <View style={styles.bubbleIconCircle}>
-                <Feather name="chevron-up" size={24} color="#DE4580" />
-              </View>
-              <Text style={styles.bubbleLabel}>AI RISK SCORE</Text>
-              <Text style={styles.bubbleValue}>Low (96%)</Text>
-              <View style={styles.bubbleFooterRow}>
-                <Ionicons
-                  name="shield-checkmark"
-                  size={12}
-                  color="#FFFFFF"
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={styles.bubbleSubText}>Verified • Safe</Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── IN-APP AR SHOWROOM SPOTLIGHT BANNER ──────────────────────────────── */}
-        <TouchableOpacity
-          style={styles.arShowroomBanner}
-          onPress={() =>
-            navigation.navigate(SCREENS.LIVE_ROOM_PREVIEW, {
-              imageUri: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80',
-              title: 'Velvet Lounge Chair',
-              listingId: 'showcase-chair-3d',
-              glbUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/SheenChair/glTF-Binary/SheenChair.glb',
-              source: 'ai_generated',
-              placement: 'floor',
-              widthCm: 75,
-              heightCm: 85,
-              depthCm: 80,
-            })
-          }
-          activeOpacity={0.92}
-        >
-          <LinearGradient
-            colors={['#0F172A', '#1E1B4B', '#172554']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.arShowroomGradient}
-          >
-            <View style={styles.arShowroomTopRow}>
-              <View style={styles.arShowroomBadge}>
-                <Ionicons name="scan" size={13} color="#00C2FF" />
-                <Text style={styles.arShowroomBadgeText}>NEW • IN-APP AR EXPERIENCE</Text>
-              </View>
-              <View style={styles.arTrueScalePill}>
-                <Text style={styles.arTrueScaleText}>1:1 SCALE</Text>
-              </View>
-            </View>
-
-            <Text style={styles.arShowroomTitle}>
-              Decorate your room with verified luxury
-            </Text>
-            <Text style={styles.arShowroomSubtitle}>
-              Hang paintings on your walls or place iconic furniture on your floor. Live plane tracking & soft shadows.
-            </Text>
-
-            <View style={styles.arShowroomFooter}>
-              <View style={styles.arShowroomItemsPill}>
-                <Ionicons name="cube-outline" size={13} color="#00C2FF" />
-                <Text style={styles.arShowroomItemsText}>5 Showcase Collectibles</Text>
-              </View>
-
-              <View style={styles.arShowroomActionBtn}>
-                <Text style={styles.arShowroomActionText}>Launch AR</Text>
-                <Feather name="arrow-right" size={14} color="#00C2FF" style={{ marginLeft: 4 }} />
-              </View>
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
-
-        {/* ── BROWSE CATEGORIES (2x2 VISUAL IMAGE GRID) ───────────────────────── */}
-        <View style={styles.dashboardSection}>
-          <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={styles.sectionTag}>MARKETPLACE</Text>
-              <Text style={styles.sectionTitle}>Explore Categories</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => navigation.navigate(SCREENS.SEARCH, { category: 'All' })}
-              activeOpacity={0.7}
-              style={styles.seeAllBtn}
-            >
-              <Text style={styles.seeAllText}>View all</Text>
-              <Feather name="chevron-right" size={14} color="#7C3AED" />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.categoriesGrid}>
-            {CATEGORY_CARDS.map((cat) => (
-              <TouchableOpacity
-                key={cat.id}
-                style={styles.categoryCard}
-                activeOpacity={0.88}
-                onPress={() => navigation.navigate(SCREENS.SEARCH, { category: cat.categoryKey })}
-              >
-                <Image
-                  source={{ uri: cat.image }}
-                  style={StyleSheet.absoluteFillObject}
-                  resizeMode="cover"
-                />
-                {/* Subtle dark frosted glass bar over bottom of each category image */}
-                <View style={styles.categoryFrostedBar}>
-                  <Text style={styles.categoryNameText} numberOfLines={1}>
-                    {cat.name}
+              <View style={styles.arShowroomTopRow}>
+                <View style={styles.arShowroomBadge}>
+                  <Ionicons name="scan" size={13} color="#00C2FF" />
+                  <Text style={styles.arShowroomBadgeText}>
+                    NEW • IN-APP AR EXPERIENCE
                   </Text>
-                  <View style={[styles.categoryDot, { backgroundColor: cat.dotColor }]} />
                 </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+                <View style={styles.arTrueScalePill}>
+                  <Text style={styles.arTrueScaleText}>1:1 SCALE</Text>
+                </View>
+              </View>
 
-        {/* ── TOP MOVERS TODAY (SINGLE HORIZONTAL CAROUSEL) ────────────────────── */}
-        <View style={styles.dashboardSection}>
-          <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={styles.sectionTag}>MARKET MOMENTUM</Text>
-              <Text style={styles.sectionTitle}>Top Movers Today</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => navigation.navigate(SCREENS.SEARCH)}
-              activeOpacity={0.7}
-              style={styles.seeAllBtn}
-            >
-              <Text style={styles.seeAllText}>Explore</Text>
-              <Feather name="arrow-right" size={13} color="#7C3AED" />
-            </TouchableOpacity>
-          </View>
+              <Text style={styles.arShowroomTitle}>
+                Decorate your room with verified luxury
+              </Text>
+              <Text style={styles.arShowroomSubtitle}>
+                Hang paintings on your walls or place iconic furniture on your
+                floor. Live plane tracking & soft shadows.
+              </Text>
 
-          {/* Curated Asset Cards (Horizontal Scroll) */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.curatedCardsScroll}
-          >
-            {marketMovers.map((item) => (
+              <View style={styles.arShowroomFooter}>
+                <View style={styles.arShowroomItemsPill}>
+                  <Ionicons name="cube-outline" size={13} color="#00C2FF" />
+                  <Text style={styles.arShowroomItemsText}>
+                    5 Showcase Collectibles
+                  </Text>
+                </View>
+
+                <View style={styles.arShowroomActionBtn}>
+                  <Text style={styles.arShowroomActionText}>Launch AR</Text>
+                  <Feather
+                    name="arrow-right"
+                    size={14}
+                    color="#00C2FF"
+                    style={{ marginLeft: 4 }}
+                  />
+                </View>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* ── BROWSE CATEGORIES (2x2 VISUAL IMAGE GRID) ───────────────────────── */}
+          <View style={styles.dashboardSection}>
+            <View style={styles.sectionHeaderRow}>
+              <View>
+                <Text style={styles.sectionTag}>MARKETPLACE</Text>
+                <Text style={styles.sectionTitle}>Explore Categories</Text>
+              </View>
               <TouchableOpacity
-                key={item.id}
-                style={styles.curatedCard}
                 onPress={() =>
-                  navigation.navigate(SCREENS.ASSET_DETAIL, { asset: item })
+                  navigation.navigate(SCREENS.SEARCH, { category: "All" })
                 }
-                activeOpacity={0.88}
+                activeOpacity={0.7}
+                style={styles.seeAllBtn}
               >
-                {/* Image Wrap with Frosted Badges */}
-                <View style={styles.curatedImgWrap}>
+                <Text style={styles.seeAllText}>View all</Text>
+                <Feather name="chevron-right" size={14} color="#7C3AED" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.categoriesGrid}>
+              {CATEGORY_CARDS.map((cat) => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={styles.categoryCard}
+                  activeOpacity={0.88}
+                  onPress={() =>
+                    navigation.navigate(SCREENS.SEARCH, {
+                      category: cat.categoryKey,
+                    })
+                  }
+                >
                   <Image
-                    source={{ uri: resolveImageUrl(item.image) }}
-                    style={styles.curatedImg}
+                    source={{ uri: cat.image }}
+                    style={StyleSheet.absoluteFillObject}
                     resizeMode="cover"
                   />
-                  {/* Verified Badge */}
-                  {item.isVerified && (
-                    <View style={styles.cardVerifiedBadge}>
-                      <Ionicons
-                        name="shield-checkmark"
-                        size={12}
-                        color="#FFFFFF"
-                        style={{ marginRight: 4 }}
-                      />
-                      <Text style={styles.cardVerifiedText}>Verified</Text>
-                    </View>
-                  )}
-
-                  {/* Gain Badge */}
-                  <View style={styles.cardGainBadge}>
-                    <Text style={styles.cardGainText}>{item.gain}</Text>
-                  </View>
-                </View>
-
-                {/* Card Info Footer */}
-                <View style={styles.curatedCardFooter}>
-                  <Text style={styles.curatedCardCat}>{item.category}</Text>
-                  <View style={styles.curatedCardDetailsRow}>
-                    <Text style={styles.curatedCardName} numberOfLines={1}>
-                      {item.name}
+                  {/* Subtle dark frosted glass bar over bottom of each category image */}
+                  <View style={styles.categoryFrostedBar}>
+                    <Text style={styles.categoryNameText} numberOfLines={1}>
+                      {cat.name}
                     </Text>
-                    <Text style={styles.curatedCardPrice}>{item.price}</Text>
+                    <View
+                      style={[
+                        styles.categoryDot,
+                        { backgroundColor: cat.dotColor },
+                      ]}
+                    />
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
-        {/* Safe bottom spacer for floating navigation bar */}
-        <View style={{ height: 100 }} />
-      </ScrollView>
-    </SafeAreaView>
-  </View>
+          {/* ── TOP MOVERS TODAY (SINGLE HORIZONTAL CAROUSEL) ────────────────────── */}
+          <View style={styles.dashboardSection}>
+            <View style={styles.sectionHeaderRow}>
+              <View>
+                <Text style={styles.sectionTag}>MARKET MOMENTUM</Text>
+                <Text style={styles.sectionTitle}>Top Movers Today</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => navigation.navigate(SCREENS.SEARCH)}
+                activeOpacity={0.7}
+                style={styles.seeAllBtn}
+              >
+                <Text style={styles.seeAllText}>Explore</Text>
+                <Feather name="arrow-right" size={13} color="#7C3AED" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Curated Asset Cards (Horizontal Scroll) */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.curatedCardsScroll}
+            >
+              {marketMovers.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.curatedCard}
+                  onPress={() =>
+                    navigation.navigate(SCREENS.ASSET_DETAIL, { asset: item })
+                  }
+                  activeOpacity={0.88}
+                >
+                  {/* Image Wrap with Frosted Badges */}
+                  <View style={styles.curatedImgWrap}>
+                    <Image
+                      source={{ uri: resolveImageUrl(item.image) }}
+                      style={styles.curatedImg}
+                      resizeMode="cover"
+                    />
+                    {/* Verified Badge */}
+                    {item.isVerified && (
+                      <View style={styles.cardVerifiedBadge}>
+                        <Ionicons
+                          name="shield-checkmark"
+                          size={12}
+                          color="#FFFFFF"
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text style={styles.cardVerifiedText}>Verified</Text>
+                      </View>
+                    )}
+
+                    {/* Gain Badge */}
+                    <View style={styles.cardGainBadge}>
+                      <Text style={styles.cardGainText}>{item.gain}</Text>
+                    </View>
+                  </View>
+
+                  {/* Card Info Footer */}
+                  <View style={styles.curatedCardFooter}>
+                    <Text style={styles.curatedCardCat}>{item.category}</Text>
+                    <View style={styles.curatedCardDetailsRow}>
+                      <Text style={styles.curatedCardName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.curatedCardPrice}>{item.price}</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Safe bottom spacer for floating navigation bar */}
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
@@ -1195,7 +1290,12 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  slimInsightLeft: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: 10 },
+  slimInsightLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 10,
+  },
   slimSparkleWrap: {
     width: 30,
     height: 30,
@@ -1330,7 +1430,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#7C3AED",
   },
-
 
   // Curated Cards
   curatedCardsScroll: {

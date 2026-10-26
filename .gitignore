@@ -40,5 +40,5 @@ yarn-error.*
 # generated native folders
 /ios
 /android
-
-Backend/src/data/userPresence.json
+Backend/src/data/*.json
+Backend/src/data/

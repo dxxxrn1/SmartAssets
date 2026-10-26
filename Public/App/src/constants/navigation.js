@@ -32,6 +32,7 @@ export const SCREENS = {
   ESCROW_TRACKER: 'EscrowTracker',
   PROFILE: 'Profile',
   PROFILE_ANALYTICS: 'ProfileAnalytics',
+  ANALYTICS: 'ProfileAnalytics',
   AR_VIEWER: 'ARViewer',
   LIVE_ROOM_PREVIEW: 'LiveRoomPreview',
 };

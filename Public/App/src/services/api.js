@@ -750,6 +750,13 @@ export async function getMyEscrowOrdersApi(token) {
   return apiRequest("/escrow/my-orders", { method: "GET" }, token);
 }
 
+/**
+ * Retrieve all escrow orders where the logged-in user is the seller.
+ */
+export async function getSellerEscrowOrdersApi(token) {
+  return apiRequest("/escrow/seller-orders", { method: "GET" }, token);
+}
+
 // ── User Profile & Account Management API ────────────────────────────────────
 
 /**

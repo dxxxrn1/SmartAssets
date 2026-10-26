@@ -7,21 +7,10 @@
 // 2. Strict pro-rata net distribution math (Gross - Platform Fees).
 // 3. Payout ledger recording and investor position retirement before ownership transfer.
 
-const fs = require('fs');
-const path = require('path');
 const supabase = require('../connection/supabaseClient');
 const notificationService = require('./notificationService');
 const vaultTransactionService = require('./vaultTransactionService');
 const auditLogService = require('./auditLogService');
-
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const POSITIONS_FILE = path.join(DATA_DIR, 'investorPositions.json');
-const PAYOUTS_FILE = path.join(DATA_DIR, 'investmentPayouts.json');
-
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
 
 // In-memory runtime cache for atomic operations
 let cachedPositions = [];
@@ -52,44 +41,7 @@ async function withAssetLock(assetId, fn) {
   }
 }
 
-// Load local files on boot
-function loadDiskLedger() {
-  try {
-    if (fs.existsSync(POSITIONS_FILE)) {
-      cachedPositions = JSON.parse(fs.readFileSync(POSITIONS_FILE, 'utf8'));
-    }
-  } catch (err) {
-    console.warn('⚠️ [PositionService] Could not read investorPositions.json:', err.message);
-    cachedPositions = [];
-  }
-
-  try {
-    if (fs.existsSync(PAYOUTS_FILE)) {
-      cachedPayouts = JSON.parse(fs.readFileSync(PAYOUTS_FILE, 'utf8'));
-    }
-  } catch (err) {
-    console.warn('⚠️ [PositionService] Could not read investmentPayouts.json:', err.message);
-    cachedPayouts = [];
-  }
-}
-
-function savePositionsToDisk() {
-  try {
-    fs.writeFileSync(POSITIONS_FILE, JSON.stringify(cachedPositions, null, 2), 'utf8');
-  } catch (err) {
-    console.error('❌ [PositionService] Failed to write investorPositions.json:', err.message);
-  }
-}
-
-function savePayoutsToDisk() {
-  try {
-    fs.writeFileSync(PAYOUTS_FILE, JSON.stringify(cachedPayouts, null, 2), 'utf8');
-  } catch (err) {
-    console.error('❌ [PositionService] Failed to write investmentPayouts.json:', err.message);
-  }
-}
-
-loadDiskLedger();
+// Supabase PostgreSQL is the primary durable store; in-memory arrays serve as fast runtime cache.
 
 /**
  * Fetch all positions for an asset (active and retired)
@@ -203,12 +155,11 @@ async function recordInvestmentPosition({
         positionRecord.id = data.id;
       }
     } catch (_dbErr) {
-      console.warn('⚠️ [PositionService] DB insert fallback to disk ledger:', _dbErr.message);
+      console.warn('⚠️ [PositionService] DB insert fallback to in-memory cache:', _dbErr.message);
     }
 
-    // 2. Persist to in-memory & disk cache
+    // 2. Persist to in-memory cache
     cachedPositions.push(positionRecord);
-    savePositionsToDisk();
 
     // 3. Log audit event
     auditLogService.logEvent({
@@ -418,7 +369,6 @@ async function processOutrightBuyoutAllocations({
         });
       } catch (_e) {}
     }
-    savePayoutsToDisk();
 
     // 5. Retire old investor positions
     for (const pos of cachedPositions) {
@@ -427,7 +377,6 @@ async function processOutrightBuyoutAllocations({
         pos.updated_at = now;
       }
     }
-    savePositionsToDisk();
 
     try {
       await supabase
@@ -472,7 +421,26 @@ async function processOutrightBuyoutAllocations({
       }
     }
 
-    // 7. Record full provenance milestone in asset_history
+    // 7. Clean up seller's and fractional investors' holdings from user_holdings
+    if (sellerId && sellerId !== buyerId) {
+      try {
+        await supabase
+          .from('user_holdings')
+          .delete()
+          .eq('user_id', sellerId)
+          .ilike('name', asset.name);
+      } catch (_e) {}
+    }
+
+    try {
+      await supabase
+        .from('user_holdings')
+        .delete()
+        .eq('asset_type', 'fractional')
+        .ilike('name', `${asset.name}%`);
+    } catch (_e) {}
+
+    // 8. Record full provenance milestone in asset_history
     const buyoutEventDescription = totalInvestorShares > 0
       ? `Whole-Item Buyout & Fractional Retirement: Acquired 100% full ownership via ${paymentRailName}. ${totalInvestorShares} fractional investor shares redeemed pro-rata. Original seller: ${sellerId ? String(sellerId).slice(0, 8) : 'Verified Lister'}.`
       : `Ownership Transferred: Acquired 100% full ownership via ${paymentRailName}. Original seller: ${sellerId ? String(sellerId).slice(0, 8) : 'Verified Lister'}.`;

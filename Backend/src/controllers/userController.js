@@ -92,7 +92,7 @@ async function getVault(req, res) {
     const formattedPortfolio = vaultTxService.formatZar(portfolioValueNum);
     const totalCombinedNum = availableBalanceNum + portfolioValueNum;
     const totalCombinedFormatted = vaultTxService.formatZar(totalCombinedNum);
-    const transactions = vaultTxService.getUserTransactions(userId);
+    const transactions = await vaultTxService.fetchUserTransactions(userId);
 
     return res.status(200).json({
       success: true,
@@ -569,7 +569,7 @@ async function getTransactions(req, res) {
   try {
     const userId = req.user.id;
     const vaultTxService = require('../services/vaultTransactionService');
-    const transactions = vaultTxService.getUserTransactions(userId);
+    const transactions = await vaultTxService.fetchUserTransactions(userId);
     const balanceNum = await vaultTxService.getUserBalance(userId);
 
     return res.status(200).json({
