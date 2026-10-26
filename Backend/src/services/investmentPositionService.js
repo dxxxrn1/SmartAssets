@@ -421,7 +421,26 @@ async function processOutrightBuyoutAllocations({
       }
     }
 
-    // 7. Record full provenance milestone in asset_history
+    // 7. Clean up seller's and fractional investors' holdings from user_holdings
+    if (sellerId && sellerId !== buyerId) {
+      try {
+        await supabase
+          .from('user_holdings')
+          .delete()
+          .eq('user_id', sellerId)
+          .ilike('name', asset.name);
+      } catch (_e) {}
+    }
+
+    try {
+      await supabase
+        .from('user_holdings')
+        .delete()
+        .eq('asset_type', 'fractional')
+        .ilike('name', `${asset.name}%`);
+    } catch (_e) {}
+
+    // 8. Record full provenance milestone in asset_history
     const buyoutEventDescription = totalInvestorShares > 0
       ? `Whole-Item Buyout & Fractional Retirement: Acquired 100% full ownership via ${paymentRailName}. ${totalInvestorShares} fractional investor shares redeemed pro-rata. Original seller: ${sellerId ? String(sellerId).slice(0, 8) : 'Verified Lister'}.`
       : `Ownership Transferred: Acquired 100% full ownership via ${paymentRailName}. Original seller: ${sellerId ? String(sellerId).slice(0, 8) : 'Verified Lister'}.`;

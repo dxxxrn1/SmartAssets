@@ -387,20 +387,60 @@ async function processPayment(req, res) {
     const holdingType = isFractional ? 'fractional' : 'whole';
     const transactionId = verifiedTxHash || verifiedPaymentIntentId || orderId;
 
-    try {
-      // 5A. Insert holding in buyer's personal vault
-      await supabase.from('user_holdings').insert({
-        user_id: userId,
-        name: holdingName,
-        category: assetCategory,
-        price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
-        price_num: actualPriceZar,
-        image: assetImage,
-        asset_type: holdingType,
-        gain: '+0.0%',
-        gain_pct: '0%',
-        positive: true,
-      });
+      // 5A. Insert or transfer holding into buyer's personal vault, removing it from seller's vault
+      if (!isFractional && sellerId && sellerId !== userId) {
+        const { data: existingSellerHoldings } = await supabase
+          .from('user_holdings')
+          .select('*')
+          .eq('user_id', sellerId)
+          .ilike('name', assetName)
+          .limit(1);
+
+        if (existingSellerHoldings && existingSellerHoldings.length > 0) {
+          // Reassign existing holding so NFT certificate metadata, token ID, and hashes transfer to the buyer
+          await supabase
+            .from('user_holdings')
+            .update({
+              user_id: userId,
+              price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+              price_num: actualPriceZar,
+            })
+            .eq('id', existingSellerHoldings[0].id);
+        } else {
+          await supabase.from('user_holdings').insert({
+            user_id: userId,
+            name: holdingName,
+            category: assetCategory,
+            price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+            price_num: actualPriceZar,
+            image: assetImage,
+            asset_type: holdingType,
+            gain: '+0.0%',
+            gain_pct: '0%',
+            positive: true,
+          });
+        }
+
+        // Guarantee that no duplicate or legacy holdings for this item remain in seller's vault
+        await supabase
+          .from('user_holdings')
+          .delete()
+          .eq('user_id', sellerId)
+          .ilike('name', assetName);
+      } else {
+        await supabase.from('user_holdings').insert({
+          user_id: userId,
+          name: holdingName,
+          category: assetCategory,
+          price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+          price_num: actualPriceZar,
+          image: assetImage,
+          asset_type: holdingType,
+          gain: '+0.0%',
+          gain_pct: '0%',
+          positive: true,
+        });
+      }
 
       if (isFractional && asset?.id) {
         // 5B. Fractional Investment Path: Record durable investor position
