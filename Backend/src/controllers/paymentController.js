@@ -387,6 +387,7 @@ async function processPayment(req, res) {
     const holdingType = isFractional ? 'fractional' : 'whole';
     const transactionId = verifiedTxHash || verifiedPaymentIntentId || orderId;
 
+    try {
       // 5A. Insert or transfer holding into buyer's personal vault, removing it from seller's vault
       if (!isFractional && sellerId && sellerId !== userId) {
         const { data: existingSellerHoldings } = await supabase
@@ -615,7 +616,8 @@ async function processPayment(req, res) {
       },
       escrowOrder,
     });
-  } catch (err) {
+  }
+  catch (err) {
     console.error('processPayment error:', err);
     return sendError(res, 500, err.message || 'Internal server error processing payment.');
   }
