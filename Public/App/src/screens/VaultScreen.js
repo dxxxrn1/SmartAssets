@@ -807,20 +807,30 @@ export default function VaultScreen({ navigation }) {
                 </Text>
               </View>
 
-              <View style={styles.gainPill}>
+              <TouchableOpacity
+                style={styles.gainPill}
+                onPress={() => navigation.navigate(SCREENS.PROFILE_ANALYTICS)}
+                activeOpacity={0.8}
+              >
                 <Feather
-                  name="trending-up"
+                  name="bar-chart-2"
                   size={12}
                   color="#FFFFFF"
                   style={{ marginRight: 4 }}
                 />
                 <Text style={styles.gainPillText}>
-                  {summary.gainText || "+0.0% Overall Gain"}
+                  {summary.gainText || "+0.0% YTD"}
                 </Text>
-              </View>
+                <Feather
+                  name="chevron-right"
+                  size={11}
+                  color="#FFFFFF"
+                  style={{ marginLeft: 3 }}
+                />
+              </TouchableOpacity>
             </View>
 
-            {/* Quick Actions (Deposit & Withdraw Buttons) */}
+            {/* Quick Actions (Deposit, Withdraw & Analytics Buttons) */}
             <View style={styles.heroActionRow}>
               <TouchableOpacity
                 style={styles.depositActionBtn}
@@ -838,11 +848,11 @@ export default function VaultScreen({ navigation }) {
               >
                 <Feather
                   name="plus"
-                  size={16}
+                  size={15}
                   color="#5835F5"
-                  style={{ marginRight: 6 }}
+                  style={{ marginRight: 4 }}
                 />
-                <Text style={styles.depositActionBtnText}>Deposit funds</Text>
+                <Text style={styles.depositActionBtnText}>Deposit</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -868,11 +878,25 @@ export default function VaultScreen({ navigation }) {
               >
                 <Feather
                   name="arrow-up-right"
-                  size={16}
+                  size={15}
                   color="#FFFFFF"
-                  style={{ marginRight: 6 }}
+                  style={{ marginRight: 4 }}
                 />
                 <Text style={styles.withdrawActionBtnText}>Withdraw</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.analyticsActionBtn}
+                onPress={() => navigation.navigate(SCREENS.PROFILE_ANALYTICS)}
+                activeOpacity={0.85}
+              >
+                <Feather
+                  name="pie-chart"
+                  size={15}
+                  color="#FFFFFF"
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.analyticsActionBtnText}>Analytics</Text>
               </TouchableOpacity>
             </View>
           </LinearGradient>
@@ -1664,6 +1688,20 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   withdrawActionBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  analyticsActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.22)",
+    paddingVertical: 11,
+    borderRadius: 999,
+  },
+  analyticsActionBtnText: {
     fontSize: 13,
     fontWeight: "700",
     color: "#FFFFFF",
