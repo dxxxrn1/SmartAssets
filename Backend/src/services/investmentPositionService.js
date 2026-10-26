@@ -238,33 +238,55 @@ async function processOutrightBuyoutAllocations({
     const payoutLedgerEntries = [];
     const now = new Date().toISOString();
 
-    // 2. Allocate pro-rata proceeds to each shareholder
+    // 2. Notify seller and shareholders that buyout is initiated and payouts are processing
+    if (sellerId) {
+      await notificationService.sendNotification({
+        userId: sellerId,
+        type: 'buyout_pending',
+        title: 'Outright Buyout Initiated — Payout Processing',
+        message: `An outright buyout for "${asset.name}" was initiated by ${buyerName}. Payout distribution of R${(Math.round((sellerRemainingShares / totalShares) * netDistributableZar)).toLocaleString('en-ZA')} is processing.`,
+        orderId,
+        assetId,
+      });
+    }
+
     for (const [investorId, sharesHeld] of investorShareMap.entries()) {
-      const shareRatio = sharesHeld / totalShares;
-      const payoutAmountZar = Math.round(shareRatio * netDistributableZar);
+      await notificationService.sendNotification({
+        userId: investorId,
+        type: 'buyout_pending',
+        title: 'Asset Buyout Initiated — Payout Pending',
+        message: `An outright buyout was initiated for "${asset.name}". Your pro-rata payout for ${sharesHeld} shares is processing.`,
+        orderId,
+        assetId,
+      });
+    }
 
-      const payoutRecord = {
-        id: 'payout_' + Math.random().toString(36).substring(2, 12),
-        asset_id: assetId,
-        order_id: orderId,
-        recipient_id: investorId,
-        recipient_role: 'investor',
-        shares_represented: sharesHeld,
-        total_shares: totalShares,
-        gross_sale_zar: grossNum,
-        net_distributable_zar: netDistributableZar,
-        platform_fee_zar: platformFeeZar,
-        payout_amount_zar: payoutAmountZar,
-        payout_amount_eth: 0,
-        tx_hash: txHash,
-        status: 'completed',
-        created_at: now,
-      };
+    // 3. Prepare payout ledger entries and execute fail-closed balance credits
+    try {
+      // 3A. Distribute pro-rata proceeds to each shareholder
+      for (const [investorId, sharesHeld] of investorShareMap.entries()) {
+        const shareRatio = sharesHeld / totalShares;
+        const payoutAmountZar = Math.round(shareRatio * netDistributableZar);
 
-      payoutLedgerEntries.push(payoutRecord);
+        const payoutRecord = {
+          id: 'payout_' + Math.random().toString(36).substring(2, 12),
+          asset_id: assetId,
+          order_id: orderId,
+          recipient_id: investorId,
+          recipient_role: 'investor',
+          shares_represented: sharesHeld,
+          total_shares: totalShares,
+          gross_sale_zar: grossNum,
+          net_distributable_zar: netDistributableZar,
+          platform_fee_zar: platformFeeZar,
+          payout_amount_zar: payoutAmountZar,
+          payout_amount_eth: 0,
+          tx_hash: txHash,
+          status: 'completed',
+          created_at: now,
+        };
 
-      // Credit investor's vault balance
-      try {
+        // Fail-closed execution: deposit into investor's vault balance
         await vaultTransactionService.depositFunds({
           userId: investorId,
           amount: payoutAmountZar,
@@ -272,55 +294,72 @@ async function processOutrightBuyoutAllocations({
           reference: `BUYOUT-${orderId}`,
           notes: `Pro-rata payout for ${sharesHeld}/${totalShares} shares in "${asset.name}" bought outright.`,
         });
-      } catch (vaultErr) {
-        console.warn(`⚠️ [BuyoutEngine] Could not credit vault for investor ${investorId}:`, vaultErr.message);
+
+        payoutLedgerEntries.push(payoutRecord);
+        cachedPayouts.push(payoutRecord);
+
+        // Record payout in durable Supabase ledger
+        try {
+          await supabase.from('investment_payouts').insert({
+            asset_id: payoutRecord.asset_id,
+            order_id: payoutRecord.order_id,
+            recipient_id: payoutRecord.recipient_id,
+            recipient_role: payoutRecord.recipient_role,
+            shares_represented: payoutRecord.shares_represented,
+            total_shares: payoutRecord.total_shares,
+            gross_sale_zar: payoutRecord.gross_sale_zar,
+            net_distributable_zar: payoutRecord.net_distributable_zar,
+            platform_fee_zar: payoutRecord.platform_fee_zar,
+            payout_amount_zar: payoutRecord.payout_amount_zar,
+            tx_hash: payoutRecord.tx_hash,
+            status: 'completed',
+          });
+        } catch (_dbPayErr) {
+          console.warn('⚠️ [BuyoutEngine] DB insert investment_payouts fallback:', _dbPayErr.message);
+        }
+
+        // Notify shareholder of confirmed payout
+        await notificationService.sendNotification({
+          userId: investorId,
+          type: 'buyout_payout_complete',
+          title: 'Investment Bought Out — Payout Credited',
+          message: `"${asset.name}" was purchased outright. Your ${sharesHeld} shares have been redeemed for R${payoutAmountZar.toLocaleString('en-ZA')} net proceeds.`,
+          orderId,
+          assetId,
+          metadata: {
+            assetName: asset.name,
+            sharesHeld,
+            payoutAmountZar,
+            grossSaleZar: grossNum,
+          },
+        });
       }
 
-      // Notify shareholder
-      await notificationService.sendNotification({
-        userId: investorId,
-        type: 'buyout_payout_complete',
-        title: 'Investment Bought Out — Payout Credited',
-        message: `"${asset.name}" was purchased outright. Your ${sharesHeld} shares have been redeemed for R${payoutAmountZar.toLocaleString('en-ZA')} net proceeds.`,
-        orderId,
-        assetId,
-        metadata: {
-          assetName: asset.name,
-          sharesHeld,
-          payoutAmountZar,
-          grossSaleZar: grossNum,
-        },
-      });
-    }
+      // 3B. Allocate remaining share proceeds to original seller
+      let sellerPayoutAmountZar = 0;
+      if (sellerId && sellerRemainingShares > 0) {
+        const sellerRatio = sellerRemainingShares / totalShares;
+        sellerPayoutAmountZar = Math.round(sellerRatio * netDistributableZar);
 
-    // 3. Allocate remaining share proceeds to original seller
-    let sellerPayoutAmountZar = 0;
-    if (sellerId && sellerRemainingShares > 0) {
-      const sellerRatio = sellerRemainingShares / totalShares;
-      sellerPayoutAmountZar = Math.round(sellerRatio * netDistributableZar);
+        const sellerPayoutRecord = {
+          id: 'payout_seller_' + Math.random().toString(36).substring(2, 12),
+          asset_id: assetId,
+          order_id: orderId,
+          recipient_id: sellerId,
+          recipient_role: 'seller',
+          shares_represented: sellerRemainingShares,
+          total_shares: totalShares,
+          gross_sale_zar: grossNum,
+          net_distributable_zar: netDistributableZar,
+          platform_fee_zar: platformFeeZar,
+          payout_amount_zar: sellerPayoutAmountZar,
+          payout_amount_eth: 0,
+          tx_hash: txHash,
+          status: 'completed',
+          created_at: now,
+        };
 
-      const sellerPayoutRecord = {
-        id: 'payout_seller_' + Math.random().toString(36).substring(2, 12),
-        asset_id: assetId,
-        order_id: orderId,
-        recipient_id: sellerId,
-        recipient_role: 'seller',
-        shares_represented: sellerRemainingShares,
-        total_shares: totalShares,
-        gross_sale_zar: grossNum,
-        net_distributable_zar: netDistributableZar,
-        platform_fee_zar: platformFeeZar,
-        payout_amount_zar: sellerPayoutAmountZar,
-        payout_amount_eth: 0,
-        tx_hash: txHash,
-        status: 'completed',
-        created_at: now,
-      };
-
-      payoutLedgerEntries.push(sellerPayoutRecord);
-
-      // Credit seller's vault balance
-      try {
+        // Fail-closed execution: deposit into seller's vault balance
         await vaultTransactionService.depositFunds({
           userId: sellerId,
           amount: sellerPayoutAmountZar,
@@ -328,49 +367,52 @@ async function processOutrightBuyoutAllocations({
           reference: `SALE-${orderId}`,
           notes: `Net proceeds for sale of "${asset.name}" (${sellerRemainingShares}/${totalShares} unsold shares).`,
         });
-      } catch (vaultErr) {
-        console.warn(`⚠️ [BuyoutEngine] Could not credit vault for seller ${sellerId}:`, vaultErr.message);
-      }
 
-      // Notify seller
-      await notificationService.sendNotification({
-        userId: sellerId,
-        type: 'asset_sold_buyout',
-        title: 'Item Sold Outright — Payout Credited',
-        message: `Your listing "${asset.name}" was purchased outright by ${buyerName}. Your remaining shares (${sellerRemainingShares}/${totalShares}) netted R${sellerPayoutAmountZar.toLocaleString('en-ZA')}.`,
-        orderId,
-        assetId,
-        metadata: {
-          assetName: asset.name,
-          sellerRemainingShares,
-          sellerPayoutAmountZar,
-          buyerId,
-        },
-      });
-    }
+        payoutLedgerEntries.push(sellerPayoutRecord);
+        cachedPayouts.push(sellerPayoutRecord);
 
-    // 4. Persist payout ledger entries to DB & local cache
-    for (const payout of payoutLedgerEntries) {
-      cachedPayouts.push(payout);
-      try {
-        await supabase.from('investment_payouts').insert({
-          asset_id: payout.asset_id,
-          order_id: payout.order_id,
-          recipient_id: payout.recipient_id,
-          recipient_role: payout.recipient_role,
-          shares_represented: payout.shares_represented,
-          total_shares: payout.total_shares,
-          gross_sale_zar: payout.gross_sale_zar,
-          net_distributable_zar: payout.net_distributable_zar,
-          platform_fee_zar: payout.platform_fee_zar,
-          payout_amount_zar: payout.payout_amount_zar,
-          tx_hash: payout.tx_hash,
-          status: 'completed',
+        try {
+          await supabase.from('investment_payouts').insert({
+            asset_id: sellerPayoutRecord.asset_id,
+            order_id: sellerPayoutRecord.order_id,
+            recipient_id: sellerPayoutRecord.recipient_id,
+            recipient_role: sellerPayoutRecord.recipient_role,
+            shares_represented: sellerPayoutRecord.shares_represented,
+            total_shares: sellerPayoutRecord.total_shares,
+            gross_sale_zar: sellerPayoutRecord.gross_sale_zar,
+            net_distributable_zar: sellerPayoutRecord.net_distributable_zar,
+            platform_fee_zar: sellerPayoutRecord.platform_fee_zar,
+            payout_amount_zar: sellerPayoutRecord.payout_amount_zar,
+            tx_hash: sellerPayoutRecord.tx_hash,
+            status: 'completed',
+          });
+        } catch (_dbPayErr) {
+          console.warn('⚠️ [BuyoutEngine] DB insert investment_payouts seller fallback:', _dbPayErr.message);
+        }
+
+        // Notify seller of confirmed payout
+        await notificationService.sendNotification({
+          userId: sellerId,
+          type: 'asset_sold_buyout',
+          title: 'Item Sold Outright — Payout Credited',
+          message: `Your listing "${asset.name}" was purchased outright by ${buyerName}. Your remaining shares (${sellerRemainingShares}/${totalShares}) netted R${sellerPayoutAmountZar.toLocaleString('en-ZA')}.`,
+          orderId,
+          assetId,
+          metadata: {
+            assetName: asset.name,
+            sellerRemainingShares,
+            sellerPayoutAmountZar,
+            buyerId,
+          },
         });
-      } catch (_e) {}
+      }
+    } catch (payoutErr) {
+      console.error('❌ [BuyoutEngine] Pro-rata buyout payout distribution failed:', payoutErr.message);
+      throw new Error(`Buyout payout distribution failed: ${payoutErr.message}. Old ownership and investor positions preserved.`);
     }
 
-    // 5. Retire old investor positions
+    // 4. ATOMIC RETIREMENT & OWNERSHIP TRANSFER (Only executed after payouts succeed)
+    // Retire old active investor positions in-memory and in Supabase
     for (const pos of cachedPositions) {
       if (String(pos.asset_id) === String(assetId) && pos.status === 'active') {
         pos.status = 'retired_bought_out';
@@ -384,11 +426,13 @@ async function processOutrightBuyoutAllocations({
         .update({ status: 'retired_bought_out', updated_at: now })
         .eq('asset_id', assetId)
         .eq('status', 'active');
-    } catch (_e) {}
+    } catch (_posErr) {
+      console.warn('⚠️ [BuyoutEngine] DB retire investor_positions fallback:', _posErr.message);
+    }
 
-    // 6. Update asset table:
+    // 5. Update asset table:
     // - mark listing sold
-    // - retire investment offering (allow_investment = false)
+    // - close investment offering (allow_investment = false)
     // - transfer current ownership to buyer (current_owner_id = buyerId, user_id = buyerId)
     // - preserve seller_id = original seller
     try {
@@ -403,7 +447,6 @@ async function processOutrightBuyoutAllocations({
         })
         .eq('id', assetId);
     } catch (assetUpdateErr) {
-      // In case columns current_owner_id / seller_id do not exist yet in schema cache
       try {
         await supabase
           .from('assets')
@@ -414,14 +457,11 @@ async function processOutrightBuyoutAllocations({
           })
           .eq('id', assetId);
       } catch (_e2) {
-        await supabase
-          .from('assets')
-          .update({ status: 'sold' })
-          .eq('id', assetId);
+        await supabase.from('assets').update({ status: 'sold' }).eq('id', assetId);
       }
     }
 
-    // 7. Clean up seller's and fractional investors' holdings from user_holdings
+    // 6. Clean up seller's and fractional investors' holdings from user_holdings
     if (sellerId && sellerId !== buyerId) {
       try {
         await supabase
@@ -439,6 +479,33 @@ async function processOutrightBuyoutAllocations({
         .eq('asset_type', 'fractional')
         .ilike('name', `${asset.name}%`);
     } catch (_e) {}
+
+    // 7. Insert whole asset holding for buyer in user_holdings
+    try {
+      const { data: existingBuyerHolding } = await supabase
+        .from('user_holdings')
+        .select('id')
+        .eq('user_id', buyerId)
+        .ilike('name', asset.name)
+        .maybeSingle();
+
+      if (!existingBuyerHolding) {
+        await supabase.from('user_holdings').insert({
+          user_id: buyerId,
+          name: asset.name,
+          category: asset.category || 'Luxury Asset',
+          price: `R${grossNum.toLocaleString('en-ZA')}`,
+          price_num: grossNum,
+          image: asset.image,
+          asset_type: 'whole',
+          gain: '+0.0%',
+          gain_pct: '0%',
+          positive: true,
+        });
+      }
+    } catch (_holdingErr) {
+      console.warn('⚠️ [BuyoutEngine] Buyer holding insert fallback:', _holdingErr.message);
+    }
 
     // 8. Record full provenance milestone in asset_history
     const buyoutEventDescription = totalInvestorShares > 0

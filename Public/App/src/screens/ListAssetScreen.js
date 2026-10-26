@@ -282,10 +282,10 @@ export default function ListAssetScreen({ navigation, route }) {
 
   // ── Image Picker Handlers ──────────────────────────────────────────────────
   const pickImageFromLibrary = async () => {
-    if (form.images.length >= 3) {
+    if (form.images.length >= 5) {
       showAlert(
         "Limit Reached",
-        "You can add up to 3 photos. Remove one to add another.",
+        "You can add up to 5 photos. Remove one to add another.",
       );
       return;
     }
@@ -300,7 +300,7 @@ export default function ListAssetScreen({ navigation, route }) {
         return;
       }
 
-      const remaining = 3 - form.images.length;
+      const remaining = 5 - form.images.length;
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: "images",
         allowsMultipleSelection: true,
@@ -315,7 +315,7 @@ export default function ListAssetScreen({ navigation, route }) {
         const newImages = result.assets.map((a) =>
           a.base64 ? `data:image/jpeg;base64,${a.base64}` : a.uri,
         );
-        const combined = [...form.images, ...newImages].slice(0, 3);
+        const combined = [...form.images, ...newImages].slice(0, 5);
         setForm((prev) => ({
           ...prev,
           images: combined,
@@ -338,10 +338,10 @@ export default function ListAssetScreen({ navigation, route }) {
   };
 
   const takePhotoWithCamera = async () => {
-    if (form.images.length >= 3) {
+    if (form.images.length >= 5) {
       showAlert(
         "Limit Reached",
-        "You can add up to 3 photos. Remove one to add another.",
+        "You can add up to 5 photos. Remove one to add another.",
       );
       return;
     }
@@ -477,6 +477,7 @@ export default function ListAssetScreen({ navigation, route }) {
         name: form.name.trim(),
         category: form.category || "Luxury Item",
         image: fallbackImg,
+        images: form.images,
         initialValue: enteredPrice,
         initialValueFormatted: `R${enteredPrice.toLocaleString("en-ZA")}`,
         liveMarketValue: oraclePrice,
@@ -660,6 +661,7 @@ export default function ListAssetScreen({ navigation, route }) {
         description: form.description.trim(),
         askingPrice: form.askingPrice.trim(),
         image: form.images[0],
+        images: form.images,
         allowInvestment: Boolean(allowInvestment),
         totalShares: allowInvestment ? (parseInt(totalShares, 10) || 100) : null,
         sharePrice: allowInvestment
@@ -995,7 +997,7 @@ export default function ListAssetScreen({ navigation, route }) {
                     </View>
                     <Text style={styles.sectionTitle}>Upload Asset Photos</Text>
                     <Text style={styles.stepDesc}>
-                      Add up to 3 high-resolution photos. The first photo will
+                      Add up to 5 high-resolution photos. The first photo will
                       be the primary spotlight image.
                     </Text>
                   </View>
@@ -1030,7 +1032,7 @@ export default function ListAssetScreen({ navigation, route }) {
                     ))}
 
                     {/* Empty slot */}
-                    {form.images.length < 3 && (
+                    {form.images.length < 5 && (
                       <TouchableOpacity
                         style={[styles.photoThumb, styles.addPhotoSlot]}
                         onPress={pickImageFromLibrary}
@@ -1042,7 +1044,7 @@ export default function ListAssetScreen({ navigation, route }) {
                         <Text style={styles.addPhotoSlotText}>
                           {form.images.length === 0
                             ? "Add Photo"
-                            : `${3 - form.images.length} more`}
+                            : `${5 - form.images.length} more`}
                         </Text>
                       </TouchableOpacity>
                     )}

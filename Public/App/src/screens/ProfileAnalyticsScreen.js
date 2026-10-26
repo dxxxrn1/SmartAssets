@@ -87,7 +87,7 @@ export default function ProfileAnalyticsScreen({ navigation }) {
       const [vaultRes, marketRes, buyerEscrowRes, sellerEscrowRes, txRes] =
         await Promise.allSettled([
           getUserVault(token, true),
-          getMarketAssets(),
+          getMarketAssets("All", "", true, true),
           getMyEscrowOrdersApi(token),
           getSellerEscrowOrdersApi(token),
           getVaultTransactionsApi(token),
@@ -293,8 +293,8 @@ export default function ProfileAnalyticsScreen({ navigation }) {
     // 1. Seller's listings on marketplace
     const myListings = marketAssets.filter(
       (a) =>
-        String(a.seller_id) === String(currentUserId) ||
-        String(a.user_id) === String(currentUserId)
+        String(a.seller_id || a.sellerId) === String(currentUserId) ||
+        String(a.user_id || a.userId) === String(currentUserId)
     );
 
     const verifiedListings = myListings.filter(
@@ -307,7 +307,8 @@ export default function ProfileAnalyticsScreen({ navigation }) {
 
     // 2. Orders where user is the seller
     const mySalesOrders = escrowOrders.filter(
-      (o) => String(o.sellerId) === String(currentUserId)
+      (o) =>
+        String(o.sellerId || o.seller_id) === String(currentUserId)
     );
 
     const filteredOrders = mySalesOrders.filter((o) => {
@@ -316,20 +317,38 @@ export default function ProfileAnalyticsScreen({ navigation }) {
     });
 
     const completedOrders = filteredOrders.filter(
-      (o) => o.status === "completed" || o.status === "released"
+      (o) =>
+        o.status === "completed" ||
+        o.status === "released" ||
+        o.status === "payment_secured"
     );
 
     const revenueNum = completedOrders.reduce(
-      (sum, o) => sum + (Number(o.amountZar) || Number(o.priceZar) || 0),
+      (sum, o) =>
+        sum +
+        (Number(o.amountZar) ||
+          Number(o.amount_zar) ||
+          Number(o.priceZar) ||
+          0),
       0
     );
 
     // In Escrow (Active locked funds awaiting completion)
     const inEscrowOrders = mySalesOrders.filter(
-      (o) => o.status === "held" || o.status === "funded"
+      (o) =>
+        o.status === "held" ||
+        o.status === "funded" ||
+        o.status === "payment_secured" ||
+        o.status === "in_transit" ||
+        o.status === "in_inspection"
     );
     const inEscrowNum = inEscrowOrders.reduce(
-      (sum, o) => sum + (Number(o.amountZar) || Number(o.priceZar) || 0),
+      (sum, o) =>
+        sum +
+        (Number(o.amountZar) ||
+          Number(o.amount_zar) ||
+          Number(o.priceZar) ||
+          0),
       0
     );
 

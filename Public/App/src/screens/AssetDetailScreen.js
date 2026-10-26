@@ -73,6 +73,139 @@ const getFractionalSharePrice = (asset) => {
   return `R${calculated.toLocaleString("en-ZA")} / share`;
 };
 
+const getCategoryAuditConfig = (category = "", name = "", asset = {}) => {
+  const combined = `${category} ${name}`.toLowerCase();
+  const certDisplay = asset?.token_id
+    ? `ERC-721 #${asset.token_id}`
+    : asset?.cert
+      ? `Cert #${asset.cert}`
+      : `Vault Reg #${Math.floor(4000 + (asset?.id ? String(asset.id).charCodeAt(0) * 10 : 250))}`;
+  const condDisplay = asset?.condition || "Verified Condition";
+  const yearDisplay = asset?.year || new Date().getFullYear();
+
+  if (
+    /electronic|tech|gadget|laptop|macbook|computer|phone|samsung|iphone|keyboard|mouse|headphone|accessories|accessory|router|audio|tv|display/i.test(
+      combined
+    )
+  ) {
+    return {
+      oracleSources: "Takealot, Amazon & PriceCheck",
+      inspectionSummary:
+        "Chassis integrity, serial barcodes, OEM firmware hash, and component tolerances match verified hardware reference archive.",
+      check1: asset?.token_id
+        ? `On-chain Sepolia NFT (${certDisplay}) cryptographically verified`
+        : `Digital custody registry (${certDisplay}) recorded & sealed in Vault`,
+      check2: `Hardware integrity & serial verified (${condDisplay} · ${yearDisplay})`,
+      check3: "Passed AI Vision Gatekeeper scan (Zero synthetic or altered defects)",
+      liquidityTier: "ACTIVE RESALE",
+      summaryNote: "Fast-moving tech hardware. Tracked against live retail comps with instant escrow fulfillment.",
+    };
+  }
+
+  if (/watch|timepiece|horology|chronograph|rolex|patek|audemars|omega|cartier/i.test(combined)) {
+    return {
+      oracleSources: "Chrono24 & WatchCharts",
+      inspectionSummary:
+        "Dial micro-tolerances, bezel alignment, serial engraving, and movement hallmarks match verified horology reference archive.",
+      check1: asset?.token_id
+        ? `On-chain Sepolia NFT (${certDisplay}) cryptographically verified`
+        : `Digital custody registry (${certDisplay}) recorded & sealed in Vault`,
+      check2: `Horological hallmarks & physical casing verified (${condDisplay} · ${yearDisplay})`,
+      check3: "Passed AI Vision Gatekeeper scan (Zero synthetic or altered defects)",
+      liquidityTier: "HIGH DEMAND",
+      summaryNote: "Strong global horology liquidity depth. High collector demand with zero escrow slippage.",
+    };
+  }
+
+  if (/sneaker|shoe|kicks|streetwear|apparel|clothing|hoodie|jacket|dunk|jordan|yeezy/i.test(combined)) {
+    return {
+      oracleSources: "StockX, GOAT & Flight Club",
+      inspectionSummary:
+        "Midsole tooling, stitching density, box label typography, and UV security stamps match deadstock archive.",
+      check1: asset?.token_id
+        ? `On-chain Sepolia NFT (${certDisplay}) cryptographically verified`
+        : `Digital custody registry (${certDisplay}) recorded & sealed in Vault`,
+      check2: `Footwear tooling, materials & stitch tolerances verified (${condDisplay} · ${yearDisplay})`,
+      check3: "Passed AI Vision Gatekeeper scan (Zero synthetic or altered defects)",
+      liquidityTier: "HIGH DEMAND",
+      summaryNote: "High-turnover streetwear market depth. Fractional and whole pair transactions clear instantly.",
+    };
+  }
+
+  if (/jewelry|diamond|gem|gold|silver|platinum|ring|necklace|bracelet/i.test(combined)) {
+    return {
+      oracleSources: "RapNet, De Beers & Blue Nile",
+      inspectionSummary:
+        "Carat weight, optical clarity, metal purity hallmarks, and stone settings verified against gemological archive.",
+      check1: asset?.token_id
+        ? `On-chain Sepolia NFT (${certDisplay}) cryptographically verified`
+        : `Digital custody registry (${certDisplay}) recorded & sealed in Vault`,
+      check2: `Metallurgical hallmarks & gemological inspection verified (${condDisplay} · ${yearDisplay})`,
+      check3: "Passed AI Vision Gatekeeper scan (Zero synthetic or altered defects)",
+      liquidityTier: "HIGH DEMAND",
+      summaryNote: "Appraised luxury jewelry backed by physical vault custody and verified assay records.",
+    };
+  }
+
+  if (/car|vehicle|auto|motorcycle|porsche|ferrari|bmw|mercedes/i.test(combined)) {
+    return {
+      oracleSources: "AutoTrader & Bring a Trailer",
+      inspectionSummary:
+        "VIN registry, chassis alignment, service logbook, and odometer telemetry verified against verified archives.",
+      check1: asset?.token_id
+        ? `On-chain Sepolia NFT (${certDisplay}) cryptographically verified`
+        : `Digital custody registry (${certDisplay}) recorded & sealed in Vault`,
+      check2: `Chassis structural integrity & mechanical pedigree verified (${condDisplay} · ${yearDisplay})`,
+      check3: "Passed AI Vision Gatekeeper scan (Clean title & authentic verification)",
+      liquidityTier: "HIGH DEMAND",
+      summaryNote: "Verified automotive collectible with clean title and verified maintenance provenance.",
+    };
+  }
+
+  if (/art|painting|sculpture|print|canvas|lithograph/i.test(combined)) {
+    return {
+      oracleSources: "Heritage Auctions & Sotheby's",
+      inspectionSummary:
+        "Surface pigment analysis, canvas substrate, artist signature, and catalogue raisonné verified.",
+      check1: asset?.token_id
+        ? `On-chain Sepolia NFT (${certDisplay}) cryptographically verified`
+        : `Digital custody registry (${certDisplay}) recorded & sealed in Vault`,
+      check2: `Pigment aging, medium & signature verified (${condDisplay} · ${yearDisplay})`,
+      check3: "Passed AI Vision Gatekeeper scan (Zero undisclosed restoration or alteration)",
+      liquidityTier: "HIGH CONVICTION",
+      summaryNote: "High-conviction art collectible with verified gallery provenance and authenticated substrate.",
+    };
+  }
+
+  if (/card|pokemon|magic|sports|comic|memorabilia/i.test(combined)) {
+    return {
+      oracleSources: "PSA PriceGuide & eBay Sold Comps",
+      inspectionSummary:
+        "Centering ratios, surface gloss, edge wear, and holographic seal match grading archive.",
+      check1: asset?.token_id
+        ? `On-chain Sepolia NFT (${certDisplay}) cryptographically verified`
+        : `Digital custody registry (${certDisplay}) recorded & sealed in Vault`,
+      check2: `Centering ratios, corner sharpness & foil verified (${condDisplay} · ${yearDisplay})`,
+      check3: "Passed AI Vision Gatekeeper scan (Zero synthetic reprint artifacts detected)",
+      liquidityTier: "ACTIVE RESALE",
+      summaryNote: "Active trading card collectible with verified centering, surface grade, and archival seal.",
+    };
+  }
+
+  return {
+    oracleSources: "Google Shopping & Global Comps",
+    inspectionSummary:
+      "Physical hallmarks, material density, manufacturer stamps, and reference records verified against archive.",
+    check1: asset?.token_id
+      ? `On-chain Sepolia NFT (${certDisplay}) cryptographically verified`
+      : `Digital custody registry (${certDisplay}) recorded & sealed in Vault`,
+    check2: `Manufacturer stampings & physical condition verified (${condDisplay} · ${yearDisplay})`,
+    check3: "Passed AI Vision Gatekeeper scan (Zero counterfeit or altered indicators)",
+    liquidityTier: "ACTIVE RESALE",
+    summaryNote: "Verified collectible asset authenticated against global market comps and digital custody archives.",
+  };
+};
+
 export default function AssetDetailScreen({ navigation, route }) {
   const { user } = useAuth();
   const initialAsset = route?.params?.asset ?? {};
@@ -252,6 +385,24 @@ export default function AssetDetailScreen({ navigation, route }) {
       ? `${asset.positive ? "+" : ""}${asset.gain_pct}%`
       : asset.gain || "+12.4%");
 
+  const hasExplicitNegative =
+    asset.positive === false ||
+    String(gainBadgeText || "").includes("-") ||
+    String(asset.badgeText || "").toLowerCase().includes("depreciation") ||
+    String(asset.gain || "").includes("-");
+
+  const liveVal =
+    typeof asset.liveMarketValue === "number"
+      ? asset.liveMarketValue
+      : parseFloat(String(asset.liveMarketValue || "").replace(/[^0-9.]/g, "")) || 0;
+  const initVal =
+    typeof asset.initialValue === "number"
+      ? asset.initialValue
+      : parseFloat(String(asset.initialValue || "").replace(/[^0-9.]/g, "")) || 0;
+
+  const isDepreciating = hasExplicitNegative || (liveVal > 0 && initVal > 0 && liveVal < initVal);
+  const badgeText = rawBadge || gainBadgeText || (isDepreciating ? "-12.0% YoY" : "+12.4% Market Gain");
+
   // Dynamic Investment Thesis / Smart Take
   const smartTake = (() => {
     // 1. If custom smart take was saved on the asset or embedded in metadata:
@@ -268,52 +419,55 @@ export default function AssetDetailScreen({ navigation, route }) {
       };
     }
 
-    // 2. Dynamic generation based on category, name, condition, and liveMarketValue vs initialValue
+    // 2. Dynamic generation based on financial direction (gain vs loss) and category
     const cat = (asset.category || "").toLowerCase();
     const name = (asset.name || "").toLowerCase();
     const condition = asset.condition || "Verified";
 
-    const liveVal =
-      typeof asset.liveMarketValue === "number"
-        ? asset.liveMarketValue
-        : parseFloat(String(asset.liveMarketValue || "").replace(/[^0-9.]/g, "")) || 0;
-    const initVal =
-      typeof asset.initialValue === "number"
-        ? asset.initialValue
-        : parseFloat(String(asset.initialValue || "").replace(/[^0-9.]/g, "")) || 0;
-
-    const isDepreciating = liveVal > 0 && initVal > 0 && liveVal < initVal;
-    const badgeText = rawBadge || gainBadgeText || "-12% YoY";
-
-    const isTech =
-      isDepreciating ||
-      /electronic|tech|gadget|laptop|macbook|computer|phone|samsung|iphone|keyboard|mouse|headphone|accessories|accessory/i.test(
-        `${cat} ${name}`
-      );
+    const isTech = /electronic|tech|gadget|laptop|macbook|computer|phone|samsung|iphone|keyboard|mouse|headphone|accessories|accessory|router/i.test(
+      `${cat} ${name}`
+    );
 
     if (isTech) {
+      if (isDepreciating) {
+        return {
+          title: "Tracked Utility & Tech Asset.",
+          body: `Consumer electronics experience utility depreciation (${badgeText}). Live Oracle tracking monitors real-time second-hand resale value across South African retailers.`,
+        };
+      }
       return {
-        title: "Tracked Utility & Tech Asset.",
-        body: `Consumer hardware experiences natural market depreciation (${badgeText || "-12% YoY"}). Live Oracle tracking monitors real-time second-hand resale value across South African retailers.`,
+        title: "High-Demand Tech & Electronics.",
+        body: `Demonstrating solid resale resilience (${badgeText}). High consumer demand and steady retail availability protect residual asset value across verified channels.`,
       };
     }
 
-    const isSneakers =
-      /sneaker|shoe|apparel|streetwear|clothing|hoodie|jacket/i.test(
-        `${cat} ${name}`
-      );
+    const isSneakers = /sneaker|shoe|apparel|streetwear|clothing|hoodie|jacket/i.test(
+      `${cat} ${name}`
+    );
 
     if (isSneakers) {
+      if (isDepreciating) {
+        return {
+          title: "Streetwear & Apparel Asset.",
+          body: `Secondary market pricing reflects retail restocking and wear (${badgeText}). Monitored across verified sneaker liquidity exchanges.`,
+        };
+      }
       return {
         title: "High-Liquidity Collector Piece.",
-        body: `Condition-sensitive streetwear asset (${condition || "Verified"}). Secondary market value is driven by deadstock scarcity and collector wishlist demand.`,
+        body: `Condition-sensitive collector asset (${condition || "Verified"}). Secondary market value is driven by deadstock scarcity and collector wishlist demand (${badgeText}).`,
       };
     }
 
     // Default: Luxury Watch / Fine Art / Jewelry / High-Conviction Collectible
+    if (isDepreciating) {
+      return {
+        title: "Monitored Luxury Collectible.",
+        body: `Current valuation comps reflect cyclical secondary market adjustments (${badgeText}). Authenticity certification and physical vault custody safeguard core value.`,
+      };
+    }
     return {
       title: "A High-Conviction Collectible.",
-      body: "Scarce supply and strong collector demand support long-term appreciation. Backed by Vault custody, verified provenance, and fractional liquidity.",
+      body: `Scarce supply and strong collector demand support long-term appreciation (${badgeText}). Backed by Vault custody, verified provenance, and fractional liquidity.`,
     };
   })();
 
@@ -385,6 +539,7 @@ export default function AssetDetailScreen({ navigation, route }) {
               horizontal
               pagingEnabled
               nestedScrollEnabled
+              directionalLockEnabled
               showsHorizontalScrollIndicator={false}
               scrollEventThrottle={16}
               onScroll={(e) => {
@@ -409,6 +564,7 @@ export default function AssetDetailScreen({ navigation, route }) {
                 <TouchableOpacity
                   key={idx}
                   activeOpacity={0.92}
+                  delayPressIn={60}
                   onPress={() => setFullscreenImage(imgUri)}
                   style={[styles.heroImageSlide, { width: heroW }]}
                 >
@@ -1162,254 +1318,208 @@ export default function AssetDetailScreen({ navigation, route }) {
               </TouchableOpacity>
             </View>
 
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.healthModalScroll}
-            >
-              {/* SECTION 1: AI Vision Authenticity & Condition Score */}
-              <View style={styles.healthSectionCard}>
-                <View style={styles.healthSectionHeader}>
-                  <Text style={styles.healthSectionTag}>
-                    SECTION 1 • COMPUTER VISION
-                  </Text>
-                  <View style={styles.healthPassedBadge}>
-                    <Text style={styles.healthPassedText}>
-                      PASSED VERIFICATION
-                    </Text>
-                  </View>
-                </View>
+            {(() => {
+              const auditConfig = getCategoryAuditConfig(asset.category, asset.name, asset);
+              const rawP =
+                Number(asset?.price_num) ||
+                parseFloat(
+                  String(asset?.price || "").replace(/[^0-9.-]+/g, ""),
+                ) ||
+                assetPrice ||
+                350;
+              const low = formatZAR(lowPrice || Math.round(rawP * 0.92));
+              const high = formatZAR(highPrice || Math.round(rawP * 1.08));
+              const fair = formatZAR(rawP);
 
-                <View style={styles.healthScoreRow}>
-                  <View style={styles.healthScoreBigWrap}>
-                    <Text style={styles.healthScoreNumber}>
-                      {asset.healthScore || 96}
-                    </Text>
-                    <Text style={styles.healthScoreMax}>/100</Text>
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 16 }}>
-                    <Text style={styles.healthScoreTitle}>
-                      AI Vision Authenticity & Condition
-                    </Text>
-                    <Text style={styles.healthScoreDesc}>
-                      Physical features, dial micro-tolerances, serial
-                      engraving, and optical material match verified reference
-                      archive.
-                    </Text>
-                  </View>
-                </View>
+              const realHealthScore =
+                asset.healthScore ||
+                asset.score ||
+                (asset.aiScanScore !== null && asset.aiScanScore !== undefined
+                  ? Math.round((1 - Math.min(0.2, Number(asset.aiScanScore))) * 100)
+                  : null) ||
+                (asset.ai_scan_score !== null && asset.ai_scan_score !== undefined
+                  ? Math.round((1 - Math.min(0.2, Number(asset.ai_scan_score))) * 100)
+                  : null) ||
+                (92 + (((asset.name ? asset.name.charCodeAt(0) : 5) + (asset.id ? String(asset.id).charCodeAt(0) : 3)) % 7));
 
-                {/* Score Breakdown Bar */}
-                <View style={styles.healthProgressWrap}>
-                  <View style={styles.healthProgressTrack}>
-                    <LinearGradient
-                      colors={["#7C3AED", "#10B981"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={[
-                        styles.healthProgressFill,
-                        { width: `${asset.healthScore || 96}%` },
-                      ]}
-                    />
-                  </View>
-                  <View style={styles.healthProgressMeta}>
-                    <Text style={styles.healthProgressLabel}>
-                      Authenticity Confidence: 99.4%
-                    </Text>
-                    <Text style={styles.healthProgressGrade}>
-                      Grade A+ Mint
-                    </Text>
-                  </View>
-                </View>
+              const realConfidence =
+                asset.authenticityConfidence ||
+                asset.confidenceScore ||
+                (confidenceScore ? `${confidenceScore}%` : "99.4%");
 
-                <View style={styles.healthChecklist}>
-                  <View style={styles.healthCheckItem}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={16}
-                      color="#10B981"
-                    />
-                    <Text style={styles.healthCheckText}>
-                      Tamper-evident seals intact & cryptographically signed
-                    </Text>
-                  </View>
-                  <View style={styles.healthCheckItem}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={16}
-                      color="#10B981"
-                    />
-                    <Text style={styles.healthCheckText}>
-                      Laser-etched serial registry match on Sepolia testnet
-                    </Text>
-                  </View>
-                  <View style={styles.healthCheckItem}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={16}
-                      color="#10B981"
-                    />
-                    <Text style={styles.healthCheckText}>
-                      Zero microscopic structural fatigue or restoration
-                      detected
-                    </Text>
-                  </View>
-                </View>
-              </View>
+              const realCondition =
+                asset.condition ||
+                asset.conditionGrade ||
+                "Grade A+ (9.5/10) • Mint";
 
-              {/* SECTION 2: Live Market Oracle Range */}
-              <View style={styles.healthSectionCard}>
-                <View style={styles.healthSectionHeader}>
-                  <Text style={styles.healthSectionTag}>
-                    SECTION 2 • ORACLE VALUATION
-                  </Text>
-                  <View style={styles.healthOracleLiveBadge}>
-                    <View style={styles.healthLiveDot} />
-                    <Text style={styles.healthOracleLiveText}>
-                      LIVE COMPS SYNCED
-                    </Text>
+              return (
+                <ScrollView
+                  style={{ flex: 1 }}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.healthModalScroll}
+                  bounces={false}
+                >
+                  {/* SECTION 1: AI Vision Authenticity & Condition Score */}
+                  <View style={styles.healthSectionCard}>
+                    <View style={styles.healthSectionHeader}>
+                      <Text style={styles.healthSectionTag}>
+                        SECTION 1 • COMPUTER VISION
+                      </Text>
+                      <View style={styles.healthPassedBadge}>
+                        <Text style={styles.healthPassedText}>
+                          PASSED VERIFICATION
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.healthScoreRow}>
+                      <View style={styles.healthScoreBigWrap}>
+                        <Text style={styles.healthScoreNumber}>
+                          {realHealthScore}
+                        </Text>
+                        <Text style={styles.healthScoreMax}>/100</Text>
+                      </View>
+                      <View style={{ flex: 1, marginLeft: 16 }}>
+                        <Text style={styles.healthScoreTitle}>
+                          AI Vision Authenticity & Condition
+                        </Text>
+                        <Text style={styles.healthScoreDesc}>
+                          {auditConfig.inspectionSummary}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Score Breakdown Bar */}
+                    <View style={styles.healthProgressWrap}>
+                      <View style={styles.healthProgressTrack}>
+                        <LinearGradient
+                          colors={["#7C3AED", "#10B981"]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={[
+                            styles.healthProgressFill,
+                            { width: `${realHealthScore}%` },
+                          ]}
+                        />
+                      </View>
+                      <View style={styles.healthProgressMeta}>
+                        <Text style={styles.healthProgressLabel}>
+                          Authenticity Confidence: {String(realConfidence).endsWith("%") ? realConfidence : `${realConfidence}%`}
+                        </Text>
+                        <Text style={styles.healthProgressGrade}>
+                          {realCondition}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.healthChecklist}>
+                      <View style={styles.healthCheckItem}>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={16}
+                          color="#10B981"
+                        />
+                        <Text style={styles.healthCheckText}>
+                          {auditConfig.check1}
+                        </Text>
+                      </View>
+                      <View style={styles.healthCheckItem}>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={16}
+                          color="#10B981"
+                        />
+                        <Text style={styles.healthCheckText}>
+                          {auditConfig.check2}
+                        </Text>
+                      </View>
+                      <View style={styles.healthCheckItem}>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={16}
+                          color="#10B981"
+                        />
+                        <Text style={styles.healthCheckText}>
+                          {auditConfig.check3}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
-                </View>
 
-                <Text style={styles.healthOracleHeading}>
-                  Live Market Oracle Range
-                </Text>
+                  {/* SECTION 2: Live Market Oracle Range */}
+                  <View style={styles.healthSectionCard}>
+                    <View style={styles.healthSectionHeader}>
+                      <Text style={styles.healthSectionTag}>
+                        SECTION 2 • ORACLE VALUATION
+                      </Text>
+                      <View style={styles.healthOracleLiveBadge}>
+                        <View style={styles.healthLiveDot} />
+                        <Text style={styles.healthOracleLiveText}>
+                          LIVE COMPS SYNCED
+                        </Text>
+                      </View>
+                    </View>
 
-                {(() => {
-                  const rawP =
-                    Number(asset?.price_num) ||
-                    parseFloat(
-                      String(asset?.price || "").replace(/[^0-9.-]+/g, ""),
-                    ) ||
-                    34500;
-                  const low = formatGBP(Math.round(rawP * 0.94));
-                  const high = formatGBP(Math.round(rawP * 1.06));
-                  const fair = formatGBP(rawP);
-                  return (
+                    <Text style={styles.healthOracleHeading}>
+                      Live Market Oracle Range
+                    </Text>
+
                     <View>
                       <View style={styles.oracleRangePillWrap}>
                         <View style={styles.oracleBoundBox}>
                           <Text style={styles.oracleBoundLabel}>
                             ORACLE LOW
                           </Text>
-                          <Text style={styles.oracleBoundVal}>{low}</Text>
+                          <Text style={styles.oracleBoundVal} numberOfLines={1}>{low}</Text>
                         </View>
                         <View style={styles.oracleFairBox}>
                           <Text style={styles.oracleFairLabel}>
                             FAIR BENCHMARK
                           </Text>
-                          <Text style={styles.oracleFairVal}>{fair}</Text>
+                          <Text style={styles.oracleFairVal} numberOfLines={1}>{fair}</Text>
                         </View>
                         <View style={styles.oracleBoundBox}>
                           <Text style={styles.oracleBoundLabel}>
                             ORACLE HIGH
                           </Text>
-                          <Text style={styles.oracleBoundVal}>{high}</Text>
+                          <Text style={styles.oracleBoundVal} numberOfLines={1}>{high}</Text>
                         </View>
                       </View>
 
                       <View style={styles.oracleMetaRow}>
                         <View style={styles.oracleMetaItem}>
                           <Feather
-                            name="trending-up"
-                            size={13}
-                            color="#10B981"
+                            name={isDepreciating ? "trending-down" : "trending-up"}
+                            size={12}
+                            color={isDepreciating ? "#EF4444" : "#10B981"}
                           />
-                          <Text style={styles.oracleMetaText}>
-                            +4.8% 30d Gain
+                          <Text
+                            style={[
+                              styles.oracleMetaText,
+                              { color: isDepreciating ? "#EF4444" : "#10B981" },
+                            ]}
+                          >
+                            {gainBadgeText || (isDepreciating ? "-5.2% 30d Trend" : "+4.8% 30d Trend")}
                           </Text>
                         </View>
-                        <Text style={styles.oracleMetaDivider}>•</Text>
                         <View style={styles.oracleMetaItem}>
-                          <Feather name="globe" size={13} color="#6366F1" />
-                          <Text style={styles.oracleMetaText}>
-                            Sotheby's & Chrono24
+                          <Feather name="globe" size={12} color="#6366F1" />
+                          <Text style={styles.oracleMetaText} numberOfLines={1}>
+                            {auditConfig.oracleSources}
                           </Text>
                         </View>
-                        <Text style={styles.oracleMetaDivider}>•</Text>
                         <View style={styles.oracleMetaItem}>
-                          <Feather name="clock" size={13} color="#64748B" />
+                          <Feather name="check-circle" size={12} color="#10B981" />
                           <Text style={styles.oracleMetaText}>
-                            Updated 3m ago
+                            Synced with Oracle
                           </Text>
                         </View>
                       </View>
                     </View>
-                  );
-                })()}
-              </View>
-
-              {/* SECTION 3: Platform Wishlist & Liquidity Demand */}
-              <View style={styles.healthSectionCard}>
-                <View style={styles.healthSectionHeader}>
-                  <Text style={styles.healthSectionTag}>
-                    SECTION 3 • SECONDARY LIQUIDITY
-                  </Text>
-                  <View style={styles.healthLiquidityTierBadge}>
-                    <Text style={styles.healthLiquidityTierText}>
-                      TIER A • HIGH DEMAND
-                    </Text>
                   </View>
-                </View>
-
-                <Text style={styles.healthOracleHeading}>
-                  Platform Wishlist & Liquidity Demand
-                </Text>
-
-                <View style={styles.demandMetricsGrid}>
-                  <View style={styles.demandMetricBox}>
-                    <Ionicons name="heart" size={18} color="#EF4444" />
-                    <Text style={styles.demandMetricValue}>148</Text>
-                    <Text style={styles.demandMetricLabel}>
-                      Wishlist Trackers
-                    </Text>
-                  </View>
-
-                  <View style={styles.demandMetricBox}>
-                    <Ionicons name="flash" size={18} color="#F59E0B" />
-                    <Text style={styles.demandMetricValue}>6 Escrow Bids</Text>
-                    <Text style={styles.demandMetricLabel}>
-                      Instant-Fill Orders
-                    </Text>
-                  </View>
-
-                  <View style={styles.demandMetricBox}>
-                    <Ionicons
-                      name="speedometer-outline"
-                      size={18}
-                      color="#10B981"
-                    />
-                    <Text style={styles.demandMetricValue}>&lt; 4.2 Hours</Text>
-                    <Text style={styles.demandMetricLabel}>
-                      Avg Settlement Speed
-                    </Text>
-                  </View>
-
-                  <View style={styles.demandMetricBox}>
-                    <Ionicons
-                      name="pie-chart-outline"
-                      size={18}
-                      color="#7C3AED"
-                    />
-                    <Text style={styles.demandMetricValue}>Top 5%</Text>
-                    <Text style={styles.demandMetricLabel}>
-                      Liquidity Index
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.demandSummaryNote}>
-                  <Ionicons
-                    name="information-circle"
-                    size={16}
-                    color="#475569"
-                  />
-                  <Text style={styles.demandSummaryNoteText}>
-                    Strong global secondary market depth. Fractional shares and
-                    full collection sales clear with zero escrow slippage.
-                  </Text>
-                </View>
-              </View>
-            </ScrollView>
+                </ScrollView>
+              );
+            })()}
 
             {/* Modal Bottom Action */}
             <View style={styles.healthModalFooter}>
@@ -2312,7 +2422,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    maxHeight: "88%",
+    maxHeight: "85%",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.15,
@@ -2506,15 +2616,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
     borderRadius: 14,
-    padding: 6,
+    padding: 4,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     alignItems: "center",
+    justifyContent: "space-between",
   },
   oracleBoundBox: {
     flex: 1,
     alignItems: "center",
     paddingVertical: 6,
+    paddingHorizontal: 2,
   },
   oracleBoundLabel: {
     fontSize: 9,
@@ -2522,17 +2634,19 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
   },
   oracleBoundVal: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "800",
     color: "#475569",
     marginTop: 2,
+    textAlign: "center",
   },
   oracleFairBox: {
-    flex: 1.4,
+    flex: 1.3,
     alignItems: "center",
     backgroundColor: "#F3E8FF",
     borderRadius: 10,
     paddingVertical: 8,
+    paddingHorizontal: 4,
   },
   oracleFairLabel: {
     fontSize: 9,
@@ -2540,22 +2654,28 @@ const styles = StyleSheet.create({
     color: "#7C3AED",
   },
   oracleFairVal: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900",
     color: "#6D28D9",
     marginTop: 2,
+    textAlign: "center",
   },
   oracleMetaRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 10,
-    gap: 8,
+    marginTop: 12,
+    gap: 6,
   },
   oracleMetaItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 5,
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   oracleMetaText: {
     fontSize: 11,
@@ -2579,23 +2699,26 @@ const styles = StyleSheet.create({
   demandMetricsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    justifyContent: "space-between",
+    rowGap: 10,
   },
   demandMetricBox: {
-    flex: 1,
-    minWidth: "45%",
+    width: "48%",
     backgroundColor: "#FFFFFF",
     borderRadius: 14,
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     alignItems: "center",
+    justifyContent: "center",
   },
   demandMetricValue: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "900",
     color: "#0F172A",
-    marginTop: 6,
+    marginTop: 4,
+    textAlign: "center",
   },
   demandMetricLabel: {
     fontSize: 10,
@@ -2621,9 +2744,11 @@ const styles = StyleSheet.create({
   },
   healthModalFooter: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
     borderTopWidth: 1,
     borderTopColor: "#F1F5F9",
+    backgroundColor: "#FFFFFF",
   },
   healthModalCloseActionBtn: {
     backgroundColor: "#0F172A",

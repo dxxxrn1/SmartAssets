@@ -424,9 +424,10 @@ export async function getMarketAssets(
   category = "All",
   searchQuery = "",
   forceRefresh = false,
+  includeSold = false,
 ) {
   const isDefaultQuery =
-    (!category || category === "All") && (!searchQuery || !searchQuery.trim());
+    (!category || category === "All") && (!searchQuery || !searchQuery.trim()) && !includeSold;
 
   if (
     !forceRefresh &&
@@ -442,6 +443,7 @@ export async function getMarketAssets(
     if (category && category !== "All") params.append("category", category);
     if (searchQuery && searchQuery.trim())
       params.append("q", searchQuery.trim());
+    if (includeSold) params.append("includeSold", "true");
     const qs = params.toString() ? `?${params.toString()}` : "";
     const data = await apiRequest(`/assets${qs}`, { method: "GET" });
 

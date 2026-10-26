@@ -388,63 +388,8 @@ async function processPayment(req, res) {
     const transactionId = verifiedTxHash || verifiedPaymentIntentId || orderId;
 
     try {
-      // 5A. Insert or transfer holding into buyer's personal vault, removing it from seller's vault
-      if (!isFractional && sellerId && sellerId !== userId) {
-        const { data: existingSellerHoldings } = await supabase
-          .from('user_holdings')
-          .select('*')
-          .eq('user_id', sellerId)
-          .ilike('name', assetName)
-          .limit(1);
-
-        if (existingSellerHoldings && existingSellerHoldings.length > 0) {
-          // Reassign existing holding so NFT certificate metadata, token ID, and hashes transfer to the buyer
-          await supabase
-            .from('user_holdings')
-            .update({
-              user_id: userId,
-              price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
-              price_num: actualPriceZar,
-            })
-            .eq('id', existingSellerHoldings[0].id);
-        } else {
-          await supabase.from('user_holdings').insert({
-            user_id: userId,
-            name: holdingName,
-            category: assetCategory,
-            price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
-            price_num: actualPriceZar,
-            image: assetImage,
-            asset_type: holdingType,
-            gain: '+0.0%',
-            gain_pct: '0%',
-            positive: true,
-          });
-        }
-
-        // Guarantee that no duplicate or legacy holdings for this item remain in seller's vault
-        await supabase
-          .from('user_holdings')
-          .delete()
-          .eq('user_id', sellerId)
-          .ilike('name', assetName);
-      } else {
-        await supabase.from('user_holdings').insert({
-          user_id: userId,
-          name: holdingName,
-          category: assetCategory,
-          price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
-          price_num: actualPriceZar,
-          image: assetImage,
-          asset_type: holdingType,
-          gain: '+0.0%',
-          gain_pct: '0%',
-          positive: true,
-        });
-      }
-
       if (isFractional && asset?.id) {
-        // 5B. Fractional Investment Path: Record durable investor position
+        // 5A. Fractional Investment Path: Record durable investor position
         await investmentPositionService.recordInvestmentPosition({
           assetId: asset.id,
           investorId: userId,
@@ -453,6 +398,20 @@ async function processPayment(req, res) {
           costBasisEth: ethVal,
           orderId,
           txHash: verifiedTxHash || null,
+        });
+
+        // Insert fractional holding into buyer's vault
+        await supabase.from('user_holdings').insert({
+          user_id: userId,
+          name: holdingName,
+          category: assetCategory,
+          price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+          price_num: actualPriceZar,
+          image: assetImage,
+          asset_type: 'fractional',
+          gain: '+0.0%',
+          gain_pct: '0%',
+          positive: true,
         });
 
         const newSharesSold = (asset.shares_sold || 0) + sharesToBuy;
@@ -503,9 +462,11 @@ async function processPayment(req, res) {
           });
         }
       } else if (!isFractional && asset?.id) {
-        // 5C. Whole-Item Outright Purchase Path
+        // 5B. Whole-Item Outright Purchase Path
         if (asset.allow_investment) {
-          // Asset had fractional investment enabled — execute pro-rata buyout allocations
+          // Fractionalized asset: processOutrightBuyoutAllocations executes pro-rata payouts,
+          // atomically retires investor positions, updates asset ownership, inserts buyer holding,
+          // cleans up seller holding, records provenance, and sends notifications.
           console.log(`🏦 [Payment] Outright purchase of fractionalized asset ${asset.id}. Distributing pro-rata buyout proceeds...`);
           await investmentPositionService.processOutrightBuyoutAllocations({
             asset,
@@ -517,7 +478,28 @@ async function processPayment(req, res) {
             paymentRailName,
           });
         } else {
-          // Standard whole listing: update asset ownership to buyer while preserving original seller
+          // Standard whole listing: credit seller proceeds, update asset ownership, transfer holding
+          if (sellerId) {
+            const netProceeds = Math.round(actualPriceZar * 0.975);
+            await vaultTransactionService.depositFunds({
+              userId: sellerId,
+              amount: netProceeds,
+              method: 'Marketplace Sale Proceeds',
+              reference: `SALE-${orderId}`,
+              notes: `Net proceeds for sale of "${assetName}" to ${req.user.fullName || req.user.email}.`,
+            });
+
+            await notificationService.sendNotification({
+              userId: sellerId,
+              type: 'asset_sold',
+              title: 'Item Sold Outright — Proceeds Credited',
+              message: `Your listing "${assetName}" was purchased outright for R${actualPriceZar.toLocaleString('en-ZA')}. R${netProceeds.toLocaleString('en-ZA')} has been credited to your Vault.`,
+              orderId,
+              assetId: asset.id,
+            });
+          }
+
+          // Update asset ownership to buyer while preserving original seller
           await supabase
             .from('assets')
             .update({
@@ -529,28 +511,57 @@ async function processPayment(req, res) {
             })
             .eq('id', asset.id);
 
-          // Credit seller net sale proceeds (2.5% fee deduction)
-          if (sellerId) {
-            const netProceeds = Math.round(actualPriceZar * 0.975);
-            try {
-              await vaultTransactionService.depositFunds({
-                userId: sellerId,
-                amount: netProceeds,
-                method: 'Marketplace Sale Proceeds',
-                reference: `SALE-${orderId}`,
-                notes: `Net proceeds for sale of "${assetName}" to ${req.user.fullName || req.user.email}.`,
+          // Reassign existing holding or insert new whole holding into buyer's vault
+          if (sellerId && sellerId !== userId) {
+            const { data: existingSellerHoldings } = await supabase
+              .from('user_holdings')
+              .select('*')
+              .eq('user_id', sellerId)
+              .ilike('name', assetName)
+              .limit(1);
+
+            if (existingSellerHoldings && existingSellerHoldings.length > 0) {
+              await supabase
+                .from('user_holdings')
+                .update({
+                  user_id: userId,
+                  price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+                  price_num: actualPriceZar,
+                })
+                .eq('id', existingSellerHoldings[0].id);
+            } else {
+              await supabase.from('user_holdings').insert({
+                user_id: userId,
+                name: holdingName,
+                category: assetCategory,
+                price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+                price_num: actualPriceZar,
+                image: assetImage,
+                asset_type: holdingType,
+                gain: '+0.0%',
+                gain_pct: '0%',
+                positive: true,
               });
-            } catch (vErr) {
-              console.warn('⚠️ [Payment] Seller vault credit warning:', vErr.message);
             }
 
-            await notificationService.sendNotification({
-              userId: sellerId,
-              type: 'asset_sold',
-              title: 'Item Sold Outright — Proceeds Credited',
-              message: `Your listing "${assetName}" was purchased outright for R${actualPriceZar.toLocaleString('en-ZA')}. R${netProceeds.toLocaleString('en-ZA')} has been credited to your Vault.`,
-              orderId,
-              assetId: asset.id,
+            // Remove legacy holding from seller's vault
+            await supabase
+              .from('user_holdings')
+              .delete()
+              .eq('user_id', sellerId)
+              .ilike('name', assetName);
+          } else {
+            await supabase.from('user_holdings').insert({
+              user_id: userId,
+              name: holdingName,
+              category: assetCategory,
+              price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+              price_num: actualPriceZar,
+              image: assetImage,
+              asset_type: holdingType,
+              gain: '+0.0%',
+              gain_pct: '0%',
+              positive: true,
             });
           }
 

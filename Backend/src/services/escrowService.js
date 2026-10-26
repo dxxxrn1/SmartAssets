@@ -364,6 +364,11 @@ async function getUserEscrowOrders(userId, req = null) {
       return data.map((row) => ({
         ...row,
         orderId: row.order_id || row.id,
+        sellerId: row.seller_id,
+        buyerId: row.buyer_id,
+        assetId: row.asset_id,
+        amountZar: Number(row.amount_zar) || 0,
+        priceZar: Number(row.amount_zar) || 0,
         assetImage: normalizeImageUrl(row.asset_image, req),
       }));
     }
@@ -396,6 +401,11 @@ async function getSellerEscrowOrders(sellerId, req = null) {
       return data.map((row) => ({
         ...row,
         orderId: row.order_id || row.id,
+        sellerId: row.seller_id,
+        buyerId: row.buyer_id,
+        assetId: row.asset_id,
+        amountZar: Number(row.amount_zar) || 0,
+        priceZar: Number(row.amount_zar) || 0,
         assetImage: normalizeImageUrl(row.asset_image, req),
       }));
     }

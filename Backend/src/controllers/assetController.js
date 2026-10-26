@@ -78,8 +78,11 @@ async function getAssets(req, res) {
     let query = supabase
       .from('assets')
       .select('*')
-      .eq('status', 'active')
       .order('created_at', { ascending: false });
+
+    if (req.query.includeSold !== 'true' && req.query.status !== 'all') {
+      query = query.eq('status', 'active');
+    }
 
     if (category && category !== 'All') {
       query = query.eq('category', category);
@@ -588,32 +591,46 @@ async function createAsset(req, res) {
 
     let finalDescription = description || '';
     if (Array.isArray(req.body.images) && req.body.images.length > 0) {
-      const uploadedExtras = await Promise.all(req.body.images.map((img) => uploadImageToCloud(img, 'assets', req, userId))); const savedExtraImages = uploadedExtras
-
-        .filter(Boolean);
-      if (savedExtraImages.length > 0) {
-        finalDescription = `${finalDescription}\n<!--images:${JSON.stringify(savedExtraImages)}-->`;
+      const allSavedImages = [];
+      for (const img of req.body.images) {
+        if (!img) continue;
+        if (img === image && savedImageUrl) {
+          allSavedImages.push(savedImageUrl);
+        } else {
+          const uploaded = await uploadImageToCloud(img, 'assets', req, userId);
+          if (uploaded) allSavedImages.push(uploaded);
+        }
+      }
+      if (allSavedImages.length > 0) {
+        if (savedImageUrl && !allSavedImages.includes(savedImageUrl)) {
+          allSavedImages.unshift(savedImageUrl);
+        }
+        finalDescription = `${finalDescription}\n<!--images:${JSON.stringify(allSavedImages)}-->`;
       }
     }
     if (smartTakeTitle && smartTakeBody) {
       finalDescription = `${finalDescription}\n<!--smartTake:${JSON.stringify({ smartTakeTitle, smartTakeBody })}-->`;
     }
 
-    // Mint ERC-721 Certificate of Authenticity on Ethereum Sepolia
-    console.log(`⛓️ [Blockchain] Minting Certificate for ${name} on Ethereum Sepolia...`);
-    const mintRes = await web3Service.mintAssetNFT({
-      recipientAddress,
-      assetId: name,
-      name,
-      category: category || 'Luxury Collectible',
-      priceNum,
-      certNumber,
-      year: parseInt(year, 10) || new Date().getFullYear(),
-      condition: condition || 'Mint / Verified',
-      image: savedImageUrl,
-    });
-
-    console.log(`✅ [Blockchain] NFT Minted! Token ID: #${mintRes.tokenId}, Tx: ${mintRes.txHash}`);
+    // Mint ERC-721 Certificate of Authenticity on Ethereum Sepolia (if relayer configured)
+    let mintRes = null;
+    try {
+      console.log(`⛓️ [Blockchain] Minting Certificate for ${name} on Ethereum Sepolia...`);
+      mintRes = await web3Service.mintAssetNFT({
+        recipientAddress,
+        assetId: name,
+        name,
+        category: category || 'Luxury Collectible',
+        priceNum,
+        certNumber,
+        year: parseInt(year, 10) || new Date().getFullYear(),
+        condition: condition || 'Mint / Verified',
+        image: savedImageUrl,
+      });
+      console.log(`✅ [Blockchain] NFT Minted! Token ID: #${mintRes.tokenId}, Tx: ${mintRes.txHash}`);
+    } catch (mintErr) {
+      console.warn(`⚠️ [Blockchain] On-chain minting skipped or unavailable: ${mintErr.message}`);
+    }
 
     const allowInvestment = req.body.allowInvestment === true || req.body.allowInvestment === 'true';
     let totalShares = null;
@@ -646,7 +663,7 @@ async function createAsset(req, res) {
       condition: visionCheck.conditionGrade || condition || 'Grade A+ (9.5/10) • Mint',
       description: finalDescription,
       image: savedImageUrl,
-      badge: 'Verified On-Chain',
+      badge: mintRes ? 'Verified On-Chain' : 'Certified',
       cert: certNumber,
       status: 'active',
       user_id: userId,
@@ -660,16 +677,18 @@ async function createAsset(req, res) {
       ai_scan_status: 'passed',
     };
 
-    // Try inserting with on-chain columns
+    // Try inserting with on-chain columns if minted
+    const rowToInsert = { ...baseRow };
+    if (mintRes) {
+      rowToInsert.token_id = String(mintRes.tokenId);
+      rowToInsert.tx_hash = mintRes.txHash;
+      rowToInsert.contract_address = mintRes.contractAddress;
+      rowToInsert.etherscan_url = mintRes.etherscanUrl;
+    }
+
     let { data: newAsset, error: insertErr } = await supabase
       .from('assets')
-      .insert({
-        ...baseRow,
-        token_id: String(mintRes.tokenId),
-        tx_hash: mintRes.txHash,
-        contract_address: mintRes.contractAddress,
-        etherscan_url: mintRes.etherscanUrl,
-      })
+      .insert(rowToInsert)
       .select()
       .single();
 
@@ -712,7 +731,7 @@ async function createAsset(req, res) {
           event: h.event || 'Provenance milestone',
           party: h.party || 'Verified Custodian',
           hash: hHash,
-          tx_hash: mintRes.txHash,
+          tx_hash: mintRes?.txHash || null,
           verified: true,
         };
       });
@@ -734,9 +753,9 @@ async function createAsset(req, res) {
       liveMarketValue: priceNum,
       badgeText: '+0.0% Market Gain',
       badgeType: 'positive',
-      certId: `ERC-721 #${mintRes.tokenId || '4811'}`,
-      hashDisplay: mintRes.txHash ? `${String(mintRes.txHash).slice(0, 5)}...${String(mintRes.txHash).slice(-2)}` : '0x71c...9a',
-      txHash: mintRes.txHash || null,
+      certId: mintRes?.tokenId ? `ERC-721 #${mintRes.tokenId}` : `Cert #${certNumber}`,
+      hashDisplay: mintRes?.txHash ? `${String(mintRes.txHash).slice(0, 5)}...${String(mintRes.txHash).slice(-2)}` : null,
+      txHash: mintRes?.txHash || null,
     };
     await supabase.from('user_holdings').insert({
       user_id: userId,
@@ -755,7 +774,9 @@ async function createAsset(req, res) {
 
     return res.status(201).json({
       success: true,
-      message: 'Asset listed and NFT Certificate minted on Ethereum Sepolia!',
+      message: mintRes
+        ? 'Asset listed and NFT Certificate minted on Ethereum Sepolia!'
+        : 'Asset listed and certified successfully!',
       asset: {
         ...newAsset,
         allow_investment: allowInvestment,
@@ -767,10 +788,10 @@ async function createAsset(req, res) {
         currentOwnerId: userId,
         smartTakeTitle: newAsset.smart_take_title || smartTakeTitle || null,
         smartTakeBody: newAsset.smart_take_body || smartTakeBody || null,
-        tokenId: mintRes.tokenId,
-        txHash: mintRes.txHash,
-        etherscanUrl: mintRes.etherscanUrl,
-        contractAddress: mintRes.contractAddress,
+        tokenId: mintRes?.tokenId || null,
+        txHash: mintRes?.txHash || null,
+        etherscanUrl: mintRes?.etherscanUrl || null,
+        contractAddress: mintRes?.contractAddress || null,
         aiScanScore: 0.02,
         aiScanStatus: 'passed',
         marketComps,

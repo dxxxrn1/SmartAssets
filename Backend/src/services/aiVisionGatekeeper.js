@@ -386,20 +386,40 @@ function detectObjectHeuristically(buffer, userHints = {}) {
 /**
  * Generates dynamic Smart Take thesis when Gemini Vision is offline or omitted.
  */
-function generateFallbackSmartTake(name = '', category = '', condition = '') {
+function generateFallbackSmartTake(name = '', category = '', condition = '', askingPrice = 0, fairValue = 0) {
   const combined = `${name} ${category}`.toLowerCase();
+  const isLoss = askingPrice > 0 && fairValue > 0 && fairValue < askingPrice;
 
-  if (/electronic|tech|gadget|laptop|macbook|computer|phone|samsung|iphone|keyboard|mouse|headphone|accessories|accessory/i.test(combined)) {
+  if (/electronic|tech|gadget|laptop|macbook|computer|phone|samsung|iphone|keyboard|mouse|headphone|accessories|accessory|router/i.test(combined)) {
+    if (isLoss) {
+      return {
+        smartTakeTitle: 'Tracked Utility & Tech Asset.',
+        smartTakeBody: 'Consumer hardware experiences utility depreciation. Live Oracle tracking monitors real-time second-hand resale value across South African retailers.',
+      };
+    }
     return {
-      smartTakeTitle: 'Tracked Utility & Tech Asset.',
-      smartTakeBody: 'Consumer hardware experiences natural market depreciation. Live Oracle tracking monitors real-time second-hand resale value across South African retailers.',
+      smartTakeTitle: 'High-Demand Tech & Electronics.',
+      smartTakeBody: 'Demonstrating solid resale resilience. High consumer demand and steady retail availability protect residual asset value across verified channels.',
     };
   }
 
   if (/sneaker|shoe|apparel|streetwear|clothing|hoodie|jacket/i.test(combined)) {
+    if (isLoss) {
+      return {
+        smartTakeTitle: 'Streetwear & Apparel Asset.',
+        smartTakeBody: `Secondary market pricing reflects retail restocking and wear (${condition || 'Verified'}). Monitored across verified sneaker liquidity exchanges.`,
+      };
+    }
     return {
       smartTakeTitle: 'High-Liquidity Collector Piece.',
       smartTakeBody: `Condition-sensitive streetwear asset (${condition || 'Verified'}). Secondary market value is driven by deadstock scarcity and collector wishlist demand.`,
+    };
+  }
+
+  if (isLoss) {
+    return {
+      smartTakeTitle: 'Monitored Luxury Collectible.',
+      smartTakeBody: 'Current valuation comps reflect cyclical secondary market adjustments. Authenticity certification and physical vault custody safeguard core value.',
     };
   }
 
