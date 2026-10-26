@@ -156,6 +156,10 @@ export default function ProfileAnalyticsScreen({ navigation }) {
     );
     const totalNetWorth = cash + portfolioVal;
 
+    // Cash vs Assets split percentage
+    const cashPct = totalNetWorth > 0 ? Math.round((cash / totalNetWorth) * 100) : 0;
+    const assetsPct = totalNetWorth > 0 ? 100 - cashPct : 0;
+
     const count = holdings.length;
     const avgValue = count > 0 ? Math.round(portfolioVal / count) : 0;
 
@@ -199,25 +203,26 @@ export default function ProfileAnalyticsScreen({ navigation }) {
       }))
       .sort((a, b) => b.totalValue - a.totalValue);
 
-    // Top 5 Most Valuable Assets
+    // Top 5 Most Valuable Assets (concentration compared strictly against assets)
     const sortedAssets = [...holdings]
       .sort((a, b) => (Number(b.price_num) || 0) - (Number(a.price_num) || 0))
       .slice(0, 5)
       .map((a) => {
         const val = Number(a.price_num) || 0;
-        const shareOfPortfolio =
+        const shareOfAssets =
           portfolioVal > 0 ? Math.round((val / portfolioVal) * 100) : 0;
         return {
           ...a,
           val,
-          shareOfPortfolio,
+          shareOfAssets,
+          shareOfPortfolio: shareOfAssets,
         };
       });
 
-    // Concentration warning (50%+)
+    // Concentration warning (50%+ of assets, but never for a single asset)
     const topAsset = sortedAssets[0] || null;
     const isConcentrated =
-      topAsset && portfolioVal > 0 && topAsset.shareOfPortfolio >= 50;
+      count > 1 && topAsset && portfolioVal > 0 && topAsset.shareOfAssets >= 50;
 
     // Performance leaders (only where actual change exists)
     const withGains = holdings
@@ -255,6 +260,8 @@ export default function ProfileAnalyticsScreen({ navigation }) {
       cash,
       portfolioVal,
       totalNetWorth,
+      cashPct,
+      assetsPct,
       count,
       avgValue,
       hasNonZeroChange,
@@ -547,9 +554,18 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                     </Text>
                   </View>
                 </View>
+
+                {/* Plain breakdown line for cash vs assets */}
+                {assetsMetrics.totalNetWorth > 0 && (
+                  <View style={styles.cashVsAssetsRow}>
+                    <Text style={styles.cashVsAssetsText}>
+                      {assetsMetrics.cashPct}% cash, {assetsMetrics.assetsPct}% assets
+                    </Text>
+                  </View>
+                )}
               </LinearGradient>
 
-              {/* 2. Concentration Warning Alert (50%+ Single Asset) */}
+              {/* 2. Concentration Warning Alert (50%+ of assets across multiple items only) */}
               {assetsMetrics.isConcentrated && assetsMetrics.topAsset && (
                 <View style={styles.concentrationAlertBox}>
                   <View style={styles.alertIconWrap}>
@@ -558,7 +574,7 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.concentrationTitle}>High Concentration Notice</Text>
                     <Text style={styles.concentrationDesc}>
-                      "{assetsMetrics.topAsset.name}" represents {assetsMetrics.topAsset.shareOfPortfolio}% of your total portfolio, heavily driving your overall net worth.
+                      "{assetsMetrics.topAsset.name}" represents {assetsMetrics.topAsset.shareOfAssets}% of your assets.
                     </Text>
                   </View>
                 </View>
@@ -673,7 +689,7 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                       <View style={{ alignItems: "flex-end" }}>
                         <Text style={styles.topAssetPrice}>{formatZAR(asset.val)}</Text>
                         <View style={styles.shareOfPortPill}>
-                          <Text style={styles.shareOfPortText}>{asset.shareOfPortfolio}% of net</Text>
+                          <Text style={styles.shareOfPortText}>{asset.shareOfAssets}% of assets</Text>
                         </View>
                       </View>
                     </View>
@@ -1201,6 +1217,21 @@ const styles = StyleSheet.create({
     width: 1,
     height: 24,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  cashVsAssetsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.12)",
+  },
+  cashVsAssetsText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.85)",
+    letterSpacing: 0.3,
   },
 
   // Concentration Alert
