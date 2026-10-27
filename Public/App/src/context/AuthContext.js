@@ -25,8 +25,8 @@ import storage, { STORAGE_KEYS } from '../utils/storage';
 export const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 // Grace warning window before forced logout: 30 seconds
 export const INACTIVITY_WARNING_MS = 30 * 1000;
-// Idle checking cadence: every 3 seconds
-const CHECK_CADENCE_MS = 3 * 1000;
+// Idle checking cadence: every 1 second for smooth countdown and timely enforcement
+const CHECK_CADENCE_MS = 1000;
 
 const AuthContext = createContext(null);
 
@@ -45,6 +45,9 @@ export function AuthProvider({ children }) {
   // High-precision activity & state refs
   const lastActiveRef = useRef(Date.now());
   const backgroundTimestampRef = useRef(null);
+  const isLoggingOutRef = useRef(false);
+  const inactivityWarningRef = useRef(false);
+  inactivityWarningRef.current = inactivityWarning;
   const tokenRef = useRef(token);
   tokenRef.current = token;
   const userRef = useRef(user);
@@ -67,8 +70,12 @@ export function AuthProvider({ children }) {
     const now = Date.now();
     lastActiveRef.current = now;
 
-    // Dismiss warning banner if active
-    setInactivityWarning(false);
+    // Immediately dismiss warning banner if active & reset countdown
+    if (inactivityWarningRef.current) {
+      inactivityWarningRef.current = false;
+      setInactivityWarning(false);
+      setSecondsRemaining(30);
+    }
 
     // Throttle writing last_active to storage to at most once every 10 seconds
     if (now - lastPersistRef.current > 10 * 1000) {
@@ -85,20 +92,26 @@ export function AuthProvider({ children }) {
     async (
       reason = 'Your session timed out after 5 minutes of inactivity for your financial security.'
     ) => {
+      if (isLoggingOutRef.current) return;
+      isLoggingOutRef.current = true;
+
       console.warn(`🔒 [AuthContext] Inactivity auto-logout triggered: ${reason}`);
 
       const currentToken = tokenRef.current;
       const currentUser = userRef.current;
 
+      inactivityWarningRef.current = false;
+      setInactivityWarning(false);
+      setSecondsRemaining(30);
       setUser(null);
       setToken(null);
-      setInactivityWarning(false);
       setSessionExpiredMessage(reason);
       setSessionNotice(reason);
 
       try {
         await storage.removeItem(STORAGE_KEYS.SESSION);
         await storage.removeItem(STORAGE_KEYS.LAST_ACTIVE_AT);
+        await storage.removeItem(STORAGE_KEYS.NOTIFICATION_PREFERENCES);
         await storage.setItem(STORAGE_KEYS.SESSION_EXPIRED_MESSAGE, reason);
       } catch (err) {
         console.warn('[AuthContext] Error clearing storage on timeout:', err.message);
@@ -177,6 +190,7 @@ export function AuthProvider({ children }) {
             setUser(enrichedUser);
             setToken(savedSession.token);
             lastActiveRef.current = now;
+            isLoggingOutRef.current = false;
             await storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now));
       await storage.removeItem(STORAGE_KEYS.PERSONAL_COLLECTION);
       await storage.removeItem(STORAGE_KEYS.CO_OWNED_ASSETS);
@@ -224,31 +238,45 @@ export function AuthProvider({ children }) {
   // ── Foreground Idle Checking Loop (Active Countdown) ──────────────────────
   useEffect(() => {
     if (!user || !token) {
-      setInactivityWarning(false);
+      if (inactivityWarningRef.current) {
+        inactivityWarningRef.current = false;
+        setInactivityWarning(false);
+      }
       return;
     }
 
     const interval = setInterval(() => {
+      if (isLoggingOutRef.current) return;
+
       const now = Date.now();
       const elapsed = now - lastActiveRef.current;
 
       if (elapsed >= INACTIVITY_TIMEOUT_MS) {
+        if (inactivityWarningRef.current) {
+          inactivityWarningRef.current = false;
+          setInactivityWarning(false);
+        }
         handleInactivityLogout(
           'Your session timed out after 5 minutes of inactivity for your financial security.'
         );
       } else if (elapsed >= INACTIVITY_TIMEOUT_MS - INACTIVITY_WARNING_MS) {
         const remaining = Math.max(1, Math.ceil((INACTIVITY_TIMEOUT_MS - elapsed) / 1000));
-        setInactivityWarning(true);
-        setSecondsRemaining(remaining);
+        if (!inactivityWarningRef.current) {
+          inactivityWarningRef.current = true;
+          setInactivityWarning(true);
+        }
+        setSecondsRemaining((prev) => (prev !== remaining ? remaining : prev));
       } else {
-        if (inactivityWarning) {
+        if (inactivityWarningRef.current) {
+          inactivityWarningRef.current = false;
           setInactivityWarning(false);
+          setSecondsRemaining(30);
         }
       }
     }, CHECK_CADENCE_MS);
 
     return () => clearInterval(interval);
-  }, [user, token, handleInactivityLogout, inactivityWarning]);
+  }, [user, token, handleInactivityLogout]);
 
   // ── Mobile AppState & Web Visibility Change Listener ───────────────────────
   useEffect(() => {
@@ -259,62 +287,50 @@ export function AuthProvider({ children }) {
       const now = Date.now();
       if (nextAppState === 'background' || nextAppState === 'inactive') {
         backgroundTimestampRef.current = now;
-        storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now)).catch(() => {});
+        storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(lastActiveRef.current)).catch(() => {});
       } else if (nextAppState === 'active') {
-        const bgTime = backgroundTimestampRef.current;
-        if (bgTime) {
-          const awayTime = now - bgTime;
-          if (awayTime >= INACTIVITY_TIMEOUT_MS) {
-            handleInactivityLogout(
-              'Your session timed out while the app was in the background (> 5 minutes) for your financial security.'
-            );
-            return;
-          }
+        const elapsed = now - lastActiveRef.current;
+        if (elapsed >= INACTIVITY_TIMEOUT_MS) {
+          handleInactivityLogout(
+            'Your session timed out while away (> 5 minutes) for your financial security.'
+          );
+          return;
         }
+        backgroundTimestampRef.current = null;
         recordActivity();
       }
     });
 
-    // 2. Web visibility and interaction listeners (React Native Web)
+    // 2. Web visibility change listener (React Native Web)
     let handleVisibilityChange = null;
-    let handleWebActivity = null;
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      let webHiddenTimestamp = null;
       handleVisibilityChange = () => {
         const now = Date.now();
         if (document.hidden) {
-          webHiddenTimestamp = now;
-          storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(now)).catch(() => {});
+          backgroundTimestampRef.current = now;
+          storage.setItem(STORAGE_KEYS.LAST_ACTIVE_AT, String(lastActiveRef.current)).catch(() => {});
         } else {
-          if (webHiddenTimestamp && now - webHiddenTimestamp >= INACTIVITY_TIMEOUT_MS) {
+          const elapsed = now - lastActiveRef.current;
+          if (elapsed >= INACTIVITY_TIMEOUT_MS) {
             handleInactivityLogout(
-              'Your session timed out while the tab was hidden (> 5 minutes) for your financial security.'
+              'Your session timed out while away (> 5 minutes) for your financial security.'
             );
             return;
           }
+          backgroundTimestampRef.current = null;
           recordActivity();
         }
       };
 
-      handleWebActivity = () => {
-        recordActivity();
-      };
-
       document.addEventListener('visibilitychange', handleVisibilityChange);
-      window.addEventListener('pointerdown', handleWebActivity, { passive: true });
-      window.addEventListener('keydown', handleWebActivity, { passive: true });
-      window.addEventListener('scroll', handleWebActivity, { passive: true });
     }
 
     return () => {
       subscription.remove();
       if (Platform.OS === 'web' && typeof document !== 'undefined') {
-        if (handleVisibilityChange) document.removeEventListener('visibilitychange', handleVisibilityChange);
-        if (handleWebActivity) {
-          window.removeEventListener('pointerdown', handleWebActivity);
-          window.removeEventListener('keydown', handleWebActivity);
-          window.removeEventListener('scroll', handleWebActivity);
+        if (handleVisibilityChange) {
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
         }
       }
     };
@@ -336,7 +352,9 @@ export function AuthProvider({ children }) {
       setToken(nextToken);
       setSessionExpiredMessage(null);
       setInactivityWarning(false);
+      setSecondsRemaining(30);
       lastActiveRef.current = now;
+      isLoggingOutRef.current = false;
 
       await storage.setJSON(STORAGE_KEYS.SESSION, {
         user: nextUser,
@@ -374,7 +392,9 @@ export function AuthProvider({ children }) {
       setToken(nextToken);
       setSessionExpiredMessage(null);
       setInactivityWarning(false);
+      setSecondsRemaining(30);
       lastActiveRef.current = now;
+      isLoggingOutRef.current = false;
 
       await storage.setJSON(STORAGE_KEYS.SESSION, {
         user: nextUser,
@@ -407,7 +427,9 @@ export function AuthProvider({ children }) {
         setToken(nextToken);
         setSessionExpiredMessage(null);
         setInactivityWarning(false);
+        setSecondsRemaining(30);
         lastActiveRef.current = now;
+        isLoggingOutRef.current = false;
 
         await storage.setJSON(STORAGE_KEYS.SESSION, {
           user: nextUser,
@@ -441,7 +463,9 @@ export function AuthProvider({ children }) {
         setToken(nextToken);
         setSessionExpiredMessage(null);
         setInactivityWarning(false);
+        setSecondsRemaining(30);
         lastActiveRef.current = now;
+        isLoggingOutRef.current = false;
 
         await storage.setJSON(STORAGE_KEYS.SESSION, {
           user: nextUser,
@@ -488,6 +512,7 @@ export function AuthProvider({ children }) {
       await storage.removeItem(STORAGE_KEYS.ESCROW_CASH);
       await storage.removeItem(STORAGE_KEYS.VAULT);
       await storage.removeItem(STORAGE_KEYS.VAULT_ACTIVITY_LOG);
+      await storage.removeItem(STORAGE_KEYS.NOTIFICATION_PREFERENCES);
     } catch (e) {
       console.warn('[AuthContext] Error clearing session from storage:', e.message);
     }

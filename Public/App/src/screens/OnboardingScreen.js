@@ -53,7 +53,11 @@ export default function OnboardingScreen({ navigation, isDark }) {
         <View style={styles.content}>
           {/* ── Hero image ── */}
           <View style={[styles.imageWrap, { backgroundColor: c.card, borderColor: c.border }]}>
-            <Image source={{ uri: slide.image }} style={styles.image} resizeMode="cover" />
+            <Image
+              source={typeof slide.image === 'string' ? { uri: slide.image } : slide.image}
+              style={styles.image}
+              resizeMode="cover"
+            />
           </View>
 
           {/* ── Progress dots ── */}

@@ -62,6 +62,13 @@ export default function ProfileAnalyticsScreen({ navigation }) {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isStale, setIsStale] = useState(false);
+  const [fetchErrors, setFetchErrors] = useState({
+    vault: null,
+    market: null,
+    escrow: null,
+    transactions: null,
+  });
 
   // Real Data Stores
   const [holdings, setHoldings] = useState([]);
@@ -80,6 +87,17 @@ export default function ProfileAnalyticsScreen({ navigation }) {
     return "R" + Math.round(num).toLocaleString("en-ZA");
   }, []);
 
+  const getHoldingValue = useCallback((h) => {
+    if (!h) return 0;
+    if (h.effectiveHoldingValue !== undefined && h.effectiveHoldingValue !== null) {
+      return Number(h.effectiveHoldingValue) || 0;
+    }
+    if (h.asset_type === "fractional") {
+      return Number(h.myStake) || 0;
+    }
+    return Number(h.liveMarketValue) || Number(h.initialValue) || Number(h.price_num) || 0;
+  }, []);
+
   const loadAllAnalyticsData = useCallback(async () => {
     try {
       if (!token) return;
@@ -93,43 +111,70 @@ export default function ProfileAnalyticsScreen({ navigation }) {
           getVaultTransactionsApi(token),
         ]);
 
+      const newErrors = { vault: null, market: null, escrow: null, transactions: null };
+      let hadFailure = false;
+
+      // 1. Vault Holdings & Authoritative Summary
       if (vaultRes.status === "fulfilled" && vaultRes.value?.success) {
         setHoldings(vaultRes.value.holdings || []);
         setVaultSummary(vaultRes.value.summary || {});
+      } else {
+        hadFailure = true;
+        newErrors.vault = vaultRes.reason?.message || "Failed to load vault data";
       }
 
+      // 2. Marketplace Listings
       if (marketRes.status === "fulfilled" && marketRes.value?.success) {
         setMarketAssets(marketRes.value.assets || []);
+      } else {
+        hadFailure = true;
+        newErrors.market = marketRes.reason?.message || "Failed to load marketplace listings";
       }
 
+      // 3. Buyer & Seller Escrow Orders (Strict deduplication by order ID)
       const combinedEscrows = [];
-      if (
-        sellerEscrowRes.status === "fulfilled" &&
-        Array.isArray(sellerEscrowRes.value?.orders)
-      ) {
-        combinedEscrows.push(...sellerEscrowRes.value.orders);
+      let escrowSuccess = false;
+
+      if (sellerEscrowRes.status === "fulfilled" && Array.isArray(sellerEscrowRes.value?.orders)) {
+        escrowSuccess = true;
+        sellerEscrowRes.value.orders.forEach((so) => {
+          combinedEscrows.push({ ...so, isSellerOrder: true });
+        });
       }
-      if (
-        buyerEscrowRes.status === "fulfilled" &&
-        Array.isArray(buyerEscrowRes.value?.orders)
-      ) {
+
+      if (buyerEscrowRes.status === "fulfilled" && Array.isArray(buyerEscrowRes.value?.orders)) {
+        escrowSuccess = true;
         buyerEscrowRes.value.orders.forEach((bo) => {
-          if (
-            !combinedEscrows.some(
-              (e) => (e.orderId || e.id) === (bo.orderId || bo.id)
-            )
-          ) {
-            combinedEscrows.push(bo);
+          const key = bo.orderId || bo.id || bo.order_id;
+          const existing = combinedEscrows.find((e) => (e.orderId || e.id || e.order_id) === key);
+          if (existing) {
+            existing.isBuyerOrder = true;
+          } else {
+            combinedEscrows.push({ ...bo, isBuyerOrder: true });
           }
         });
       }
-      setEscrowOrders(combinedEscrows);
 
+      if (escrowSuccess) {
+        setEscrowOrders(combinedEscrows);
+      } else {
+        hadFailure = true;
+        newErrors.escrow = "Failed to load escrow orders";
+      }
+
+      // 4. Ledger Transactions
       if (txRes.status === "fulfilled" && txRes.value?.success) {
         setTransactions(txRes.value.transactions || []);
+      } else {
+        hadFailure = true;
+        newErrors.transactions = txRes.reason?.message || "Failed to load transactions";
       }
+
+      setFetchErrors(newErrors);
+      setIsStale(hadFailure);
     } catch (err) {
       console.warn("Analytics data load warning:", err.message);
+      setIsStale(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -149,44 +194,51 @@ export default function ProfileAnalyticsScreen({ navigation }) {
   // TAB 1: ASSETS COMPUTATIONS
   // ══════════════════════════════════════════════════════════════════════════
   const assetsMetrics = useMemo(() => {
+    // 1. Authoritative liquid cash and locked escrow balances
     const cash = Number(vaultSummary?.availableBalanceNum) || 0;
+    const escrowLocked = Number(vaultSummary?.escrowBalanceNum) || 0;
+
+    // 2. Authoritative portfolio valuation using effectiveHoldingValue
     const portfolioVal = holdings.reduce(
-      (sum, h) => sum + (Number(h.price_num) || 0),
+      (sum, h) => sum + getHoldingValue(h),
       0
     );
-    const totalNetWorth = cash + portfolioVal;
 
-    // Cash vs Assets split percentage
+    // Combined Net Worth: separate liquid cash, escrow custody, and holdings
+    const totalNetWorth = cash + escrowLocked + portfolioVal;
+
+    // Valuation categorization from vault API
+    const valuationType = vaultSummary?.valuationType || "recorded";
+    const valuationLabel = vaultSummary?.valuationLabel ||
+      (valuationType === "market"
+        ? "Live Market Value"
+        : valuationType === "mixed"
+          ? "Mixed Market & Recorded"
+          : "Recorded Vault Value");
+
+    // Liquid Cash vs Vault Assets breakdown
     const cashPct = totalNetWorth > 0 ? Math.round((cash / totalNetWorth) * 100) : 0;
-    const assetsPct = totalNetWorth > 0 ? 100 - cashPct : 0;
+    const assetsPct = totalNetWorth > 0 ? Math.round((portfolioVal / totalNetWorth) * 100) : 0;
 
     const count = holdings.length;
     const avgValue = count > 0 ? Math.round(portfolioVal / count) : 0;
 
-    // Change since added: calculate difference only from stored real data
-    let totalInitial = 0;
-    let totalLive = 0;
-    let hasNonZeroChange = false;
+    // 3. Performance derived strictly from dated portfolio_snapshots via vault API
+    // (Never invent values or calculate monthly change from holding metadata)
+    const hasPerformanceHistory = Boolean(vaultSummary?.hasPerformanceHistory);
+    const monthlyChangeNum = vaultSummary?.monthlyChangeNum !== undefined ? vaultSummary.monthlyChangeNum : null;
+    const monthlyChangePct = vaultSummary?.monthlyChangePct || null;
+    const monthlyChangeFormatted = vaultSummary?.monthlyChangeFormatted || null;
+    const isPositive = vaultSummary?.isPositive !== undefined
+      ? vaultSummary.isPositive
+      : (monthlyChangeNum !== null && monthlyChangeNum >= 0);
+    const history = Array.isArray(vaultSummary?.history) ? vaultSummary.history : [];
 
-    holdings.forEach((h) => {
-      const init = Number(h.initialValue) || Number(h.price_num) || 0;
-      const live = Number(h.liveMarketValue) || Number(h.price_num) || 0;
-      totalInitial += init;
-      totalLive += live;
-      if (live !== init) {
-        hasNonZeroChange = true;
-      }
-    });
-
-    const netChangeNum = totalLive - totalInitial;
-    const netChangePct =
-      totalInitial > 0 ? ((netChangeNum / totalInitial) * 100).toFixed(1) : "0.0";
-
-    // Allocation by category
+    // 4. Allocation by category using authoritative effectiveHoldingValue
     const categoryMap = {};
     holdings.forEach((h) => {
-      const cat = h.category || "Uncategorised";
-      const val = Number(h.price_num) || 0;
+      const cat = h.category ? String(h.category).trim() : "Uncategorised";
+      const val = getHoldingValue(h);
       if (!categoryMap[cat]) {
         categoryMap[cat] = { category: cat, totalValue: 0, count: 0 };
       }
@@ -203,70 +255,90 @@ export default function ProfileAnalyticsScreen({ navigation }) {
       }))
       .sort((a, b) => b.totalValue - a.totalValue);
 
-    // Top 5 Most Valuable Assets (concentration compared strictly against assets)
+    // 5. Top 5 Most Valuable Assets using authoritative holding value
     const sortedAssets = [...holdings]
-      .sort((a, b) => (Number(b.price_num) || 0) - (Number(a.price_num) || 0))
-      .slice(0, 5)
       .map((a) => {
-        const val = Number(a.price_num) || 0;
-        const shareOfAssets =
-          portfolioVal > 0 ? Math.round((val / portfolioVal) * 100) : 0;
+        const val = getHoldingValue(a);
         return {
           ...a,
           val,
+        };
+      })
+      .sort((a, b) => b.val - a.val)
+      .slice(0, 5)
+      .map((a) => {
+        const shareOfAssets =
+          portfolioVal > 0 ? Math.round((a.val / portfolioVal) * 100) : 0;
+        return {
+          ...a,
           shareOfAssets,
           shareOfPortfolio: shareOfAssets,
         };
       });
 
-    // Concentration warning (50%+ of assets, but never for a single asset)
+    // Concentration notice (50%+ of assets across multiple items only)
     const topAsset = sortedAssets[0] || null;
     const isConcentrated =
       count > 1 && topAsset && portfolioVal > 0 && topAsset.shareOfAssets >= 50;
 
-    // Performance leaders (only where actual change exists)
-    const withGains = holdings
+    // 6. Best and Lowest Performers
+    // Calculate asset-level performance ONLY when both a reliable initial value
+    // and a dated live market valuation exist. Never treat price_num fallback as 0% gain.
+    const withReliablePerformance = holdings
+      .filter((h) => {
+        const hasLive = (h.hasMarketValue === true) || (h.liveMarketValue !== null && h.liveMarketValue !== undefined && Number(h.liveMarketValue) > 0);
+        const hasInit = (h.initialValue !== null && h.initialValue !== undefined && Number(h.initialValue) > 0);
+        return hasLive && hasInit;
+      })
       .map((h) => {
-        const init = Number(h.initialValue) || Number(h.price_num) || 0;
-        const live = Number(h.liveMarketValue) || Number(h.price_num) || 0;
+        const init = Number(h.initialValue);
+        const live = Number(h.liveMarketValue);
         const diff = live - init;
         const pct = init > 0 ? (diff / init) * 100 : 0;
-        return { ...h, diff, pct };
-      })
-      .filter((h) => Math.abs(h.diff) > 0);
+        return { ...h, diff, pct, isPositive: diff >= 0 };
+      });
 
     let bestPerformer = null;
     let lowestPerformer = null;
-    if (withGains.length > 0) {
-      const sortedByGain = [...withGains].sort((a, b) => b.pct - a.pct);
+    if (withReliablePerformance.length > 0) {
+      const sortedByGain = [...withReliablePerformance].sort((a, b) => b.pct - a.pct);
       bestPerformer = sortedByGain[0];
-      lowestPerformer = sortedByGain[sortedByGain.length - 1];
+      if (sortedByGain.length > 1 && sortedByGain[sortedByGain.length - 1].pct !== bestPerformer.pct) {
+        lowestPerformer = sortedByGain[sortedByGain.length - 1];
+      }
     }
 
-    // Ownership: Outright vs Fractional
+    // 7. Ownership Structure: Outright vs Fractional
+    // Uses authoritative effectiveHoldingValue; fractional holdings use stake once without fallback to price_num
     const outrightHoldings = holdings.filter((h) => h.asset_type !== "fractional");
     const fractionalHoldings = holdings.filter((h) => h.asset_type === "fractional");
 
     const outrightValue = outrightHoldings.reduce(
-      (sum, h) => sum + (Number(h.price_num) || 0),
+      (sum, h) => sum + getHoldingValue(h),
       0
     );
     const fractionalValue = fractionalHoldings.reduce(
-      (sum, h) => sum + (Number(h.myStake) || Number(h.price_num) || 0),
+      (sum, h) => sum + getHoldingValue(h),
       0
     );
 
     return {
       cash,
+      escrowLocked,
       portfolioVal,
       totalNetWorth,
+      valuationType,
+      valuationLabel,
       cashPct,
       assetsPct,
       count,
       avgValue,
-      hasNonZeroChange,
-      netChangeNum,
-      netChangePct,
+      hasPerformanceHistory,
+      monthlyChangeNum,
+      monthlyChangePct,
+      monthlyChangeFormatted,
+      isPositive,
+      history,
       categories,
       sortedAssets,
       topAsset,
@@ -278,19 +350,45 @@ export default function ProfileAnalyticsScreen({ navigation }) {
       outrightValue,
       fractionalValue,
     };
-  }, [holdings, vaultSummary]);
+  }, [holdings, vaultSummary, getHoldingValue]);
 
   // ══════════════════════════════════════════════════════════════════════════
   // TAB 2: SELLING COMPUTATIONS
   // ══════════════════════════════════════════════════════════════════════════
   const sellingMetrics = useMemo(() => {
-    const currentUserId = user?.id || user?.userId;
+    const currentUserId = user?.id || user?.userId || user?.sub;
     const now = Date.now();
     const periodObj =
       SELLING_PERIODS.find((p) => p.id === sellingPeriod) || SELLING_PERIODS[1];
+    const isAllTime = sellingPeriod === "all";
     const cutoffTime = now - periodObj.days * 86400000;
 
-    // 1. Seller's listings on marketplace
+    const ACTIVE_ESCROW_STATUSES = [
+      "payment_secured",
+      "in_transit",
+      "in_inspection",
+      "delivered",
+      "accepted",
+      "disputed",
+      "held",
+      "funded",
+      "in_escrow",
+    ];
+
+    const TERMINAL_SUCCESSFUL_STATUSES = ["completed", "released"];
+
+    const getOrderAmount = (o) => {
+      return Number(o.amountZar) || Number(o.amount_zar) || Number(o.priceZar) || 0;
+    };
+
+    const getOrderTimestamp = (o) => {
+      const raw = o.created_at || o.createdAt;
+      if (!raw) return null;
+      const ts = new Date(raw).getTime();
+      return isNaN(ts) ? null : ts;
+    };
+
+    // 1. Seller's listings on marketplace with explicit verification distinction
     const myListings = marketAssets.filter(
       (a) =>
         String(a.seller_id || a.sellerId) === String(currentUserId) ||
@@ -298,61 +396,68 @@ export default function ProfileAnalyticsScreen({ navigation }) {
     );
 
     const verifiedListings = myListings.filter(
-      (a) => a.status === "active" || a.status === "funded"
+      (a) =>
+        a.is_verified === true ||
+        a.verified === true ||
+        a.verification_status === "verified" ||
+        a.verification_status === "certified"
     );
+
+    const activeUnverifiedListings = myListings.filter(
+      (a) =>
+        a.status === "active" &&
+        !a.is_verified &&
+        !a.verified &&
+        a.verification_status !== "verified" &&
+        a.verification_status !== "certified"
+    );
+
     const awaitingReviewListings = myListings.filter(
-      (a) => a.status === "pending" || a.status === "pending_review"
+      (a) =>
+        a.status === "pending" ||
+        a.status === "pending_review" ||
+        a.verification_status === "in_review" ||
+        a.verification_status === "pending"
     );
+
     const soldListings = myListings.filter((a) => a.status === "sold");
 
-    // 2. Orders where user is the seller
-    const mySalesOrders = escrowOrders.filter(
-      (o) =>
-        String(o.sellerId || o.seller_id) === String(currentUserId)
-    );
+    // 2. Orders where user is the seller (strictly deduplicated)
+    const mySalesOrders = escrowOrders.filter((o) => {
+      if (o.isSellerOrder) return true;
+      return String(o.sellerId || o.seller_id) === String(currentUserId);
+    });
 
+    // Period filter: "All Time" includes all records; time filters require valid timestamps
     const filteredOrders = mySalesOrders.filter((o) => {
-      const orderTs = o.created_at ? new Date(o.created_at).getTime() : now;
+      if (isAllTime) return true;
+      const orderTs = getOrderTimestamp(o);
+      if (orderTs === null) return false; // Exclude undated orders from strict time-window filters
       return orderTs >= cutoffTime;
     });
 
-    const completedOrders = filteredOrders.filter(
-      (o) =>
-        o.status === "completed" ||
-        o.status === "released" ||
-        o.status === "payment_secured"
+    // Completed orders: ONLY terminal successful states (released / completed)
+    // Never count payment_secured, in_transit, or other active custody states as revenue!
+    const completedOrders = filteredOrders.filter((o) =>
+      TERMINAL_SUCCESSFUL_STATUSES.includes(o.status)
     );
 
     const revenueNum = completedOrders.reduce(
-      (sum, o) =>
-        sum +
-        (Number(o.amountZar) ||
-          Number(o.amount_zar) ||
-          Number(o.priceZar) ||
-          0),
+      (sum, o) => sum + getOrderAmount(o),
       0
     );
 
-    // In Escrow (Active locked funds awaiting completion)
-    const inEscrowOrders = mySalesOrders.filter(
-      (o) =>
-        o.status === "held" ||
-        o.status === "funded" ||
-        o.status === "payment_secured" ||
-        o.status === "in_transit" ||
-        o.status === "in_inspection"
+    // In Escrow: active locked funds awaiting completion
+    const inEscrowOrders = filteredOrders.filter((o) =>
+      ACTIVE_ESCROW_STATUSES.includes(o.status)
     );
+
     const inEscrowNum = inEscrowOrders.reduce(
-      (sum, o) =>
-        sum +
-        (Number(o.amountZar) ||
-          Number(o.amount_zar) ||
-          Number(o.priceZar) ||
-          0),
+      (sum, o) => sum + getOrderAmount(o),
       0
     );
 
-    // 3. 6-Month Sales Volume Chart (Past 6 calendar months)
+    // 3. 6-Month Sales Volume Chart (Past 6 calendar months from terminal successful orders)
     const months = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date();
@@ -363,15 +468,16 @@ export default function ProfileAnalyticsScreen({ navigation }) {
 
       const monthRevenue = mySalesOrders
         .filter((o) => {
-          if (!o.created_at) return false;
-          const od = new Date(o.created_at);
+          const ts = getOrderTimestamp(o);
+          if (ts === null) return false;
+          const od = new Date(ts);
           return (
             od.getFullYear() === mYear &&
             od.getMonth() === mIdx &&
-            (o.status === "completed" || o.status === "released")
+            TERMINAL_SUCCESSFUL_STATUSES.includes(o.status)
           );
         })
-        .reduce((sum, o) => sum + (Number(o.amountZar) || 0), 0);
+        .reduce((sum, o) => sum + getOrderAmount(o), 0);
 
       months.push({
         name: mName,
@@ -384,6 +490,7 @@ export default function ProfileAnalyticsScreen({ navigation }) {
     return {
       myListings,
       verifiedListings,
+      activeUnverifiedListings,
       awaitingReviewListings,
       soldListings,
       filteredOrders,
@@ -396,12 +503,105 @@ export default function ProfileAnalyticsScreen({ navigation }) {
     };
   }, [marketAssets, escrowOrders, user, sellingPeriod]);
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // EXPLICIT VERIFICATION BADGE HELPERS
+  // ══════════════════════════════════════════════════════════════════════════
+  const renderHoldingVerificationBadge = (asset) => {
+    const isMinted = Boolean(
+      asset.nft_token_id || asset.tokenId || (asset.certId && asset.isVerified)
+    );
+    if (isMinted) {
+      return (
+        <View style={[styles.certPill, { backgroundColor: "rgba(16, 185, 129, 0.15)", borderColor: "rgba(16, 185, 129, 0.3)" }]}>
+          <Ionicons name="shield-checkmark" size={10} color="#10B981" />
+          <Text style={[styles.certPillText, { color: "#10B981" }]}>Certificate Minted</Text>
+        </View>
+      );
+    }
+    if (asset.isVerified === true || asset.verified === true) {
+      return (
+        <View style={[styles.certPill, { backgroundColor: "rgba(0, 194, 255, 0.15)", borderColor: "rgba(0, 194, 255, 0.3)" }]}>
+          <Ionicons name="checkmark-circle" size={10} color="#00C2FF" />
+          <Text style={[styles.certPillText, { color: "#00C2FF" }]}>Verified</Text>
+        </View>
+      );
+    }
+    if (asset.verification_status === "in_review" || asset.status === "in_review") {
+      return (
+        <View style={[styles.certPill, { backgroundColor: "rgba(245, 158, 11, 0.15)", borderColor: "rgba(245, 158, 11, 0.3)" }]}>
+          <Ionicons name="hourglass-outline" size={10} color="#F59E0B" />
+          <Text style={[styles.certPillText, { color: "#F59E0B" }]}>Under Review</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={[styles.certPill, { backgroundColor: "rgba(148, 163, 184, 0.12)", borderColor: "rgba(148, 163, 184, 0.25)" }]}>
+        <Ionicons name="help-circle-outline" size={10} color="#94A3B8" />
+        <Text style={[styles.certPillText, { color: "#94A3B8" }]}>Unverified</Text>
+      </View>
+    );
+  };
+
+  const renderListingStatusBadge = (listing) => {
+    const isMinted = Boolean(listing.nft_token_id || listing.token_id || listing.cert_id);
+    const isVer =
+      listing.is_verified === true ||
+      listing.verified === true ||
+      listing.verification_status === "verified" ||
+      listing.verification_status === "certified";
+
+    if (listing.status === "sold") {
+      return (
+        <View style={[styles.listingStatusPill, styles.statusSold]}>
+          <Text style={styles.listingStatusText}>Sold</Text>
+        </View>
+      );
+    }
+    if (isMinted && isVer) {
+      return (
+        <View style={[styles.listingStatusPill, { backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
+          <Text style={[styles.listingStatusText, { color: "#10B981" }]}>Cert Minted</Text>
+        </View>
+      );
+    }
+    if (isVer) {
+      return (
+        <View style={[styles.listingStatusPill, styles.statusActive]}>
+          <Text style={[styles.listingStatusText, { color: "#00C2FF" }]}>Verified</Text>
+        </View>
+      );
+    }
+    if (listing.status === "active") {
+      return (
+        <View style={[styles.listingStatusPill, { backgroundColor: "rgba(56, 189, 248, 0.15)" }]}>
+          <Text style={[styles.listingStatusText, { color: "#38BDF8" }]}>Listed</Text>
+        </View>
+      );
+    }
+    if (
+      listing.status === "pending" ||
+      listing.status === "pending_review" ||
+      listing.verification_status === "in_review"
+    ) {
+      return (
+        <View style={[styles.listingStatusPill, styles.statusPending]}>
+          <Text style={styles.listingStatusText}>In Review</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={[styles.listingStatusPill, { backgroundColor: "rgba(148, 163, 184, 0.15)" }]}>
+        <Text style={[styles.listingStatusText, { color: "#94A3B8" }]}>Unverified</Text>
+      </View>
+    );
+  };
+
   const handleShare = async () => {
     try {
       await Share.share({
         message: `SmartAssets Portfolio Intelligence\nNet Worth: ${formatZAR(
           assetsMetrics.totalNetWorth
-        )}\nAssets Tracked: ${assetsMetrics.count}\nVault Liquidity: ${formatZAR(
+        )} (${assetsMetrics.valuationLabel})\nAssets Tracked: ${assetsMetrics.count}\nVault Liquidity: ${formatZAR(
           assetsMetrics.cash
         )}`,
       });
@@ -500,6 +700,16 @@ export default function ProfileAnalyticsScreen({ navigation }) {
             />
           }
         >
+          {/* Stale Cache Notice Banner */}
+          {isStale && (
+            <View style={styles.staleNoticeRow}>
+              <Ionicons name="information-circle-outline" size={14} color="#F59E0B" style={{ marginRight: 6 }} />
+              <Text style={styles.staleNoticeText}>
+                Showing cached data — network sync encountered a notice. Pull down to refresh.
+              </Text>
+            </View>
+          )}
+
           {/* ══════════════════════════════════════════════════════════════════
               TAB 1: ASSETS VIEW (NET-WORTH FIRST)
           ══════════════════════════════════════════════════════════════════ */}
@@ -514,33 +724,49 @@ export default function ProfileAnalyticsScreen({ navigation }) {
               >
                 <View style={styles.heroHeaderTag}>
                   <Ionicons name="shield-checkmark" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
-                  <Text style={styles.heroHeaderTagText}>TOTAL ESTIMATED NET WORTH</Text>
+                  <Text style={styles.heroHeaderTagText}>
+                    NET WORTH ({assetsMetrics.valuationLabel.toUpperCase()})
+                  </Text>
                 </View>
 
                 <Text style={styles.heroTotalValue}>
                   {formatZAR(assetsMetrics.totalNetWorth)}
                 </Text>
 
-                {/* Change since added: ONLY shown if non-zero change stored */}
-                {assetsMetrics.hasNonZeroChange && (
+                {/* Performance Pill: strictly from dated snapshots or explicit unavailable state */}
+                {assetsMetrics.hasPerformanceHistory ? (
                   <View style={styles.changeBadgeRow}>
                     <View
                       style={[
                         styles.changePill,
-                        assetsMetrics.netChangeNum >= 0
+                        assetsMetrics.isPositive
                           ? styles.changePillPositive
                           : styles.changePillNegative,
                       ]}
                     >
                       <Feather
-                        name={assetsMetrics.netChangeNum >= 0 ? "trending-up" : "trending-down"}
+                        name={assetsMetrics.isPositive ? "trending-up" : "trending-down"}
                         size={12}
                         color="#FFFFFF"
                         style={{ marginRight: 4 }}
                       />
                       <Text style={styles.changePillText}>
-                        {assetsMetrics.netChangeNum >= 0 ? "+" : ""}
-                        {formatZAR(assetsMetrics.netChangeNum)} ({assetsMetrics.netChangePct}%) since added
+                        {assetsMetrics.monthlyChangeFormatted}
+                        {assetsMetrics.monthlyChangePct ? ` (${assetsMetrics.monthlyChangePct})` : ""}
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.changeBadgeRow}>
+                    <View style={[styles.changePill, styles.changePillNeutral]}>
+                      <Feather
+                        name="clock"
+                        size={12}
+                        color="rgba(255, 255, 255, 0.7)"
+                        style={{ marginRight: 4 }}
+                      />
+                      <Text style={styles.changePillText}>
+                        Performance history unavailable (requires baseline)
                       </Text>
                     </View>
                   </View>
@@ -574,15 +800,36 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                   </View>
                 </View>
 
-                {/* Plain breakdown line for cash vs assets */}
+                {/* Separate Escrow Custody Notice */}
+                {assetsMetrics.escrowLocked > 0 && (
+                  <View style={styles.escrowNoticeRow}>
+                    <Ionicons name="lock-closed" size={12} color="#F59E0B" style={{ marginRight: 5 }} />
+                    <Text style={styles.escrowNoticeText}>
+                      {formatZAR(assetsMetrics.escrowLocked)} in escrow custody (separate from available cash)
+                    </Text>
+                  </View>
+                )}
+
+                {/* Liquid Cash vs Vault Assets breakdown */}
                 {assetsMetrics.totalNetWorth > 0 && (
                   <View style={styles.cashVsAssetsRow}>
                     <Text style={styles.cashVsAssetsText}>
-                      {assetsMetrics.cashPct}% cash, {assetsMetrics.assetsPct}% assets
+                      {assetsMetrics.cashPct}% liquid cash, {assetsMetrics.assetsPct}% vault assets{assetsMetrics.escrowLocked > 0 ? `, ${formatZAR(assetsMetrics.escrowLocked)} in escrow` : ""}
                     </Text>
                   </View>
                 )}
               </LinearGradient>
+
+              {/* Error notice for Vault if failed */}
+              {fetchErrors.vault && holdings.length === 0 && (
+                <View style={styles.sectionErrorBox}>
+                  <Feather name="alert-circle" size={16} color="#F43F5E" />
+                  <Text style={styles.sectionErrorText}>Unable to sync vault holdings from server.</Text>
+                  <TouchableOpacity onPress={onRefresh} style={styles.retryBtn}>
+                    <Text style={styles.retryBtnText}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* 2. Concentration Warning Alert (50%+ of assets across multiple items only) */}
               {assetsMetrics.isConcentrated && assetsMetrics.topAsset && (
@@ -695,13 +942,10 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                           {asset.name}
                         </Text>
                         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 3 }}>
-                          <Text style={styles.topAssetCategory}>{asset.category}</Text>
-                          {asset.certId && (
-                            <View style={styles.certPill}>
-                              <Ionicons name="shield-checkmark" size={10} color="#10B981" />
-                              <Text style={styles.certPillText}>Verified</Text>
-                            </View>
-                          )}
+                          <Text style={styles.topAssetCategory}>{asset.category || "Luxury Asset"}</Text>
+                          <View style={{ marginLeft: 6 }}>
+                            {renderHoldingVerificationBadge(asset)}
+                          </View>
                         </View>
                       </View>
 
@@ -716,8 +960,8 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                 )}
               </View>
 
-              {/* 5. Performance: Best & Lowest Performer (Only if data exists) */}
-              {assetsMetrics.bestPerformer && (
+              {/* 5. Performance: Best & Lowest Performer (Only when reliable dated market data exists) */}
+              {assetsMetrics.bestPerformer ? (
                 <View style={styles.performanceGrid}>
                   <View style={[styles.perfCard, { borderColor: "rgba(16, 185, 129, 0.3)" }]}>
                     <View style={styles.perfHeader}>
@@ -741,11 +985,18 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                       <Text style={styles.perfName} numberOfLines={1}>
                         {assetsMetrics.lowestPerformer.name}
                       </Text>
-                      <Text style={[styles.perfGainText, { color: "#F43F5E" }]}>
-                        {assetsMetrics.lowestPerformer.pct.toFixed(1)}% ({formatZAR(assetsMetrics.lowestPerformer.diff)})
+                      <Text style={[styles.perfGainText, { color: assetsMetrics.lowestPerformer.pct >= 0 ? "#10B981" : "#F43F5E" }]}>
+                        {assetsMetrics.lowestPerformer.pct >= 0 ? "+" : ""}{assetsMetrics.lowestPerformer.pct.toFixed(1)}% ({assetsMetrics.lowestPerformer.diff >= 0 ? "+" : ""}{formatZAR(assetsMetrics.lowestPerformer.diff)})
                       </Text>
                     </View>
                   )}
+                </View>
+              ) : (
+                <View style={styles.perfUnavailableBox}>
+                  <Ionicons name="stats-chart-outline" size={16} color="#94A3B8" style={{ marginRight: 8 }} />
+                  <Text style={styles.perfUnavailableText}>
+                    Asset-level market performance requires dated live appraisals. Holdings are currently tracked at recorded cost basis.
+                  </Text>
                 </View>
               )}
 
@@ -886,7 +1137,7 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                   <Text style={styles.metricCardVal}>
                     {formatZAR(sellingMetrics.revenueNum)}
                   </Text>
-                  <Text style={styles.metricCardSub}>Completed sales</Text>
+                  <Text style={styles.metricCardSub}>Completed sales (released)</Text>
                 </View>
 
                 <View style={styles.metricCard}>
@@ -897,7 +1148,7 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                   <Text style={styles.metricCardVal}>
                     {sellingMetrics.completedOrders.length}
                   </Text>
-                  <Text style={styles.metricCardSub}>Delivered & paid</Text>
+                  <Text style={styles.metricCardSub}>Delivered & released</Text>
                 </View>
 
                 <View style={styles.metricCard}>
@@ -908,7 +1159,7 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                   <Text style={styles.metricCardVal}>
                     {formatZAR(sellingMetrics.inEscrowNum)}
                   </Text>
-                  <Text style={styles.metricCardSub}>Locked in settlement</Text>
+                  <Text style={styles.metricCardSub}>Active in settlement</Text>
                 </View>
               </View>
 
@@ -952,9 +1203,16 @@ export default function ProfileAnalyticsScreen({ navigation }) {
 
                 <View style={styles.listingStatRow}>
                   <View style={styles.listingStatPill}>
-                    <View style={[styles.statDot, { backgroundColor: "#10B981" }]} />
+                    <View style={[styles.statDot, { backgroundColor: "#00C2FF" }]} />
                     <Text style={styles.listingStatText}>
-                      {sellingMetrics.verifiedListings.length} Active / Verified
+                      {sellingMetrics.verifiedListings.length} Verified
+                    </Text>
+                  </View>
+
+                  <View style={styles.listingStatPill}>
+                    <View style={[styles.statDot, { backgroundColor: "#38BDF8" }]} />
+                    <Text style={styles.listingStatText}>
+                      {sellingMetrics.activeUnverifiedListings.length} Listed
                     </Text>
                   </View>
 
@@ -968,7 +1226,7 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                   <View style={styles.listingStatPill}>
                     <View style={[styles.statDot, { backgroundColor: "#8B5CF6" }]} />
                     <Text style={styles.listingStatText}>
-                      {sellingMetrics.soldListings.length} Sold Outright
+                      {sellingMetrics.soldListings.length} Sold
                     </Text>
                   </View>
                 </View>
@@ -1009,23 +1267,8 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                             <Text style={styles.listingPrice}>{formatZAR(listing.price)}</Text>
                           </View>
 
-                          <View
-                            style={[
-                              styles.listingStatusPill,
-                              listing.status === "sold"
-                                ? styles.statusSold
-                                : listing.status === "active"
-                                ? styles.statusActive
-                                : styles.statusPending,
-                            ]}
-                          >
-                            <Text style={styles.listingStatusText}>
-                              {listing.status === "sold"
-                                ? "Sold"
-                                : listing.status === "active"
-                                ? "Active"
-                                : "Review"}
-                            </Text>
+                          <View style={{ marginLeft: 8 }}>
+                            {renderListingStatusBadge(listing)}
                           </View>
                         </View>
 
@@ -1201,6 +1444,9 @@ const styles = StyleSheet.create({
   changePillNegative: {
     backgroundColor: "rgba(239, 68, 68, 0.3)",
   },
+  changePillNeutral: {
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+  },
   changePillText: {
     fontSize: 12,
     fontWeight: "700",
@@ -1236,6 +1482,17 @@ const styles = StyleSheet.create({
     width: 1,
     height: 24,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  escrowNoticeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+  },
+  escrowNoticeText: {
+    fontSize: 11,
+    color: "#FDE68A",
+    fontWeight: "600",
   },
   cashVsAssetsRow: {
     flexDirection: "row",
@@ -1766,6 +2023,69 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#00C2FF",
     borderRadius: 3,
+  },
+
+  // Notices and Unavailable States
+  staleNoticeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(245, 158, 11, 0.12)",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.25)",
+  },
+  staleNoticeText: {
+    fontSize: 11,
+    color: "#F59E0B",
+    fontWeight: "600",
+    flex: 1,
+  },
+  sectionErrorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(244, 63, 94, 0.12)",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "rgba(244, 63, 94, 0.25)",
+  },
+  sectionErrorText: {
+    fontSize: 12,
+    color: "#F43F5E",
+    flex: 1,
+    marginLeft: 8,
+    fontWeight: "600",
+  },
+  retryBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    backgroundColor: "rgba(244, 63, 94, 0.25)",
+    borderRadius: 6,
+  },
+  retryBtnText: {
+    fontSize: 11,
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  perfUnavailableBox: {
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+  },
+  perfUnavailableText: {
+    fontSize: 12,
+    color: "#94A3B8",
+    flex: 1,
+    lineHeight: 17,
   },
 
   // Empty State Box

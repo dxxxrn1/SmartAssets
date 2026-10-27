@@ -29,6 +29,8 @@ const {
   getVerificationStatus,
   submitBankAccount,
   getBankAccount,
+  getNotificationPreferences,
+  updateNotificationPreferences,
 } = require('../controllers/userController');
 
 // All user routes are protected by requireAuth
@@ -48,6 +50,8 @@ router.get('/profile', getProfile);
 router.get('/analytics', getAnalytics);
 router.put('/profile', updateProfile);
 router.delete('/account', deleteAccount);
+router.get('/notifications/preferences', getNotificationPreferences);
+router.put('/notifications/preferences', updateNotificationPreferences);
 
 // FICA / KYC Compliance Submission & Status (both granular 3-doc and full dossier endpoints)
 router.post('/kyc-submit', submitKyc);

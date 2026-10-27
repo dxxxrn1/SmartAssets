@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
   Platform,
   RefreshControl,
+  AppState,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -85,43 +86,168 @@ const CATEGORY_CARDS = [
 // ── Curated "Assets worth watching" Mockup Data ──────────────────────────────
 const CURATED_ASSETS = [];
 
-// ── Smooth Sine-Wave Line Component (Web SVG or Native line segments) ────────
-const PortfolioWaveGraph = () => {
+// ── Authoritative check whether a user holding is verified ───────────────────
+const isHoldingVerified = (item) => {
+  if (!item || typeof item !== "object") return false;
+  if (item.verified === true || item.is_verified === true) return true;
+  if (item.verified === false || item.is_verified === false) return false;
+
+  const rawStatus = item.verification_status || item.status;
+  if (typeof rawStatus === "string") {
+    const s = rawStatus.toLowerCase().trim();
+    if (s === "verified" || s === "certified" || s === "approved" || s === "on_chain") return true;
+    if (s === "unverified" || s === "pending" || s === "rejected" || s === "in_review" || s === "none") return false;
+  }
+
+  let meta = null;
+  if (typeof item.gain === "string" && item.gain.includes("<!--meta:")) {
+    const match = item.gain.match(/<!--meta:([\s\S]*?)-->/);
+    if (match) {
+      try {
+        meta = JSON.parse(match[1]);
+      } catch (_) {}
+    }
+  }
+
+  if (meta && typeof meta === "object") {
+    if (meta.verified === true || meta.is_verified === true) return true;
+    if (meta.verified === false || meta.is_verified === false) return false;
+    const metaStatus = meta.verification_status || meta.status;
+    if (typeof metaStatus === "string") {
+      const ms = metaStatus.toLowerCase().trim();
+      if (ms === "verified" || ms === "certified" || ms === "approved") return true;
+      if (ms === "unverified" || ms === "pending" || ms === "rejected") return false;
+    }
+    if (typeof meta.txHash === "string" && meta.txHash.length > 10 && !meta.txHash.includes("0x71c...9a")) {
+      return true;
+    }
+  }
+
+  const txHash = item.tx_hash || item.txHash;
+  if (typeof txHash === "string" && txHash.length > 10 && !txHash.includes("0x71c...9a")) {
+    return true;
+  }
+
+  return false;
+};
+
+// ── Smooth Bezier Wave Line Component (Web SVG or Native line segments) ────────
+const PortfolioWaveGraph = ({ data = [] }) => {
+  const pointsData = Array.isArray(data) ? data : [];
+
+  if (pointsData.length < 2) {
+    return (
+      <View style={styles.waveContainer}>
+        <View style={styles.waveEmptyTrack}>
+          <View style={styles.waveEmptyDashedLine} />
+          <Text style={styles.waveEmptyText}>
+            Trend line builds as daily snapshots record
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  const values = pointsData.map((d) => Number(d.value) || 0);
+  const minVal = Math.min(...values);
+  const maxVal = Math.max(...values);
+  const valRange = maxVal - minVal;
+
+  const points = pointsData.map((d, idx) => {
+    const x = (idx / (pointsData.length - 1)) * 420;
+    const y =
+      valRange === 0
+        ? 26
+        : 44 - ((Number(d.value || 0) - minVal) / valRange) * 36;
+    return { x, y, value: d.value, date: d.date };
+  });
+
   if (Platform.OS === "web") {
+    let svgPath = `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
+    if (points.length === 2) {
+      svgPath += ` L ${points[1].x.toFixed(1)},${points[1].y.toFixed(1)}`;
+    } else {
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[i === 0 ? 0 : i - 1];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[i + 2] || p2;
+
+        const cp1x = p1.x + (p2.x - p0.x) / 6;
+        const cp1y = p1.y + (p2.y - p0.y) / 6;
+        const cp2x = p2.x - (p3.x - p1.x) / 6;
+        const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+        svgPath += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+      }
+    }
+
     return (
       <View style={styles.waveContainer}>
         <svg
-          viewBox="0 0 420 64"
+          viewBox="0 0 420 52"
           preserveAspectRatio="none"
           style={{ width: "100%", height: 52, overflow: "visible" }}
         >
           <path
-            d="M 0,38 C 50,14 85,54 140,42 C 190,28 230,50 285,24 C 335,8 370,26 420,18"
+            d={svgPath}
             fill="none"
             stroke="rgba(255, 255, 255, 0.95)"
             strokeWidth="3.2"
             strokeLinecap="round"
+            strokeLinejoin="round"
           />
+          {points.map((pt, idx) => (
+            <circle
+              key={idx}
+              cx={pt.x}
+              cy={pt.y}
+              r={idx === points.length - 1 ? 4 : 2.5}
+              fill="#FFFFFF"
+            />
+          ))}
         </svg>
       </View>
     );
   }
 
-  // Cross-platform native fallback using connected smooth curve segments
+  // Cross-platform native fallback using coordinates computed from same series
   return (
     <View style={styles.waveContainerNative}>
       <View style={styles.waveTrackNative}>
-        <View style={[styles.waveDot, { left: "0%", top: 28 }]} />
-        <View style={[styles.waveDot, { left: "15%", top: 12 }]} />
-        <View style={[styles.waveDot, { left: "30%", top: 38 }]} />
-        <View style={[styles.waveDot, { left: "50%", top: 24 }]} />
-        <View style={[styles.waveDot, { left: "70%", top: 34 }]} />
-        <View style={[styles.waveDot, { left: "85%", top: 10 }]} />
-        <View style={[styles.waveDot, { left: "100%", top: 16 }]} />
         <View style={styles.waveLineNative} />
+        {points.map((pt, idx) => (
+          <View
+            key={idx}
+            style={[
+              styles.waveDot,
+              {
+                left: `${((pt.x / 420) * 100).toFixed(1)}%`,
+                top: Math.max(0, Math.min(48, pt.y - 3)),
+              },
+            ]}
+          />
+        ))}
       </View>
     </View>
   );
+};
+
+// ── Time-Based Greeting Helper ───────────────────────────────────────────────
+// Returns a greeting string based on local device time:
+// - 05:00–11:59: "Good morning,"
+// - 12:00–16:59: "Good afternoon,"
+// - 17:00–04:59: "Good evening,"
+export const getTimeBasedGreeting = (date = new Date()) => {
+  const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
+  const hour = d.getHours();
+  if (hour >= 5 && hour < 12) {
+    return "Good morning,";
+  }
+  if (hour >= 12 && hour < 17) {
+    return "Good afternoon,";
+  }
+  return "Good evening,";
 };
 
 export default function HomeScreen({ navigation }) {
@@ -129,6 +255,7 @@ export default function HomeScreen({ navigation }) {
   const isDesktop = screenWidth >= 840;
   const { user, token, logout } = useAuth();
 
+  const [greeting, setGreeting] = useState(() => getTimeBasedGreeting());
   const [refreshing, setRefreshing] = useState(false);
   const [loadingVault, setLoadingVault] = useState(true);
   const [vaultSummary, setVaultSummary] = useState({
@@ -139,130 +266,229 @@ export default function HomeScreen({ navigation }) {
     availableBalanceNum: 0,
     totalCount: 0,
     categoriesCount: 0,
-    verifiedPct: 100,
-    annualGainFormatted: "0.0% overall gain",
-    gainPct: "0.0%",
+    verifiedPct: null,
+    valuationType: "recorded",
+    valuationLabel: "Recorded Vault Value",
+    hasPerformanceHistory: false,
+    monthlyChangeNum: null,
+    monthlyChangePct: null,
+    monthlyChangeFormatted: null,
+    isPositive: true,
+    history: [],
+    isCached: false,
   });
   const [vaultHoldings, setVaultHoldings] = useState([]);
   const [marketMovers, setMarketMovers] = useState([]);
 
   // Fetch Vault Data with unified dynamic formula: personalTotal + fractionalTotal + escrowCash
-  const loadVaultData = useCallback(async () => {
-    // 1. Immediately compute from local storage for instant real-time sync with VaultScreen
-    try {
-      const [cachedPersonal, cachedFractions, cachedCash, cachedVault] =
-        await Promise.all([
-          storage.getJSON(STORAGE_KEYS.PERSONAL_COLLECTION),
-          storage.getJSON(STORAGE_KEYS.CO_OWNED_ASSETS),
-          storage.getJSON(STORAGE_KEYS.ESCROW_CASH),
-          storage.getJSON(STORAGE_KEYS.VAULT),
-        ]);
+  const loadVaultData = useCallback(
+    async (forceRefresh = false) => {
+      // 1. Immediately compute from local storage for instant real-time sync with VaultScreen
+      try {
+        const [cachedPersonal, cachedFractions, cachedCash, cachedVault] =
+          await Promise.all([
+            storage.getJSON(STORAGE_KEYS.PERSONAL_COLLECTION),
+            storage.getJSON(STORAGE_KEYS.CO_OWNED_ASSETS),
+            storage.getJSON(STORAGE_KEYS.ESCROW_CASH),
+            storage.getJSON(STORAGE_KEYS.VAULT),
+          ]);
 
-      const personalList =
-        Array.isArray(cachedPersonal) && cachedPersonal.length > 0
-          ? cachedPersonal
-          : [];
+        const personalList =
+          Array.isArray(cachedPersonal) && cachedPersonal.length > 0
+            ? cachedPersonal
+            : [];
 
-      const fractionalList =
-        Array.isArray(cachedFractions) && cachedFractions.length > 0
-          ? cachedFractions
-          : [];
+        const fractionalList =
+          Array.isArray(cachedFractions) && cachedFractions.length > 0
+            ? cachedFractions
+            : [];
 
-      const cashNum = typeof cachedCash === "number" ? cachedCash : 0;
+        const combinedList = [...personalList, ...fractionalList];
+        const cashNum = typeof cachedCash === "number" ? cachedCash : 0;
 
-      const pTotal = personalList.reduce(
-        (sum, it) =>
-          sum + (Number(it.liveMarketValue) || Number(it.initialValue) || 0),
-        0,
-      );
-      const fTotal = fractionalList.reduce(
-        (sum, it) => sum + (Number(it.myStake) || 0),
-        0,
-      );
-      const assetsValueNum = pTotal + fTotal;
-      const combinedTotalNum = assetsValueNum + cashNum;
-      const combinedCount = personalList.length + fractionalList.length;
-
-      setVaultSummary((prev) => ({
-        ...prev,
-        portfolioValueFormatted: formatGBP(assetsValueNum),
-        portfolioValueNum: assetsValueNum,
-        totalValueFormatted: formatGBP(combinedTotalNum),
-        availableBalanceFormatted: formatGBP(cashNum),
-        availableBalanceNum: cashNum,
-        totalCount: combinedCount,
-      }));
-
-      if (cachedVault?.holdings && Array.isArray(cachedVault.holdings)) {
-        setVaultHoldings(cachedVault.holdings);
-      }
-    } catch (_) {}
-
-    // 2. Fetch live if token available
-    if (!token) {
-      setLoadingVault(false);
-      return;
-    }
-
-    try {
-      setLoadingVault(true);
-      const [res, marketRes] = await Promise.all([
-        getUserVault(token),
-        getMarketAssets("All", "").catch(() => null),
-      ]);
-      if (
-        marketRes?.assets &&
-        Array.isArray(marketRes.assets) &&
-        marketRes.assets.length > 0
-      ) {
-        setMarketMovers(marketRes.assets);
-      }
-      if (res?.holdings && Array.isArray(res.holdings)) {
-        setVaultHoldings(res.holdings);
-        const pItems = res.holdings.filter(
-          (h) => h.asset_type !== "fractional",
-        );
-        const fItems = res.holdings.filter(
-          (h) => h.asset_type === "fractional",
-        );
-        await storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, pItems);
-        await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, fItems);
-      }
-      if (res?.summary) {
-        setVaultSummary(res.summary);
-        await storage.setJSON(
-          STORAGE_KEYS.ESCROW_CASH,
-          res.summary.availableBalanceNum || 0,
-        );
-        await storage.setJSON(STORAGE_KEYS.VAULT, {
-          summary: res.summary,
-          holdings: res?.holdings,
+        let pTotal = 0;
+        let hasMarketVal = false;
+        personalList.forEach((it) => {
+          const marketVal = Number(it.liveMarketValue);
+          const initVal = Number(it.initialValue) || Number(it.price_num) || 0;
+          if (!isNaN(marketVal) && marketVal > 0) {
+            pTotal += marketVal;
+            hasMarketVal = true;
+          } else {
+            pTotal += initVal;
+          }
         });
+
+        const fTotal = fractionalList.reduce(
+          (sum, it) =>
+            sum + (Number(it.myStake) || Number(it.price_num) || 0),
+          0,
+        );
+        const assetsValueNum = pTotal + fTotal;
+        const combinedTotalNum = assetsValueNum + cashNum;
+        const combinedCount = combinedList.length;
+
+        const uniqueCats = new Set(
+          combinedList
+            .map((it) => (it.category ? String(it.category).trim() : ""))
+            .filter((c) => c.length > 0),
+        );
+        const localCategoriesCount =
+          combinedList.length === 0 ? 0 : uniqueCats.size;
+
+        const verifiedCount = combinedList.filter(isHoldingVerified).length;
+        const localVerifiedPct =
+          combinedList.length === 0
+            ? null
+            : Math.round((verifiedCount / combinedList.length) * 100);
+
+        const cachedSummary = cachedVault?.summary || {};
+
+        setVaultSummary((prev) => ({
+          ...prev,
+          ...cachedSummary,
+          portfolioValueFormatted: formatGBP(assetsValueNum),
+          portfolioValueNum: assetsValueNum,
+          totalValueFormatted: formatGBP(combinedTotalNum),
+          availableBalanceFormatted: formatGBP(cashNum),
+          availableBalanceNum: cashNum,
+          totalCount: combinedCount,
+          categoriesCount:
+            cachedSummary.categoriesCount !== undefined
+              ? cachedSummary.categoriesCount
+              : localCategoriesCount,
+          verifiedPct:
+            cachedSummary.verifiedPct !== undefined
+              ? cachedSummary.verifiedPct
+              : localVerifiedPct,
+          valuationType:
+            cachedSummary.valuationType ||
+            (hasMarketVal ? "market" : "recorded"),
+          valuationLabel:
+            cachedSummary.valuationLabel ||
+            (hasMarketVal ? "Live Market Value" : "Recorded Vault Value"),
+          hasPerformanceHistory: Boolean(cachedSummary.hasPerformanceHistory),
+          monthlyChangeNum: cachedSummary.monthlyChangeNum ?? null,
+          monthlyChangePct: cachedSummary.monthlyChangePct ?? null,
+          monthlyChangeFormatted: cachedSummary.monthlyChangeFormatted ?? null,
+          isPositive: cachedSummary.isPositive ?? true,
+          history: Array.isArray(cachedSummary.history)
+            ? cachedSummary.history
+            : [],
+          isCached: true,
+        }));
+
+        if (cachedVault?.holdings && Array.isArray(cachedVault.holdings)) {
+          setVaultHoldings(cachedVault.holdings);
+        }
+      } catch (_) {}
+
+      // 2. Fetch live if token available
+      if (!token) {
+        setLoadingVault(false);
+        return;
       }
-    } catch (err) {
-      console.warn("[HomeScreen] Vault load fallback:", err.message);
-      if (
-        err.message?.includes("Unauthorized") ||
-        err.message?.includes("Session expired") ||
-        err.message?.includes("invalid token")
-      ) {
-        logout();
+
+      try {
+        setLoadingVault(true);
+        const [res, marketRes] = await Promise.all([
+          getUserVault(token, forceRefresh),
+          getMarketAssets("All", "").catch(() => null),
+        ]);
+        if (
+          marketRes?.assets &&
+          Array.isArray(marketRes.assets) &&
+          marketRes.assets.length > 0
+        ) {
+          setMarketMovers(marketRes.assets);
+        }
+        if (res?.holdings && Array.isArray(res.holdings)) {
+          setVaultHoldings(res.holdings);
+          const pItems = res.holdings.filter(
+            (h) => h.asset_type !== "fractional",
+          );
+          const fItems = res.holdings.filter(
+            (h) => h.asset_type === "fractional",
+          );
+          await storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, pItems);
+          await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, fItems);
+        }
+        if (res?.summary) {
+          setVaultSummary({
+            ...res.summary,
+            isCached: Boolean(res.isOffline),
+          });
+          await storage.setJSON(
+            STORAGE_KEYS.ESCROW_CASH,
+            res.summary.availableBalanceNum || 0,
+          );
+          await storage.setJSON(STORAGE_KEYS.VAULT, {
+            summary: res.summary,
+            holdings: res?.holdings,
+          });
+        }
+      } catch (err) {
+        console.warn("[HomeScreen] Vault load fallback:", err.message);
+        // Retain current displayed cached data on error; mark as cached
+        setVaultSummary((prev) => ({
+          ...prev,
+          isCached: true,
+        }));
+        if (
+          err.message?.includes("Unauthorized") ||
+          err.message?.includes("Session expired") ||
+          err.message?.includes("invalid token")
+        ) {
+          logout();
+        }
+      } finally {
+        setLoadingVault(false);
+        setRefreshing(false);
       }
-    } finally {
-      setLoadingVault(false);
-      setRefreshing(false);
-    }
-  }, [token]);
+    },
+    [token],
+  );
 
   useFocusEffect(
     useCallback(() => {
-      loadVaultData();
+      setGreeting(getTimeBasedGreeting());
+      loadVaultData(false);
     }, [loadVaultData]),
   );
 
+  // Synchronize greeting when returning to foreground or across boundary times
+  useEffect(() => {
+    const updateGreeting = () => {
+      setGreeting(getTimeBasedGreeting());
+    };
+
+    const handleAppStateChange = (nextAppState) => {
+      if (nextAppState === "active") {
+        updateGreeting();
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange,
+    );
+
+    // Periodic check so greeting transitions promptly if user stays on screen
+    const timerId = setInterval(updateGreeting, 30000);
+
+    return () => {
+      if (subscription && typeof subscription.remove === "function") {
+        subscription.remove();
+      } else if (AppState.removeEventListener) {
+        AppState.removeEventListener("change", handleAppStateChange);
+      }
+      clearInterval(timerId);
+    };
+  }, []);
+
   const onRefresh = () => {
     setRefreshing(true);
-    loadVaultData();
+    loadVaultData(true);
   };
 
   // Derive user display name & photo (strictly never displays MetaMask or wallet hex as a person's name)
@@ -385,7 +611,7 @@ export default function HomeScreen({ navigation }) {
           {/* ── GREETING & ACTIVITY BAR ─────────────────────────────────────────── */}
           <View style={styles.greetingRow}>
             <View style={styles.greetingTextCol}>
-              <Text style={styles.greetingHelloText}>Good morning,</Text>
+              <Text style={styles.greetingHelloText}>{greeting}</Text>
               <Text style={styles.greetingUserNameText} numberOfLines={1}>
                 {userName}
               </Text>
@@ -512,9 +738,11 @@ export default function HomeScreen({ navigation }) {
             >
               <View style={styles.portfolioHeader}>
                 <Text style={styles.portfolioLabel}>PORTFOLIO VALUE</Text>
-                <View style={styles.barChartBadge}>
-                  <Feather name="bar-chart-2" size={16} color="#FFFFFF" />
-                </View>
+                {vaultSummary.isCached && (
+                  <View style={styles.cachedBadge}>
+                    <Text style={styles.cachedBadgeText}>CACHED</Text>
+                  </View>
+                )}
               </View>
 
               <Text style={styles.portfolioValueNumber}>
@@ -522,24 +750,49 @@ export default function HomeScreen({ navigation }) {
               </Text>
 
               <View style={styles.gainRow}>
-                <View
-                  style={[
-                    styles.growthPill,
-                    { flexDirection: "row", alignItems: "center" },
-                  ]}
-                >
-                  <Feather
-                    name="trending-up"
-                    size={12}
-                    color="#FFFFFF"
-                    style={{ marginRight: 4 }}
-                  />
-                  <Text style={styles.growthPillText}>8.4%</Text>
-                </View>
-                <Text style={styles.yearlyGainText}>+R185 this month</Text>
+                {vaultSummary.hasPerformanceHistory && vaultSummary.monthlyChangePct ? (
+                  <>
+                    <View
+                      style={[
+                        styles.growthPill,
+                        { flexDirection: "row", alignItems: "center" },
+                        vaultSummary.monthlyChangeNum < 0 && styles.negativePill,
+                      ]}
+                    >
+                      <Feather
+                        name={
+                          vaultSummary.monthlyChangeNum >= 0
+                            ? "trending-up"
+                            : "trending-down"
+                        }
+                        size={12}
+                        color="#FFFFFF"
+                        style={{ marginRight: 4 }}
+                      />
+                      <Text style={styles.growthPillText}>
+                        {vaultSummary.monthlyChangePct}
+                      </Text>
+                    </View>
+                    <Text style={styles.yearlyGainText}>
+                      {vaultSummary.monthlyChangeFormatted}
+                    </Text>
+                  </>
+                ) : (
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <Feather
+                      name="clock"
+                      size={12}
+                      color="rgba(255, 255, 255, 0.75)"
+                      style={{ marginRight: 5 }}
+                    />
+                    <Text style={[styles.yearlyGainText, { marginLeft: 0 }]}>
+                      Performance history unavailable
+                    </Text>
+                  </View>
+                )}
               </View>
 
-              <PortfolioWaveGraph />
+              <PortfolioWaveGraph data={vaultSummary.history} />
 
               <View style={styles.portfolioStatsRow}>
                 <View style={styles.portfolioStatCol}>
@@ -566,10 +819,11 @@ export default function HomeScreen({ navigation }) {
 
                 <View style={styles.portfolioStatCol}>
                   <Text style={styles.statNumber}>
-                    {vaultSummary.totalCount
-                      ? vaultSummary.verifiedPct || 100
-                      : 100}
-                    %
+                    {vaultSummary.totalCount > 0 &&
+                    vaultSummary.verifiedPct !== null &&
+                    vaultSummary.verifiedPct !== undefined
+                      ? `${vaultSummary.verifiedPct}%`
+                      : "—"}
                   </Text>
                   <Text style={styles.statLabel}>Verified</Text>
                 </View>
@@ -1124,6 +1378,18 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.85)",
     letterSpacing: 1.2,
   },
+  cachedBadge: {
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 8,
+  },
+  cachedBadgeText: {
+    fontSize: 9.5,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.9)",
+    letterSpacing: 0.8,
+  },
   barChartBadge: {
     width: 32,
     height: 32,
@@ -1150,6 +1416,9 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 999,
   },
+  negativePill: {
+    backgroundColor: "rgba(239, 68, 68, 0.38)",
+  },
   growthPillText: {
     fontSize: 12,
     fontWeight: "700",
@@ -1174,6 +1443,29 @@ const styles = StyleSheet.create({
     width: "100%",
     justifyContent: "center",
     marginVertical: 4,
+  },
+  waveEmptyTrack: {
+    width: "100%",
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  waveEmptyDashedLine: {
+    width: "100%",
+    height: 1,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.25)",
+    position: "absolute",
+  },
+  waveEmptyText: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.7)",
+    fontWeight: "500",
+    backgroundColor: "rgba(100, 60, 240, 0.45)",
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+    borderRadius: 10,
   },
   waveTrackNative: {
     height: 40,

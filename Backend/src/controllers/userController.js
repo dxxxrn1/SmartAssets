@@ -8,6 +8,8 @@ const avatarService = require('../services/avatarService');
 const complianceService = require('../services/complianceService');
 const auditLogService = require('../services/auditLogService');
 const { uploadImageToCloud, saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
+const { isHoldingVerified } = require('../utils/holdingVerification');
+const portfolioSnapshotService = require('../services/portfolioSnapshotService');
 
 // ── GET /api/user/vault ──────────────────────────────────────────────────────
 // Returns ONLY holdings belonging to the authenticated user.
@@ -24,24 +26,48 @@ async function getVault(req, res) {
 
     if (error) {
       console.error('Error fetching vault holdings:', error);
-      // If table doesn't exist yet or has error, return safe empty list
+      // If table doesn't exist yet or has error, return safe empty list with explicit unavailable states
       return res.status(200).json({
         success: true,
         holdings: [],
         summary: {
+          availableBalanceNum: 0,
+          availableBalanceFormatted: 'R0',
+          escrowBalanceNum: 0,
+          escrowBalanceFormatted: 'R0',
+          sellerPendingEscrowNum: 0,
+          sellerPendingEscrowFormatted: 'R0',
+          portfolioValueNum: 0,
+          portfolioValueFormatted: 'R0',
+          valuationType: 'recorded',
+          valuationLabel: 'Recorded Vault Value',
           totalValueFormatted: 'R0',
           totalValueNum: 0,
+          combinedTotalNum: 0,
+          combinedTotalFormatted: 'R0',
           totalCount: 0,
           wholeCount: 0,
           fractionalCount: 0,
-          gainText: '+0.0% MoM',
+          categoriesCount: 0,
+          verifiedPct: null,
+          hasPerformanceHistory: false,
+          monthlyChangeNum: null,
+          monthlyChangePct: null,
+          monthlyChangeFormatted: null,
+          isPositive: true,
+          history: [],
+          gainText: 'Performance history unavailable',
         },
       });
     }
 
+    let allHaveMarketValue = (holdings || []).length > 0;
+    let anyHasMarketValue = false;
+
     const items = (holdings || []).map((item) => {
       let initialValue = Number(item.price_num) || 0;
-      let liveMarketValue = Number(item.price_num) || 0;
+      let liveMarketValue = null;
+      let hasMarketValue = false;
       let badgeText = item.gain || '+0.0% Market Gain';
       let badgeType = item.positive ? 'positive' : 'negative';
       let sharesOwned = 1;
@@ -52,8 +78,13 @@ async function getVault(req, res) {
         if (match) {
           try {
             const meta = JSON.parse(match[1]);
-            if (meta.initialValue !== undefined) initialValue = Number(meta.initialValue);
-            if (meta.liveMarketValue !== undefined) liveMarketValue = Number(meta.liveMarketValue);
+            if (meta.initialValue !== undefined && meta.initialValue !== null) {
+              initialValue = Number(meta.initialValue);
+            }
+            if (meta.liveMarketValue !== undefined && meta.liveMarketValue !== null && !isNaN(meta.liveMarketValue)) {
+              liveMarketValue = Number(meta.liveMarketValue);
+              hasMarketValue = true;
+            }
             if (meta.badgeText) badgeText = meta.badgeText;
             if (meta.badgeType) badgeType = meta.badgeType;
             if (meta.sharesOwned) sharesOwned = meta.sharesOwned;
@@ -62,6 +93,12 @@ async function getVault(req, res) {
             if (meta.hashDisplay) item.hashDisplay = meta.hashDisplay;
           } catch (_) {}
         }
+      }
+
+      if (!hasMarketValue) {
+        allHaveMarketValue = false;
+      } else {
+        anyHasMarketValue = true;
       }
 
       const cleanGain = badgeText.replace(/<!--[\s\S]*?-->/g, '').trim();
@@ -77,6 +114,14 @@ async function getVault(req, res) {
         }
       }
 
+      const isVerified = isHoldingVerified(item);
+
+      // Determine authoritative holding value for portfolio total
+      const isFractional = item.asset_type === 'fractional';
+      const effectiveHoldingValue = isFractional
+        ? myStake
+        : (hasMarketValue ? liveMarketValue : initialValue);
+
       return {
         ...item,
         asset_id: assetId,
@@ -84,7 +129,11 @@ async function getVault(req, res) {
         initialValue,
         initialValueFormatted: `R${initialValue.toLocaleString('en-ZA')}`,
         liveMarketValue,
-        liveMarketValueFormatted: `R${liveMarketValue.toLocaleString('en-ZA')}`,
+        liveMarketValueFormatted: liveMarketValue !== null ? `R${liveMarketValue.toLocaleString('en-ZA')}` : null,
+        hasMarketValue,
+        effectiveHoldingValue,
+        isVerified,
+        verified: isVerified,
         badgeText: cleanGain,
         badgeType,
         sharesOwned,
@@ -92,6 +141,7 @@ async function getVault(req, res) {
         myStakeFormatted: `R${myStake.toLocaleString('en-ZA')}`,
       };
     });
+
     const vaultTxService = require('../services/vaultTransactionService');
     const availableBalanceNum = await vaultTxService.getUserBalance(userId);
     const availableBalanceFormatted = vaultTxService.formatZar(availableBalanceNum);
@@ -135,15 +185,53 @@ async function getVault(req, res) {
     const escrowBalanceFormatted = vaultTxService.formatZar(escrowBalanceNum);
     const sellerPendingEscrowFormatted = vaultTxService.formatZar(sellerPendingEscrowNum);
 
-    // Compute personal portfolio summary
-    const portfolioValueNum = items.reduce((sum, item) => sum + (Number(item.price_num) || 0), 0);
+    // Compute personal portfolio summary from authoritative holding values
+    const portfolioValueNum = items.reduce((sum, item) => sum + (Number(item.effectiveHoldingValue) || 0), 0);
     const wholeCount = items.filter((i) => i.asset_type !== 'fractional').length;
     const fractionalCount = items.filter((i) => i.asset_type === 'fractional').length;
+
+    // Valuation categorization: distinguishes live market valuations from recorded purchase prices
+    const valuationType = items.length === 0
+      ? 'recorded'
+      : allHaveMarketValue
+        ? 'market'
+        : anyHasMarketValue
+          ? 'mixed'
+          : 'recorded';
+    const valuationLabel = valuationType === 'market'
+      ? 'Live Market Value'
+      : valuationType === 'mixed'
+        ? 'Mixed Market & Recorded'
+        : 'Recorded Vault Value';
+
+    // Categories count: distinct non-empty categories, 0 if no holdings
+    const uniqueCategories = new Set(
+      items
+        .map((i) => (i.category ? String(i.category).trim() : ''))
+        .filter((c) => c.length > 0)
+    );
+    const categoriesCount = items.length === 0 ? 0 : uniqueCategories.size;
+
+    // Verified percentage: explicit authoritative verification status
+    const verifiedCount = items.filter((i) => i.isVerified).length;
+    const verifiedPct = items.length === 0
+      ? null
+      : Math.round((verifiedCount / items.length) * 100);
 
     const formattedPortfolio = vaultTxService.formatZar(portfolioValueNum);
     const totalCombinedNum = availableBalanceNum + escrowBalanceNum + portfolioValueNum;
     const totalCombinedFormatted = vaultTxService.formatZar(totalCombinedNum);
     const transactions = await vaultTxService.fetchUserTransactions(userId);
+
+    // Authoritative dated snapshot recording & monthly performance calculation
+    await portfolioSnapshotService.recordDailySnapshot(userId, {
+      portfolioValue: portfolioValueNum,
+      cashBalance: availableBalanceNum,
+      totalValue: totalCombinedNum,
+      holdingsCount: items.length,
+    });
+
+    const performance = await portfolioSnapshotService.getMonthlyPerformance(userId, portfolioValueNum);
 
     return res.status(200).json({
       success: true,
@@ -158,6 +246,8 @@ async function getVault(req, res) {
         sellerPendingEscrowFormatted,
         portfolioValueNum,
         portfolioValueFormatted: formattedPortfolio,
+        valuationType,
+        valuationLabel,
         totalValueFormatted: availableBalanceFormatted, // Liquid cash available
         totalValueNum: availableBalanceNum,
         combinedTotalNum: totalCombinedNum,
@@ -165,7 +255,17 @@ async function getVault(req, res) {
         totalCount: items.length,
         wholeCount,
         fractionalCount,
-        gainText: items.length > 0 ? '+12.4% YTD' : '0.0% YTD',
+        categoriesCount,
+        verifiedPct,
+        hasPerformanceHistory: performance.hasPerformanceHistory,
+        monthlyChangeNum: performance.monthlyChangeNum,
+        monthlyChangePct: performance.monthlyChangePct,
+        monthlyChangeFormatted: performance.monthlyChangeFormatted,
+        isPositive: performance.isPositive,
+        history: performance.history || [],
+        gainText: performance.hasPerformanceHistory
+          ? performance.monthlyChangeFormatted
+          : 'Performance history unavailable',
       },
     });
   } catch (err) {
@@ -192,6 +292,8 @@ async function addHolding(req, res) {
       initialValue,
       liveMarketValue,
       badgeText,
+      verified,
+      isVerified,
     } = req.body;
 
     if (!name || !category || (priceNum === undefined && initialValue === undefined)) {
@@ -200,14 +302,17 @@ async function addHolding(req, res) {
 
     const effectivePriceNum = Number(priceNum !== undefined ? priceNum : (liveMarketValue || initialValue || 0));
     let gainVal = gain || badgeText || '+0.0%';
-    if (initialValue !== undefined || liveMarketValue !== undefined || badgeText !== undefined) {
+    const holdingVerified = Boolean(verified || isVerified);
+    if (initialValue !== undefined || liveMarketValue !== undefined || badgeText !== undefined || holdingVerified) {
       const meta = {
         initialValue: Number(initialValue || effectivePriceNum),
-        liveMarketValue: Number(liveMarketValue || effectivePriceNum),
+        liveMarketValue: liveMarketValue !== undefined ? Number(liveMarketValue) : undefined,
         badgeText: badgeText || gainVal,
         badgeType: positive !== undefined ? (positive ? 'positive' : 'negative') : 'positive',
-        certId: req.body.certId || 'ERC-721 #4811',
-        hashDisplay: req.body.hashDisplay || '0x71c...9a',
+        certId: req.body.certId || null,
+        hashDisplay: req.body.hashDisplay || null,
+        txHash: req.body.txHash || null,
+        verified: holdingVerified,
       };
       gainVal = `${badgeText || gainVal}<!--meta:${JSON.stringify(meta)}-->`;
     }
@@ -377,6 +482,12 @@ async function getProfile(req, res) {
         bankAccount: verificationBundle.bank_account || null,
         bankStatus: verificationBundle.bank_account?.status || 'not_submitted',
         verificationDocuments: verificationBundle.documents || null,
+        notificationPreferences: userMeta.notification_preferences || {
+          escrowAlerts: true,
+          priceAlerts: true,
+          securityAlerts: true,
+          marketing: false,
+        },
       },
     });
   } catch (err) {
@@ -390,7 +501,7 @@ async function getProfile(req, res) {
 async function updateProfile(req, res) {
   try {
     const userId = req.user.id;
-    const { fullName, avatarUrl, gender, dob, phone, password } = req.body;
+    const { fullName, avatarUrl, gender, dob, phone, password, notificationPreferences } = req.body;
 
     // Save avatar to the database (profiles.avatar_url column)
     let savedAvatar = null;
@@ -410,6 +521,7 @@ async function updateProfile(req, res) {
       ...(gender !== undefined ? { gender: gender.trim() } : {}),
       ...(dob !== undefined ? { dob: dob.trim() } : {}),
       ...(phone !== undefined ? { phone: phone.trim() } : {}),
+      ...(notificationPreferences ? { notification_preferences: notificationPreferences } : {}),
     };
 
     const updatePayload = {
@@ -693,10 +805,14 @@ async function getSupportTickets(req, res) {
 }
 
 // ── GET /api/user/analytics ──────────────────────────────────────────────────
-// Aggregates user profile analytics since joining date.
+// Aggregates user profile analytics from authoritative database, vault, and snapshot records.
+// Strictly ZERO fabricated trends, zero fake health scores, and zero fallback gains.
 async function getAnalytics(req, res) {
   try {
     const userId = req.user.id;
+    const portfolioSnapshotService = require('../services/portfolioSnapshotService');
+    const { isHoldingVerified } = require('../utils/holdingVerification');
+    const vaultTxService = require('../services/vaultTransactionService');
 
     // 1. Fetch user profile & created_at
     const { data: authData } = await supabase.auth.admin.getUserById(userId);
@@ -726,38 +842,145 @@ async function getAnalytics(req, res) {
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
-    const items = holdings || [];
-    const vaultTxService = require('../services/vaultTransactionService');
-    const availableBalanceNum = await vaultTxService.getUserBalance(userId);
-    const portfolioValueNum = items.reduce((sum, item) => sum + (Number(item.price_num) || 0), 0);
-    const combinedNetWorth = availableBalanceNum + portfolioValueNum;
+    const rawHoldings = holdings || [];
+    let allHaveMarketValue = rawHoldings.length > 0;
+    let anyHasMarketValue = false;
+    let measuredGainsNum = 0;
+    let holdingsWithMarketValueCount = 0;
 
-    // Category distribution
-    const categoryTotals = {};
-    items.forEach((item) => {
-      const cat = item.category || 'Collectibles';
-      categoryTotals[cat] = (categoryTotals[cat] || 0) + (Number(item.price_num) || 0);
+    const items = rawHoldings.map((item) => {
+      const isFractional = item.asset_type === 'fractional';
+      const sharesOwned = Number(item.shares_owned) || 1;
+      const sharePrice = Number(item.price_num) || 0;
+      const myStake = isFractional
+        ? (Number(item.my_stake) || sharesOwned * sharePrice)
+        : sharePrice;
+
+      let initialValue = Number(item.initial_value);
+      if (isNaN(initialValue) || initialValue <= 0) {
+        initialValue = isFractional ? myStake : (Number(item.price_num) || 0);
+      }
+
+      let liveMarketValue = null;
+      let hasMarketValue = false;
+      if (item.live_market_value !== null && item.live_market_value !== undefined) {
+        const lmv = Number(item.live_market_value);
+        if (!isNaN(lmv) && lmv > 0) {
+          liveMarketValue = lmv;
+          hasMarketValue = true;
+        }
+      }
+
+      if (!hasMarketValue) {
+        allHaveMarketValue = false;
+      } else {
+        anyHasMarketValue = true;
+        holdingsWithMarketValueCount += 1;
+        if (initialValue > 0) {
+          measuredGainsNum += (liveMarketValue - initialValue);
+        }
+      }
+
+      const effectiveHoldingValue = isFractional
+        ? myStake
+        : (hasMarketValue ? liveMarketValue : initialValue);
+
+      const isVerified = isHoldingVerified(item);
+
+      return {
+        ...item,
+        isFractional,
+        myStake,
+        initialValue,
+        liveMarketValue,
+        hasMarketValue,
+        effectiveHoldingValue,
+        isVerified,
+      };
     });
 
-    let categoryBreakdown = Object.entries(categoryTotals).map(([category, val]) => ({
+    const availableBalanceNum = await vaultTxService.getUserBalance(userId);
+    const availableBalanceFormatted = vaultTxService.formatZar(availableBalanceNum);
+
+    // Compute separate escrow balances for funds locked in custody
+    let escrowBalanceNum = 0;
+    let sellerPendingEscrowNum = 0;
+    const activeEscrowStatuses = [
+      'payment_secured',
+      'in_transit',
+      'in_inspection',
+      'delivered',
+      'accepted',
+      'disputed',
+    ];
+
+    try {
+      const { data: buyerEscrows } = await supabase
+        .from('escrow_orders')
+        .select('amount_zar, status')
+        .eq('buyer_id', userId)
+        .in('status', activeEscrowStatuses);
+
+      if (buyerEscrows && Array.isArray(buyerEscrows)) {
+        escrowBalanceNum = buyerEscrows.reduce((sum, o) => sum + (Number(o.amount_zar) || 0), 0);
+      }
+
+      const { data: sellerEscrows } = await supabase
+        .from('escrow_orders')
+        .select('amount_zar, status')
+        .eq('seller_id', userId)
+        .in('status', activeEscrowStatuses);
+
+      if (sellerEscrows && Array.isArray(sellerEscrows)) {
+        sellerPendingEscrowNum = sellerEscrows.reduce((sum, o) => sum + (Number(o.amount_zar) || 0), 0);
+      }
+    } catch (_escErr) {
+      console.warn('⚠️ [UserController] Escrow balance lookup notice in getAnalytics:', _escErr.message);
+    }
+
+    const escrowBalanceFormatted = vaultTxService.formatZar(escrowBalanceNum);
+    const sellerPendingEscrowFormatted = vaultTxService.formatZar(sellerPendingEscrowNum);
+
+    // Authoritative portfolio valuation
+    const portfolioValueNum = items.reduce((sum, item) => sum + (Number(item.effectiveHoldingValue) || 0), 0);
+    const combinedNetWorth = availableBalanceNum + escrowBalanceNum + portfolioValueNum;
+
+    // Valuation categorization: distinguishes live market valuations from recorded purchase prices
+    const valuationType = items.length === 0
+      ? 'recorded'
+      : allHaveMarketValue
+        ? 'market'
+        : anyHasMarketValue
+          ? 'mixed'
+          : 'recorded';
+    const valuationLabel = valuationType === 'market'
+      ? 'Live Market Value'
+      : valuationType === 'mixed'
+        ? 'Mixed Market & Recorded'
+        : 'Recorded Vault Value';
+
+    // Category distribution using authoritative effectiveHoldingValue
+    const categoryTotals = {};
+    items.forEach((item) => {
+      const cat = item.category ? String(item.category).trim() : 'Collectibles';
+      categoryTotals[cat] = (categoryTotals[cat] || 0) + (Number(item.effectiveHoldingValue) || 0);
+    });
+
+    const categoryBreakdown = Object.entries(categoryTotals).map(([category, val]) => ({
       category,
       valueNum: val,
       valueFormatted: vaultTxService.formatZar(val),
       percentage: portfolioValueNum > 0 ? Math.round((val / portfolioValueNum) * 100) : 0,
     }));
 
-    if (categoryBreakdown.length === 0) {
-      categoryBreakdown = [];
-    }
-
     // 3. Transactions & Escrows
-    const transactions = vaultTxService.getUserTransactions(userId);
-    let escrows = [];
+    const transactions = await vaultTxService.fetchUserTransactions(userId);
+    let userEscrows = [];
     try {
       const escrowService = require('../services/escrowService');
-      escrows = escrowService.getUserEscrowOrders(userId) || [];
+      userEscrows = await escrowService.getUserEscrowOrders(userId);
     } catch (_err) {
-      escrows = [];
+      userEscrows = [];
     }
 
     const totalDeposits = transactions
@@ -767,95 +990,114 @@ async function getAnalytics(req, res) {
       .filter((t) => t.type === 'withdraw')
       .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-    // 4. Growth & Performance since joining
-    const totalGainsNum = items.reduce((sum, h) => sum + (Number(h.gain_num) || Math.round(Number(h.price_num || 0) * 0.05)), 0);
-    const appreciationRate = portfolioValueNum > 0 ? Number(((totalGainsNum / portfolioValueNum) * 100).toFixed(1)) : 0;
-    const baseVal = combinedNetWorth;
-    const estimatedGainsNum = totalGainsNum;
+    // 4. Growth & Performance from authoritative dated snapshots
+    // Ensure today's snapshot is authoritatively recorded
+    await portfolioSnapshotService.recordDailySnapshot(userId, {
+      portfolioValue: portfolioValueNum,
+      cashBalance: availableBalanceNum,
+      totalValue: combinedNetWorth,
+      holdingsCount: items.length,
+    });
 
-    // 5. Monthly Timeline (Past 6 months since joining)
-    const monthlyTimeline = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date();
-      d.setMonth(d.getMonth() - i);
-      const mName = d.toLocaleString('default', { month: 'short' });
-      const factor = (0.72 + (5 - i) * 0.056);
-      const val = Math.round(baseVal * factor);
-      monthlyTimeline.push({
-        month: mName,
-        valueNum: val,
-        valueFormatted: vaultTxService.formatZar(val),
-        growthPct: `+${((5 - i) * 3.2 + 2.1).toFixed(1)}%`,
-      });
-    }
+    const performance = await portfolioSnapshotService.getMonthlyPerformance(userId, portfolioValueNum);
+    const userSnapshots = await portfolioSnapshotService.getUserSnapshots(userId);
 
-    // 6. User Milestones since joining
+    // Real monthly timeline from dated portfolio_snapshots (NEVER fabricated multipliers)
+    const monthlyTimeline = userSnapshots.map((s) => ({
+      date: s.snapshotDate,
+      valueNum: s.portfolioValue,
+      valueFormatted: vaultTxService.formatZar(s.portfolioValue),
+      cashBalanceNum: s.cashBalance,
+      cashBalanceFormatted: vaultTxService.formatZar(s.cashBalance),
+      totalValueNum: s.totalValue,
+      totalValueFormatted: vaultTxService.formatZar(s.totalValue),
+      holdingsCount: s.holdingsCount,
+    }));
+
+    // 5. User Milestones derived strictly from real recorded events
     const milestones = [
       {
-        id: 'ms-1',
+        id: 'ms-joined',
         title: 'Joined SmartAssets Network',
         date: joinedDate.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }),
         desc: 'Account activated with decentralized vault custody',
         icon: 'checkmark-circle',
         completed: true,
       },
-      {
-        id: 'ms-2',
-        title: 'Vault Liquidity Activated',
-        date: transactions.length > 0 ? new Date(transactions[transactions.length - 1].createdAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Verified',
-        desc: `Initial vault balance initialized (${vaultTxService.formatZar(availableBalanceNum)})`,
+    ];
+
+    if (transactions.length > 0) {
+      const firstTx = transactions[transactions.length - 1];
+      milestones.push({
+        id: 'ms-vault',
+        title: 'Vault Liquidity Initialized',
+        date: firstTx.createdAt ? new Date(firstTx.createdAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Confirmed',
+        desc: `Vault balance recorded (${availableBalanceFormatted})`,
         icon: 'wallet',
         completed: true,
-      },
-      {
-        id: 'ms-3',
-        title: 'Asset Acquisition & Provenance Token',
-        date: items.length > 0 ? `${items.length} Assets Registered` : 'Active Verification',
-        desc: 'Cryptographic ownership tokens registered on Sepolia Ethereum',
+      });
+    }
+
+    if (items.length > 0) {
+      milestones.push({
+        id: 'ms-holdings',
+        title: 'Asset Acquisition Recorded',
+        date: `${items.length} ${items.length === 1 ? 'Asset' : 'Assets'} in Vault`,
+        desc: `${items.filter((i) => i.isVerified).length} verified custody holdings`,
         icon: 'shield-checkmark',
         completed: true,
-      },
-      {
-        id: 'ms-4',
-        title: 'Private Collector Status',
-        date: 'Tier 1 Prime',
-        desc: 'Zero-fee peer escrow clearance and 96% health audit index',
-        icon: 'ribbon',
-        completed: true,
-      },
-    ];
+      });
+    }
+
+    const verifiedHoldingsCount = items.filter((i) => i.isVerified).length;
+    const verifiedPct = items.length === 0 ? null : Math.round((verifiedHoldingsCount / items.length) * 100);
 
     return res.status(200).json({
       success: true,
       analytics: {
         userId,
-        fullName: profile?.full_name || authUser?.user_metadata?.full_name || req.user.fullName || 'Verified Member',
+        fullName: profile?.full_name || authUser?.user_metadata?.full_name || req.user.fullName || 'Member',
         email: authUser?.email || profile?.email || req.user.email || '',
         avatarUrl: profile?.avatar_url || authUser?.user_metadata?.avatar_url || null,
         joinedAt: createdAt,
         daysSinceJoined,
         memberSinceFormatted,
-        membershipTier: 'Prime Collector Tier 1',
-        netWorthNum: baseVal,
-        netWorthFormatted: vaultTxService.formatZar(baseVal),
+        membershipTier: profile?.tier || 'Member',
+        netWorthNum: combinedNetWorth,
+        netWorthFormatted: vaultTxService.formatZar(combinedNetWorth),
         availableBalanceNum,
-        availableBalanceFormatted: vaultTxService.formatZar(availableBalanceNum),
+        availableBalanceFormatted,
+        escrowBalanceNum,
+        escrowBalanceFormatted,
+        sellerPendingEscrowNum,
+        sellerPendingEscrowFormatted,
         portfolioValueNum,
         portfolioValueFormatted: vaultTxService.formatZar(portfolioValueNum),
-        growthRatePct: `+${appreciationRate}%`,
-        estimatedGainsNum,
-        estimatedGainsFormatted: `+${vaultTxService.formatZar(estimatedGainsNum)}`,
-        healthScore: 96,
-        healthGrade: 'Optimal Grade A+',
+        valuationType,
+        valuationLabel,
+        hasPerformanceHistory: performance.hasPerformanceHistory,
+        growthRatePct: performance.hasPerformanceHistory ? performance.monthlyChangePct : null,
+        monthlyChangeNum: performance.hasPerformanceHistory ? performance.monthlyChangeNum : null,
+        monthlyChangeFormatted: performance.hasPerformanceHistory ? performance.monthlyChangeFormatted : null,
+        performanceMessage: performance.performanceMessage,
+        measuredGainsNum: holdingsWithMarketValueCount > 0 ? measuredGainsNum : null,
+        measuredGainsFormatted: holdingsWithMarketValueCount > 0
+          ? `${measuredGainsNum >= 0 ? '+' : ''}${vaultTxService.formatZar(measuredGainsNum)}`
+          : null,
+        healthScore: null, // Removed fabricated score
+        healthGrade: null, // Removed fabricated grade
         totalHoldingsCount: items.length,
+        verifiedHoldingsCount,
+        verifiedPct,
         totalTransactionsCount: transactions.length,
-        totalEscrowsCount: escrows.length,
+        totalEscrowsCount: userEscrows.length,
         totalDepositsNum: totalDeposits,
         totalDepositsFormatted: vaultTxService.formatZar(totalDeposits),
         totalWithdrawalsNum: totalWithdrawals,
         totalWithdrawalsFormatted: vaultTxService.formatZar(totalWithdrawals),
         categoryBreakdown,
         monthlyTimeline,
+        history: performance.history || [],
         milestones,
       },
     });
@@ -881,7 +1123,7 @@ async function submitKyc(req, res) {
       bankingDetails,
     } = req.body;
 
-    const record = complianceService.submitKyc({
+    const record = await complianceService.submitKyc({
       userId,
       userEmail,
       fullName,
@@ -905,15 +1147,19 @@ async function submitKyc(req, res) {
       status: 'Pending Review',
     });
 
+    const bundle = await complianceService.getVerificationStatusBundle(userId, userEmail, req);
+
     return res.status(200).json({
       success: true,
       message: 'KYC compliance documents submitted successfully! Our compliance desk will review your dossier.',
       verification: record,
-      kycStatus: 'pending',
+      kycStatus: bundle.verification_status || 'pending',
+      verification_status: bundle.verification_status || 'pending',
+      bundle,
     });
   } catch (err) {
     console.error('submitKyc error:', err);
-    return sendError(res, 500, 'Failed to submit KYC compliance details.');
+    return sendError(res, 500, err.message || 'Failed to submit KYC compliance details.');
   }
 }
 
@@ -1094,6 +1340,76 @@ async function getBankAccount(req, res) {
   }
 }
 
+// ── GET /api/user/notifications/preferences ──────────────────────────────────
+async function getNotificationPreferences(req, res) {
+  try {
+    const userId = req.user.id;
+    const { data: authData } = await supabase.auth.admin.getUserById(userId);
+    const existingMeta = authData?.user?.user_metadata || {};
+    const defaultPrefs = {
+      escrowAlerts: true,
+      priceAlerts: true,
+      securityAlerts: true,
+      marketing: false,
+    };
+    const preferences = {
+      ...defaultPrefs,
+      ...(existingMeta.notification_preferences || {}),
+    };
+    return res.status(200).json({
+      success: true,
+      preferences,
+    });
+  } catch (err) {
+    console.error('getNotificationPreferences error:', err);
+    return sendError(res, 500, 'Failed to fetch notification preferences.');
+  }
+}
+
+// ── PUT /api/user/notifications/preferences ──────────────────────────────────
+async function updateNotificationPreferences(req, res) {
+  try {
+    const userId = req.user.id;
+    const inputPrefs = req.body.preferences || req.body || {};
+    const defaultPrefs = {
+      escrowAlerts: true,
+      priceAlerts: true,
+      securityAlerts: true,
+      marketing: false,
+    };
+    const { data: authData } = await supabase.auth.admin.getUserById(userId);
+    const existingMeta = authData?.user?.user_metadata || {};
+    const updatedPreferences = {
+      ...defaultPrefs,
+      ...(existingMeta.notification_preferences || {}),
+      ...(inputPrefs.escrowAlerts !== undefined ? { escrowAlerts: Boolean(inputPrefs.escrowAlerts) } : {}),
+      ...(inputPrefs.priceAlerts !== undefined ? { priceAlerts: Boolean(inputPrefs.priceAlerts) } : {}),
+      ...(inputPrefs.securityAlerts !== undefined ? { securityAlerts: Boolean(inputPrefs.securityAlerts) } : {}),
+      ...(inputPrefs.marketing !== undefined ? { marketing: Boolean(inputPrefs.marketing) } : {}),
+    };
+
+    const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
+      user_metadata: {
+        ...existingMeta,
+        notification_preferences: updatedPreferences,
+      },
+    });
+
+    if (updateError) {
+      return sendError(res, 400, updateError.message || 'Could not update notification preferences.');
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Notification preferences updated successfully.',
+      preferences: updatedPreferences,
+    });
+  } catch (err) {
+    console.error('updateNotificationPreferences error:', err);
+    return sendError(res, 500, 'Failed to update notification preferences.');
+  }
+}
+
 module.exports = {
   submitKyc,
   getKycStatus,
@@ -1113,4 +1429,6 @@ module.exports = {
   lodgeSupport,
   getSupportTickets,
   getAnalytics,
+  getNotificationPreferences,
+  updateNotificationPreferences,
 };

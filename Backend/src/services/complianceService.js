@@ -502,6 +502,7 @@ async function submitBankAccount({
   accountNumber,
   branchCode,
   accountType,
+  allowPendingKyc = false,
 }) {
   if (!accountHolder || !bankName || !accountNumber || !branchCode) {
     const err = new Error(
@@ -512,7 +513,7 @@ async function submitBankAccount({
   }
 
   const compliance = getUserCompliance(userId, userEmail);
-  if (compliance?.kycStatus !== 'verified') {
+  if (!allowPendingKyc && compliance?.kycStatus !== 'verified') {
     const err = new Error(
       'Account verification required: All 3 KYC documents must be approved by an administrator before submitting bank account details.'
     );
@@ -619,6 +620,122 @@ async function submitBankAccount({
     ...record,
     account_number: undefined,
   };
+}
+
+/**
+ * Submits a complete KYC compliance pack (dossier).
+ */
+async function submitKyc({
+  userId,
+  userEmail,
+  fullName,
+  idNumber,
+  idDocumentUrl,
+  taxNumber,
+  taxDocumentUrl,
+  residentialAddress,
+  proofOfResidenceUrl,
+  bankingDetails,
+}) {
+  const dossierId = 'KYC-' + crypto.randomUUID().slice(0, 8);
+  const now = new Date().toISOString();
+
+  // If document data was passed as data URI, upload/register via uploadVerificationDocument
+  const docPromises = [];
+  if (idDocumentUrl && typeof idDocumentUrl === 'string' && idDocumentUrl.startsWith('data:')) {
+    docPromises.push(
+      uploadVerificationDocument({
+        userId,
+        userEmail,
+        fullName,
+        docType: 'id',
+        fileData: idDocumentUrl,
+        fileName: 'id_document.jpg',
+        metaValue: idNumber,
+      }).catch((e) => console.warn('[KYC submit] id upload warning:', e.message))
+    );
+  }
+  if (taxDocumentUrl && typeof taxDocumentUrl === 'string' && taxDocumentUrl.startsWith('data:')) {
+    docPromises.push(
+      uploadVerificationDocument({
+        userId,
+        userEmail,
+        fullName,
+        docType: 'tax',
+        fileData: taxDocumentUrl,
+        fileName: 'tax_document.jpg',
+        metaValue: taxNumber,
+      }).catch((e) => console.warn('[KYC submit] tax upload warning:', e.message))
+    );
+  }
+  if (proofOfResidenceUrl && typeof proofOfResidenceUrl === 'string' && proofOfResidenceUrl.startsWith('data:')) {
+    docPromises.push(
+      uploadVerificationDocument({
+        userId,
+        userEmail,
+        fullName,
+        docType: 'proof_of_residence',
+        fileData: proofOfResidenceUrl,
+        fileName: 'proof_of_residence.jpg',
+        metaValue: residentialAddress,
+      }).catch((e) => console.warn('[KYC submit] proof upload warning:', e.message))
+    );
+  }
+
+  await Promise.all(docPromises);
+
+  // If banking details are provided, register bank account with allowPendingKyc: true
+  if (bankingDetails && bankingDetails.accountNumber) {
+    try {
+      await submitBankAccount({
+        userId,
+        userEmail,
+        fullName: bankingDetails.accountHolder || fullName,
+        accountHolder: bankingDetails.accountHolder || fullName,
+        bankName: bankingDetails.bankName,
+        accountNumber: bankingDetails.accountNumber,
+        branchCode: bankingDetails.branchCode,
+        accountType: bankingDetails.accountType || 'Cheque / Current',
+        allowPendingKyc: true,
+      });
+    } catch (bankErr) {
+      console.warn('[KYC submit] bank account warning:', bankErr.message);
+    }
+  }
+
+  const userStat = userStatusMap.get(userId) || { userId, userEmail, fullName };
+  const updatedStat = {
+    ...userStat,
+    kycStatus: 'pending',
+    verification_status: 'pending',
+    idNumber: idNumber || userStat.idNumber,
+    taxNumber: taxNumber || userStat.taxNumber,
+    residentialAddress: residentialAddress || userStat.residentialAddress,
+    updatedAt: now,
+  };
+  userStatusMap.set(userId, updatedStat);
+
+  try {
+    await supabase
+      .from('profiles')
+      .update({ verification_status: 'pending' })
+      .eq('id', userId);
+  } catch (_) {}
+
+  const record = {
+    id: dossierId,
+    userId,
+    userEmail,
+    fullName,
+    idNumber,
+    taxNumber,
+    residentialAddress,
+    status: 'pending',
+    submittedAt: now,
+  };
+
+  verificationsMap.set(dossierId, record);
+  return record;
 }
 
 /**
@@ -1225,6 +1342,7 @@ async function rejectKyc(verificationId, rejectionReason) {
 }
 
 module.exports = {
+  submitKyc,
   approveKyc,
   rejectKyc,
   maskAccountNumber,
