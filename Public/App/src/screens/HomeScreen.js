@@ -454,7 +454,7 @@ export default function HomeScreen({ navigation }) {
               <Feather
                 name="arrow-right"
                 size={14}
-                color="#6D28D9"
+                color="#FFFFFF"
                 style={{ marginLeft: 6 }}
               />
             </TouchableOpacity>
@@ -527,7 +527,12 @@ export default function HomeScreen({ navigation }) {
                   />
                   {/* Verified Badge */}
                   {item.isVerified && (
-                    <View style={styles.cardVerifiedBadge}>
+                    <LinearGradient
+                      colors={["#F2DC87", "#C5A059"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.cardVerifiedBadge}
+                    >
                       <Ionicons
                         name="shield-checkmark"
                         size={12}
@@ -535,7 +540,7 @@ export default function HomeScreen({ navigation }) {
                         style={{ marginRight: 4 }}
                       />
                       <Text style={styles.cardVerifiedText}>Verified</Text>
-                    </View>
+                    </LinearGradient>
                   )}
 
                   {/* Gain Badge */}
@@ -847,6 +852,8 @@ const styles = StyleSheet.create({
     padding: 22,
     borderWidth: 1,
     borderColor: "rgba(226, 232, 240, 0.8)",
+    borderLeftWidth: 6,
+    borderLeftColor: "#C5A059",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.05,
@@ -889,17 +896,22 @@ const styles = StyleSheet.create({
   exploreCtaBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F5F3FF",
+    backgroundColor: "#C5A059",
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 999,
     alignSelf: "flex-start",
     marginTop: 18,
+    shadowColor: "#C5A059",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
   },
   exploreCtaText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#6D28D9",
+    color: "#FFFFFF",
   },
 
   // ── Curated Section ─────────────────────────────────────────────────────────
@@ -993,14 +1005,18 @@ const styles = StyleSheet.create({
     left: 12,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.65)",
     paddingVertical: 4,
     paddingHorizontal: 9,
     borderRadius: 999,
+    shadowColor: "#C5A059",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 3,
   },
   cardVerifiedText: {
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#FFFFFF",
   },
   cardGainBadge: {
