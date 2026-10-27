@@ -1,4 +1,3 @@
-
 {
   "expo": {
     "name": "App",
@@ -9,9 +8,31 @@
     "scheme": "smartassets",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.smartassets.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SmartAssets requires camera access to place and preview luxury collectibles and fine art in Augmented Reality on your walls and floors.",
+        "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos",
+        "NSPhotoLibraryAddUsageDescription": "Allow $(PRODUCT_NAME) to save photos",
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use your microphone",
+        "LSApplicationQueriesSchemes": ["metamask", "smartassets"]
+      }
     },
     "android": {
+      "package": "com.smartassets.app",
+      "usesCleartextTraffic": true,
+      "permissions": ["android.permission.CAMERA"],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "smartassets"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -29,7 +50,33 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SmartAssets to show a live room preview.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow SmartAssets to keep the artwork steady as you move your phone."
+        }
+      ],
+      [
+        "@reactvision/react-viro",
+        {
+          "android": {
+            "xRMode": ["AR"]
+          }
+        }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "45e8dce4-f9e6-4de7-b898-137fdc0905eb"
+      }
+    }
   }
 }

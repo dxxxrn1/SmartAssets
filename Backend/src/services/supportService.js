@@ -1,51 +1,61 @@
 // ─── Support Service ─────────────────────────────────────────────────────────
 // Manages luxury platform user support inquiries, ticket lodging, and persistence.
+// Supabase support_tickets is the source of truth with live cache synchronization.
 
-const fs = require('fs');
-const path = require('path');
+const supabase = require('../connection/supabaseClient');
 
-const DATA_DIR = path.resolve(__dirname, '../data');
-const TICKETS_FILE = path.join(DATA_DIR, 'supportTickets.json');
-
+// In-memory runtime cache for fast lookups synced with Supabase
 const ticketsMap = new Map();
-
-function initStorage() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (fs.existsSync(TICKETS_FILE)) {
-      const data = JSON.parse(fs.readFileSync(TICKETS_FILE, 'utf8'));
-      if (Array.isArray(data)) {
-        data.forEach((ticket) => {
-          if (ticket && ticket.id) {
-            ticketsMap.set(ticket.id, ticket);
-          }
-        });
-      }
-    }
-  } catch (err) {
-    console.warn('⚠️ [SupportService] Storage initialization warning:', err.message);
-  }
-}
-
-function persistTickets() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    const ticketsArray = Array.from(ticketsMap.values());
-    fs.writeFileSync(TICKETS_FILE, JSON.stringify(ticketsArray, null, 2), 'utf8');
-  } catch (err) {
-    console.error('❌ [SupportService] Failed to persist support tickets:', err.message);
-  }
-}
-
-// Initialize on module load
-initStorage();
+let hydrated = false;
 
 /**
- * Creates and logs a new support ticket.
+ * Hydrates ticketsMap from Supabase support_tickets table on startup.
+ */
+async function hydrateTicketsFromSupabase() {
+  try {
+    const { data, error } = await supabase
+      .from('support_tickets')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (!error && Array.isArray(data)) {
+      data.forEach((row) => {
+        if (!row || !row.id) return;
+        if (!ticketsMap.has(row.id)) {
+          ticketsMap.set(row.id, {
+            id: row.id,
+            userId: row.user_id || null,
+            userEmail: row.user_email || 'collector@smartassets.io',
+            userName: row.user_name || 'Valued Collector',
+            category: row.category || 'General Inquiry',
+            subject: row.subject || 'Support Ticket',
+            message: row.message || '',
+            priority: row.priority || 'normal',
+            status: row.status || 'Open',
+            adminNotes: row.admin_notes || null,
+            resolutionNote: row.admin_notes || null,
+            createdAt: row.created_at || new Date().toISOString(),
+            updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+            responseEstimate: '2-4 hours',
+            assignedTeam:
+              row.category === 'Escrow & Payments'
+                ? 'Smart Contract Settlement Desk'
+                : row.category === 'Physical Verification'
+                ? 'Horology & Gemology Appraisal Lab'
+                : 'Luxury Concierge Team',
+          });
+        }
+      });
+      hydrated = true;
+    }
+  } catch (_) {}
+}
+
+hydrateTicketsFromSupabase();
+
+/**
+ * Creates and logs a new support ticket into Supabase support_tickets.
  */
 function createTicket({ userId, userEmail, userName, category, subject, message, priority = 'normal' }) {
   const ticketId = 'TKT-' + Math.floor(100000 + Math.random() * 900000);
@@ -60,17 +70,38 @@ function createTicket({ userId, userEmail, userName, category, subject, message,
     subject: subject.trim(),
     message: message.trim(),
     priority,
-    status: 'Open', // 'Open' | 'In Review' | 'Resolved'
+    status: 'Open',
     createdAt: now,
     updatedAt: now,
     responseEstimate: '2-4 hours',
-    assignedTeam: category === 'Escrow & Payments' ? 'Smart Contract Settlement Desk' :
-                  category === 'Physical Verification' ? 'Horology & Gemology Appraisal Lab' :
-                  'Luxury Concierge Team',
+    assignedTeam:
+      category === 'Escrow & Payments'
+        ? 'Smart Contract Settlement Desk'
+        : category === 'Physical Verification'
+        ? 'Horology & Gemology Appraisal Lab'
+        : 'Luxury Concierge Team',
   };
 
   ticketsMap.set(ticketId, ticket);
-  persistTickets();
+
+  // Sync to Supabase support_tickets table
+  try {
+    Promise.resolve(
+      supabase.from('support_tickets').insert({
+        id: ticketId,
+        user_id: userId && userId.includes('-') ? userId : null,
+        user_email: ticket.userEmail,
+        user_name: ticket.userName,
+        category: ticket.category,
+        subject: ticket.subject,
+        message: ticket.message,
+        priority: ticket.priority,
+        status: ticket.status,
+        created_at: now,
+        updated_at: now,
+      })
+    ).catch(() => {});
+  } catch (_e) {}
 
   console.log(`🎫 [SupportService] Lodged ticket ${ticketId} [${category}] for user ${userId}`);
   return ticket;
@@ -80,14 +111,55 @@ function createTicket({ userId, userEmail, userName, category, subject, message,
  * Retrieves all tickets lodged by a specific user.
  */
 function getUserTickets(userId) {
+  if (!hydrated) {
+    hydrateTicketsFromSupabase().catch(() => {});
+  }
   const list = [];
   for (const t of ticketsMap.values()) {
     if (t.userId === userId) {
       list.push(t);
     }
   }
-  // Sort newest first
   return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+/**
+ * Retrieves all tickets in the system (Admin support console).
+ */
+function getAllTickets() {
+  if (!hydrated) {
+    hydrateTicketsFromSupabase().catch(() => {});
+  }
+  const list = Array.from(ticketsMap.values());
+  return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+/**
+ * Updates a support ticket's status and logs resolution note.
+ */
+async function updateTicketStatus(ticketId, status, resolutionNote = null) {
+  const ticket = ticketsMap.get(ticketId);
+  if (!ticket) return null;
+
+  const now = new Date().toISOString();
+  ticket.status = status;
+  ticket.updatedAt = now;
+  if (resolutionNote) {
+    ticket.resolutionNote = resolutionNote;
+    ticket.adminNotes = resolutionNote;
+    ticket.adminResponse = resolutionNote;
+  }
+  ticketsMap.set(ticketId, ticket);
+
+  try {
+    await supabase.from('support_tickets').update({
+      status,
+      admin_notes: resolutionNote,
+      updated_at: now,
+    }).eq('id', ticketId);
+  } catch (_e) {}
+
+  return ticket;
 }
 
 /**
@@ -101,5 +173,7 @@ module.exports = {
   createTicket,
   getUserTickets,
   getTicketById,
+  getAllTickets,
+  updateTicketStatus,
+  hydrateTicketsFromSupabase,
 };
-

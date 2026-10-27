@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartAssets • Admin Authentication</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-base: #070B14;
+      --bg-surface: #0F1626;
+      --bg-elevated: #162035;
+      --border: rgba(255, 255, 255, 0.09);
+      --text-primary: #F8FAFC;
+      --text-secondary: #94A3B8;
+      --text-muted: #64748B;
+      --accent: #7C5CFC;
+      --accent-cyan: #38BDF8;
+      --emerald: #10B981;
+      --danger: #EF4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: radial-gradient(circle at 18% 15%, rgba(124, 92, 252, 0.22), transparent 42%),
+                  radial-gradient(circle at 82% 85%, rgba(56, 189, 248, 0.16), transparent 42%),
+                  var(--bg-base);
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 440px;
+      background: rgba(15, 22, 38, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 36px 32px;
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+
+    .brand-mark {
+      width: 46px;
+      height: 46px;
+      border-radius: 13px;
+      background: linear-gradient(135deg, #7C5CFC, #38BDF8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 18px;
+      color: #fff;
+      box-shadow: 0 8px 24px rgba(124, 92, 252, 0.38);
+    }
+
+    .brand-title {
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-sub {
+      font-size: 12px;
+      color: var(--accent-cyan);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 2px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+
+    .alert-box {
+      display: none;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 18px;
+      line-height: 1.45;
+    }
+
+    .alert-box.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.14);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #FCA5A5;
+    }
+
+    .alert-box.success {
+      display: block;
+      background: rgba(16, 185, 129, 0.14);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #6EE7B7;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-secondary);
+      margin-bottom: 7px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 13px 15px;
+      border-radius: 12px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.22);
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 14px 18px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #7C5CFC, #4F46E5);
+      color: #FFFFFF;
+      font-size: 14.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+      box-shadow: 0 10px 26px rgba(124, 92, 252, 0.35);
+      margin-top: 6px;
+    }
+
+    .btn-submit:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px rgba(124, 92, 252, 0.45);
+    }
+
+    .btn-submit:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .quick-fill-box {
+      margin-top: 22px;
+      padding: 13px 15px;
+      border-radius: 12px;
+      background: rgba(124, 92, 252, 0.08);
+      border: 1px dashed rgba(124, 92, 252, 0.32);
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .quick-fill-box strong {
+      color: var(--text-primary);
+    }
+
+    .btn-quick {
+      margin-top: 8px;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 6px 11px;
+      border-radius: 8px;
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-quick:hover {
+      background: rgba(124, 92, 252, 0.2);
+      border-color: var(--accent);
+    }
+
+    .security-footer {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="brand-header">
+      <div class="brand-mark">SA</div>
+      <div>
+        <div class="brand-title">SmartAssets</div>
+        <div class="brand-sub">Compliance &amp; Admin Portal</div>
+      </div>
+    </div>
+
+    <h1>Administrator Sign In</h1>
+    <p class="subtitle">
+      Sign in with your Supabase administrator account. Access is restricted strictly to accounts with <code>profiles.role = 'admin'</code>.
+    </p>
+
+    <div id="login-alert" class="alert-box"></div>
+
+    <div id="active-session-banner" class="alert-box success" style="display: none; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); padding: 14px; border-radius: 12px; margin-bottom: 20px;">
+      <div style="font-weight: 700; color: #6EE7B7; margin-bottom: 4px;">Active Admin Session Detected</div>
+      <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;">
+        Currently authenticated as <strong id="active-admin-name" style="color: #F8FAFC;"></strong>.
+      </div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <a href="index.html" class="btn-quick" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; background: #10B981; color: #070B14; font-weight: 700; border: none; padding: 7px 14px; border-radius: 8px;">
+          Go to Operations Portal &rarr;
+        </a>
+        <button type="button" class="btn-quick" id="btn-switch-account" style="background: rgba(255, 255, 255, 0.08); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px;">
+          Sign In as Different Admin
+        </button>
+      </div>
+    </div>
+
+    <form id="admin-login-form">
+      <div class="form-group">
+        <label class="form-label" for="admin-email">Admin Email Address</label>
+        <input
+          id="admin-email"
+          type="email"
+          class="form-input"
+          placeholder="admin@smartassets.io"
+          required
+          autocomplete="email"
+        />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="admin-password">Password</label>
+        <input
+          id="admin-password"
+          type="password"
+          class="form-input"
+          placeholder="Enter your password"
+          required
+          autocomplete="current-password"
+        />
+      </div>
+
+      <button id="login-btn" type="submit" class="btn-submit">
+        Sign In to Admin Console
+      </button>
+    </form>
+
+    <div class="quick-fill-box">
+      <div><strong>Compliance Officer Quick Sign-In:</strong></div>
+      <div>Use your Supabase <code>role = 'admin'</code> account or the local Compliance Officer credentials (<code>admin@smartassets.io</code>).</div>
+      <button type="button" class="btn-quick" id="fill-demo-admin">
+        Auto-fill Compliance Admin Credentials
+      </button>
+    </div>
+
+    <div class="security-footer">
+      🔒 Protected by Supabase Auth + Role-Based Access Control (RLS)
+    </div>
+  </div>
+
+  <script>
+    const API_BASE_URL = (function () {
+      const { protocol, hostname, port } = window.location;
+      if (protocol === 'file:') return 'http://localhost:5000';
+      if (port && port !== '5000') {
+        const targetHost = hostname === '127.0.0.1' ? 'localhost' : hostname;
+        return `http://${targetHost}:5000`;
+      }
+      return '';
+    })();
+
+    const SESSION_KEY = 'smartassets_admin_session';
+
+    const alertBox = document.getElementById('login-alert');
+    function showAlert(msg, type = 'error') {
+      alertBox.textContent = msg;
+      alertBox.className = `alert-box ${type}`;
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('logout')) {
+      localStorage.removeItem(SESSION_KEY);
+      showAlert('Signed out of Administrator Console successfully.', 'success');
+    } else if (urlParams.has('expired')) {
+      localStorage.removeItem(SESSION_KEY);
+      showAlert('Administrator session has expired or is invalid. Please sign in.', 'error');
+    } else if (urlParams.has('invalid')) {
+      localStorage.removeItem(SESSION_KEY);
+      showAlert('Access denied: Account role is not admin.', 'error');
+    } else if (urlParams.has('switch')) {
+      localStorage.removeItem(SESSION_KEY);
+    }
+
+    document.getElementById('btn-switch-account')?.addEventListener('click', () => {
+      localStorage.removeItem(SESSION_KEY);
+      const banner = document.getElementById('active-session-banner');
+      if (banner) banner.style.display = 'none';
+      showAlert('Session cleared. Sign in with your admin credentials.', 'success');
+    });
+
+    // If already logged in with a valid admin session, verify and offer option to proceed or switch
+    (async function checkExistingSession() {
+      if (urlParams.has('logout') || urlParams.has('expired') || urlParams.has('switch')) return;
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.token) {
+          localStorage.removeItem(SESSION_KEY);
+          return;
+        }
+
+        const res = await fetch(`${API_BASE_URL}/api/admin/auth/me`, {
+          headers: { Authorization: `Bearer ${parsed.token}` },
+        });
+        const data = await res.json();
+        if (res.ok && data.success && data.admin?.role === 'admin') {
+          const banner = document.getElementById('active-session-banner');
+          const nameSpan = document.getElementById('active-admin-name');
+          if (banner && nameSpan) {
+            nameSpan.textContent = data.admin.fullName || data.admin.email || 'Administrator';
+            banner.style.display = 'block';
+          }
+        } else {
+          localStorage.removeItem(SESSION_KEY);
+        }
+      } catch (_) {}
+    })();
+
+    document.getElementById('fill-demo-admin').addEventListener('click', () => {
+      document.getElementById('admin-email').value = 'admin@smartassets.io';
+      document.getElementById('admin-password').value = 'Admin@SmartAssets2026';
+      alertBox.className = 'alert-box';
+    });
+
+    document.getElementById('admin-login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('admin-email').value.trim();
+      const password = document.getElementById('admin-password').value;
+      const btn = document.getElementById('login-btn');
+
+      alertBox.className = 'alert-box';
+      btn.disabled = true;
+      btn.textContent = 'Verifying Admin Role...';
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/admin/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          localStorage.removeItem(SESSION_KEY);
+          showAlert(data.error || 'Access denied. Admin privileges required.', 'error');
+          btn.disabled = false;
+          btn.textContent = 'Sign In to Admin Console';
+          return;
+        }
+
+        if (!data.admin || data.admin.role !== 'admin') {
+          localStorage.removeItem(SESSION_KEY);
+          showAlert('Access denied. Your account role is "user", not "admin".', 'error');
+          btn.disabled = false;
+          btn.textContent = 'Sign In to Admin Console';
+          return;
+        }
+
+        localStorage.setItem(
+          SESSION_KEY,
+          JSON.stringify({
+            token: data.token,
+            admin: data.admin,
+            loggedInAt: new Date().toISOString(),
+          })
+        );
+
+        showAlert('Admin verified! Redirecting to SmartAssets Operations Portal...', 'success');
+        setTimeout(() => {
+          window.location.href = 'index.html';
+        }, 350);
+      } catch (err) {
+        showAlert('Network error connecting to SmartAssets backend (:5000). Ensure backend is running.', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Sign In to Admin Console';
+      }
+    });
+  </script>
+</body>
+</html>

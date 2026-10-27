@@ -1,9 +1,13 @@
 // ─── User Data Controller ───────────────────────────────────────────────────
-// Manages strictly user-isolated portfolio and vault holdings.
+// Manages strictly user-isolated portfolio, vault holdings, KYC verification documents,
+// and bank account approval workflows.
 
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const avatarService = require('../services/avatarService');
+const complianceService = require('../services/complianceService');
+const auditLogService = require('../services/auditLogService');
+const { uploadImageToCloud, saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
 
 // ── GET /api/user/vault ──────────────────────────────────────────────────────
 // Returns ONLY holdings belonging to the authenticated user.
@@ -35,7 +39,47 @@ async function getVault(req, res) {
       });
     }
 
-    const items = holdings || [];
+    const items = (holdings || []).map((item) => {
+      let initialValue = Number(item.price_num) || 0;
+      let liveMarketValue = Number(item.price_num) || 0;
+      let badgeText = item.gain || '+0.0% Market Gain';
+      let badgeType = item.positive ? 'positive' : 'negative';
+      let sharesOwned = 1;
+      let myStake = Number(item.price_num) || 0;
+
+      if (item.gain && item.gain.includes('<!--meta:')) {
+        const match = item.gain.match(/<!--meta:([\s\S]*?)-->/);
+        if (match) {
+          try {
+            const meta = JSON.parse(match[1]);
+            if (meta.initialValue !== undefined) initialValue = Number(meta.initialValue);
+            if (meta.liveMarketValue !== undefined) liveMarketValue = Number(meta.liveMarketValue);
+            if (meta.badgeText) badgeText = meta.badgeText;
+            if (meta.badgeType) badgeType = meta.badgeType;
+            if (meta.sharesOwned) sharesOwned = meta.sharesOwned;
+            if (meta.myStake) myStake = Number(meta.myStake);
+            if (meta.certId) item.certId = meta.certId;
+            if (meta.hashDisplay) item.hashDisplay = meta.hashDisplay;
+          } catch (_) {}
+        }
+      }
+
+      const cleanGain = badgeText.replace(/<!--[\s\S]*?-->/g, '').trim();
+
+      return {
+        ...item,
+        image: normalizeImageUrl(item.image, req),
+        initialValue,
+        initialValueFormatted: `R${initialValue.toLocaleString('en-ZA')}`,
+        liveMarketValue,
+        liveMarketValueFormatted: `R${liveMarketValue.toLocaleString('en-ZA')}`,
+        badgeText: cleanGain,
+        badgeType,
+        sharesOwned,
+        myStake,
+        myStakeFormatted: `R${myStake.toLocaleString('en-ZA')}`,
+      };
+    });
     const vaultTxService = require('../services/vaultTransactionService');
     const availableBalanceNum = await vaultTxService.getUserBalance(userId);
     const availableBalanceFormatted = vaultTxService.formatZar(availableBalanceNum);
@@ -48,7 +92,7 @@ async function getVault(req, res) {
     const formattedPortfolio = vaultTxService.formatZar(portfolioValueNum);
     const totalCombinedNum = availableBalanceNum + portfolioValueNum;
     const totalCombinedFormatted = vaultTxService.formatZar(totalCombinedNum);
-    const transactions = vaultTxService.getUserTransactions(userId);
+    const transactions = await vaultTxService.fetchUserTransactions(userId);
 
     return res.status(200).json({
       success: true,
@@ -66,7 +110,7 @@ async function getVault(req, res) {
         totalCount: items.length,
         wholeCount,
         fractionalCount,
-        gainText: '+12.4% YTD',
+        gainText: items.length > 0 ? '+12.4% YTD' : '0.0% YTD',
       },
     });
   } catch (err) {
@@ -80,11 +124,42 @@ async function getVault(req, res) {
 async function addHolding(req, res) {
   try {
     const userId = req.user.id;
-    const { name, category, price, priceNum, gain, gainPct, positive, image, assetType } = req.body;
+    const {
+      name,
+      category,
+      price,
+      priceNum,
+      gain,
+      gainPct,
+      positive,
+      image,
+      assetType,
+      initialValue,
+      liveMarketValue,
+      badgeText,
+    } = req.body;
 
-    if (!name || !category || priceNum === undefined) {
+    if (!name || !category || (priceNum === undefined && initialValue === undefined)) {
       return sendError(res, 400, 'Please provide asset name, category, and price.');
     }
+
+    const effectivePriceNum = Number(priceNum !== undefined ? priceNum : (liveMarketValue || initialValue || 0));
+    let gainVal = gain || badgeText || '+0.0%';
+    if (initialValue !== undefined || liveMarketValue !== undefined || badgeText !== undefined) {
+      const meta = {
+        initialValue: Number(initialValue || effectivePriceNum),
+        liveMarketValue: Number(liveMarketValue || effectivePriceNum),
+        badgeText: badgeText || gainVal,
+        badgeType: positive !== undefined ? (positive ? 'positive' : 'negative') : 'positive',
+        certId: req.body.certId || 'ERC-721 #4811',
+        hashDisplay: req.body.hashDisplay || '0x71c...9a',
+      };
+      gainVal = `${badgeText || gainVal}<!--meta:${JSON.stringify(meta)}-->`;
+    }
+
+    const cleanImage = image
+      ? await uploadImageToCloud(image, 'assets', req, userId)
+      : 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
 
     const { data, error } = await supabase
       .from('user_holdings')
@@ -92,13 +167,13 @@ async function addHolding(req, res) {
         user_id: userId,
         name: name.trim(),
         category: category.trim(),
-        price: price || `R${Number(priceNum).toLocaleString('en-ZA')}`,
-        price_num: Number(priceNum),
-        gain: gain || '+0.0%',
+        price: price || `R${effectivePriceNum.toLocaleString('en-ZA')}`,
+        price_num: effectivePriceNum,
+        gain: gainVal,
         gain_pct: gainPct || '0%',
         positive: positive !== undefined ? positive : true,
-        image: image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800',
-        asset_type: assetType || 'whole',
+        image: cleanImage,
+        asset_type: assetType || 'personal',
       })
       .select()
       .single();
@@ -111,7 +186,10 @@ async function addHolding(req, res) {
     return res.status(201).json({
       success: true,
       message: 'Asset added to your personal vault!',
-      holding: data,
+      holding: {
+        ...data,
+        image: normalizeImageUrl(data?.image, req),
+      },
     });
   } catch (err) {
     console.error('addHolding error:', err);
@@ -214,6 +292,13 @@ async function getProfile(req, res) {
     const phone = userMeta.phone || '';
     const createdAt = authUser?.created_at || profile?.created_at || new Date().toISOString();
 
+    const comp = complianceService.getUserCompliance(userId, email);
+    const verificationBundle = await complianceService.getVerificationStatusBundle(userId, email, req);
+    const effectiveVerificationStatus =
+      profile?.verification_status === 'verified'
+        ? 'verified'
+        : verificationBundle.verification_status || comp.kycStatus || 'unverified';
+
     return res.status(200).json({
       success: true,
       profile: {
@@ -227,6 +312,16 @@ async function getProfile(req, res) {
         dob,
         phone,
         createdAt,
+        role: profile?.role || 'user',
+        verification_status: effectiveVerificationStatus,
+        kycStatus: effectiveVerificationStatus,
+        accountStatus: comp.accountStatus || 'active',
+        isSuspended: comp.isSuspended || false,
+        suspensionReason: comp.suspensionReason || null,
+        bankingDetails: comp.bankingDetails || null,
+        bankAccount: verificationBundle.bank_account || null,
+        bankStatus: verificationBundle.bank_account?.status || 'not_submitted',
+        verificationDocuments: verificationBundle.documents || null,
       },
     });
   } catch (err) {
@@ -368,6 +463,18 @@ async function deleteAccount(req, res) {
 async function deposit(req, res) {
   try {
     const userId = req.user.id;
+    const comp = complianceService.getUserCompliance(userId, req.user?.email);
+    if (comp && comp.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
+    }
+    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    if (!bundle || bundle.verification_status !== 'verified') {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        error: 'KYC Verification Required: You must upload and get all 3 verification documents (ID, Tax, Proof of Residence) approved before depositing funds.',
+      });
+    }
     const { amount, method, reference, notes } = req.body;
 
     if (!amount || Number(amount) <= 0) {
@@ -395,29 +502,59 @@ async function deposit(req, res) {
 }
 
 // ── POST /api/user/withdraw ──────────────────────────────────────────────────
-// Withdraws funds from user's vault balance
+// Withdraws funds from user's vault balance (requires verified account + approved bank account)
 async function withdraw(req, res) {
   try {
     const userId = req.user.id;
+    const comp = complianceService.getUserCompliance(userId, req.user?.email);
+    if (comp && comp.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
+    }
+    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    if (!bundle || bundle.verification_status !== 'verified') {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        error: 'KYC Verification Required: You must upload and get all 3 verification documents approved before withdrawing funds.',
+      });
+    }
+
+    const approvedBank = req.approvedBankAccount || complianceService.getUserBankAccount(userId, req.user?.email);
+    if (!approvedBank || approvedBank.status !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        code: 'BANK_APPROVAL_REQUIRED',
+        error: 'Approved bank account required. Please submit your bank details and wait for admin approval before withdrawing funds.',
+      });
+    }
+
     const { amount, method, bankDetails, walletAddress, notes } = req.body;
 
     if (!amount || Number(amount) <= 0) {
       return sendError(res, 400, 'Please enter a valid withdrawal amount greater than R0.');
     }
 
+    const effectiveBankDetails = bankDetails || {
+      bankName: approvedBank.bank_name,
+      accountHolder: approvedBank.account_holder,
+      accountNumber: approvedBank.account_number,
+      branchCode: approvedBank.branch_code,
+      accountType: approvedBank.account_type,
+    };
+
     const vaultTxService = require('../services/vaultTransactionService');
     const result = await vaultTxService.withdrawFunds({
       userId,
       amount: Number(amount),
-      method,
-      bankDetails,
+      method: method || 'bank_transfer',
+      bankDetails: effectiveBankDetails,
       walletAddress,
       notes,
     });
 
     return res.status(200).json({
       success: true,
-      message: `Successfully processed withdrawal of ${vaultTxService.formatZar(amount)}!`,
+      message: `Successfully processed withdrawal of ${vaultTxService.formatZar(amount)} to your approved ${approvedBank.bank_name} account!`,
       ...result,
     });
   } catch (err) {
@@ -432,7 +569,7 @@ async function getTransactions(req, res) {
   try {
     const userId = req.user.id;
     const vaultTxService = require('../services/vaultTransactionService');
-    const transactions = vaultTxService.getUserTransactions(userId);
+    const transactions = await vaultTxService.fetchUserTransactions(userId);
     const balanceNum = await vaultTxService.getUserBalance(userId);
 
     return res.status(200).json({
@@ -554,8 +691,6 @@ async function getAnalytics(req, res) {
       percentage: portfolioValueNum > 0 ? Math.round((val / portfolioValueNum) * 100) : 0,
     }));
 
-    // If no holdings in vault yet, keep breakdown empty so frontend shows real empty state
-    // rather than fake placeholder numbers
     if (categoryBreakdown.length === 0) {
       categoryBreakdown = [];
     }
@@ -675,7 +810,242 @@ async function getAnalytics(req, res) {
   }
 }
 
+// ── POST /api/user/kyc-submit (Legacy Dossier Pack Submission) ───────────────
+async function submitKyc(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const fullName = req.user.user_metadata?.full_name || req.body.fullName || 'SmartAssets Collector';
+    const {
+      idNumber,
+      idDocumentUrl,
+      taxNumber,
+      taxDocumentUrl,
+      residentialAddress,
+      proofOfResidenceUrl,
+      bankingDetails,
+    } = req.body;
+
+    const record = complianceService.submitKyc({
+      userId,
+      userEmail,
+      fullName,
+      idNumber,
+      idDocumentUrl,
+      taxNumber,
+      taxDocumentUrl,
+      residentialAddress,
+      proofOfResidenceUrl,
+      bankingDetails,
+    });
+
+    auditLogService.logEvent({
+      eventType: 'KYC_SUBMIT',
+      category: 'Compliance',
+      actorEmail: userEmail,
+      actorId: userId,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Mobile App',
+      description: 'Submitted FICA / KYC compliance pack. Dossier: ' + record.id,
+      status: 'Pending Review',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'KYC compliance documents submitted successfully! Our compliance desk will review your dossier.',
+      verification: record,
+      kycStatus: 'pending',
+    });
+  } catch (err) {
+    console.error('submitKyc error:', err);
+    return sendError(res, 500, 'Failed to submit KYC compliance details.');
+  }
+}
+
+// ── GET /api/user/kyc-status ─────────────────────────────────────────────────
+async function getKycStatus(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const compliance = complianceService.getUserCompliance(userId, userEmail);
+    const bundle = await complianceService.getVerificationStatusBundle(userId, userEmail, req);
+
+    return res.status(200).json({
+      success: true,
+      compliance: {
+        ...compliance,
+        verification_status: bundle.verification_status,
+        kycStatus: bundle.verification_status,
+        documents: bundle.documents,
+        bankAccount: bundle.bank_account,
+        bankStatus: bundle.bank_account?.status || 'not_submitted',
+      },
+      ...bundle,
+    });
+  } catch (err) {
+    console.error('getKycStatus error:', err);
+    return sendError(res, 500, 'Failed to fetch KYC compliance status.');
+  }
+}
+
+// ── POST /verification/documents ─────────────────────────────────────────────
+// Uploads a single KYC verification document (id | tax | proof_of_residence)
+async function uploadVerificationDocument(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const fullName =
+      req.user.user_metadata?.full_name || req.body.fullName || req.user.email?.split('@')[0] || 'SmartAssets Collector';
+
+    const docType = req.body.doc_type || req.body.docType;
+    const fileData = req.body.file_data || req.body.fileData || req.body.documentUrl || req.body.base64;
+    const fileName = req.body.file_name || req.body.fileName || `${docType}_document.jpg`;
+    const mimeType = req.body.mime_type || req.body.mimeType || null;
+    const metaValue = req.body.meta_value || req.body.metaValue || null;
+
+    if (!docType) {
+      return sendError(res, 400, 'doc_type is required ("id", "tax", or "proof_of_residence").');
+    }
+
+    const uploadRes = await complianceService.uploadVerificationDocument({
+      userId,
+      userEmail,
+      fullName,
+      docType,
+      fileData,
+      fileName,
+      mimeType,
+      metaValue,
+    });
+
+    const docRecord = uploadRes?.document || uploadRes || {};
+    const docTypeName = docRecord.doc_type || docType || 'Document';
+
+    auditLogService.logEvent({
+      eventType: 'KYC_DOC_UPLOAD',
+      category: 'Compliance',
+      actorEmail: userEmail,
+      actorId: userId,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Mobile App',
+      description: `Uploaded ${docTypeName} verification document (${docRecord.id || 'new'}). Status set to pending review.`,
+      status: 'Pending Review',
+    });
+
+    const bundle = await complianceService.getVerificationStatusBundle(userId, userEmail, req);
+
+    return res.status(200).json({
+      success: true,
+      message: `${String(docTypeName).replace(/_/g, ' ').toUpperCase()} uploaded and queued for admin review.`,
+      document: docRecord,
+      ...bundle,
+    });
+  } catch (err) {
+    console.error('uploadVerificationDocument error:', err);
+    const status = err.statusCode || 500;
+    const msg = status === 500 ? 'Could not save your document. Please try again.' : (err.message || 'Failed to upload verification document.');
+    return sendError(res, status, msg);
+  }
+}
+
+// ── GET /verification/status ─────────────────────────────────────────────────
+// Returns the user's 3 document slots + overall verification_status + bank account status
+async function getVerificationStatus(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const bundle = await complianceService.getVerificationStatusBundle(userId, userEmail, req);
+
+    return res.status(200).json({
+      success: true,
+      ...bundle,
+    });
+  } catch (err) {
+    console.error('getVerificationStatus error:', err);
+    return sendError(res, 500, 'Failed to fetch verification status.');
+  }
+}
+
+// ── POST /bank-accounts ──────────────────────────────────────────────────────
+// Submits or updates the user's bank account details for withdrawal approval
+async function submitBankAccount(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const fullName =
+      req.user.user_metadata?.full_name || req.body.fullName || req.user.email?.split('@')[0] || 'SmartAssets Collector';
+
+    const accountHolder = req.body.account_holder || req.body.accountHolder;
+    const bankName = req.body.bank_name || req.body.bankName;
+    const accountNumber = req.body.account_number || req.body.accountNumber;
+    const branchCode = req.body.branch_code || req.body.branchCode;
+    const accountType = req.body.account_type || req.body.accountType || 'Cheque / Current';
+
+    const bankRecord = await complianceService.submitBankAccount({
+      userId,
+      userEmail,
+      fullName,
+      accountHolder,
+      bankName,
+      accountNumber,
+      branchCode,
+      accountType,
+    });
+
+    auditLogService.logEvent({
+      eventType: 'BANK_ACCOUNT_SUBMIT',
+      category: 'Compliance',
+      actorEmail: userEmail,
+      actorId: userId,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Mobile App',
+      description: `Submitted bank account (${bankRecord.bank_name} ${bankRecord.account_number_masked}) for withdrawal approval.`,
+      status: 'Pending Review',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Bank account details submitted! An administrator will review and approve your bank account before withdrawals are enabled.',
+      bank_account: bankRecord,
+    });
+  } catch (err) {
+    console.error('submitBankAccount error:', err);
+    return sendError(res, err.statusCode || 400, err.message || 'Failed to submit bank account details.');
+  }
+}
+
+// ── GET /bank-accounts ───────────────────────────────────────────────────────
+// Returns the authenticated user's bank account status
+async function getBankAccount(req, res) {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const bankAccount = complianceService.getUserBankAccount(userId, userEmail);
+
+    const sanitizedBank = bankAccount
+      ? {
+          ...bankAccount,
+          account_number: undefined,
+        }
+      : null;
+    return res.status(200).json({
+      success: true,
+      bank_account: sanitizedBank,
+      status: bankAccount?.status || 'not_submitted',
+    });
+  } catch (err) {
+    console.error('getBankAccount error:', err);
+    return sendError(res, 500, 'Failed to fetch bank account details.');
+  }
+}
+
 module.exports = {
+  submitKyc,
+  getKycStatus,
+  uploadVerificationDocument,
+  getVerificationStatus,
+  submitBankAccount,
+  getBankAccount,
   getVault,
   addHolding,
   seedStarterHoldings,
@@ -689,5 +1059,3 @@ module.exports = {
   getSupportTickets,
   getAnalytics,
 };
-
-

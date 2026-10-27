@@ -20,18 +20,24 @@ export const SCREENS = {
   VAULT: 'Vault',
 
   // Detail screens (pushed on top of tabs)
+  SCAN_AND_KNOW: 'ScanAndKnow',
   ASSET_DETAIL: 'AssetDetail',
   CERTIFICATE: 'Certificate',
   PROVENANCE: 'Provenance',
   HEALTH_REPORT: 'HealthReport',
   CHECKOUT: 'Checkout',
   VERIFICATION: 'Verification',
+  VERIFY_ACCOUNT: 'VerifyAccount',
+  BANK_DETAILS: 'BankDetails',
   ESCROW_TRACKER: 'EscrowTracker',
   PROFILE: 'Profile',
   PROFILE_ANALYTICS: 'ProfileAnalytics',
+  ANALYTICS: 'ProfileAnalytics',
+  AR_VIEWER: 'ARViewer',
+  LIVE_ROOM_PREVIEW: 'LiveRoomPreview',
 };
 
-// Bottom tab config — mirrors BottomNav in prototype
+// Bottom tab config — mirrors BottomNav
 export const TABS = [
   { name: SCREENS.HOME,       label: 'Home',    icon: 'home' },
   { name: SCREENS.SEARCH,     label: 'Market',  icon: 'grid' },

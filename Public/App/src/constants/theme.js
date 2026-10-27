@@ -1,7 +1,6 @@
 // ─── SmartAssets Design Tokens ───────────────────────────────────────────────
-// Inspired by the Royal Indigo & Crisp Modern Fintech style:
-// Deep Royal Indigo Header (#1E2768 / #333D9B / #3C48AA),
-// Pure White Cards & Canvas, Electric Blue (#3666DD), Coral (#F05F3C), & Teal (#4BB7A9) Accents
+// Unified SmartAssets Luminous Lavender & Violet-Cyan Glassmorphism Theme
+// Matches HomeScreen, VaultScreen, InvestScreen, and SearchScreen across the entire app.
 
 export const FONTS = {
   display: 'Georgia',
@@ -10,40 +9,40 @@ export const FONTS = {
 };
 
 export const ROYAL = {
-  // Deep Royal Indigo signature (Header & primary brand surfaces)
-  indigo: '#1E2768',
-  indigoDark: '#1E2768',
-  indigoLight: '#3C48AA',
-  indigoGradient: ['#1E2768', '#2B3B95', '#3C48AA'],
-  indigoBg: 'rgba(51, 61, 155, 0.12)',
-  indigoGlow: 'rgba(51, 61, 155, 0.35)',
+  // Deep Royal Violet-Indigo signature (Header & primary brand surfaces)
+  indigo: '#5B36F5',
+  indigoDark: '#4C1D95',
+  indigoLight: '#7C3AED',
+  indigoGradient: ['#7C3AED', '#5B36F5', '#2563EB'],
+  indigoBg: 'rgba(124, 58, 237, 0.12)',
+  indigoGlow: 'rgba(124, 58, 237, 0.35)',
 
-  // Primary Action Button (Luminous Royal Blue)
-  blue: '#3666DD',
-  blueGradient: ['#3B82F6', '#3666DD', '#2563EB'],
-  blueLight: '#60A5FA',
+  // Primary Action Button (Luminous Violet-Blue)
+  blue: '#7C3AED',
+  blueGradient: ['#7C3AED', '#5B36F5', '#2563EB'],
+  blueLight: '#976af0',
 
-  // Feature Card Gradients (from reference mockup)
-  cardBlue: '#3666DD',
-  cardBlueGradient: ['#3B82F6', '#3666DD', '#1D4ED8'],
+  // Feature Card Gradients
+  cardBlue: '#5B36F5',
+  cardBlueGradient: ['#7C3AED', '#5B36F5', '#2563EB'],
   cardOrange: '#F05F3C',
   cardOrangeGradient: ['#FB923C', '#F05F3C', '#EA580C'],
   cardTeal: '#4BB7A9',
   cardTealGradient: ['#2DD4BF', '#4BB7A9', '#0D9488'],
 
   // Header & dark surfaces
-  darkHeader: '#1E2768',
-  darkHeaderGradient: ['#1E2768', '#2B3B95', '#3C48AA'],
+  darkHeader: '#2E1065',
+  darkHeaderGradient: ['#4C1D95', '#5B36F5', '#2563EB'],
   darkCard: '#151D42',
 
-  // Canvas & cards (Crisp pure white & subtle neutrals)
-  canvas: '#FFFFFF',
+  // Canvas & cards (Crisp pure white & subtle lavender neutrals)
+  canvas: '#F5F3FF',
   canvasSubtle: '#F8FAFC',
   cardWhite: '#FFFFFF',
   cardBorder: '#E2E8F0',
   cardBorderSubtle: '#F1F5F9',
 
-  // Gain & Success (Luminous green from balance card)
+  // Gain & Success
   green: '#10B981',
   greenGain: '#34D399',
   greenBg: 'rgba(16, 185, 129, 0.12)',
@@ -61,16 +60,16 @@ export const ROYAL = {
   redBg: 'rgba(239, 68, 68, 0.12)',
 };
 
-// ─── New Purple/Violet Glassmorphism Theme (Mockups 2025/2026) ─────────────
+// ─── Purple/Violet Glassmorphism Theme (Mockups 2025/2026) ───────────────────
 export const PURPLE_THEME = {
   heroGradient: ['#7C3AED', '#5B36F5', '#2563EB', '#00C2FF'],
   walletGradient: ['#976af0', '#00fbff'],
   canvasMesh: [
-    'rgba(216, 214, 253, 1)',
-    '#d5cdffff',
-    '#fae3f4ff',
-    '#fff0e6ff',
-    '#FFF7EF',
+    '#e4e0ffff', // Soft luminous lavender
+    '#e0daffff', // Soft purple aura
+    '#f5dfefff', // Soft lilac-pink
+    '#fff5efff', // Soft peach aura
+    '#ffffffff', // Ambient cream
   ],
   primary: '#976af0',
   primaryViolet: '#7C3AED',
@@ -92,11 +91,10 @@ export const PURPLE_THEME = {
 // Aliased as ALIM for seamless backward-compatibility across all screens
 export const ALIM = {
   ...ROYAL,
-  // Mapping button tokens to Royal Blue
   mint: ROYAL.blue,
   mintGradient: ROYAL.blueGradient,
   mintText: '#FFFFFF',
-  mintGlow: 'rgba(54, 102, 221, 0.4)',
+  mintGlow: 'rgba(124, 58, 237, 0.4)',
   emerald: ROYAL.indigo,
   emeraldGradient: ROYAL.indigoGradient,
   emeraldLight: ROYAL.blue,
@@ -104,18 +102,18 @@ export const ALIM = {
 };
 
 const light = {
-  // Primary – Royal Indigo & Blue
-  primary: '#3666DD',
-  primaryLight: '#60A5FA',
-  primaryDim: '#2563EB',
+  // Primary – SmartAssets Violet & Electric Indigo
+  primary: '#7C3AED',
+  primaryLight: '#976af0',
+  primaryDim: '#5B36F5',
   primaryText: '#FFFFFF',
-  primaryBg: 'rgba(54, 102, 221, 0.15)',
-  primarySubtle: 'rgba(54, 102, 221, 0.08)',
-  accentGlow: 'rgba(54, 102, 221, 0.25)',
+  primaryBg: 'rgba(124, 58, 237, 0.12)',
+  primarySubtle: 'rgba(124, 58, 237, 0.08)',
+  accentGlow: 'rgba(124, 58, 237, 0.25)',
 
-  // Surfaces
-  canvas: '#FFFFFF',
-  obsidian: '#1E2768',
+  // Surfaces (Soft Lavender Canvas & Frosted White Cards — never dark blue behind dark text)
+  canvas: '#F5F3FF',
+  obsidian: '#F5F3FF',
   vault: '#FFFFFF',
   card: '#FFFFFF',
   cardLight: '#F8FAFC',
@@ -132,21 +130,21 @@ const light = {
   greenBg: 'rgba(16, 185, 129, 0.12)',
   red: '#EF4444',
   redBg: 'rgba(239, 68, 68, 0.12)',
-  blue: '#3666DD',
-  blueBg: 'rgba(54, 102, 221, 0.12)',
+  blue: '#5B36F5',
+  blueBg: 'rgba(91, 54, 245, 0.12)',
   amber: '#F59E0B',
   amberBg: 'rgba(245, 158, 11, 0.15)',
 };
 
 const dark = {
-  // Primary – Glowing Royal Indigo
-  primary: '#3B82F6',
-  primaryLight: '#60A5FA',
-  primaryDim: '#2563EB',
+  // Primary – Glowing SmartAssets Violet
+  primary: '#976af0',
+  primaryLight: '#A855F7',
+  primaryDim: '#7C3AED',
   primaryText: '#FFFFFF',
-  primaryBg: 'rgba(59, 130, 246, 0.18)',
-  primarySubtle: 'rgba(59, 130, 246, 0.08)',
-  accentGlow: 'rgba(59, 130, 246, 0.35)',
+  primaryBg: 'rgba(151, 106, 240, 0.18)',
+  primarySubtle: 'rgba(151, 106, 240, 0.08)',
+  accentGlow: 'rgba(151, 106, 240, 0.35)',
 
   // Surfaces
   canvas: '#0F172A',
@@ -154,7 +152,7 @@ const dark = {
   vault: '#131A2F',
   card: '#182138',
   cardLight: '#1E294B',
-  border: 'rgba(255, 255, 255, 0.08)',
+  border: 'rgba(255, 255, 255, 0.1)',
   borderSubtle: 'rgba(255, 255, 255, 0.05)',
 
   // Typography
@@ -167,8 +165,8 @@ const dark = {
   greenBg: 'rgba(16, 185, 129, 0.2)',
   red: '#EF4444',
   redBg: 'rgba(239, 68, 68, 0.2)',
-  blue: '#3B82F6',
-  blueBg: 'rgba(59, 130, 246, 0.2)',
+  blue: '#976af0',
+  blueBg: 'rgba(151, 106, 240, 0.2)',
   amber: '#F59E0B',
   amberBg: 'rgba(245, 158, 11, 0.2)',
 };
@@ -177,3 +175,4 @@ export const useColors = (isDark = false) => {
   return isDark ? dark : light;
 };
 
+export const getTheme = useColors;

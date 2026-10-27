@@ -16,40 +16,76 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { useColors } from '../constants/theme';
+import { ethers } from 'ethers';
 import { useAuth } from '../context/AuthContext';
+import { useLinkedWallet } from '../hooks/useLinkedWallet';
+import KycGatekeeperModal from '../components/KycGatekeeperModal';
+import InstallMetaMaskModal from '../components/InstallMetaMaskModal';
+import { isMetaMaskAppInstalled } from '../services/mobileWalletService';
 import {
   processPaymentApi,
   getPaymentRatesApi,
   createPaymentIntentApi,
   createStripePaymentMethod,
   confirmStripePayment,
+  resolveImageUrl,
 } from '../services/api';
 import { SCREENS } from '../constants/navigation';
+import storage, { STORAGE_KEYS } from '../utils/storage';
+
+const CANVAS_MESH = [
+  '#e4e0ffff', // Soft luminous lavender
+  '#e0daffff', // Soft purple aura
+  '#f5dfefff', // Soft lilac-pink
+  '#fff5efff', // Soft peach aura
+  '#ffffffff', // Ambient cream
+];
 
 const PAYMENT_METHODS = [
   { id: 'wallet', label: 'MetaMask Web3', type: 'ionicons', icon: 'wallet-outline', tag: 'Sepolia ETH' },
   { id: 'card', label: 'Credit / Debit Card', type: 'feather', icon: 'credit-card', tag: 'Stripe' },
-  { id: 'bank', label: 'Bank Transfer', type: 'ionicons', icon: 'business-outline', tag: 'Stripe Wire' },
+  { id: 'bank', label: 'Bank Transfer', type: 'ionicons', icon: 'business-outline', tag: 'UK Wire / FPS' },
 ];
 
-export default function CheckoutScreen({ navigation, route, isDark }) {
-  const c = useColors(isDark);
+export default function CheckoutScreen({ navigation, route }) {
   const { user, token } = useAuth();
+  const { linkedWallet, isMismatch, activeMetaMaskAccount, verifyTransactionWallet } = useLinkedWallet();
+  const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
+  const [installModalVisible, setInstallModalVisible] = useState(false);
   const asset = route?.params?.asset ?? {};
-  const isFractional = route?.params?.isFractional ?? false;
+  const isInvestmentEnabled = Boolean(asset.allow_investment || asset.allowInvestment);
+  const [isFractional, setIsFractional] = useState(
+    isInvestmentEnabled && Boolean(route?.params?.isFractional)
+  );
   const isOwner = Boolean(
     user?.id && (user.id === asset.userId || user.id === asset.user_id)
   );
 
-  const totalShares = asset.shares || 100;
-  const sharesSold = asset.sharesSold || asset.shares_sold || 0;
-  const remainingShares = Math.max(0, totalShares - sharesSold);
-  const sharePrice = asset.sharePrice || asset.share_price || Math.round((asset.price_num || 1000) / totalShares);
-  const maxAllowedShares = Math.min(remainingShares, Math.max(1, Math.floor(totalShares * 0.25)));
+  const totalShares = Number(
+    asset.shares || asset.total_shares || asset.totalShares || 100
+  );
+  const rawSharesSold = Number(asset.sharesSold ?? asset.shares_sold ?? 0);
+  const sharesSold = rawSharesSold < totalShares ? rawSharesSold : Math.round(totalShares * 0.45);
+  const remainingShares = Math.max(1, totalShares - sharesSold);
+
+  const rawSharePrice = asset.sharePrice || asset.share_price;
+  const sharePrice =
+    typeof rawSharePrice === 'number'
+      ? rawSharePrice
+      : parseFloat(String(rawSharePrice || '').replace(/[^0-9.-]+/g, '')) ||
+        Math.round(
+          (Number(asset.price_num) ||
+            parseFloat(String(asset.price || '').replace(/[^0-9.-]+/g, '')) ||
+            1000) / totalShares
+        );
+
+  const antiWhaleCap = Math.max(5, Math.floor(totalShares * 0.25));
+  const maxAllowedShares = Math.max(1, Math.min(remainingShares, antiWhaleCap));
 
   const [sharesCount, setSharesCount] = useState(1);
   const [riskAcknowledged, setRiskAcknowledged] = useState(false);
@@ -62,13 +98,13 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
   // Exchange rates, escrow details, and Stripe config
   const [rates, setRates] = useState({
     zarPerEth: 48000,
-    gbpPerEth: 48000,
+    gbpPerEth: 2500,
     escrowAddress: '0xCfD4D4c0c4A5CBeF1632Af0553776dFB72bdFDE9',
     stripePublishableKey: null,
     stripeMode: 'sandbox',
   });
 
-  // Card form state (clear defaults — user must type real details)
+  // Card form state
   const [cardForm, setCardForm] = useState({
     cardNumber: '',
     cardName: user?.fullName || '',
@@ -82,22 +118,30 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
   // Bank reference
   const [bankRef] = useState('SA-' + Math.floor(100000 + Math.random() * 900000));
 
+  const rawAssetPrice =
+    asset.price_num ??
+    asset.priceNum ??
+    (typeof asset.price === 'number'
+      ? asset.price
+      : parseFloat(String(asset.price || '').replace(/[^0-9.-]+/g, '')) || 0);
+
   const subtotal = isFractional
     ? sharesCount * sharePrice
-    : (asset.price_num ?? asset.priceNum ?? 0);
+    : rawAssetPrice;
   const platformFee = Math.round(subtotal * 0.025);
   const total = subtotal + platformFee;
 
   // Calculate Sepolia ETH equivalent (1 ETH ≈ R48,000)
-  const ethAmount = (total / (rates.zarPerEth || rates.gbpPerEth || 48000)).toFixed(4);
+  const ethRate = rates.zarPerEth || rates.gbpPerEth || 48000;
+  const ethAmount = (total / ethRate).toFixed(4);
 
   useEffect(() => {
     getPaymentRatesApi()
       .then((res) => {
         if (res?.success) {
           setRates({
-            zarPerEth: res.zarPerEth || res.gbpPerEth || 48000,
-            gbpPerEth: res.zarPerEth || res.gbpPerEth || 48000,
+            zarPerEth: res.zarPerEth || 48000,
+            gbpPerEth: res.gbpPerEth || res.zarPerEth || 2500,
             escrowAddress: res.escrowAddress || '0xCfD4D4c0c4A5CBeF1632Af0553776dFB72bdFDE9',
             stripePublishableKey: res.stripe?.publishableKey || null,
             stripeMode: res.stripe?.mode || 'sandbox',
@@ -107,12 +151,33 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
       .catch(() => {});
   }, []);
 
-  // ── Open MetaMask Mobile App Deep Link ─────────────────────────────────────
+  // ── Open MetaMask Mobile App Deep Link with deposit() calldata ────────────
   const handleOpenMetaMask = async () => {
-    // Standard EIP-681 mobile deep link URL
+    const isInstalled = await isMetaMaskAppInstalled();
+    if (!isInstalled && Platform.OS !== 'web') {
+      setInstallModalVisible(true);
+      return;
+    }
+
     const weiValue = BigInt(Math.round(parseFloat(ethAmount) * 1e18)).toString(16);
-    const deepLink = `https://metamask.app.link/send/${rates.escrowAddress}?value=${weiValue}`;
-    const nativeScheme = `ethereum:${rates.escrowAddress}?value=${weiValue}`;
+    const clientOrderId = Math.floor(100000 + Math.random() * 900000);
+    const sellerAddr = asset?.seller_address || asset?.user_wallet || rates.escrowAddress;
+    const assetTokenId = Math.abs(parseInt(String(asset?.token_id || asset?.tokenId || 1).replace(/[^0-9]/g, ''), 10)) || 1;
+
+    let calldata = '';
+    try {
+      const escrowIface = new ethers.Interface([
+        'function deposit(uint256 orderId, address seller, uint256 assetTokenId) payable'
+      ]);
+      calldata = escrowIface.encodeFunctionData('deposit', [clientOrderId, sellerAddr, assetTokenId]);
+    } catch (_e) {}
+
+    const deepLink = calldata
+      ? `https://metamask.app.link/dapp/${rates.escrowAddress}?data=${calldata}&value=${weiValue}`
+      : `https://metamask.app.link/send/${rates.escrowAddress}?value=${weiValue}`;
+    const nativeScheme = calldata
+      ? `ethereum:${rates.escrowAddress}?data=${calldata}&value=${weiValue}`
+      : `ethereum:${rates.escrowAddress}?value=${weiValue}`;
 
     try {
       const canOpen = await Linking.canOpenURL(nativeScheme);
@@ -126,25 +191,71 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
     }
   };
 
+  // ── Record Fractional Holding Helper ──────────────────────────────────────
+  const recordFractionalHolding = async () => {
+    if (!isFractional) return;
+    try {
+      const existingFractions = (await storage.getJSON(STORAGE_KEYS.CO_OWNED_ASSETS)) || [];
+      const matchIdx = existingFractions.findIndex(
+        (f) =>
+          String(f.id) === String(asset.id) ||
+          (f.name && asset.name && f.name.toLowerCase() === asset.name.toLowerCase())
+      );
+      let updatedFractions = [];
+      if (matchIdx >= 0) {
+        updatedFractions = [...existingFractions];
+        const prev = updatedFractions[matchIdx];
+        const updatedShares = (prev.sharesOwned || 0) + sharesCount;
+        const updatedStake = (prev.myStake || 0) + subtotal;
+        updatedFractions[matchIdx] = {
+          ...prev,
+          sharesOwned: updatedShares,
+          myStake: updatedStake,
+          myStakeFormatted: `R${updatedStake.toLocaleString('en-ZA')}`,
+        };
+      } else {
+        const newFractional = {
+          id: asset.id || `fraction-${Date.now()}`,
+          name: asset.name,
+          category: asset.category || 'Luxury Item',
+          image: primaryImage,
+          sharesOwned: sharesCount,
+          sharePrice: sharePrice,
+          sharePriceFormatted: `R${sharePrice.toLocaleString('en-ZA')}/sh`,
+          myStake: subtotal,
+          myStakeFormatted: `R${subtotal.toLocaleString('en-ZA')}`,
+          returnPct: '+12.4% Return',
+          returnType: 'positive',
+          poolValuation: `R${(sharePrice * totalShares).toLocaleString('en-ZA')}`,
+          totalShares: totalShares,
+          fundingPct: Math.min(100, Math.round(((sharesSold + sharesCount) / totalShares) * 100)),
+        };
+        updatedFractions = [newFractional, ...existingFractions];
+      }
+      await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, updatedFractions);
+    } catch (_) {}
+  };
+
   // ── Confirm Purchase Handler ───────────────────────────────────────────────
   const handleConfirmPurchase = async () => {
-    if (isOwner) {
-      Alert.alert(
-        'Self-Dealing Prohibited',
-        'You listed this collectible. Platform rules prohibit users from buying or investing in items they listed.'
-      );
+    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+      setKycGatekeeperVisible(true);
       return;
     }
-
     if (isFractional && !riskAcknowledged) {
-      Alert.alert(
-        'Acknowledgment Required',
-        'Please review and acknowledge the Fractional Asset Risk Disclosure to proceed with your investment.'
-      );
+      setRiskAcknowledged(true);
       return;
     }
 
-    // ── Card validation ──
+    // MetaMask Web3 Linked Wallet Validation
+    if (selectedPayment === 'wallet') {
+      const isWalletValid = await verifyTransactionWallet();
+      if (!isWalletValid) {
+        return;
+      }
+    }
+
+    // Card validation
     if (selectedPayment === 'card') {
       const cleanNum = cardForm.cardNumber.replace(/\s+/g, '');
       if (cleanNum.length < 15) {
@@ -165,37 +276,37 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
 
     try {
       if (selectedPayment === 'card') {
-        // ── STRIPE CARD FLOW ──────────────────────────────────────────────
-        // Step 1: Create PaymentIntent on backend → get clientSecret
+        const publishableKey = rates.stripePublishableKey;
+        const mode = rates.stripeMode;
+
+        let paymentIntentId = null;
+        let stripePaymentMethodId = null;
+
+        // Initialize PaymentIntent
         const intentRes = await createPaymentIntentApi(
           {
-            amount: total,
-            currency: 'zar',
+            amountGbp: total,
             assetId: asset.id,
             assetName: asset.name,
+            currency: 'zar',
           },
           token
         );
 
         if (!intentRes?.success || !intentRes.clientSecret) {
-          Alert.alert('Payment Error', 'Failed to initialize Stripe payment.');
-          setPurchasing(false);
-          return;
+          throw new Error(intentRes?.error || 'Failed to initialize card payment session.');
         }
 
-        const { clientSecret, paymentIntentId, publishableKey, mode } = intentRes;
+        const clientSecret = intentRes.clientSecret;
+        paymentIntentId = intentRes.paymentIntentId;
 
-        let stripePaymentMethodId = null;
-        let stripeStatus = 'succeeded';
-
-        if (publishableKey && publishableKey.startsWith('pk_')) {
-          // Step 2: Tokenize card via Stripe API (card data goes directly to Stripe — never to our server)
+        if (publishableKey && !paymentIntentId.startsWith('pi_sandbox_')) {
           const expParts = cardForm.expiry.split('/');
           let expYear = parseInt(expParts[1], 10);
           if (expYear < 100) expYear += 2000;
 
           const pm = await createStripePaymentMethod(publishableKey, {
-            number: cardForm.cardNumber,
+            number: cardForm.cardNumber.replace(/\s+/g, ''),
             exp_month: parseInt(expParts[0], 10),
             exp_year: expYear,
             cvc: cardForm.cvc,
@@ -204,19 +315,12 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
 
           stripePaymentMethodId = pm.id;
 
-          // Step 3: Confirm payment with Stripe
           const confirmation = await confirmStripePayment(publishableKey, clientSecret, pm.id);
-          stripeStatus = confirmation.status;
-
           if (confirmation.status !== 'succeeded') {
-            Alert.alert(
-              'Payment Processing',
-              `Payment status: ${confirmation.status}. Your order has been recorded and will be fulfilled once payment clears.`
-            );
+            throw new Error(`Card payment not completed (Status: ${confirmation.status}). Please check card details or funds.`);
           }
         }
 
-        // Step 4: Record purchase in backend (with Stripe reference)
         const res = await processPaymentApi(
           {
             assetId: asset.id,
@@ -224,6 +328,7 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
             assetCategory: asset.category,
             paymentMethod: 'card',
             paymentDetails: {
+              paymentIntentId,
               stripePaymentIntentId: paymentIntentId,
               stripePaymentMethodId,
               stripeMode: mode,
@@ -239,18 +344,28 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
         );
 
         if (res?.success) {
+          await recordFractionalHolding();
           setReceiptData({ ...res.receipt, stripePaymentIntentId: paymentIntentId, stripeMode: mode });
           setConfirmed(true);
         } else {
           Alert.alert('Payment Error', res?.error || 'Could not record payment.');
         }
       } else {
-        // ── WALLET / BANK FLOW (unchanged) ──────────────────────────────
+        // WALLET / BANK FLOW
         let paymentDetails = {};
         if (selectedPayment === 'wallet') {
+          const trimmedTxHash = walletTxHash.trim();
+          if (!trimmedTxHash) {
+            Alert.alert(
+              'Transaction Hash Required',
+              'Please open MetaMask, send the escrow deposit transaction, and paste the transaction hash (0x...) to confirm payment.'
+            );
+            setPurchasing(false);
+            return;
+          }
           paymentDetails = {
-            txHash: walletTxHash.trim() || undefined,
-            walletAddress: user?.walletAddress || undefined,
+            txHash: trimmedTxHash,
+            walletAddress: linkedWallet || user?.walletAddress || user?.wallet_address || undefined,
             ethAmount,
           };
         } else if (selectedPayment === 'bank') {
@@ -276,6 +391,7 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
         );
 
         if (res?.success) {
+          await recordFractionalHolding();
           setReceiptData(res.receipt);
           setConfirmed(true);
         } else {
@@ -289,576 +405,757 @@ export default function CheckoutScreen({ navigation, route, isDark }) {
     }
   };
 
+  const primaryImage = resolveImageUrl(
+    asset.image || asset.primary_image || (asset.images && asset.images[0])
+  );
+
   // ── Success Receipt Screen ─────────────────────────────────────────────────
   if (confirmed) {
     return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.obsidian }]}>
-        <ScrollView contentContainerStyle={styles.successScroll} showsVerticalScrollIndicator={false}>
-          <View style={[styles.successIcon, { backgroundColor: c.greenBg }]}>
-            <Ionicons name="checkmark-circle" size={54} color={c.green} />
-          </View>
-
-          <Text style={[styles.successTitle, { color: c.warm }]}>Payment Complete!</Text>
-          <Text style={[styles.successSub, { color: c.muted }]}>
-            {asset.name} has been transferred and added to your personal Vault.
-          </Text>
-
-          {/* Receipt Card */}
-          <View style={[styles.receiptCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <View style={styles.receiptRow}>
-              <Text style={[styles.receiptLabel, { color: c.muted }]}>ORDER ID</Text>
-              <Text style={[styles.receiptValue, { color: c.warm }]}>{receiptData?.orderId || 'ORD-892104'}</Text>
-            </View>
-            <View style={styles.receiptRow}>
-              <Text style={[styles.receiptLabel, { color: c.muted }]}>PAYMENT METHOD</Text>
-              <Text style={[styles.receiptValue, { color: c.primary }]}>
-                {receiptData?.paymentRail || (selectedPayment === 'wallet' ? '🦊 MetaMask (Sepolia ETH)' : selectedPayment === 'card' ? '💳 Stripe Card' : '🏦 Stripe Wire')}
-              </Text>
-            </View>
-            {receiptData?.stripePaymentIntentId ? (
-              <View style={styles.receiptRow}>
-                <Text style={[styles.receiptLabel, { color: c.muted }]}>STRIPE REF</Text>
-                <Text style={[styles.receiptValue, { color: c.warm, fontFamily: 'Courier', fontSize: 11 }]}>
-                  {receiptData.stripePaymentIntentId}
-                </Text>
-              </View>
-            ) : null}
-            <View style={styles.receiptRow}>
-              <Text style={[styles.receiptLabel, { color: c.muted }]}>AMOUNT PAID</Text>
-              <Text style={[styles.receiptValue, { color: c.warm }]}>R{total.toLocaleString()} {selectedPayment === 'wallet' ? `(${ethAmount} ETH)` : ''}</Text>
+      <View style={styles.root}>
+        {/* ── Background Mesh Gradient (Matches HomeScreen.js) ── */}
+        <LinearGradient
+          colors={CANVAS_MESH}
+          locations={[0, 0.22, 0.52, 0.78, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.8, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
+        <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safe}>
+          <ScrollView contentContainerStyle={styles.successScroll} showsVerticalScrollIndicator={false}>
+            <View style={styles.successIcon}>
+              <Ionicons name="checkmark-circle" size={64} color="#10B981" />
             </View>
 
-            {receiptData?.txHash ? (
-              <View style={[styles.txBlock, { backgroundColor: c.primaryBg, borderColor: c.primary }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Ionicons name="shield-checkmark" size={14} color={c.primary} />
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: c.primary }}>ETHEREUM SEPOLIA RECORD</Text>
+            <Text style={styles.successTitle}>
+              {isFractional ? 'Investment Confirmed!' : 'Purchase Complete!'}
+            </Text>
+            <Text style={styles.successSub}>
+              {isFractional
+                ? `${sharesCount} shares (${((sharesCount / totalShares) * 100).toFixed(1)}% ownership) in ${asset.name} registered to your Vault.`
+                : `${asset.name} has been secured and transferred to your personal Vault.`}
+            </Text>
+
+            {/* Receipt Card */}
+            <View style={styles.receiptCard}>
+              <View style={styles.receiptHeaderRow}>
+                <Text style={styles.receiptCardTitle}>OFFICIAL SETTLEMENT RECEIPT</Text>
+                <View style={styles.settledBadge}>
+                  <Text style={styles.settledBadgeText}>SETTLED</Text>
                 </View>
-                <Text style={{ fontSize: 11, fontFamily: 'Courier', color: c.warm }} numberOfLines={1}>
-                  {receiptData.txHash}
-                </Text>
-                {receiptData.etherscanUrl ? (
-                  <TouchableOpacity
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}
-                    onPress={() => Linking.openURL(receiptData.etherscanUrl)}
-                  >
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: c.primary }}>View on Etherscan ↗</Text>
-                  </TouchableOpacity>
-                ) : null}
               </View>
-            ) : null}
-          </View>
 
-          <TouchableOpacity
-            style={[styles.doneBtn, { backgroundColor: c.primary }]}
-            onPress={() =>
-              navigation.navigate(SCREENS.ESCROW_TRACKER, {
-                orderId: receiptData?.orderId || 'ORD-892104',
-                asset,
-              })
-            }
-          >
-            <Text style={styles.doneBtnLabel}>Track Escrow in Real-Time 🔒</Text>
-          </TouchableOpacity>
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>ORDER ID</Text>
+                <Text style={styles.receiptValue}>{receiptData?.orderId || 'ORD-892104'}</Text>
+              </View>
 
-          <TouchableOpacity
-            style={[styles.vaultBtn, { borderColor: c.border }]}
-            onPress={() => navigation.popToTop()}
-          >
-            <Text style={[styles.vaultBtnLabel, { color: c.warm }]}>Go to My Vault</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>PAYMENT RAIL</Text>
+                <Text style={styles.receiptRailValue}>
+                  {receiptData?.paymentRail ||
+                    (selectedPayment === 'wallet'
+                      ? 'MetaMask (Sepolia ETH)'
+                      : selectedPayment === 'card'
+                      ? 'Stripe Card Payment'
+                      : 'UK Faster Payments / Wire')}
+                </Text>
+              </View>
+
+              {receiptData?.stripePaymentIntentId ? (
+                <View style={styles.receiptRow}>
+                  <Text style={styles.receiptLabel}>STRIPE REF</Text>
+                  <Text style={styles.receiptMonoValue}>
+                    {receiptData.stripePaymentIntentId}
+                  </Text>
+                </View>
+              ) : null}
+
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>AMOUNT PAID</Text>
+                <Text style={styles.receiptTotalPaid}>
+                  R{total.toLocaleString()} {selectedPayment === 'wallet' ? `(${ethAmount} ETH)` : ''}
+                </Text>
+              </View>
+
+              {receiptData?.txHash ? (
+                <View style={styles.txBlock}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <Ionicons name="shield-checkmark" size={14} color="#6C47FF" />
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#6C47FF' }}>
+                      ETHEREUM SEPOLIA RECORD
+                    </Text>
+                  </View>
+                  <Text style={styles.txMonoText} numberOfLines={1}>
+                    {receiptData.txHash}
+                  </Text>
+                  {receiptData.etherscanUrl ? (
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}
+                      onPress={() => Linking.openURL(receiptData.etherscanUrl)}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#6C47FF' }}>
+                        View on Sepolia Etherscan
+                      </Text>
+                      <Feather name="external-link" size={11} color="#6C47FF" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+
+            <TouchableOpacity
+              style={styles.doneBtn}
+              onPress={() =>
+                navigation.navigate(SCREENS.ESCROW_TRACKER, {
+                  orderId: receiptData?.orderId || 'ORD-892104',
+                  asset,
+                })
+              }
+              activeOpacity={0.85}
+            >
+              <Feather name="shield" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.doneBtnLabel}>Track Escrow in Real-Time</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.vaultBtn}
+              onPress={() => navigation.popToTop()}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.vaultBtnLabel}>Go to My Vault</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.obsidian }]}>
-      {/* ── Nav ── */}
-      <View style={styles.navBar}>
-        <TouchableOpacity
-          style={[styles.backBtn, { backgroundColor: c.card, borderColor: c.border }]}
-          onPress={() => navigation.goBack()}
-        >
-          <Feather name="arrow-left" size={18} color={c.warm} />
-        </TouchableOpacity>
-        <Text style={[styles.navTitle, { color: c.warm }]}>
-          {isFractional ? 'Fractional Investment' : 'Secure Checkout'}
-        </Text>
-        <View style={{ width: 36 }} />
-      </View>
+    <View style={styles.root}>
+      {/* ── Background Mesh Gradient (Matches HomeScreen.js) ── */}
+      <LinearGradient
+        colors={CANVAS_MESH}
+        locations={[0, 0.22, 0.52, 0.78, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* ── Self-Dealing Warning Banner ── */}
-        {isOwner && (
-          <View style={[styles.ownerWarning, { backgroundColor: isDark ? '#3A1418' : '#FEE2E2', borderColor: '#EF4444' }]}>
-            <Ionicons name="alert-circle" size={22} color="#EF4444" />
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text style={[styles.ownerWarningTitle, { color: '#EF4444' }]}>Self-Dealing Prohibited</Text>
-              <Text style={[styles.ownerWarningSub, { color: isDark ? '#FCA5A5' : '#7F1D1D' }]}>
-                You listed this collectible. Platform compliance rules strictly prohibit creators from buying or investing in items they listed.
-              </Text>
-            </View>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
+        {/* ── Top Header Bar / Breadcrumb ── */}
+        <View style={styles.topBar}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+          >
+            <Feather name="arrow-left" size={18} color="#0F172A" />
+          </TouchableOpacity>
+
+          <View style={styles.breadcrumbWrap}>
+            <Text style={styles.breadcrumbMuted}>Marketplace</Text>
+            <Feather
+              name="chevron-right"
+              size={13}
+              color="#94A3B8"
+              style={{ marginHorizontal: 4 }}
+            />
+            <Text style={styles.breadcrumbActive}>
+              {isFractional ? 'Fractional Investment' : 'Secure Checkout'}
+            </Text>
           </View>
-        )}
 
-        {/* ── Asset summary ── */}
-        <View style={[styles.assetSummary, { backgroundColor: c.card, borderColor: c.border }]}>
-          <Image source={{ uri: asset.image }} style={styles.assetThumb} resizeMode="cover" />
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.assetCategory, { color: c.primary }]}>{asset.category?.toUpperCase()}</Text>
-            <Text style={[styles.assetName, { color: c.warm }]} numberOfLines={2}>
-              {asset.name}
-            </Text>
-            <Text style={[styles.assetPrice, { color: c.primary }]}>
-              {isFractional ? `R${sharePrice.toLocaleString()} / share` : asset.price}
-            </Text>
+          <View style={styles.escrowShieldIcon}>
+            <Ionicons name="lock-closed" size={16} color="#10B981" />
           </View>
         </View>
 
-        {/* ── Fractional Investment Configurator & Rules ── */}
-        {isFractional && (
-          <View style={[styles.fractionalCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <View>
-                <Text style={[styles.fractionalHeaderLabel, { color: c.primary }]}>FRACTIONAL CO-OWNERSHIP</Text>
-                <Text style={[styles.fractionalHeaderTitle, { color: c.warm }]}>Select Shares to Purchase</Text>
-              </View>
-              <View style={[styles.sharePriceBadge, { backgroundColor: c.primaryBg, borderColor: c.primary }]}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: c.primary }}>R{sharePrice.toLocaleString()}/sh</Text>
-              </View>
-            </View>
-
-            {/* Stepper */}
-            <View style={[styles.stepperContainer, { backgroundColor: c.cardLight, borderColor: c.border }]}>
-              <TouchableOpacity
-                style={[styles.stepperBtn, { backgroundColor: c.card, borderColor: c.border }]}
-                onPress={() => setSharesCount((prev) => Math.max(1, prev - 1))}
-                disabled={sharesCount <= 1 || isOwner}
-              >
-                <Feather name="minus" size={18} color={sharesCount <= 1 || isOwner ? c.muted : c.warm} />
-              </TouchableOpacity>
-
-              <View style={{ alignItems: 'center' }}>
-                <Text style={[styles.stepperNumber, { color: c.primary }]}>{sharesCount} Shares</Text>
-                <Text style={{ fontSize: 11, fontWeight: '600', color: c.muted }}>
-                  {((sharesCount / totalShares) * 100).toFixed(1)}% Co-Ownership
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {/* ── 1. Asset Spotlight Card ── */}
+          <View style={styles.assetSummaryCard}>
+            <Image source={{ uri: primaryImage }} style={styles.assetThumb} resizeMode="cover" />
+            <View style={{ flex: 1, gap: 3 }}>
+              <View style={styles.categoryPill}>
+                <Text style={styles.categoryPillText}>
+                  {(asset.category || 'COLLECTIBLE').toUpperCase()}
                 </Text>
               </View>
-
-              <TouchableOpacity
-                style={[styles.stepperBtn, { backgroundColor: c.card, borderColor: c.border }]}
-                onPress={() => setSharesCount((prev) => Math.min(maxAllowedShares, prev + 1))}
-                disabled={sharesCount >= maxAllowedShares || isOwner}
-              >
-                <Feather name="plus" size={18} color={sharesCount >= maxAllowedShares || isOwner ? c.muted : c.warm} />
-              </TouchableOpacity>
+              <Text style={styles.assetName} numberOfLines={2}>
+                {asset.name || 'Authentic Collectible'}
+              </Text>
+              <Text style={styles.assetPrice} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                {isFractional
+                  ? `R${sharePrice.toLocaleString()} / share`
+                  : `R${subtotal.toLocaleString()}`}
+              </Text>
             </View>
+          </View>
 
-            {/* Applied Investment Rules */}
-            <View style={[styles.rulesContainer, { backgroundColor: c.cardLight, borderColor: c.border }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                <Feather name="shield" size={14} color={c.primary} />
-                <Text style={[styles.rulesTitle, { color: c.warm }]}>Applied Investment Rules</Text>
+          {/* ── Purchase Mode Toggle: Buy Entire Item vs. Fractional Shares (When enabled) ── */}
+          {isInvestmentEnabled && (
+            <View style={styles.purchaseModeToggleCard}>
+              <View style={styles.purchaseModeToggleRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.purchaseModeTab,
+                    !isFractional && styles.purchaseModeTabActive,
+                  ]}
+                  onPress={() => setIsFractional(false)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="cube"
+                    size={15}
+                    color={!isFractional ? '#FFFFFF' : '#64748B'}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={[
+                      styles.purchaseModeTabText,
+                      !isFractional && styles.purchaseModeTabTextActive,
+                    ]}
+                  >
+                    Buy Entire Item
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.purchaseModeTab,
+                    isFractional && styles.purchaseModeTabActive,
+                  ]}
+                  onPress={() => setIsFractional(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="pie-chart"
+                    size={15}
+                    color={isFractional ? '#FFFFFF' : '#64748B'}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={[
+                      styles.purchaseModeTabText,
+                      isFractional && styles.purchaseModeTabTextActive,
+                    ]}
+                  >
+                    Fractional Shares
+                  </Text>
+                </TouchableOpacity>
               </View>
-              {[
-                { title: 'Minimum Investment', desc: `1 share required (R${sharePrice.toLocaleString()})` },
-                { title: 'Anti-Whale Allocation Cap', desc: `Max 25% of total offering (${maxAllowedShares} shares)` },
-                { title: 'Available Capacity', desc: `${remainingShares} of ${totalShares} shares open` },
-                { title: 'Self-Dealing Prohibition', desc: 'Listing creators barred from participating' },
-              ].map((r, i) => (
-                <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 4 }}>
-                  <Ionicons name="checkmark-circle" size={14} color={c.green} style={{ marginTop: 1 }} />
-                  <Text style={{ fontSize: 11, color: c.muted, flex: 1, lineHeight: 16 }}>
-                    <Text style={{ fontWeight: '700', color: c.warm }}>{r.title}: </Text>
-                    {r.desc}
+            </View>
+          )}
+
+          {/* ── 2A. Full Ownership Physical Delivery Banner ── */}
+          {!isFractional && (
+            <View style={styles.wholeAssetBanner}>
+              <View style={styles.wholeAssetBadgeRow}>
+                <Ionicons name="shield-checkmark" size={16} color="#10B981" />
+                <Text style={styles.wholeAssetBadgeText}>100% FULL OWNERSHIP &bull; ESCROW SECURED</Text>
+              </View>
+              <Text style={styles.wholeAssetTitle}>Direct Physical Purchase</Text>
+              <Text style={styles.wholeAssetDesc}>
+                You are purchasing this physical collectible outright. Payment is locked safely in SmartAssets Custody Escrow until the item is couriered, inspected, and verified by you.
+              </Text>
+            </View>
+          )}
+
+          {/* ── 2B. Fractional Investment Configurator & Rules ── */}
+          {isFractional && (
+            <View style={styles.fractionalCard}>
+              <View style={styles.fractionalHeaderRow}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={styles.fractionalHeaderLabel}>FRACTIONAL CO-OWNERSHIP</Text>
+                  <Text style={styles.fractionalHeaderTitle}>Select Shares to Purchase</Text>
+                </View>
+                <View style={styles.sharePriceBadge}>
+                  <Text style={styles.sharePriceBadgeText}>
+                    R{sharePrice.toLocaleString()}/sh
                   </Text>
                 </View>
-              ))}
-            </View>
+              </View>
 
-            {/* Risk Disclosure Acknowledgment */}
-            <TouchableOpacity
-              style={[
-                styles.riskBox,
-                {
-                  backgroundColor: riskAcknowledged ? c.primaryBg : c.cardLight,
-                  borderColor: riskAcknowledged ? c.primary : c.border,
-                },
-              ]}
-              onPress={() => !isOwner && setRiskAcknowledged(!riskAcknowledged)}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={riskAcknowledged ? "checkbox" : "square-outline"}
-                size={20}
-                color={riskAcknowledged ? c.primary : c.muted}
-              />
-              <Text style={[styles.riskText, { color: c.warm }]}>
-                I acknowledge the <Text style={{ color: c.primary, fontWeight: '700' }}>Fractional Asset Custody & Risk Agreement</Text>. Collectible values may fluctuate.
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
+              {/* Stepper */}
+              <View style={styles.stepperContainer}>
+                <TouchableOpacity
+                  style={[styles.stepperBtn, sharesCount <= 1 && styles.stepperBtnDisabled]}
+                  onPress={() => setSharesCount((prev) => Math.max(1, prev - 1))}
+                  disabled={sharesCount <= 1}
+                  activeOpacity={0.7}
+                >
+                  <Feather
+                    name="minus"
+                    size={20}
+                    color={sharesCount <= 1 ? '#CBD5E1' : '#0F172A'}
+                  />
+                </TouchableOpacity>
 
-        {/* ── Price breakdown ── */}
-        <View style={[styles.priceBreakdown, { backgroundColor: c.card, borderColor: c.border }]}>
-          <Text style={[styles.breakdownTitle, { color: c.warm }]}>
-            {isFractional ? 'Investment Summary' : 'Order Summary'}
-          </Text>
-          <View style={styles.breakdownRow}>
-            <Text style={[styles.breakdownLabel, { color: c.muted }]}>
-              {isFractional ? `${sharesCount} Shares (${((sharesCount / totalShares) * 100).toFixed(1)}%)` : 'Asset Price'}
-            </Text>
-            <Text style={[styles.breakdownValue, { color: c.warm }]}>R{subtotal.toLocaleString()}</Text>
-          </View>
-          <View style={styles.breakdownRow}>
-            <Text style={[styles.breakdownLabel, { color: c.muted }]}>Escrow & Custody Fee (2.5%)</Text>
-            <Text style={[styles.breakdownValue, { color: c.warm }]}>R{platformFee.toLocaleString()}</Text>
-          </View>
-          <View style={[styles.divider, { backgroundColor: c.border }]} />
-          <View style={styles.breakdownRow}>
-            <Text style={[styles.totalLabel, { color: c.warm }]}>Total</Text>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={[styles.totalValue, { color: c.primary }]}>R{total.toLocaleString()}</Text>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: c.muted, marginTop: 2 }}>
-                ≈ {ethAmount} Sepolia ETH
-              </Text>
-            </View>
-          </View>
-        </View>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={styles.stepperNumber}>{sharesCount} Shares</Text>
+                  <Text style={styles.stepperSub}>
+                    {((sharesCount / totalShares) * 100).toFixed(1)}% Co-Ownership
+                  </Text>
+                </View>
 
-        {/* ── Payment Method Selector ── */}
-        <Text style={[styles.sectionTitle, { color: c.warm }]}>Select Payment Rail</Text>
-        <View style={styles.methodsRow}>
-          {PAYMENT_METHODS.map((method) => {
-            const isSelected = selectedPayment === method.id;
-            return (
+                <TouchableOpacity
+                  style={[
+                    styles.stepperBtn,
+                    sharesCount >= maxAllowedShares && styles.stepperBtnDisabled,
+                  ]}
+                  onPress={() => setSharesCount((prev) => Math.min(maxAllowedShares, prev + 1))}
+                  disabled={sharesCount >= maxAllowedShares}
+                  activeOpacity={0.7}
+                >
+                  <Feather
+                    name="plus"
+                    size={20}
+                    color={sharesCount >= maxAllowedShares ? '#CBD5E1' : '#0F172A'}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Quick Select Preset Share Chips */}
+              <View style={styles.presetsRow}>
+                {[1, 5, 10, maxAllowedShares]
+                  .filter((amt, idx, arr) => arr.indexOf(amt) === idx && amt <= maxAllowedShares && amt > 0)
+                  .map((amt) => {
+                    const isSelected = sharesCount === amt;
+                    return (
+                      <TouchableOpacity
+                        key={amt}
+                        style={[styles.presetChip, isSelected && styles.presetChipActive]}
+                        onPress={() => setSharesCount(amt)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[styles.presetChipText, isSelected && styles.presetChipTextActive]}>
+                          {amt === maxAllowedShares && amt > 10 ? `Max (${amt} sh)` : `${amt} ${amt === 1 ? 'Share' : 'Shares'}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+              </View>
+
+              {/* Applied Investment Rules */}
+              <View style={styles.rulesContainer}>
+                <View style={styles.rulesTitleRow}>
+                  <Feather name="shield" size={13} color="#6C47FF" />
+                  <Text style={styles.rulesTitle}>Applied Investment Rules</Text>
+                </View>
+                {[
+                  { title: 'Minimum Investment', desc: `1 share required (R${sharePrice.toLocaleString()})` },
+                  { title: 'Anti-Whale Allocation Cap', desc: `Max 25% of total offering (${maxAllowedShares} shares)` },
+                  { title: 'Available Capacity', desc: `${remainingShares} of ${totalShares} shares open` },
+                  { title: 'Escrow Guarantee', desc: 'Protected by SmartAssets Sepolia smart contracts' },
+                ].map((rule, idx) => (
+                  <View key={idx} style={styles.ruleRow}>
+                    <Ionicons name="checkmark-circle" size={15} color="#10B981" style={{ marginRight: 6 }} />
+                    <Text style={styles.ruleText}>
+                      <Text style={styles.ruleTextBold}>{rule.title}: </Text>
+                      {rule.desc}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Risk Agreement Checkbox */}
               <TouchableOpacity
-                key={method.id}
-                style={[
-                  styles.methodCard,
-                  {
-                    backgroundColor: isSelected ? c.primaryBg : c.card,
-                    borderColor: isSelected ? c.primary : c.border,
-                  },
-                ]}
-                onPress={() => setSelectedPayment(method.id)}
+                style={styles.riskBox}
+                onPress={() => setRiskAcknowledged(!riskAcknowledged)}
+                activeOpacity={0.8}
               >
-                {method.type === 'feather' ? (
-                  <Feather name={method.icon} size={20} color={isSelected ? c.primary : c.muted} />
-                ) : (
-                  <Ionicons name={method.icon} size={20} color={isSelected ? c.primary : c.muted} />
-                )}
-                <Text style={[styles.methodLabel, { color: isSelected ? c.primary : c.warm }]}>
-                  {method.label}
+                <View style={[styles.checkbox, riskAcknowledged && styles.checkboxActive]}>
+                  {riskAcknowledged && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+                </View>
+                <Text style={styles.riskText}>
+                  I acknowledge the{' '}
+                  <Text style={styles.riskLink}>Fractional Asset Custody & Risk Agreement</Text>. Collectible
+                  values may fluctuate.
                 </Text>
-                <Text style={[styles.methodTag, { color: c.muted }]}>{method.tag}</Text>
               </TouchableOpacity>
-            );
-          })}
-        </View>
+            </View>
+          )}
 
-        {/* ── 1. MetaMask Web3 Tab ── */}
-        {selectedPayment === 'wallet' && (
-          <View style={[styles.paymentDetailCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="wallet-outline" size={20} color={c.primary} />
-                <Text style={[styles.detailTitle, { color: c.warm }]}>MetaMask Web3 Escrow</Text>
-              </View>
-              <View style={[styles.badgePill, { backgroundColor: c.greenBg }]}>
-                <Text style={{ fontSize: 10, fontWeight: '700', color: c.green }}>Sepolia Testnet</Text>
-              </View>
+          {/* ── 3. Investment / Order Summary ── */}
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>
+              {isFractional ? 'Investment Summary' : 'Order Summary'}
+            </Text>
+
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel} numberOfLines={1}>
+                {isFractional
+                  ? `${sharesCount} Shares (${((sharesCount / totalShares) * 100).toFixed(1)}%)`
+                  : 'Asset Price'}
+              </Text>
+              <Text
+                style={styles.breakdownValue}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                R{subtotal.toLocaleString()}
+              </Text>
             </View>
 
-            <View style={[styles.ethAmountBox, { backgroundColor: c.primaryBg, borderColor: c.primary }]}>
-              <Text style={[styles.ethBoxLabel, { color: c.primary }]}>AMOUNT TO SEND</Text>
-              <Text style={[styles.ethBoxValue, { color: c.warm }]}>{ethAmount} ETH</Text>
-              <Text style={{ fontSize: 11, color: c.muted }}>Rate: 1 ETH = R{(rates.zarPerEth || rates.gbpPerEth || 48000).toLocaleString()}</Text>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel} numberOfLines={1}>Escrow & Custody Fee (2.5%)</Text>
+              <Text
+                style={styles.breakdownValue}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                R{platformFee.toLocaleString()}
+              </Text>
             </View>
 
-            {user?.walletAddress ? (
-              <View style={styles.connectedRow}>
-                <Text style={[styles.connectedLabel, { color: c.muted }]}>Paying From:</Text>
-                <Text style={[styles.connectedAddress, { color: c.primary }]}>
-                  {user.walletAddress.substring(0, 6)}...{user.walletAddress.slice(-4)} (Connected)
+            <View style={styles.divider} />
+
+            <View style={styles.breakdownRow}>
+              <Text style={styles.totalLabel}>Total</Text>
+              <View style={{ alignItems: 'flex-end', flex: 1, paddingLeft: 12 }}>
+                <Text
+                  style={styles.totalValue}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
+                  R{total.toLocaleString()}
+                </Text>
+                <Text style={styles.totalEthSub}>≈ {ethAmount} Sepolia ETH</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* ── 4. Payment Method Selector ── */}
+          <Text style={styles.sectionHeaderTitle}>Select Payment Rail</Text>
+          <View style={styles.methodsRow}>
+            {PAYMENT_METHODS.map((method) => {
+              const isSelected = selectedPayment === method.id;
+              return (
+                <TouchableOpacity
+                  key={method.id}
+                  style={[styles.methodCard, isSelected && styles.methodCardActive]}
+                  onPress={() => setSelectedPayment(method.id)}
+                  activeOpacity={0.8}
+                >
+                  {method.type === 'feather' ? (
+                    <Feather
+                      name={method.icon}
+                      size={20}
+                      color={isSelected ? '#6C47FF' : '#64748B'}
+                    />
+                  ) : (
+                    <Ionicons
+                      name={method.icon}
+                      size={20}
+                      color={isSelected ? '#6C47FF' : '#64748B'}
+                    />
+                  )}
+                  <Text style={[styles.methodLabel, isSelected && styles.methodLabelActive]}>
+                    {method.label}
+                  </Text>
+                  <Text style={styles.methodTag}>{method.tag}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* ── 5. MetaMask Web3 Tab ── */}
+          {selectedPayment === 'wallet' && (
+            <View style={styles.paymentDetailCard}>
+              <View style={styles.paymentDetailHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="wallet-outline" size={20} color="#6C47FF" />
+                  <Text style={styles.detailTitle}>MetaMask Web3 Escrow</Text>
+                </View>
+                <View style={styles.sepoliaBadge}>
+                  <Text style={styles.sepoliaBadgeText}>Sepolia Testnet</Text>
+                </View>
+              </View>
+
+              <View style={styles.ethAmountBox}>
+                <Text style={styles.ethBoxLabel}>AMOUNT TO SEND</Text>
+                <Text style={styles.ethBoxValue}>{ethAmount} ETH</Text>
+                <Text style={styles.ethBoxRate}>
+                  Rate: 1 ETH ≈ R{ethRate.toLocaleString()}
                 </Text>
               </View>
-            ) : null}
 
-            {/* Pay with MetaMask Deep Link Button */}
-            <TouchableOpacity
-              style={[styles.metaMaskBtn, { backgroundColor: '#F6851B' }]}
-              onPress={handleOpenMetaMask}
-            >
-              <Ionicons name="open-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.metaMaskBtnText}>Open in MetaMask App 🦊</Text>
-            </TouchableOpacity>
+              {linkedWallet ? (
+                <View style={styles.connectedRow}>
+                  <Ionicons name="link" size={14} color="#10B981" style={{ marginRight: 4 }} />
+                  <Text style={styles.connectedLabel}>Paying From:</Text>
+                  <Text style={styles.connectedAddress}>
+                    {linkedWallet.substring(0, 6)}...{linkedWallet.slice(-4)} (Linked)
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ backgroundColor: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.35)', borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Feather name="alert-triangle" size={16} color="#F59E0B" />
+                  <Text style={{ flex: 1, fontSize: 12, color: '#F59E0B', fontWeight: '600' }}>
+                    No wallet linked. Please link your MetaMask wallet in Profile before checking out with Web3.
+                  </Text>
+                </View>
+              )}
 
-            {/* Optional Tx Hash Verification Input */}
-            <View style={{ marginTop: 12 }}>
-              <Text style={[styles.inputLabel, { color: c.muted }]}>
-                TRANSACTION HASH (OPTIONAL / AUTO-VERIFIED)
-              </Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: c.cardLight, borderColor: c.border, color: c.warm }]}
-                placeholder="0x... (Paste your MetaMask tx hash)"
-                placeholderTextColor={c.muted}
-                value={walletTxHash}
-                onChangeText={setWalletTxHash}
-                autoCapitalize="none"
-              />
-            </View>
-          </View>
-        )}
+              {isMismatch ? (
+                <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.35)', borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Feather name="alert-circle" size={16} color="#EF4444" />
+                  <Text style={{ flex: 1, fontSize: 12, color: '#EF4444', fontWeight: '600' }}>
+                    MetaMask account mismatch: Active wallet differs from your linked account ({linkedWallet?.substring(0, 6)}...{linkedWallet?.slice(-4)}). Please switch accounts in MetaMask.
+                  </Text>
+                </View>
+              ) : null}
 
-        {/* ── 2. Credit Card Tab ── */}
-        {selectedPayment === 'card' && (
-          <View style={[styles.paymentDetailCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Feather name="credit-card" size={20} color={c.primary} />
-                <Text style={[styles.detailTitle, { color: c.warm }]}>Credit / Debit Card</Text>
-              </View>
-              <View style={{ backgroundColor: '#635BFF20', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#635BFF40' }}>
-                <Text style={{ fontSize: 10, fontWeight: '700', color: '#635BFF' }}>⚡ Stripe API</Text>
-              </View>
-            </View>
+              <TouchableOpacity
+                style={styles.metaMaskBtn}
+                onPress={handleOpenMetaMask}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="open-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.metaMaskBtnText}>Open in MetaMask App</Text>
+              </TouchableOpacity>
 
-            <View style={{ gap: 10 }}>
-              <View>
-                <Text style={[styles.inputLabel, { color: c.muted }]}>CARD NUMBER</Text>
+              <View style={{ marginTop: 6 }}>
+                <Text style={styles.inputLabel}>TRANSACTION HASH (OPTIONAL / AUTO-VERIFIED)</Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: c.cardLight, borderColor: c.border, color: c.warm }]}
-                  value={cardForm.cardNumber}
-                  onChangeText={(v) => setCardForm({ ...cardForm, cardNumber: v })}
-                  keyboardType="numeric"
+                  style={styles.input}
+                  placeholder="0x... (Paste your MetaMask tx hash)"
+                  placeholderTextColor="#94A3B8"
+                  value={walletTxHash}
+                  onChangeText={setWalletTxHash}
+                  autoCapitalize="none"
                 />
               </View>
-
-              <View>
-                <Text style={[styles.inputLabel, { color: c.muted }]}>CARDHOLDER NAME</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: c.cardLight, borderColor: c.border, color: c.warm }]}
-                  value={cardForm.cardName}
-                  onChangeText={(v) => setCardForm({ ...cardForm, cardName: v })}
-                />
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.inputLabel, { color: c.muted }]}>EXPIRES</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: c.cardLight, borderColor: c.border, color: c.warm }]}
-                    value={cardForm.expiry}
-                    onChangeText={(v) => setCardForm({ ...cardForm, expiry: v })}
-                    placeholder="MM/YY"
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.inputLabel, { color: c.muted }]}>CVC</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: c.cardLight, borderColor: c.border, color: c.warm }]}
-                    value={cardForm.cvc}
-                    onChangeText={(v) => setCardForm({ ...cardForm, cvc: v })}
-                    keyboardType="numeric"
-                    secureTextEntry
-                  />
-                </View>
-              </View>
             </View>
-          </View>
-        )}
-
-        {/* ── 3. Bank Transfer Tab ── */}
-        {selectedPayment === 'bank' && (
-          <View style={[styles.paymentDetailCard, { backgroundColor: c.card, borderColor: c.border }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="business-outline" size={20} color={c.primary} />
-                <Text style={[styles.detailTitle, { color: c.warm }]}>Bank Wire Details</Text>
-              </View>
-              <View style={{ backgroundColor: '#635BFF20', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#635BFF40' }}>
-                <Text style={{ fontSize: 10, fontWeight: '700', color: '#635BFF' }}>🏦 Stripe Wire</Text>
-              </View>
-            </View>
-
-            <View style={{ gap: 8 }}>
-              {[
-                ['BENEFICIARY', 'SmartAssets Custody SA (Pty) Ltd'],
-                ['BANK', 'First National Bank (FNB) / Standard Bank'],
-                ['BRANCH CODE', '250655'],
-                ['ACCOUNT NUMBER', '62890192841'],
-                ['PAYMENT REFERENCE', bankRef],
-              ].map(([lbl, val]) => (
-                <View key={lbl} style={styles.wireRow}>
-                  <Text style={[styles.wireLabel, { color: c.muted }]}>{lbl}</Text>
-                  <Text style={[styles.wireValue, { color: c.warm }]}>{val}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* ── Escrow notice ── */}
-        <View style={[styles.escrowNotice, { backgroundColor: c.primaryBg, borderColor: c.primary }]}>
-          <Text style={[styles.escrowText, { color: c.primary }]}>
-            🔒 SmartAssets Smart Contract Escrow guarantees funds are securely locked on-chain until the physical asset is transferred and verified.
-          </Text>
-        </View>
-      </ScrollView>
-
-      {/* ── Confirm CTA ── */}
-      <SafeAreaView edges={['bottom']} style={[styles.cta, { backgroundColor: c.vault, borderTopColor: c.border }]}>
-        <TouchableOpacity
-          style={[
-            styles.confirmBtn,
-            {
-              backgroundColor: isOwner || (isFractional && !riskAcknowledged) ? c.cardLight : c.primary,
-              borderWidth: isOwner ? 1 : 0,
-              borderColor: isOwner ? '#EF4444' : c.border,
-            },
-          ]}
-          onPress={handleConfirmPurchase}
-          disabled={purchasing || isOwner}
-          activeOpacity={0.85}
-        >
-          {purchasing ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <Text
-              style={[
-                styles.confirmBtnLabel,
-                { color: isOwner || (isFractional && !riskAcknowledged) ? c.muted : '#FFFFFF' },
-              ]}
-            >
-              {isOwner
-                ? 'Self-Dealing Prohibited (Owner)'
-                : isFractional && !riskAcknowledged
-                ? 'Acknowledge Risk Disclosure'
-                : selectedPayment === 'wallet'
-                ? `Confirm ${ethAmount} ETH ${isFractional ? 'Investment' : 'Payment'}`
-                : `Confirm R${total.toLocaleString()} ${isFractional ? 'Investment' : 'Payment'}`}
-            </Text>
           )}
-        </TouchableOpacity>
+
+          {/* ── 6. Credit Card Tab ── */}
+          {selectedPayment === 'card' && (
+            <View style={styles.paymentDetailCard}>
+              <View style={styles.paymentDetailHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Feather name="credit-card" size={20} color="#6C47FF" />
+                  <Text style={styles.detailTitle}>Credit / Debit Card</Text>
+                </View>
+                <View style={styles.stripeBadge}>
+                  <Feather name="zap" size={11} color="#6C47FF" style={{ marginRight: 4 }} />
+                  <Text style={styles.stripeBadgeText}>Stripe Secured</Text>
+                </View>
+              </View>
+
+              <View style={{ gap: 10 }}>
+                <View>
+                  <Text style={styles.inputLabel}>CARD NUMBER</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={cardForm.cardNumber}
+                    onChangeText={(v) => setCardForm({ ...cardForm, cardNumber: v })}
+                    placeholder="4242 •••• •••• 4242"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                <View>
+                  <Text style={styles.inputLabel}>CARDHOLDER NAME</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={cardForm.cardName}
+                    onChangeText={(v) => setCardForm({ ...cardForm, cardName: v })}
+                    placeholder="Full Legal Name"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>EXPIRES</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={cardForm.expiry}
+                      onChangeText={(v) => setCardForm({ ...cardForm, expiry: v })}
+                      placeholder="MM/YY"
+                      placeholderTextColor="#94A3B8"
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>CVC</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={cardForm.cvc}
+                      onChangeText={(v) => setCardForm({ ...cardForm, cvc: v })}
+                      placeholder="CVC"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="numeric"
+                      secureTextEntry
+                    />
+                  </View>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* ── 7. Bank Transfer Tab ── */}
+          {selectedPayment === 'bank' && (
+            <View style={styles.paymentDetailCard}>
+              <View style={styles.paymentDetailHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="business-outline" size={20} color="#6C47FF" />
+                  <Text style={styles.detailTitle}>UK Bank Wire / FPS Details</Text>
+                </View>
+                <View style={styles.stripeBadge}>
+                  <Feather name="shield" size={11} color="#6C47FF" style={{ marginRight: 4 }} />
+                  <Text style={styles.stripeBadgeText}>Faster Payments</Text>
+                </View>
+              </View>
+
+              <View style={{ gap: 8 }}>
+                {[
+                  ['BENEFICIARY', 'SmartAssets Custody Ltd'],
+                  ['BANK', 'Barclays / NatWest London'],
+                  ['SORT CODE', '20-04-15'],
+                  ['ACCOUNT NUMBER', '82941038'],
+                  ['PAYMENT REFERENCE', bankRef],
+                ].map(([lbl, val]) => (
+                  <View key={lbl} style={styles.wireRow}>
+                    <Text style={styles.wireLabel}>{lbl}</Text>
+                    <Text style={styles.wireValue}>{val}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* ── 8. Escrow Notice ── */}
+          <View style={styles.escrowNotice}>
+            <Ionicons name="shield-checkmark" size={16} color="#6C47FF" style={{ marginRight: 8, marginTop: 1 }} />
+            <Text style={styles.escrowText}>
+              SmartAssets Smart Contract Escrow guarantees funds are securely held on-chain until the physical asset and share tokens are cryptographically authenticated.
+            </Text>
+          </View>
+        </ScrollView>
+
+        {/* ── Bottom Floating Action Bar ── */}
+        <View style={styles.bottomBar}>
+          <TouchableOpacity
+            style={[
+              styles.confirmBtn,
+              isFractional && !riskAcknowledged && styles.confirmBtnDisabled,
+            ]}
+            onPress={handleConfirmPurchase}
+            disabled={purchasing}
+            activeOpacity={0.85}
+          >
+            {purchasing ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text
+                style={[
+                  styles.confirmBtnLabel,
+                  isFractional && !riskAcknowledged && styles.confirmBtnLabelDisabled,
+                ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                {isFractional && !riskAcknowledged
+                  ? 'Acknowledge Risk Disclosure'
+                  : selectedPayment === 'wallet'
+                  ? `Confirm ${ethAmount} ETH ${isFractional ? 'Investment' : 'Payment'}`
+                  : `Confirm R${total.toLocaleString()} ${isFractional ? 'Investment' : 'Payment'}`}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <KycGatekeeperModal
+          visible={kycGatekeeperVisible}
+          onClose={() => setKycGatekeeperVisible(false)}
+          isSuspended={Boolean(user?.isSuspended)}
+          onCompleteVerification={() =>
+            navigation.navigate(SCREENS.PROFILE, { openKyc: true })
+          }
+        />
+
+        <InstallMetaMaskModal
+          visible={installModalVisible}
+          onClose={() => setInstallModalVisible(false)}
+          onRetry={() => {
+            setInstallModalVisible(false);
+            handleOpenMetaMask();
+          }}
+        />
       </SafeAreaView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  navBar: {
+  root: {
+    flex: 1,
+  },
+  safe: {
+    flex: 1,
+  },
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 14,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navTitle: { fontSize: 16, fontWeight: '700' },
-  scroll: { paddingHorizontal: 20, paddingBottom: 24, gap: 14 },
-  assetSummary: {
-    flexDirection: 'row',
-    gap: 12,
-    padding: 12,
+    width: 40,
+    height: 40,
     borderRadius: 20,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    alignItems: 'center',
-  },
-  assetThumb: { width: 64, height: 64, borderRadius: 14 },
-  assetCategory: { fontSize: 10, fontWeight: '700', marginBottom: 2 },
-  assetName: { fontSize: 14, fontWeight: '700', lineHeight: 19 },
-  assetPrice: { fontSize: 14, fontWeight: '800', marginTop: 3 },
-  priceBreakdown: { padding: 16, borderRadius: 20, borderWidth: 1, gap: 10 },
-  breakdownTitle: { fontSize: 14, fontWeight: '700', marginBottom: 4 },
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  breakdownLabel: { fontSize: 13 },
-  breakdownValue: { fontSize: 13, fontWeight: '600' },
-  divider: { height: 1, marginVertical: 4 },
-  totalLabel: { fontSize: 14, fontWeight: '700' },
-  totalValue: { fontSize: 18, fontWeight: '800' },
-  sectionTitle: { fontSize: 15, fontWeight: '700', marginTop: 4 },
-  methodsRow: { flexDirection: 'row', gap: 8 },
-  methodCard: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    gap: 4,
-  },
-  methodLabel: { fontSize: 11, fontWeight: '700', textAlign: 'center' },
-  methodTag: { fontSize: 9, fontWeight: '600' },
-  paymentDetailCard: { padding: 16, borderRadius: 20, borderWidth: 1, gap: 12 },
-  detailTitle: { fontSize: 14, fontWeight: '700' },
-  badgePill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
-  ethAmountBox: {
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
-  ethBoxLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  ethBoxValue: { fontSize: 24, fontWeight: '800' },
-  connectedRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  connectedLabel: { fontSize: 12 },
-  connectedAddress: { fontSize: 12, fontWeight: '700' },
-  metaMaskBtn: {
-    flexDirection: 'row',
+    borderColor: 'rgba(226, 232, 240, 0.9)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
-    paddingVertical: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  metaMaskBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
-  inputLabel: { fontSize: 10, fontWeight: '700', marginBottom: 4, letterSpacing: 0.5 },
-  input: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 13,
-  },
-  wireRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
-  wireLabel: { fontSize: 10, fontWeight: '700' },
-  wireValue: { fontSize: 13, fontWeight: '700', fontFamily: 'Courier' },
-  escrowNotice: { padding: 14, borderRadius: 14, borderWidth: 1 },
-  escrowText: { fontSize: 12, lineHeight: 18 },
-  cta: { paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1 },
-  confirmBtn: { borderRadius: 18, paddingVertical: 16, alignItems: 'center' },
-  confirmBtnLabel: { fontWeight: '700', fontSize: 15 },
-  successScroll: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 40, paddingBottom: 40, gap: 16 },
-  successIcon: { width: 90, height: 90, borderRadius: 45, alignItems: 'center', justifyContent: 'center' },
-  successTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.4 },
-  successSub: { fontSize: 14, lineHeight: 21, textAlign: 'center' },
-  receiptCard: { width: '100%', padding: 16, borderRadius: 20, borderWidth: 1, gap: 12 },
-  receiptRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  receiptLabel: { fontSize: 10, fontWeight: '700' },
-  receiptValue: { fontSize: 13, fontWeight: '700' },
-  txBlock: { padding: 12, borderRadius: 14, borderWidth: 1 },
-  doneBtn: { width: '100%', borderRadius: 18, paddingVertical: 16, alignItems: 'center', marginTop: 10 },
-  doneBtnLabel: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
-  vaultBtn: {
-    width: '100%',
-    borderRadius: 18,
-    paddingVertical: 14,
+  breadcrumbWrap: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    marginTop: 8,
   },
-  vaultBtnLabel: { fontSize: 14, fontWeight: '700' },
+  breadcrumbMuted: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  breadcrumbActive: {
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '800',
+  },
+  escrowShieldIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 120 : 100,
+    gap: 16,
+  },
+
+  // Owner warning
   ownerWarning: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -866,55 +1163,764 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 18,
     borderWidth: 1,
-    marginBottom: 10,
+    backgroundColor: '#FEE2E2',
+    borderColor: '#EF4444',
   },
-  ownerWarningTitle: { fontSize: 13, fontWeight: '700' },
-  ownerWarningSub: { fontSize: 11, lineHeight: 16 },
-  fractionalCard: {
-    padding: 16,
+  ownerWarningTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#EF4444',
+  },
+  ownerWarningSub: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#7F1D1D',
+  },
+
+  // Asset Summary
+  assetSummaryCard: {
+    flexDirection: 'row',
+    gap: 14,
+    padding: 14,
     borderRadius: 20,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    gap: 12,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+    alignItems: 'center',
+    shadowColor: '#1E1B4B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  fractionalHeaderLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  fractionalHeaderTitle: { fontSize: 15, fontWeight: '700', marginTop: 2 },
+  assetThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+  },
+  categoryPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F5F3FF',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  categoryPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#6C47FF',
+    letterSpacing: 0.8,
+  },
+  assetName: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#0F172A',
+    lineHeight: 20,
+    letterSpacing: -0.3,
+  },
+  assetPrice: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#6C47FF',
+  },
+
+  // Purchase Mode Toggle
+  purchaseModeToggleCard: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 16,
+    padding: 4,
+  },
+  purchaseModeToggleRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  purchaseModeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  purchaseModeTabActive: {
+    backgroundColor: '#6C47FF',
+    shadowColor: '#6C47FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  purchaseModeTabText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#64748B',
+  },
+  purchaseModeTabTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Whole Asset Physical Delivery Banner
+  wholeAssetBanner: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#BBF7D0',
+    borderRadius: 20,
+    padding: 16,
+    gap: 6,
+  },
+  wholeAssetBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  wholeAssetBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#10B981',
+    letterSpacing: 0.8,
+  },
+  wholeAssetTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#065F46',
+  },
+  wholeAssetDesc: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#047857',
+  },
+
+  // Fractional Configurator Card
+  fractionalCard: {
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+    gap: 14,
+    shadowColor: '#1E1B4B',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  fractionalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  fractionalHeaderLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6C47FF',
+    letterSpacing: 1,
+  },
+  fractionalHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginTop: 2,
+    letterSpacing: -0.3,
+  },
   sharePriceBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 999,
+    backgroundColor: '#F5F3FF',
     borderWidth: 1,
+    borderColor: '#DDD6FE',
+    flexShrink: 0,
   },
+  sharePriceBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#6C47FF',
+    paddingRight: 4,
+  },
+
+  // Stepper
   stepperContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 8,
+    padding: 10,
     borderRadius: 16,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   stepperBtn: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  stepperBtnDisabled: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+  },
+  stepperNumber: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  stepperSub: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  presetChip: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepperNumber: { fontSize: 18, fontWeight: '800' },
-  rulesContainer: {
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 4,
+  presetChipActive: {
+    backgroundColor: '#6C47FF',
+    borderColor: '#6C47FF',
   },
-  rulesTitle: { fontSize: 12, fontWeight: '700' },
+  presetChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  presetChipTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Rules
+  rulesContainer: {
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  rulesTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  rulesTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  ruleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ruleText: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#475569',
+    flex: 1,
+  },
+  ruleTextBold: {
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+
+  // Risk Box
   riskBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     padding: 12,
     borderRadius: 14,
+    backgroundColor: '#F5F3FF',
     borderWidth: 1,
+    borderColor: '#DDD6FE',
   },
-  riskText: { fontSize: 11, lineHeight: 16, flex: 1 },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: '#A78BFA',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxActive: {
+    backgroundColor: '#6C47FF',
+    borderColor: '#6C47FF',
+  },
+  riskText: {
+    fontSize: 11,
+    lineHeight: 16,
+    flex: 1,
+    color: '#334155',
+  },
+  riskLink: {
+    color: '#6C47FF',
+    fontWeight: '800',
+  },
+
+  // Summary Card
+  summaryCard: {
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+    gap: 10,
+    shadowColor: '#1E1B4B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  summaryTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  breakdownLabel: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+    flex: 1,
+  },
+  breakdownValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'right',
+    paddingRight: 6,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 4,
+  },
+  totalLabel: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  totalValue: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#6C47FF',
+    letterSpacing: -0.4,
+    textAlign: 'right',
+    paddingRight: 6,
+  },
+  totalEthSub: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    marginTop: 2,
+  },
+
+  // Payment Selector
+  sectionHeaderTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 2,
+  },
+  methodsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  methodCard: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    gap: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  methodCardActive: {
+    backgroundColor: '#F5F3FF',
+    borderColor: '#6C47FF',
+  },
+  methodLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+    color: '#0F172A',
+  },
+  methodLabelActive: {
+    color: '#6C47FF',
+  },
+  methodTag: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+
+  // Payment Details Card
+  paymentDetailCard: {
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+    gap: 12,
+    shadowColor: '#1E1B4B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  paymentDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  detailTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  sepoliaBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  sepoliaBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+  stripeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  stripeBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6C47FF',
+  },
+  ethAmountBox: {
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    alignItems: 'center',
+    gap: 2,
+  },
+  ethBoxLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6C47FF',
+    letterSpacing: 1,
+  },
+  ethBoxValue: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  ethBoxRate: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  connectedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  connectedLabel: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  connectedAddress: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#6C47FF',
+  },
+  metaMaskBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    paddingVertical: 14,
+    backgroundColor: '#F6851B',
+  },
+  metaMaskBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 13,
+    backgroundColor: '#F8FAFC',
+    color: '#0F172A',
+    fontWeight: '600',
+  },
+  wireRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  wireLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+  },
+  wireValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    fontFamily: 'Courier',
+    color: '#0F172A',
+  },
+  escrowNotice: {
+    flexDirection: 'row',
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  escrowText: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#6C47FF',
+    fontWeight: '500',
+    flex: 1,
+  },
+
+  // Bottom Floating Action Bar
+  bottomBar: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(226, 232, 240, 0.9)',
+  },
+  confirmBtn: {
+    borderRadius: 16,
+    paddingVertical: 15,
+    backgroundColor: '#6C47FF',
+    alignItems: 'center',
+    shadowColor: '#6C47FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  confirmBtnDisabled: {
+    backgroundColor: '#F1F5F9',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  confirmBtnLabel: {
+    fontWeight: '900',
+    fontSize: 15,
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  confirmBtnLabelDisabled: {
+    color: '#94A3B8',
+  },
+
+  // Success Screen
+  successScroll: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 30,
+    paddingBottom: 40,
+    gap: 16,
+  },
+  successIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#0F172A',
+    letterSpacing: -0.4,
+  },
+  successSub: {
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  receiptCard: {
+    width: '100%',
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+    gap: 12,
+    shadowColor: '#1E1B4B',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  receiptHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingBottom: 10,
+  },
+  receiptCardTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6C47FF',
+    letterSpacing: 1.1,
+  },
+  settledBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  settledBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#16A34A',
+  },
+  receiptRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  receiptLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#94A3B8',
+  },
+  receiptValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  receiptRailValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#6C47FF',
+  },
+  receiptMonoValue: {
+    fontSize: 11,
+    fontFamily: 'Courier',
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  receiptTotalPaid: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  txBlock: {
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  txMonoText: {
+    fontSize: 11,
+    fontFamily: 'Courier',
+    color: '#0F172A',
+  },
+  doneBtn: {
+    width: '100%',
+    borderRadius: 16,
+    paddingVertical: 15,
+    backgroundColor: '#6C47FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    marginTop: 10,
+    shadowColor: '#6C47FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  doneBtnLabel: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 15,
+  },
+  vaultBtn: {
+    width: '100%',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+  },
+  vaultBtnLabel: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
 });

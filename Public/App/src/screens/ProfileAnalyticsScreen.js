@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+// ─── ProfileAnalyticsScreen (Two-Tab Net-Worth & Marketplace Intelligence) ─────
+// SmartAssets Modern Glassmorphism Theme (2025/2026)
+// Assets Tab: Net-worth first, category allocation, concentration alert, top assets & ownership.
+// Selling Tab: Period filters (7d, 30d, 90d, all), revenue, escrow orders, 6-month sales chart, listings.
+// Strictly ZERO mock data. Clean empty states when accounts have no activity yet.
+
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,169 +15,422 @@ import {
   Share,
   Alert,
   Dimensions,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Feather, Ionicons } from '@expo/vector-icons';
-import { ALIM } from '../constants/theme';
-import { SCREENS } from '../constants/navigation';
-import { useAuth } from '../context/AuthContext';
-import { getUserAnalyticsApi } from '../services/api';
+  ActivityIndicator,
+  RefreshControl,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { Feather, Ionicons } from "@expo/vector-icons";
+import { ALIM, ROYAL } from "../constants/theme";
+import { useAuth } from "../context/AuthContext";
+import {
+  getUserVault,
+  getMarketAssets,
+  getMyEscrowOrdersApi,
+  getSellerEscrowOrdersApi,
+  getVaultTransactionsApi,
+  resolveImageUrl,
+} from "../services/api";
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-const TIMEFRAMES = ['1M', '3M', '6M', '1Y', 'Since Joined'];
+// Palette for Category Allocation Stacked Bar
+const CATEGORY_COLORS = [
+  "#00C2FF", // Cyan
+  "#8B5CF6", // Violet
+  "#10B981", // Emerald
+  "#F59E0B", // Amber
+  "#EC4899", // Pink
+  "#6366F1", // Indigo
+  "#14B8A6", // Teal
+  "#F43F5E", // Rose
+];
+
+const SELLING_PERIODS = [
+  { id: "7d", label: "7 Days", days: 7 },
+  { id: "30d", label: "30 Days", days: 30 },
+  { id: "90d", label: "90 Days", days: 90 },
+  { id: "all", label: "All Time", days: 99999 },
+];
 
 export default function ProfileAnalyticsScreen({ navigation }) {
   const { user, token } = useAuth();
 
-  const [loading, setLoading] = useState(true);
-  const [selectedTimeframe, setSelectedTimeframe] = useState('Since Joined');
-  const [analyticsData, setAnalyticsData] = useState(null);
+  // Active Tab: 'assets' (Opens first by default) | 'selling'
+  const [activeTab, setActiveTab] = useState("assets");
+  const [sellingPeriod, setSellingPeriod] = useState("30d");
 
-  useEffect(() => {
-    let isMounted = true;
-    async function loadData() {
-      try {
-        setLoading(true);
-        if (token) {
-          const res = await getUserAnalyticsApi(token);
-          if (isMounted && res?.success && res.analytics) {
-            setAnalyticsData(res.analytics);
-          }
-        }
-      } catch (err) {
-        console.warn('Analytics fetch error:', err.message);
-      } finally {
-        if (isMounted) setLoading(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Real Data Stores
+  const [holdings, setHoldings] = useState([]);
+  const [vaultSummary, setVaultSummary] = useState({});
+  const [transactions, setTransactions] = useState([]);
+  const [marketAssets, setMarketAssets] = useState([]);
+  const [escrowOrders, setEscrowOrders] = useState([]);
+
+  const formatZAR = useCallback((val) => {
+    if (val === undefined || val === null || val === "") return "R0";
+    const num =
+      typeof val === "number"
+        ? val
+        : parseFloat(String(val).replace(/[^0-9.-]+/g, ""));
+    if (isNaN(num)) return "R0";
+    return "R" + Math.round(num).toLocaleString("en-ZA");
+  }, []);
+
+  const loadAllAnalyticsData = useCallback(async () => {
+    try {
+      if (!token) return;
+
+      const [vaultRes, marketRes, buyerEscrowRes, sellerEscrowRes, txRes] =
+        await Promise.allSettled([
+          getUserVault(token, true),
+          getMarketAssets("All", "", true, true),
+          getMyEscrowOrdersApi(token),
+          getSellerEscrowOrdersApi(token),
+          getVaultTransactionsApi(token),
+        ]);
+
+      if (vaultRes.status === "fulfilled" && vaultRes.value?.success) {
+        setHoldings(vaultRes.value.holdings || []);
+        setVaultSummary(vaultRes.value.summary || {});
       }
+
+      if (marketRes.status === "fulfilled" && marketRes.value?.success) {
+        setMarketAssets(marketRes.value.assets || []);
+      }
+
+      const combinedEscrows = [];
+      if (
+        sellerEscrowRes.status === "fulfilled" &&
+        Array.isArray(sellerEscrowRes.value?.orders)
+      ) {
+        combinedEscrows.push(...sellerEscrowRes.value.orders);
+      }
+      if (
+        buyerEscrowRes.status === "fulfilled" &&
+        Array.isArray(buyerEscrowRes.value?.orders)
+      ) {
+        buyerEscrowRes.value.orders.forEach((bo) => {
+          if (
+            !combinedEscrows.some(
+              (e) => (e.orderId || e.id) === (bo.orderId || bo.id)
+            )
+          ) {
+            combinedEscrows.push(bo);
+          }
+        });
+      }
+      setEscrowOrders(combinedEscrows);
+
+      if (txRes.status === "fulfilled" && txRes.value?.success) {
+        setTransactions(txRes.value.transactions || []);
+      }
+    } catch (err) {
+      console.warn("Analytics data load warning:", err.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-    loadData();
-    return () => {
-      isMounted = false;
-    };
   }, [token]);
 
-  // Fallback defaults if backend has not yet seeded data
-  const joinedDate = useMemo(() => {
-    const raw = analyticsData?.joinedAt || user?.createdAt || user?.created_at;
-    if (raw) return new Date(raw);
-    return new Date(Date.now() - 1000 * 60 * 60 * 24 * 128); // 128 days ago default
-  }, [analyticsData, user]);
+  useEffect(() => {
+    loadAllAnalyticsData();
+  }, [loadAllAnalyticsData]);
 
-  const daysSinceJoined = useMemo(() => {
-    if (analyticsData?.daysSinceJoined) return analyticsData.daysSinceJoined;
-    const diff = Math.max(1, Math.floor((Date.now() - joinedDate.getTime()) / (1000 * 60 * 60 * 24)));
-    return diff;
-  }, [analyticsData, joinedDate]);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadAllAnalyticsData();
+  }, [loadAllAnalyticsData]);
 
-  const memberSinceFormatted = useMemo(() => {
-    if (analyticsData?.memberSinceFormatted) return analyticsData.memberSinceFormatted;
-    const month = joinedDate.toLocaleString('en-US', { month: 'long' });
-    const year = joinedDate.getFullYear();
-    return `${month} ${year}`;
-  }, [analyticsData, joinedDate]);
+  // ══════════════════════════════════════════════════════════════════════════
+  // TAB 1: ASSETS COMPUTATIONS
+  // ══════════════════════════════════════════════════════════════════════════
+  const assetsMetrics = useMemo(() => {
+    const cash = Number(vaultSummary?.availableBalanceNum) || 0;
+    const portfolioVal = holdings.reduce(
+      (sum, h) => sum + (Number(h.price_num) || 0),
+      0
+    );
+    const totalNetWorth = cash + portfolioVal;
 
-  const netWorthDisplay = analyticsData?.netWorthFormatted || 'R 0';
-  const growthRate = analyticsData?.growthRatePct || '+0.0%';
-  const gainsDisplay = analyticsData?.estimatedGainsFormatted || '+R 0';
-  const healthScore = analyticsData?.healthScore || 96;
+    // Cash vs Assets split percentage
+    const cashPct = totalNetWorth > 0 ? Math.round((cash / totalNetWorth) * 100) : 0;
+    const assetsPct = totalNetWorth > 0 ? 100 - cashPct : 0;
 
-  const categories = useMemo(() => {
-    if (analyticsData?.categoryBreakdown) {
-      return analyticsData.categoryBreakdown;
+    const count = holdings.length;
+    const avgValue = count > 0 ? Math.round(portfolioVal / count) : 0;
+
+    // Change since added: calculate difference only from stored real data
+    let totalInitial = 0;
+    let totalLive = 0;
+    let hasNonZeroChange = false;
+
+    holdings.forEach((h) => {
+      const init = Number(h.initialValue) || Number(h.price_num) || 0;
+      const live = Number(h.liveMarketValue) || Number(h.price_num) || 0;
+      totalInitial += init;
+      totalLive += live;
+      if (live !== init) {
+        hasNonZeroChange = true;
+      }
+    });
+
+    const netChangeNum = totalLive - totalInitial;
+    const netChangePct =
+      totalInitial > 0 ? ((netChangeNum / totalInitial) * 100).toFixed(1) : "0.0";
+
+    // Allocation by category
+    const categoryMap = {};
+    holdings.forEach((h) => {
+      const cat = h.category || "Uncategorised";
+      const val = Number(h.price_num) || 0;
+      if (!categoryMap[cat]) {
+        categoryMap[cat] = { category: cat, totalValue: 0, count: 0 };
+      }
+      categoryMap[cat].totalValue += val;
+      categoryMap[cat].count += 1;
+    });
+
+    const categories = Object.values(categoryMap)
+      .map((c, idx) => ({
+        ...c,
+        percentage:
+          portfolioVal > 0 ? Math.round((c.totalValue / portfolioVal) * 100) : 0,
+        color: CATEGORY_COLORS[idx % CATEGORY_COLORS.length],
+      }))
+      .sort((a, b) => b.totalValue - a.totalValue);
+
+    // Top 5 Most Valuable Assets (concentration compared strictly against assets)
+    const sortedAssets = [...holdings]
+      .sort((a, b) => (Number(b.price_num) || 0) - (Number(a.price_num) || 0))
+      .slice(0, 5)
+      .map((a) => {
+        const val = Number(a.price_num) || 0;
+        const shareOfAssets =
+          portfolioVal > 0 ? Math.round((val / portfolioVal) * 100) : 0;
+        return {
+          ...a,
+          val,
+          shareOfAssets,
+          shareOfPortfolio: shareOfAssets,
+        };
+      });
+
+    // Concentration warning (50%+ of assets, but never for a single asset)
+    const topAsset = sortedAssets[0] || null;
+    const isConcentrated =
+      count > 1 && topAsset && portfolioVal > 0 && topAsset.shareOfAssets >= 50;
+
+    // Performance leaders (only where actual change exists)
+    const withGains = holdings
+      .map((h) => {
+        const init = Number(h.initialValue) || Number(h.price_num) || 0;
+        const live = Number(h.liveMarketValue) || Number(h.price_num) || 0;
+        const diff = live - init;
+        const pct = init > 0 ? (diff / init) * 100 : 0;
+        return { ...h, diff, pct };
+      })
+      .filter((h) => Math.abs(h.diff) > 0);
+
+    let bestPerformer = null;
+    let lowestPerformer = null;
+    if (withGains.length > 0) {
+      const sortedByGain = [...withGains].sort((a, b) => b.pct - a.pct);
+      bestPerformer = sortedByGain[0];
+      lowestPerformer = sortedByGain[sortedByGain.length - 1];
     }
-    return [];
-  }, [analyticsData]);
 
-  const timelineData = useMemo(() => {
-    if (analyticsData?.monthlyTimeline && analyticsData.monthlyTimeline.length > 0) {
-      return analyticsData.monthlyTimeline;
-    }
-    return [
-      { month: 'May', valueNum: 310000, valueFormatted: 'R310k', heightPct: 45 },
-      { month: 'Jun', valueNum: 345000, valueFormatted: 'R345k', heightPct: 55 },
-      { month: 'Jul', valueNum: 390000, valueFormatted: 'R390k', heightPct: 68 },
-      { month: 'Aug', valueNum: 430000, valueFormatted: 'R430k', heightPct: 80 },
-      { month: 'Sep', valueNum: 485000, valueFormatted: 'R485k', heightPct: 100 },
-    ];
-  }, [analyticsData]);
+    // Ownership: Outright vs Fractional
+    const outrightHoldings = holdings.filter((h) => h.asset_type !== "fractional");
+    const fractionalHoldings = holdings.filter((h) => h.asset_type === "fractional");
 
-  const milestones = useMemo(() => {
-    if (analyticsData?.milestones && analyticsData.milestones.length > 0) {
-      return analyticsData.milestones;
+    const outrightValue = outrightHoldings.reduce(
+      (sum, h) => sum + (Number(h.price_num) || 0),
+      0
+    );
+    const fractionalValue = fractionalHoldings.reduce(
+      (sum, h) => sum + (Number(h.myStake) || Number(h.price_num) || 0),
+      0
+    );
+
+    return {
+      cash,
+      portfolioVal,
+      totalNetWorth,
+      cashPct,
+      assetsPct,
+      count,
+      avgValue,
+      hasNonZeroChange,
+      netChangeNum,
+      netChangePct,
+      categories,
+      sortedAssets,
+      topAsset,
+      isConcentrated,
+      bestPerformer,
+      lowestPerformer,
+      outrightHoldings,
+      fractionalHoldings,
+      outrightValue,
+      fractionalValue,
+    };
+  }, [holdings, vaultSummary]);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TAB 2: SELLING COMPUTATIONS
+  // ══════════════════════════════════════════════════════════════════════════
+  const sellingMetrics = useMemo(() => {
+    const currentUserId = user?.id || user?.userId;
+    const now = Date.now();
+    const periodObj =
+      SELLING_PERIODS.find((p) => p.id === sellingPeriod) || SELLING_PERIODS[1];
+    const cutoffTime = now - periodObj.days * 86400000;
+
+    // 1. Seller's listings on marketplace
+    const myListings = marketAssets.filter(
+      (a) =>
+        String(a.seller_id || a.sellerId) === String(currentUserId) ||
+        String(a.user_id || a.userId) === String(currentUserId)
+    );
+
+    const verifiedListings = myListings.filter(
+      (a) => a.status === "active" || a.status === "funded"
+    );
+    const awaitingReviewListings = myListings.filter(
+      (a) => a.status === "pending" || a.status === "pending_review"
+    );
+    const soldListings = myListings.filter((a) => a.status === "sold");
+
+    // 2. Orders where user is the seller
+    const mySalesOrders = escrowOrders.filter(
+      (o) =>
+        String(o.sellerId || o.seller_id) === String(currentUserId)
+    );
+
+    const filteredOrders = mySalesOrders.filter((o) => {
+      const orderTs = o.created_at ? new Date(o.created_at).getTime() : now;
+      return orderTs >= cutoffTime;
+    });
+
+    const completedOrders = filteredOrders.filter(
+      (o) =>
+        o.status === "completed" ||
+        o.status === "released" ||
+        o.status === "payment_secured"
+    );
+
+    const revenueNum = completedOrders.reduce(
+      (sum, o) =>
+        sum +
+        (Number(o.amountZar) ||
+          Number(o.amount_zar) ||
+          Number(o.priceZar) ||
+          0),
+      0
+    );
+
+    // In Escrow (Active locked funds awaiting completion)
+    const inEscrowOrders = mySalesOrders.filter(
+      (o) =>
+        o.status === "held" ||
+        o.status === "funded" ||
+        o.status === "payment_secured" ||
+        o.status === "in_transit" ||
+        o.status === "in_inspection"
+    );
+    const inEscrowNum = inEscrowOrders.reduce(
+      (sum, o) =>
+        sum +
+        (Number(o.amountZar) ||
+          Number(o.amount_zar) ||
+          Number(o.priceZar) ||
+          0),
+      0
+    );
+
+    // 3. 6-Month Sales Volume Chart (Past 6 calendar months)
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const mYear = d.getFullYear();
+      const mIdx = d.getMonth();
+      const mName = d.toLocaleString("default", { month: "short" });
+
+      const monthRevenue = mySalesOrders
+        .filter((o) => {
+          if (!o.created_at) return false;
+          const od = new Date(o.created_at);
+          return (
+            od.getFullYear() === mYear &&
+            od.getMonth() === mIdx &&
+            (o.status === "completed" || o.status === "released")
+          );
+        })
+        .reduce((sum, o) => sum + (Number(o.amountZar) || 0), 0);
+
+      months.push({
+        name: mName,
+        value: monthRevenue,
+      });
     }
-    return [
-      {
-        id: 'm1',
-        title: 'Joined SmartAssets Network',
-        date: `${joinedDate.getDate()} ${joinedDate.toLocaleString('default', { month: 'short' })} ${joinedDate.getFullYear()}`,
-        desc: 'Account activated with decentralized vault & escrow custody',
-        icon: 'checkmark-circle',
-        completed: true,
-      },
-      {
-        id: 'm2',
-        title: 'Vault Liquidity Activated',
-        date: 'Verified',
-        desc: 'Initial cash reserve & bank rail linkage verified',
-        icon: 'wallet',
-        completed: true,
-      },
-      {
-        id: 'm3',
-        title: 'Asset Acquisition & Provenance Token',
-        date: 'Active',
-        desc: 'Authenticated luxury assets vaulted on-chain',
-        icon: 'shield-checkmark',
-        completed: true,
-      },
-      {
-        id: 'm4',
-        title: 'Prime Tier 1 Collector',
-        date: 'VIP Status',
-        desc: 'Zero-slippage peer escrow clearance and 96% health audit index',
-        icon: 'ribbon',
-        completed: true,
-      },
-    ];
-  }, [analyticsData, joinedDate]);
+
+    const maxMonthVal = Math.max(...months.map((m) => m.value), 1000);
+
+    return {
+      myListings,
+      verifiedListings,
+      awaitingReviewListings,
+      soldListings,
+      filteredOrders,
+      completedOrders,
+      revenueNum,
+      inEscrowNum,
+      inEscrowOrders,
+      months,
+      maxMonthVal,
+    };
+  }, [marketAssets, escrowOrders, user, sellingPeriod]);
 
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `SmartAssets Portfolio Analytics\nMember since: ${memberSinceFormatted}\nPortfolio Valuation: ${netWorthDisplay}\nAll-time Growth: ${growthRate} (${gainsDisplay})\nAudit Health Score: ${healthScore}/100`,
+        message: `SmartAssets Portfolio Intelligence\nNet Worth: ${formatZAR(
+          assetsMetrics.totalNetWorth
+        )}\nAssets Tracked: ${assetsMetrics.count}\nVault Liquidity: ${formatZAR(
+          assetsMetrics.cash
+        )}`,
       });
-    } catch (_e) {
-      // User cancelled share
-    }
-  };
-
-  const handleExportStatement = () => {
-    Alert.alert(
-      'Export Analytics Statement',
-      `Audit certificate and transaction statement generated for ${memberSinceFormatted} to present date.\n\nFile: SmartAssets_Portfolio_Audit_${joinedDate.getFullYear()}.pdf`,
-      [{ text: 'Done', style: 'default' }]
-    );
+    } catch (_e) {}
   };
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safe, { backgroundColor: ALIM.darkHeader }]}>
-      {/* ── Top Header Navigation ── */}
-      <View style={styles.navHeader}>
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
+      {/* ── Top App Bar ── */}
+      <View style={styles.topBar}>
         <TouchableOpacity
-          style={styles.navBackBtn}
+          style={styles.backBtn}
           onPress={() => navigation.goBack()}
           activeOpacity={0.8}
         >
-          <Feather name="chevron-left" size={22} color="#FFFFFF" />
+          <Feather name="chevron-left" size={24} color="#FFFFFF" />
         </TouchableOpacity>
-        <View style={styles.navTitleCenter}>
-          <Text style={styles.navTitle}>Profile Analytics</Text>
-          <Text style={styles.navSubtitle}>Performance Since Joining</Text>
+
+        <View style={styles.titleWrap}>
+          <Text style={styles.screenTitle}>SmartAssets Analytics</Text>
+          <Text style={styles.screenSubtitle}>
+            {activeTab === "assets"
+              ? "Net-Worth & Custody Breakdown"
+              : "Marketplace Sales & Escrow"}
+          </Text>
         </View>
+
         <TouchableOpacity
-          style={styles.navActionBtn}
+          style={styles.shareBtn}
           onPress={handleShare}
           activeOpacity={0.8}
         >
@@ -179,311 +438,627 @@ export default function ProfileAnalyticsScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Hero Profile & Member Since Card ── */}
-        <LinearGradient
-          colors={ALIM.darkHeaderGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.heroCard}
+      {/* ── Segmented Main Tabs: Assets vs Selling ── */}
+      <View style={styles.mainTabRow}>
+        <TouchableOpacity
+          style={[styles.mainTabBtn, activeTab === "assets" && styles.mainTabBtnActive]}
+          onPress={() => setActiveTab("assets")}
+          activeOpacity={0.85}
         >
-          <View style={styles.heroTopRow}>
-            <View style={styles.avatarWrapper}>
-              {user?.avatar_url || user?.avatarUrl ? (
-                <Image
-                  source={{ uri: user.avatar_url || user.avatarUrl }}
-                  style={styles.avatarImg}
-                />
-              ) : (
-                <View style={styles.avatarFallback}>
-                  <Feather name="user" size={24} color="#FFFFFF" />
-                </View>
-              )}
-              <View style={styles.avatarOnlineDot} />
-            </View>
+          <Feather
+            name="pie-chart"
+            size={14}
+            color={activeTab === "assets" ? "#FFFFFF" : "rgba(255,255,255,0.6)"}
+            style={{ marginRight: 6 }}
+          />
+          <Text
+            style={[
+              styles.mainTabText,
+              activeTab === "assets" && styles.mainTabTextActive,
+            ]}
+          >
+            Assets
+          </Text>
+        </TouchableOpacity>
 
-            <View style={{ flex: 1, marginLeft: 14 }}>
-              <View style={styles.nameRow}>
-                <Text style={styles.userName} numberOfLines={1}>
-                  {user?.fullName || user?.name || user?.email?.split('@')[0] || 'Member Collector'}
+        <TouchableOpacity
+          style={[styles.mainTabBtn, activeTab === "selling" && styles.mainTabBtnActive]}
+          onPress={() => setActiveTab("selling")}
+          activeOpacity={0.85}
+        >
+          <Feather
+            name="trending-up"
+            size={14}
+            color={activeTab === "selling" ? "#FFFFFF" : "rgba(255,255,255,0.6)"}
+            style={{ marginRight: 6 }}
+          />
+          <Text
+            style={[
+              styles.mainTabText,
+              activeTab === "selling" && styles.mainTabTextActive,
+            ]}
+          >
+            Selling
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color="#00C2FF" />
+          <Text style={styles.loadingText}>Syncing Vault & Market Intelligence...</Text>
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#00C2FF"
+            />
+          }
+        >
+          {/* ══════════════════════════════════════════════════════════════════
+              TAB 1: ASSETS VIEW (NET-WORTH FIRST)
+          ══════════════════════════════════════════════════════════════════ */}
+          {activeTab === "assets" && (
+            <View>
+              {/* 1. Hero Portfolio & Net-Worth Card */}
+              <LinearGradient
+                colors={["#7C3AED", "#5B36F5", "#2563EB", "#00C2FF"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0.9 }}
+                style={styles.heroCard}
+              >
+                <View style={styles.heroHeaderTag}>
+                  <Ionicons name="shield-checkmark" size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
+                  <Text style={styles.heroHeaderTagText}>TOTAL ESTIMATED NET WORTH</Text>
+                </View>
+
+                <Text style={styles.heroTotalValue}>
+                  {formatZAR(assetsMetrics.totalNetWorth)}
                 </Text>
-                <Ionicons name="checkmark-circle" size={16} color="#38BDF8" />
-              </View>
-              <Text style={styles.userEmail} numberOfLines={1}>
-                {user?.email || 'verified@smartassets.io'}
-              </Text>
-              <View style={styles.badgeRow}>
-                <View style={styles.tierPill}>
-                  <Ionicons name="sparkles" size={11} color="#FBBF24" />
-                  <Text style={styles.tierPillText}>PRIME COLLECTOR</Text>
-                </View>
-                <View style={styles.activePill}>
-                  <Text style={styles.activePillText}>⚡ {daysSinceJoined} DAYS ACTIVE</Text>
-                </View>
-              </View>
-            </View>
-          </View>
 
-          {/* Member Since Banner Bar */}
-          <View style={styles.joinedBanner}>
-            <View style={styles.joinedBannerLeft}>
-              <Feather name="calendar" size={14} color="#94A3B8" />
-              <Text style={styles.joinedBannerLabel}>Member Since</Text>
-            </View>
-            <Text style={styles.joinedBannerValue}>{memberSinceFormatted}</Text>
-          </View>
-        </LinearGradient>
-
-        {/* ── Executive Performance Grid ── */}
-        <View style={styles.statsGrid}>
-          {/* Card 1: Total Valuation */}
-          <View style={[styles.statTile]}>
-            <View style={styles.statTileTop}>
-              <Text style={styles.statTileLabel}>TOTAL PORTFOLIO</Text>
-              <View style={[styles.statIconBadge, { backgroundColor: '#EFF6FF' }]}>
-                <Feather name="briefcase" size={14} color="#2563EB" />
-              </View>
-            </View>
-            <Text style={styles.statTileMainValue}>{netWorthDisplay}</Text>
-            <View style={styles.statPillRow}>
-              <Ionicons name="trending-up" size={13} color="#10B981" />
-              <Text style={styles.statPositiveText}>{growthRate} Since Joined</Text>
-            </View>
-          </View>
-
-          {/* Card 2: Net Appreciation */}
-          <View style={[styles.statTile]}>
-            <View style={styles.statTileTop}>
-              <Text style={styles.statTileLabel}>NET CAPITAL GAIN</Text>
-              <View style={[styles.statIconBadge, { backgroundColor: '#ECFDF5' }]}>
-                <Feather name="trending-up" size={14} color="#10B981" />
-              </View>
-            </View>
-            <Text style={[styles.statTileMainValue, { color: '#FF2D55' }]}>
-              {gainsDisplay}
-            </Text>
-            <Text style={styles.statSubText}>Compound valuation gain</Text>
-          </View>
-
-          {/* Card 3: Health & Trust Score */}
-          <View style={[styles.statTile]}>
-            <View style={styles.statTileTop}>
-              <Text style={styles.statTileLabel}>VAULT HEALTH</Text>
-              <View style={[styles.statIconBadge, { backgroundColor: '#FEF3C7' }]}>
-                <Feather name="shield" size={14} color="#D97706" />
-              </View>
-            </View>
-            <Text style={styles.statTileMainValue}>{healthScore}/100</Text>
-            <View style={styles.statPillRow}>
-              <Ionicons name="shield-checkmark" size={12} color="#10B981" />
-              <Text style={styles.statPositiveText}>Grade A+ Optimal</Text>
-            </View>
-          </View>
-
-          {/* Card 4: Escrow & Trades */}
-          <View style={[styles.statTile]}>
-            <View style={styles.statTileTop}>
-              <Text style={styles.statTileLabel}>ESCROWS & TRADES</Text>
-              <View style={[styles.statIconBadge, { backgroundColor: '#F3E8FF' }]}>
-                <Feather name="repeat" size={14} color="#7C3AED" />
-              </View>
-            </View>
-            <Text style={styles.statTileMainValue}>
-              {analyticsData?.totalHoldingsCount ? `${analyticsData.totalHoldingsCount} Assets` : '4 Active'}
-            </Text>
-            <Text style={styles.statSubText}>100% On-chain custody</Text>
-          </View>
-        </View>
-
-        {/* ── Portfolio Growth Curve & Timeframe Filter ── */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={styles.sectionTitle}>Portfolio Growth</Text>
-              <Text style={styles.sectionSubtitle}>Valuation trajectory since inception</Text>
-            </View>
-            <View style={styles.growthBadge}>
-              <Text style={styles.growthBadgeText}>{growthRate}</Text>
-            </View>
-          </View>
-
-          {/* Timeframe selector */}
-          <View style={styles.timeframeRow}>
-            {TIMEFRAMES.map((tf) => {
-              const active = selectedTimeframe === tf;
-              return (
-                <TouchableOpacity
-                  key={tf}
-                  style={[styles.timeframePill, active && styles.timeframePillActive]}
-                  onPress={() => setSelectedTimeframe(tf)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.timeframeText, active && styles.timeframeTextActive]}>
-                    {tf}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Monthly Growth Chart Bars */}
-          <View style={styles.chartContainer}>
-            <View style={styles.chartBarsRow}>
-              {timelineData.map((item, idx) => {
-                const heightVal = Math.max(30, (item.heightPct || 40 + idx * 14));
-                const isLatest = idx === timelineData.length - 1;
-                return (
-                  <View key={item.month + idx} style={styles.chartCol}>
-                    <Text style={styles.chartValTooltip}>{item.valueFormatted}</Text>
-                    <View style={styles.barTrack}>
-                      <LinearGradient
-                        colors={isLatest ? ['#FF9500', '#EA580C'] : ['rgba(255,255,255,0.15)', 'rgba(255,255,255,0.05)']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 0, y: 1 }}
-                        style={[styles.barFill, { height: `${heightVal}%` }]}
-                      />
-                    </View>
-                    <Text style={[styles.barMonthLabel, isLatest && styles.barMonthLabelActive]}>
-                      {item.month}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        </View>
-
-        {/* ── Asset Allocation Breakdown ── */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={styles.sectionTitle}>Asset Allocation</Text>
-              <Text style={styles.sectionSubtitle}>Vault distribution across luxury categories</Text>
-            </View>
-            <Feather name="pie-chart" size={18} color="#9333EA" />
-          </View>
-
-          {categories.length === 0 ? (
-            <View style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 13, color: '#64748B', fontWeight: '600' }}>
-                No active vaulted assets yet
-              </Text>
-              <Text style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 4, textAlign: 'center' }}>
-                Asset categories populate automatically as you acquire luxury items.
-              </Text>
-            </View>
-          ) : (
-            categories.map((cat, idx) => {
-              const colors = ['#FF2D55', '#9333EA', '#FF9500', '#FF2D55'];
-              const barColor = cat.color || colors[idx % colors.length];
-              return (
-                <View key={cat.category + idx} style={styles.categoryRow}>
-                  <View style={styles.categoryMetaRow}>
-                    <View style={styles.categoryLabelGroup}>
-                      <View style={[styles.categoryBullet, { backgroundColor: barColor }]} />
-                      <Text style={styles.categoryName}>{cat.category}</Text>
-                    </View>
-                    <View style={styles.categoryValGroup}>
-                      <Text style={styles.categoryValText}>{cat.valueFormatted}</Text>
-                      <Text style={styles.categoryPctText}>{cat.percentage}%</Text>
-                    </View>
-                  </View>
-                  <View style={styles.categoryProgressTrack}>
+                {/* Change since added: ONLY shown if non-zero change stored */}
+                {assetsMetrics.hasNonZeroChange && (
+                  <View style={styles.changeBadgeRow}>
                     <View
                       style={[
-                        styles.categoryProgressFill,
-                        { width: `${cat.percentage}%`, backgroundColor: barColor },
+                        styles.changePill,
+                        assetsMetrics.netChangeNum >= 0
+                          ? styles.changePillPositive
+                          : styles.changePillNegative,
                       ]}
-                    />
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </View>
-
-        {/* ── Milestones Since Joining (Chronological Journey) ── */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={styles.sectionTitle}>Collector Journey</Text>
-              <Text style={styles.sectionSubtitle}>Milestones achieved since joining</Text>
-            </View>
-            <Feather name="award" size={18} color="#D97706" />
-          </View>
-
-          <View style={styles.timelineList}>
-            {milestones.map((ms, index) => {
-              const isLast = index === milestones.length - 1;
-              return (
-                <View key={ms.id || index} style={styles.timelineItem}>
-                  <View style={styles.timelineLeftCol}>
-                    <View style={styles.timelineDot}>
-                      <Ionicons
-                        name={ms.icon || 'checkmark-circle'}
-                        size={16}
-                        color="#2563EB"
+                    >
+                      <Feather
+                        name={assetsMetrics.netChangeNum >= 0 ? "trending-up" : "trending-down"}
+                        size={12}
+                        color="#FFFFFF"
+                        style={{ marginRight: 4 }}
                       />
+                      <Text style={styles.changePillText}>
+                        {assetsMetrics.netChangeNum >= 0 ? "+" : ""}
+                        {formatZAR(assetsMetrics.netChangeNum)} ({assetsMetrics.netChangePct}%) since added
+                      </Text>
                     </View>
-                    {!isLast && <View style={styles.timelineLine} />}
                   </View>
-                  <View style={styles.timelineContent}>
-                    <View style={styles.timelineTitleRow}>
-                      <Text style={styles.timelineTitle}>{ms.title}</Text>
-                      <Text style={styles.timelineDate}>{ms.date}</Text>
-                    </View>
-                    <Text style={styles.timelineDesc}>{ms.desc}</Text>
+                )}
+
+                {/* Sub-Metrics 3-Column Strip */}
+                <View style={styles.subMetricsStrip}>
+                  <View style={styles.subMetricCol}>
+                    <Text style={styles.subMetricLabel}>Asset Count</Text>
+                    <Text style={styles.subMetricVal}>
+                      {assetsMetrics.count} {assetsMetrics.count === 1 ? "Item" : "Items"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.subMetricDivider} />
+
+                  <View style={styles.subMetricCol}>
+                    <Text style={styles.subMetricLabel}>Average Value</Text>
+                    <Text style={styles.subMetricVal}>
+                      {formatZAR(assetsMetrics.avgValue)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.subMetricDivider} />
+
+                  <View style={styles.subMetricCol}>
+                    <Text style={styles.subMetricLabel}>Vault Cash</Text>
+                    <Text style={styles.subMetricVal}>
+                      {formatZAR(assetsMetrics.cash)}
+                    </Text>
                   </View>
                 </View>
-              );
-            })}
-          </View>
-        </View>
 
-        {/* ── Action Buttons ── */}
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity
-            style={styles.primaryActionBtn}
-            onPress={handleExportStatement}
-            activeOpacity={0.88}
-          >
-            <LinearGradient
-              colors={['#3666DD', '#2563EB']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.primaryActionGradient}
-            >
-              <Feather name="download" size={16} color="#FFFFFF" />
-              <Text style={styles.primaryActionText}>Export Analytics Report</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+                {/* Plain breakdown line for cash vs assets */}
+                {assetsMetrics.totalNetWorth > 0 && (
+                  <View style={styles.cashVsAssetsRow}>
+                    <Text style={styles.cashVsAssetsText}>
+                      {assetsMetrics.cashPct}% cash, {assetsMetrics.assetsPct}% assets
+                    </Text>
+                  </View>
+                )}
+              </LinearGradient>
 
-          <View style={styles.secondaryButtonsRow}>
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={() => navigation.navigate(SCREENS.VAULT)}
-              activeOpacity={0.8}
-            >
-              <Feather name="shield" size={15} color="#333D9B" />
-              <Text style={styles.secondaryBtnText}>View Vault</Text>
-            </TouchableOpacity>
+              {/* 2. Concentration Warning Alert (50%+ of assets across multiple items only) */}
+              {assetsMetrics.isConcentrated && assetsMetrics.topAsset && (
+                <View style={styles.concentrationAlertBox}>
+                  <View style={styles.alertIconWrap}>
+                    <Ionicons name="warning" size={20} color="#F59E0B" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.concentrationTitle}>High Concentration Notice</Text>
+                    <Text style={styles.concentrationDesc}>
+                      "{assetsMetrics.topAsset.name}" represents {assetsMetrics.topAsset.shareOfAssets}% of your assets.
+                    </Text>
+                  </View>
+                </View>
+              )}
 
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={() => navigation.navigate(SCREENS.PROFILE)}
-              activeOpacity={0.8}
-            >
-              <Feather name="user" size={15} color="#333D9B" />
-              <Text style={styles.secondaryBtnText}>Profile Settings</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+              {/* 3. Category Allocation */}
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>Asset Allocation</Text>
+                  <Text style={styles.sectionSubtitle}>By Category</Text>
+                </View>
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
+                {assetsMetrics.categories.length === 0 ? (
+                  <View style={styles.emptyBox}>
+                    <Feather name="inbox" size={24} color="#64748B" />
+                    <Text style={styles.emptyBoxText}>No asset holdings in vault yet</Text>
+                  </View>
+                ) : (
+                  <View>
+                    {/* Horizontal Proportional Stacked Bar */}
+                    <View style={styles.stackedBar}>
+                      {assetsMetrics.categories.map((cat, idx) => (
+                        <View
+                          key={cat.category}
+                          style={[
+                            styles.stackedBarSegment,
+                            {
+                              backgroundColor: cat.color,
+                              flex: Math.max(cat.percentage, 3),
+                              borderTopLeftRadius: idx === 0 ? 8 : 0,
+                              borderBottomLeftRadius: idx === 0 ? 8 : 0,
+                              borderTopRightRadius:
+                                idx === assetsMetrics.categories.length - 1 ? 8 : 0,
+                              borderBottomRightRadius:
+                                idx === assetsMetrics.categories.length - 1 ? 8 : 0,
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
+
+                    {/* Legend */}
+                    <View style={styles.categoryLegendList}>
+                      {assetsMetrics.categories.map((cat) => (
+                        <View key={cat.category} style={styles.categoryLegendItem}>
+                          <View style={styles.legendLeft}>
+                            <View style={[styles.legendDot, { backgroundColor: cat.color }]} />
+                            <Text style={styles.legendCategoryName}>{cat.category}</Text>
+                            <Text style={styles.legendCountText}>({cat.count})</Text>
+                          </View>
+                          <View style={styles.legendRight}>
+                            <Text style={styles.legendValueText}>
+                              {formatZAR(cat.totalValue)}
+                            </Text>
+                            <View style={styles.legendPctPill}>
+                              <Text style={styles.legendPctText}>{cat.percentage}%</Text>
+                            </View>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              {/* 4. Most Valuable Assets (Top 5) */}
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>Most Valuable Assets</Text>
+                  <Text style={styles.sectionSubtitle}>Top Holdings</Text>
+                </View>
+
+                {assetsMetrics.sortedAssets.length === 0 ? (
+                  <View style={styles.emptyBox}>
+                    <Feather name="layers" size={24} color="#64748B" />
+                    <Text style={styles.emptyBoxText}>No assets logged</Text>
+                  </View>
+                ) : (
+                  assetsMetrics.sortedAssets.map((asset, index) => (
+                    <View key={asset.id || index} style={styles.topAssetRow}>
+                      <View style={styles.rankBadge}>
+                        <Text style={styles.rankBadgeText}>#{index + 1}</Text>
+                      </View>
+
+                      {asset.image ? (
+                        <Image
+                          source={{ uri: resolveImageUrl(asset.image) }}
+                          style={styles.topAssetImg}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.topAssetImgFallback}>
+                          <Ionicons name="cube-outline" size={20} color="#94A3B8" />
+                        </View>
+                      )}
+
+                      <View style={{ flex: 1, marginHorizontal: 12 }}>
+                        <Text style={styles.topAssetName} numberOfLines={1}>
+                          {asset.name}
+                        </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 3 }}>
+                          <Text style={styles.topAssetCategory}>{asset.category}</Text>
+                          {asset.certId && (
+                            <View style={styles.certPill}>
+                              <Ionicons name="shield-checkmark" size={10} color="#10B981" />
+                              <Text style={styles.certPillText}>Verified</Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text style={styles.topAssetPrice}>{formatZAR(asset.val)}</Text>
+                        <View style={styles.shareOfPortPill}>
+                          <Text style={styles.shareOfPortText}>{asset.shareOfAssets}% of assets</Text>
+                        </View>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+
+              {/* 5. Performance: Best & Lowest Performer (Only if data exists) */}
+              {assetsMetrics.bestPerformer && (
+                <View style={styles.performanceGrid}>
+                  <View style={[styles.perfCard, { borderColor: "rgba(16, 185, 129, 0.3)" }]}>
+                    <View style={styles.perfHeader}>
+                      <Feather name="arrow-up-right" size={16} color="#10B981" />
+                      <Text style={[styles.perfTitle, { color: "#10B981" }]}>Best Performer</Text>
+                    </View>
+                    <Text style={styles.perfName} numberOfLines={1}>
+                      {assetsMetrics.bestPerformer.name}
+                    </Text>
+                    <Text style={styles.perfGainText}>
+                      +{assetsMetrics.bestPerformer.pct.toFixed(1)}% (+{formatZAR(assetsMetrics.bestPerformer.diff)})
+                    </Text>
+                  </View>
+
+                  {assetsMetrics.lowestPerformer && assetsMetrics.lowestPerformer.id !== assetsMetrics.bestPerformer.id && (
+                    <View style={[styles.perfCard, { borderColor: "rgba(244, 63, 94, 0.3)" }]}>
+                      <View style={styles.perfHeader}>
+                        <Feather name="arrow-down-right" size={16} color="#F43F5E" />
+                        <Text style={[styles.perfTitle, { color: "#F43F5E" }]}>Lowest Performer</Text>
+                      </View>
+                      <Text style={styles.perfName} numberOfLines={1}>
+                        {assetsMetrics.lowestPerformer.name}
+                      </Text>
+                      <Text style={[styles.perfGainText, { color: "#F43F5E" }]}>
+                        {assetsMetrics.lowestPerformer.pct.toFixed(1)}% ({formatZAR(assetsMetrics.lowestPerformer.diff)})
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* 6. How You Own Them: Outright vs Fractional */}
+              <View style={styles.sectionCard}>
+                <Text style={styles.sectionTitle}>Ownership Structure</Text>
+                <View style={styles.ownershipRow}>
+                  <View style={styles.ownershipCard}>
+                    <View style={styles.ownershipIconWrap}>
+                      <Ionicons name="key" size={16} color="#00C2FF" />
+                    </View>
+                    <Text style={styles.ownershipType}>Outright (100%)</Text>
+                    <Text style={styles.ownershipValue}>{formatZAR(assetsMetrics.outrightValue)}</Text>
+                    <Text style={styles.ownershipCount}>
+                      {assetsMetrics.outrightHoldings.length} {assetsMetrics.outrightHoldings.length === 1 ? "Asset" : "Assets"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.ownershipCard}>
+                    <View style={[styles.ownershipIconWrap, { backgroundColor: "rgba(139, 92, 246, 0.15)" }]}>
+                      <Ionicons name="pie-chart" size={16} color="#8B5CF6" />
+                    </View>
+                    <Text style={styles.ownershipType}>Fractional Co-Owned</Text>
+                    <Text style={styles.ownershipValue}>{formatZAR(assetsMetrics.fractionalValue)}</Text>
+                    <Text style={styles.ownershipCount}>
+                      {assetsMetrics.fractionalHoldings.length} {assetsMetrics.fractionalHoldings.length === 1 ? "Stake" : "Stakes"}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* 7. Recent Cash & Ledger Activity */}
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>Recent Cash Activity</Text>
+                  <Text style={styles.sectionSubtitle}>Vault Ledger</Text>
+                </View>
+
+                {transactions.length === 0 ? (
+                  <View style={styles.emptyBox}>
+                    <Feather name="clock" size={24} color="#64748B" />
+                    <Text style={styles.emptyBoxText}>No transactions or cash activity logged yet</Text>
+                  </View>
+                ) : (
+                  transactions.slice(0, 4).map((tx, idx) => {
+                    const isPos = tx.positive || tx.type === "deposit" || tx.type === "sale";
+                    const isPurchase = tx.type === "purchase";
+                    return (
+                      <View key={tx.id || idx} style={styles.txRow}>
+                        <View
+                          style={[
+                            styles.txIconWrap,
+                            isPos
+                              ? styles.txIconDeposit
+                              : isPurchase
+                              ? { backgroundColor: "rgba(139, 92, 246, 0.15)" }
+                              : styles.txIconWithdraw,
+                          ]}
+                        >
+                          <Feather
+                            name={
+                              isPos
+                                ? "arrow-down-left"
+                                : isPurchase
+                                ? "shopping-bag"
+                                : "arrow-up-right"
+                            }
+                            size={14}
+                            color={isPos ? "#10B981" : isPurchase ? "#A78BFA" : "#F43F5E"}
+                          />
+                        </View>
+                        <View style={{ flex: 1, marginHorizontal: 12 }}>
+                          <Text style={styles.txDescText} numberOfLines={1}>
+                            {tx.notes || tx.title || (isPos ? "Sale Proceeds / Deposit" : "Marketplace Purchase")}
+                          </Text>
+                          <Text style={styles.txDateText}>
+                            {tx.createdAt
+                              ? new Date(tx.createdAt).toLocaleDateString("en-ZA", {
+                                  day: "numeric",
+                                  month: "short",
+                                })
+                              : "Recent"}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            styles.txAmountText,
+                            { color: isPos ? "#10B981" : "#FFFFFF" },
+                          ]}
+                        >
+                          {isPos ? "+" : "-"}
+                          {formatZAR(tx.amount)}
+                        </Text>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════════
+              TAB 2: SELLING VIEW (MARKETPLACE & ESCROW)
+          ══════════════════════════════════════════════════════════════════ */}
+          {activeTab === "selling" && (
+            <View>
+              {/* Period Selector Pills */}
+              <View style={styles.periodPillRow}>
+                {SELLING_PERIODS.map((period) => (
+                  <TouchableOpacity
+                    key={period.id}
+                    style={[
+                      styles.periodPill,
+                      sellingPeriod === period.id && styles.periodPillActive,
+                    ]}
+                    onPress={() => setSellingPeriod(period.id)}
+                    activeOpacity={0.8}
+                  >
+                    <Text
+                      style={[
+                        styles.periodPillText,
+                        sellingPeriod === period.id && styles.periodPillTextActive,
+                      ]}
+                    >
+                      {period.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* 3 Summary Metric Cards */}
+              <View style={styles.summaryGrid}>
+                <View style={styles.metricCard}>
+                  <View style={styles.metricCardHeader}>
+                    <Feather name="dollar-sign" size={14} color="#10B981" />
+                    <Text style={styles.metricCardLabel}>Revenue</Text>
+                  </View>
+                  <Text style={styles.metricCardVal}>
+                    {formatZAR(sellingMetrics.revenueNum)}
+                  </Text>
+                  <Text style={styles.metricCardSub}>Completed sales</Text>
+                </View>
+
+                <View style={styles.metricCard}>
+                  <View style={styles.metricCardHeader}>
+                    <Feather name="check-circle" size={14} color="#00C2FF" />
+                    <Text style={styles.metricCardLabel}>Orders</Text>
+                  </View>
+                  <Text style={styles.metricCardVal}>
+                    {sellingMetrics.completedOrders.length}
+                  </Text>
+                  <Text style={styles.metricCardSub}>Delivered & paid</Text>
+                </View>
+
+                <View style={styles.metricCard}>
+                  <View style={styles.metricCardHeader}>
+                    <Ionicons name="lock-closed" size={14} color="#F59E0B" />
+                    <Text style={styles.metricCardLabel}>In Escrow</Text>
+                  </View>
+                  <Text style={styles.metricCardVal}>
+                    {formatZAR(sellingMetrics.inEscrowNum)}
+                  </Text>
+                  <Text style={styles.metricCardSub}>Locked in settlement</Text>
+                </View>
+              </View>
+
+              {/* 6-Month Sales Volume Chart */}
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>Sales Volume</Text>
+                  <Text style={styles.sectionSubtitle}>Past 6 Months</Text>
+                </View>
+
+                <View style={styles.barChartContainer}>
+                  {sellingMetrics.months.map((m, idx) => {
+                    const heightPct = Math.max(
+                      8,
+                      Math.round((m.value / sellingMetrics.maxMonthVal) * 100)
+                    );
+                    return (
+                      <View key={idx} style={styles.barCol}>
+                        <Text style={styles.barValText}>
+                          {m.value > 0 ? formatZAR(m.value).replace("R", "") : ""}
+                        </Text>
+                        <View style={styles.barTrack}>
+                          <LinearGradient
+                            colors={m.value > 0 ? ["#00C2FF", "#5B36F5"] : ["#334155", "#1E293B"]}
+                            style={[styles.barFill, { height: `${heightPct}%` }]}
+                          />
+                        </View>
+                        <Text style={styles.barMonthLabel}>{m.name}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Your Marketplace Listings */}
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>Your Listings Status</Text>
+                  <Text style={styles.sectionSubtitle}>{sellingMetrics.myListings.length} Total</Text>
+                </View>
+
+                <View style={styles.listingStatRow}>
+                  <View style={styles.listingStatPill}>
+                    <View style={[styles.statDot, { backgroundColor: "#10B981" }]} />
+                    <Text style={styles.listingStatText}>
+                      {sellingMetrics.verifiedListings.length} Active / Verified
+                    </Text>
+                  </View>
+
+                  <View style={styles.listingStatPill}>
+                    <View style={[styles.statDot, { backgroundColor: "#F59E0B" }]} />
+                    <Text style={styles.listingStatText}>
+                      {sellingMetrics.awaitingReviewListings.length} In Review
+                    </Text>
+                  </View>
+
+                  <View style={styles.listingStatPill}>
+                    <View style={[styles.statDot, { backgroundColor: "#8B5CF6" }]} />
+                    <Text style={styles.listingStatText}>
+                      {sellingMetrics.soldListings.length} Sold Outright
+                    </Text>
+                  </View>
+                </View>
+
+                {sellingMetrics.myListings.length === 0 ? (
+                  <View style={styles.emptyBox}>
+                    <Feather name="shopping-bag" size={24} color="#64748B" />
+                    <Text style={styles.emptyBoxText}>
+                      You haven't listed any assets on the marketplace yet
+                    </Text>
+                  </View>
+                ) : (
+                  sellingMetrics.myListings.slice(0, 5).map((listing, idx) => {
+                    const isFractional = listing.allow_investment || (listing.shares && listing.shares > 1);
+                    const sharesSold = listing.shares_sold || 0;
+                    const totalShares = listing.shares || 100;
+                    const sharesPct = Math.round((sharesSold / totalShares) * 100);
+
+                    return (
+                      <View key={listing.id || idx} style={styles.listingCard}>
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          {listing.image ? (
+                            <Image
+                              source={{ uri: resolveImageUrl(listing.image) }}
+                              style={styles.listingThumb}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.listingThumbFallback}>
+                              <Feather name="box" size={16} color="#94A3B8" />
+                            </View>
+                          )}
+
+                          <View style={{ flex: 1, marginLeft: 12 }}>
+                            <Text style={styles.listingName} numberOfLines={1}>
+                              {listing.name}
+                            </Text>
+                            <Text style={styles.listingPrice}>{formatZAR(listing.price)}</Text>
+                          </View>
+
+                          <View
+                            style={[
+                              styles.listingStatusPill,
+                              listing.status === "sold"
+                                ? styles.statusSold
+                                : listing.status === "active"
+                                ? styles.statusActive
+                                : styles.statusPending,
+                            ]}
+                          >
+                            <Text style={styles.listingStatusText}>
+                              {listing.status === "sold"
+                                ? "Sold"
+                                : listing.status === "active"
+                                ? "Active"
+                                : "Review"}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Fractional Shares Sold Progress Bar */}
+                        {isFractional && listing.status !== "sold" && (
+                          <View style={styles.fractionalProgressWrap}>
+                            <View style={styles.fractionalProgressHeader}>
+                              <Text style={styles.fractionalProgressLabel}>
+                                Fractional Shares Sold
+                              </Text>
+                              <Text style={styles.fractionalProgressVal}>
+                                {sharesSold} / {totalShares} ({sharesPct}%)
+                              </Text>
+                            </View>
+                            <View style={styles.progressBarTrack}>
+                              <View
+                                style={[
+                                  styles.progressBarFill,
+                                  { width: `${Math.min(sharesPct, 100)}%` },
+                                ]}
+                              />
+                            </View>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+            </View>
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -491,485 +1066,717 @@ export default function ProfileAnalyticsScreen({ navigation }) {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
+    backgroundColor: "#070A12",
   },
-  navHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
   },
-  navBackBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  backBtn: {
+    padding: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
   },
-  navTitleCenter: {
-    alignItems: 'center',
+  titleWrap: {
+    alignItems: "center",
   },
-  navTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: -0.2,
+  screenTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
-  navSubtitle: {
-    fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginTop: 1,
-  },
-  navActionBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scrollContent: {
-    paddingHorizontal: 18,
-    paddingTop: 4,
-  },
-  heroCard: {
-    borderRadius: 22,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.16)',
-    marginBottom: 16,
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatarWrapper: {
-    position: 'relative',
-  },
-  avatarImg: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  avatarFallback: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: '#3666DD',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  avatarOnlineDot: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 13,
-    height: 13,
-    borderRadius: 7,
-    backgroundColor: '#10B981',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  userName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: -0.3,
-  },
-  userEmail: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.75)',
+  screenSubtitle: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.6)",
     marginTop: 2,
   },
-  badgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
+  shareBtn: {
+    padding: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
   },
-  tierPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(251, 191, 36, 0.18)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  tierPillText: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#FBBF24',
-    letterSpacing: 0.3,
-  },
-  activePill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  activePillText: {
-    fontSize: 9.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.2,
-  },
-  joinedBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 255, 255, 0.10)',
+
+  // Main Tabs
+  mainTabRow: {
+    flexDirection: "row",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 6,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    padding: 4,
   },
-  joinedBannerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
+  mainTabBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    borderRadius: 10,
   },
-  joinedBannerLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#CBD5E1',
+  mainTabBtnActive: {
+    backgroundColor: "#5B36F5",
+    shadowColor: "#5B36F5",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  joinedBannerValue: {
+  mainTabText: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.6)",
   },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+  mainTabTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+
+  loadingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+  },
+  loadingText: {
+    color: "#94A3B8",
+    fontSize: 13,
+    marginTop: 12,
+  },
+
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 40,
+  },
+
+  // Hero Card
+  heroCard: {
+    borderRadius: 20,
+    padding: 20,
     marginBottom: 16,
+    shadowColor: "#5B36F5",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  statTile: {
-    width: (SCREEN_WIDTH - 18 * 2 - 12) / 2,
-    borderRadius: 18,
-    padding: 14,
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  statTileTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  heroHeaderTag: {
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 6,
   },
-  statTileLabel: {
-    fontSize: 9.5,
-    fontWeight: '700',
-    color: '#64748B',
-    letterSpacing: 0.4,
-  },
-  statIconBadge: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statTileMainValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.4,
-  },
-  statPillRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  statPositiveText: {
+  heroHeaderTagText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#10B981',
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 0.8,
   },
-  statSubText: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: '#94A3B8',
-    marginTop: 4,
+  heroTotalValue: {
+    fontSize: 34,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    marginVertical: 4,
   },
-  sectionCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 16,
+  changeBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 6,
+  },
+  changePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+  },
+  changePillPositive: {
+    backgroundColor: "rgba(16, 185, 129, 0.3)",
+  },
+  changePillNegative: {
+    backgroundColor: "rgba(239, 68, 68, 0.3)",
+  },
+  changePillText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  subMetricsStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(0, 0, 0, 0.25)",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 14,
+  },
+  subMetricCol: {
+    flex: 1,
+    alignItems: "center",
+  },
+  subMetricLabel: {
+    fontSize: 10,
+    color: "rgba(255, 255, 255, 0.75)",
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  subMetricVal: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  subMetricDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  cashVsAssetsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.12)",
+  },
+  cashVsAssetsText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.85)",
+    letterSpacing: 0.3,
+  },
+
+  // Concentration Alert
+  concentrationAlertBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "rgba(245, 158, 11, 0.12)",
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
+    borderColor: "rgba(245, 158, 11, 0.35)",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  alertIconWrap: {
+    marginRight: 10,
+    marginTop: 2,
+  },
+  concentrationTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#F59E0B",
+    marginBottom: 2,
+  },
+  concentrationDesc: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.8)",
+    lineHeight: 17,
+  },
+
+  // General Section Card
+  sectionCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    padding: 16,
+    marginBottom: 16,
   },
   sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
     marginBottom: 14,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: -0.2,
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   sectionSubtitle: {
-    fontSize: 11.5,
-    color: '#64748B',
-    marginTop: 2,
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.5)",
   },
-  growthBadge: {
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+
+  // Stacked Bar
+  stackedBar: {
+    flexDirection: "row",
+    height: 12,
     borderRadius: 8,
-  },
-  growthBadgeText: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: '#059669',
-  },
-  timeframeRow: {
-    flexDirection: 'row',
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
-    padding: 3,
-    marginBottom: 16,
-  },
-  timeframePill: {
-    flex: 1,
-    paddingVertical: 6,
-    alignItems: 'center',
-    borderRadius: 9,
-  },
-  timeframePillActive: {
-    backgroundColor: '#9333EA',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  timeframeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  timeframeTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  chartContainer: {
-    height: 140,
-    justifyContent: 'flex-end',
-    paddingTop: 10,
-  },
-  chartBarsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'flex-end',
-    height: '100%',
-  },
-  chartCol: {
-    alignItems: 'center',
-    height: '100%',
-    justifyContent: 'flex-end',
-    flex: 1,
-  },
-  chartValTooltip: {
-    fontSize: 9.5,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 4,
-  },
-  barTrack: {
-    width: 22,
-    height: 85,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 11,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  barFill: {
-    width: '100%',
-    borderRadius: 11,
-  },
-  barMonthLabel: {
-    fontSize: 10.5,
-    fontWeight: '600',
-    color: '#94A3B8',
-    marginTop: 6,
-  },
-  barMonthLabelActive: {
-    color: '#2563EB',
-    fontWeight: '800',
-  },
-  categoryRow: {
+    overflow: "hidden",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     marginBottom: 14,
   },
-  categoryMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
+  stackedBarSegment: {
+    height: "100%",
   },
-  categoryLabelGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  categoryLegendList: {
+    gap: 10,
   },
-  categoryBullet: {
+  categoryLegendItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  legendLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  legendDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
+    marginRight: 8,
   },
-  categoryName: { fontSize: 13, fontWeight: '700', color: '#FFFFFF',
-  },
-  categoryValGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  categoryValText: { fontSize: 13, fontWeight: '700', color: '#FFFFFF',
-  },
-  categoryPctText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  categoryProgressTrack: {
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  categoryProgressFill: {
-    height: '100%',
-    borderRadius: 999,
-  },
-  timelineList: {
-    paddingLeft: 4,
-    marginTop: 4,
-  },
-  timelineItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  timelineLeftCol: {
-    alignItems: 'center',
-    width: 28,
-  },
-  timelineDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  timelineLine: {
-    width: 2,
-    height: 42,
-    backgroundColor: '#E2E8F0',
-    marginVertical: 2,
-  },
-  timelineContent: {
-    flex: 1,
-    paddingLeft: 10,
-    paddingBottom: 16,
-  },
-  timelineTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  timelineTitle: {
+  legendCategoryName: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
-  timelineDate: {
-    fontSize: 10.5,
-    fontWeight: '600',
-    color: '#3666DD',
+  legendCountText: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.5)",
+    marginLeft: 4,
   },
-  timelineDesc: {
-    fontSize: 11.5,
-    color: '#64748B',
+  legendRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  legendValueText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginRight: 8,
+  },
+  legendPctPill: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+  },
+  legendPctText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#00C2FF",
+  },
+
+  // Top Assets List
+  topAssetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.06)",
+  },
+  rankBadge: {
+    width: 22,
+    alignItems: "center",
+  },
+  rankBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.4)",
+  },
+  topAssetImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: "#1E293B",
+  },
+  topAssetImgFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: "#1E293B",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  topAssetName: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  topAssetCategory: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.5)",
+  },
+  certPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    paddingVertical: 1,
+    paddingHorizontal: 5,
+    borderRadius: 4,
+    marginLeft: 6,
+  },
+  certPillText: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#10B981",
+    marginLeft: 3,
+  },
+  topAssetPrice: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  shareOfPortPill: {
+    backgroundColor: "rgba(0, 194, 255, 0.12)",
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
     marginTop: 2,
-    lineHeight: 16,
   },
-  actionButtonsContainer: {
+  shareOfPortText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#00C2FF",
+  },
+
+  // Performance Cards
+  performanceGrid: {
+    flexDirection: "row",
     gap: 12,
-    marginTop: 4,
+    marginBottom: 16,
   },
-  primaryActionBtn: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  primaryActionGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    gap: 8,
-  },
-  primaryActionText: {
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: -0.2,
-  },
-  secondaryButtonsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  secondaryBtn: {
+  perfCard: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+  },
+  perfHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  perfTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    marginLeft: 4,
+  },
+  perfName: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginBottom: 4,
+  },
+  perfGainText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#10B981",
+  },
+
+  // Ownership Breakdown
+  ownershipRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 10,
+  },
+  ownershipCard: {
+    flex: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+  },
+  ownershipIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "rgba(0, 194, 255, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  ownershipType: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.6)",
+    fontWeight: "600",
+  },
+  ownershipValue: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  ownershipCount: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.4)",
+  },
+
+  // Transactions
+  txRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.06)",
+  },
+  txIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  txIconDeposit: {
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+  },
+  txIconWithdraw: {
+    backgroundColor: "rgba(244, 63, 94, 0.15)",
+  },
+  txDescText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  txDateText: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.45)",
+    marginTop: 1,
+  },
+  txAmountText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TAB 2: SELLING STYLES
+  // ══════════════════════════════════════════════════════════════════════════
+  periodPillRow: {
+    flexDirection: "row",
     gap: 8,
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  periodPill: {
+    flex: 1,
+    paddingVertical: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  periodPillActive: {
+    backgroundColor: "#00C2FF",
+    borderColor: "#00C2FF",
+  },
+  periodPillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.6)",
+  },
+  periodPillTextActive: {
+    color: "#070A12",
+    fontWeight: "700",
+  },
+
+  summaryGrid: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 16,
+  },
+  metricCard: {
+    flex: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  metricCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  metricCardLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.6)",
+    marginLeft: 4,
+  },
+  metricCardVal: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  metricCardSub: {
+    fontSize: 10,
+    color: "rgba(255, 255, 255, 0.4)",
+    marginTop: 2,
+  },
+
+  // 6-Month Chart
+  barChartContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    height: 120,
+    paddingTop: 10,
+  },
+  barCol: {
+    flex: 1,
+    alignItems: "center",
+    height: "100%",
+    justifyContent: "flex-end",
+  },
+  barValText: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#00C2FF",
+    marginBottom: 4,
+  },
+  barTrack: {
+    width: 14,
+    height: 80,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 7,
+    overflow: "hidden",
+    justifyContent: "flex-end",
+  },
+  barFill: {
+    width: "100%",
+    borderRadius: 7,
+  },
+  barMonthLabel: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.5)",
+    marginTop: 6,
+  },
+
+  // Listings Breakdown
+  listingStatRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 14,
+  },
+  listingStatPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+    borderRadius: 8,
+  },
+  statDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  listingStatText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+
+  listingCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    padding: 12,
+    marginBottom: 10,
   },
-  secondaryBtnText: {
+  listingThumb: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "#1E293B",
+  },
+  listingThumbFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "#1E293B",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  listingName: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#333D9B',
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  listingPrice: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#00C2FF",
+    marginTop: 1,
+  },
+  listingStatusPill: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  statusActive: {
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+  },
+  statusPending: {
+    backgroundColor: "rgba(245, 158, 11, 0.15)",
+  },
+  statusSold: {
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
+  },
+  listingStatusText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  fractionalProgressWrap: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
+  },
+  fractionalProgressHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  fractionalProgressLabel: {
+    fontSize: 10,
+    color: "rgba(255, 255, 255, 0.5)",
+  },
+  fractionalProgressVal: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#00C2FF",
+  },
+  progressBarTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: "100%",
+    backgroundColor: "#00C2FF",
+    borderRadius: 3,
+  },
+
+  // Empty State Box
+  emptyBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 24,
+  },
+  emptyBoxText: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 8,
   },
 });

@@ -18,17 +18,53 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { OfflineBanner } from "../context/NetworkContext";
 import {
   getUserProfileApi,
   updateUserProfileApi,
   deleteAccountApi,
   lodgeSupportTicketApi,
   getUserSupportTicketsApi,
+  submitKycApi,
+  getKycStatusApi,
 } from "../services/api";
+import useLinkedWallet from "../hooks/useLinkedWallet";
+import InstallMetaMaskModal from "../components/InstallMetaMaskModal";
+import { SCREENS } from "../constants/navigation";
 
-export default function ProfileScreen({ navigation }) {
+// Helper to filter out synthetic MetaMask strings and raw hex addresses from user name fields
+const isWalletOrMetaMaskString = (str) => {
+  if (!str || typeof str !== "string") return true;
+  const trimmed = str.trim().toLowerCase();
+  return (
+    trimmed.startsWith("metamask") ||
+    /^0x[a-f0-9]{4,}/i.test(trimmed) ||
+    trimmed.includes("@metamask.smartassets.io")
+  );
+};
+
+export default function ProfileScreen({ navigation, route, isDark: propIsDark, toggleTheme: propToggleTheme }) {
+  const themeContext = useTheme();
+  // const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
+  // const toggleTheme = propToggleTheme || themeContext.toggleTheme;
+  const setIsDark = themeContext.setIsDark;
   const { user, token, logout, updateUser } = useAuth();
   const { isDark, toggleTheme } = useTheme();
+
+  // Web3 Linked Wallet Hook
+  const {
+    linkedWallet,
+    activeMetaMaskAccount,
+    isMismatch,
+    isSepolia,
+    loading: walletActionLoading,
+    installModalVisible,
+    setInstallModalVisible,
+    linkWallet,
+    unlinkWallet,
+  } = useLinkedWallet();
+
+  const [copiedWallet, setCopiedWallet] = useState(false);
 
   // State to manage which accordion section is expanded
   const [expandedSection, setExpandedSection] = useState(null);
@@ -39,11 +75,44 @@ export default function ProfileScreen({ navigation }) {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [submittingSupport, setSubmittingSupport] = useState(false);
 
+  const initialRawName = user?.fullName || user?.name || "";
+  const initialCleanName = !isWalletOrMetaMaskString(initialRawName) ? initialRawName : "";
+  const initialRawEmail = user?.email || "";
+  const initialCleanEmail = !isWalletOrMetaMaskString(initialRawEmail) ? initialRawEmail : "";
+
+  // ── SmartAssets FICA / KYC & Banking State ───────────────────────────────
+  const SA_BANKS = [
+    { name: 'FNB', code: '250655' },
+    { name: 'Standard Bank', code: '051001' },
+    { name: 'Capitec', code: '470010' },
+    { name: 'Absa', code: '632005' },
+    { name: 'Nedbank', code: '198765' },
+    { name: 'TymeBank', code: '678910' },
+  ];
+
+  const [kycStatus, setKycStatus] = useState(user?.kycStatus || "unverified");
+  const [rejectionReason, setRejectionReason] = useState(null);
+  const [submittingKyc, setSubmittingKyc] = useState(false);
+  const [supportModalVisible, setSupportModalVisible] = useState(false);
+
+  const [kycForm, setKycForm] = useState({
+    idNumber: "",
+    idDocumentUrl: null,
+    taxNumber: "",
+    taxDocumentUrl: null,
+    residentialAddress: "",
+    proofOfResidenceUrl: null,
+    bankName: "FNB",
+    accountHolder: initialCleanName || user?.fullName || "",
+    accountNumber: "",
+    branchCode: "250655",
+  });
+
   const [form, setForm] = useState({
-    fullName: user?.fullName || user?.name || "",
+    fullName: initialCleanName,
     gender: user?.gender || "",
     dob: user?.dob || "",
-    email: user?.email || "",
+    email: initialCleanEmail,
     password: "",
   });
 
@@ -59,6 +128,7 @@ export default function ProfileScreen({ navigation }) {
   const [supportCategory, setSupportCategory] = useState("Escrow & Payments");
   const [supportSubject, setSupportSubject] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
+  const [supportPriority, setSupportPriority] = useState("normal");
   const [supportTickets, setSupportTickets] = useState([]);
 
   // Delete Account Confirmation
@@ -69,6 +139,38 @@ export default function ProfileScreen({ navigation }) {
     setExpandedSection(expandedSection === section ? null : section);
   };
 
+  // Listen for navigation route params (e.g. from gatekeeper modal)
+  useEffect(() => {
+    if (route?.params?.openKyc) {
+      setExpandedSection("kyc");
+    } else if (route?.params?.openSupport) {
+      setExpandedSection("support");
+    }
+  }, [route?.params]);
+
+  // Load latest profile, tickets & KYC status on mount
+  useEffect(() => {
+    if (token) {
+      getKycStatusApi(token)
+        .then((res) => {
+          if (res?.compliance) {
+            setKycStatus(res.compliance.kycStatus || "unverified");
+            setRejectionReason(res.compliance.rejectionReason || null);
+            if (res.compliance.bankingDetails) {
+              setKycForm((prev) => ({
+                ...prev,
+                bankName: res.compliance.bankingDetails.bankName || prev.bankName,
+                accountHolder: res.compliance.bankingDetails.accountHolder || prev.accountHolder,
+                accountNumber: res.compliance.bankingDetails.accountNumber || prev.accountNumber,
+                branchCode: res.compliance.bankingDetails.branchCode || prev.branchCode,
+              }));
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [token]);
+
   // Load latest profile & tickets on mount
   useEffect(() => {
     if (token) {
@@ -76,17 +178,22 @@ export default function ProfileScreen({ navigation }) {
         .then((res) => {
           if (res?.success && res.profile) {
             const p = res.profile;
+            const cleanPFullName = (!isWalletOrMetaMaskString(p.fullName) && p.fullName) ? p.fullName : "";
+            const cleanPEmail = (!isWalletOrMetaMaskString(p.email) && p.email) ? p.email : "";
             setForm((prev) => ({
               ...prev,
-              fullName: p.fullName || prev.fullName,
+              fullName: cleanPFullName || prev.fullName,
               gender: p.gender || prev.gender,
               dob: p.dob || prev.dob,
-              email: p.email || prev.email,
+              email: cleanPEmail || prev.email,
             }));
             const effectiveAvatar = p.avatarUrl || p.avatar_url;
-            if (effectiveAvatar) {
-              updateUser({ avatarUrl: effectiveAvatar, avatar_url: effectiveAvatar, fullName: p.fullName });
-            }
+            const effectiveWallet = p.wallet_address || p.walletAddress;
+            updateUser({
+              ...(effectiveAvatar ? { avatarUrl: effectiveAvatar, avatar_url: effectiveAvatar } : {}),
+              ...(cleanPFullName ? { fullName: cleanPFullName } : {}),
+              ...(effectiveWallet ? { walletAddress: effectiveWallet, wallet_address: effectiveWallet } : {}),
+            });
           }
         })
         .catch(() => {});
@@ -111,11 +218,11 @@ export default function ProfileScreen({ navigation }) {
       Alert.alert("Profile Photo", "Upload or take a new profile photo:", [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Take Photo 📸",
+          text: "Take Photo",
           onPress: () => capturePhoto(),
         },
         {
-          text: "Choose from Library 🖼️",
+          text: "Choose from Library",
           onPress: () => pickFromLibrary(),
         },
       ]);
@@ -126,7 +233,10 @@ export default function ProfileScreen({ navigation }) {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Permission Required", "Camera access is needed to capture a profile photo.");
+        Alert.alert(
+          "Permission Required",
+          "Camera access is needed to capture a profile photo.",
+        );
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
@@ -148,9 +258,13 @@ export default function ProfileScreen({ navigation }) {
     try {
       // On web, permission is always granted, but we still call it for mobile
       if (Platform.OS !== "web") {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        const { status } =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== "granted") {
-          Alert.alert("Permission Required", "Photo library access is needed to pick an avatar.");
+          Alert.alert(
+            "Permission Required",
+            "Photo library access is needed to pick an avatar.",
+          );
           return;
         }
       }
@@ -207,7 +321,10 @@ export default function ProfileScreen({ navigation }) {
           reader.readAsDataURL(blob);
         });
       } catch (err) {
-        console.warn("assetToDataUri: blob conversion failed, using raw uri:", err);
+        console.warn(
+          "assetToDataUri: blob conversion failed, using raw uri:",
+          err,
+        );
         return asset.uri;
       }
     }
@@ -221,7 +338,9 @@ export default function ProfileScreen({ navigation }) {
 
       const dataUri = await assetToDataUri(asset);
       if (!dataUri) {
-        throw new Error("Could not process the selected image. Please try again.");
+        throw new Error(
+          "Could not process the selected image. Please try again.",
+        );
       }
 
       // Optimistically show the new avatar immediately
@@ -233,9 +352,12 @@ export default function ProfileScreen({ navigation }) {
         const saved = res?.user?.avatarUrl || res?.user?.avatar_url || dataUri;
         updateUser({ avatarUrl: saved, avatar_url: saved });
         if (Platform.OS === "web") {
-          alert("✅ Profile photo saved successfully!");
+          alert("Profile photo saved successfully!");
         } else {
-          Alert.alert("Avatar Updated", "Your profile photo has been saved to your account.");
+          Alert.alert(
+            "Avatar Updated",
+            "Your profile photo has been saved to your account.",
+          );
         }
       } else {
         // Server responded but not success — avatar is already showing locally
@@ -244,9 +366,15 @@ export default function ProfileScreen({ navigation }) {
     } catch (err) {
       console.error("Avatar upload failed:", err);
       if (Platform.OS === "web") {
-        alert("Upload notice: " + (err.message || "Could not save photo to server."));
+        alert(
+          "Upload notice: " +
+            (err.message || "Could not save photo to server."),
+        );
       } else {
-        Alert.alert("Upload Notice", err.message || "Could not save photo to server.");
+        Alert.alert(
+          "Upload Notice",
+          err.message || "Could not save photo to server.",
+        );
       }
     } finally {
       setUploadingAvatar(false);
@@ -269,7 +397,7 @@ export default function ProfileScreen({ navigation }) {
           dob: form.dob.trim(),
           password: form.password ? form.password : undefined,
         },
-        token
+        token,
       );
 
       if (res?.success) {
@@ -291,14 +419,103 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
+  // ── SmartAssets FICA / KYC Document Picker ──
+  const pickKycDocument = async (field) => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: false,
+        quality: 0.5,
+        base64: true,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        const dataUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setKycForm((prev) => ({ ...prev, [field]: dataUri }));
+      }
+    } catch (err) {
+      Alert.alert("File Selection Error", err.message || "Could not select document.");
+    }
+  };
+
+  const handleSelectBank = (bank) => {
+    setKycForm((prev) => ({
+      ...prev,
+      bankName: bank.name,
+      branchCode: bank.code,
+    }));
+  };
+
+  const handleSubmitKyc = async () => {
+    if (!kycForm.idNumber.trim()) {
+      Alert.alert("Required", "Please provide your SA ID or Passport Number.");
+      return;
+    }
+    if (!kycForm.taxNumber.trim()) {
+      Alert.alert("Required", "Please provide your SARS Tax Reference Number.");
+      return;
+    }
+    if (!kycForm.residentialAddress.trim()) {
+      Alert.alert("Required", "Please provide your Physical Residential Address.");
+      return;
+    }
+    if (!kycForm.accountNumber.trim()) {
+      Alert.alert("Required", "Please enter your Bank Account Number for payouts.");
+      return;
+    }
+
+    setSubmittingKyc(true);
+    try {
+      const payload = {
+        fullName: user?.fullName || kycForm.accountHolder,
+        idNumber: kycForm.idNumber.trim(),
+        idDocumentUrl: kycForm.idDocumentUrl,
+        taxNumber: kycForm.taxNumber.trim(),
+        taxDocumentUrl: kycForm.taxDocumentUrl,
+        residentialAddress: kycForm.residentialAddress.trim(),
+        proofOfResidenceUrl: kycForm.proofOfResidenceUrl,
+        bankingDetails: {
+          bankName: kycForm.bankName,
+          accountHolder: kycForm.accountHolder || user?.fullName,
+          accountNumber: kycForm.accountNumber.trim(),
+          branchCode: kycForm.branchCode,
+        },
+      };
+
+      const res = await submitKycApi(payload, token);
+      if (res?.success) {
+        setKycStatus("pending");
+        updateUser({
+          kycStatus: "pending",
+          bankingDetails: payload.bankingDetails,
+        });
+        Alert.alert(
+          "✅ Compliance Pack Submitted!",
+          "Your FICA identity documents and verified banking details are now in the Admin Operations review queue. You will be cleared to transact upon approval."
+        );
+      } else {
+        Alert.alert("Notice", res?.error || "KYC submission failed.");
+      }
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to submit KYC compliance pack.");
+    } finally {
+      setSubmittingKyc(false);
+    }
+  };
+
   // ── Lodge Support Ticket ──
   const handleLodgeSupport = async () => {
     if (!supportSubject.trim()) {
-      Alert.alert("Required", "Please provide a subject for your support inquiry.");
+      Alert.alert(
+        "Required",
+        "Please provide a subject for your support inquiry.",
+      );
       return;
     }
     if (!supportMessage.trim()) {
-      Alert.alert("Required", "Please provide message details for your inquiry.");
+      Alert.alert(
+        "Required",
+        "Please provide message details for your inquiry.",
+      );
       return;
     }
 
@@ -309,8 +526,9 @@ export default function ProfileScreen({ navigation }) {
           category: supportCategory,
           subject: supportSubject.trim(),
           message: supportMessage.trim(),
+          priority: supportPriority,
         },
-        token
+        token,
       );
 
       if (res?.success && res.ticket) {
@@ -318,8 +536,8 @@ export default function ProfileScreen({ navigation }) {
         setSupportSubject("");
         setSupportMessage("");
         Alert.alert(
-          "Ticket Lodged 🎉",
-          `Reference: ${res.ticket.id}\n\nOur concierge desk has received your inquiry and will reply within 2-4 hours.`
+          "Ticket Lodged",
+          `Reference: ${res.ticket.id}\n\nOur concierge desk has received your inquiry and will reply within 2-4 hours.`,
         );
       } else {
         Alert.alert("Notice", res?.error || "Support inquiry submitted.");
@@ -334,7 +552,10 @@ export default function ProfileScreen({ navigation }) {
   // ── Delete Account ──
   const handleDeleteAccount = () => {
     if (deleteConfirmText.trim().toUpperCase() !== "DELETE") {
-      Alert.alert("Confirmation Required", 'Please type "DELETE" into the box to authorize account deletion.');
+      Alert.alert(
+        "Confirmation Required",
+        'Please type "DELETE" into the box to authorize account deletion.',
+      );
       return;
     }
 
@@ -351,20 +572,25 @@ export default function ProfileScreen({ navigation }) {
               setDeletingAccount(true);
               const res = await deleteAccountApi(token);
               if (res?.success) {
-                Alert.alert("Account Deleted", "Your account has been deleted.", [
-                  { text: "OK", onPress: () => logout() },
-                ]);
+                Alert.alert(
+                  "Account Deleted",
+                  "Your account has been deleted.",
+                  [{ text: "OK", onPress: () => logout() }],
+                );
               } else {
                 logout();
               }
             } catch (err) {
-              Alert.alert("Delete Error", err.message || "Could not delete account.");
+              Alert.alert(
+                "Delete Error",
+                err.message || "Could not delete account.",
+              );
             } finally {
               setDeletingAccount(false);
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -379,18 +605,79 @@ export default function ProfileScreen({ navigation }) {
     ]);
   };
 
-  // Dynamic values (no hardcoded "Anna Miller" or "anna@profile.com")
+  // Dynamic values: strictly display real user details (never "MetaMask" or placeholder email)
+  const rawFullName = user?.fullName || user?.name || form.fullName || "";
+  const cleanFullName = !isWalletOrMetaMaskString(rawFullName) ? rawFullName.trim() : "";
+  const rawEmail = user?.email || form.email || "";
+  const cleanEmail = !isWalletOrMetaMaskString(rawEmail) ? rawEmail.trim() : "";
+
   const displayName =
-    user?.fullName || user?.name || form.fullName || (user?.email ? user.email.split("@")[0] : "Luxury Collector");
+    cleanFullName ||
+    (cleanEmail ? cleanEmail.split("@")[0] : "") ||
+    "Luxury Collector";
+
   const displayEmail =
-    user?.email ||
-    (user?.walletAddress
-      ? `🦊 ${user.walletAddress.substring(0, 6)}...${user.walletAddress.slice(-4)}`
+    cleanEmail ||
+    (linkedWallet
+      ? `Wallet linked (${linkedWallet.substring(0, 6)}...${linkedWallet.slice(-4)})`
       : "Verified Member");
+
   const avatarUrl = user?.avatarUrl || user?.avatar_url;
+
+  const handleCopyWallet = async () => {
+    if (!linkedWallet) return;
+    try {
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(linkedWallet);
+      }
+      setCopiedWallet(true);
+      setTimeout(() => setCopiedWallet(false), 2000);
+      if (Platform.OS !== "web") {
+        Alert.alert("Wallet Address", linkedWallet);
+      }
+    } catch (_) {
+      Alert.alert("Wallet Address", linkedWallet);
+    }
+  };
+
+  const handleDisconnectWallet = () => {
+    Alert.alert(
+      "Disconnect Wallet",
+      "Are you sure you want to unlink this wallet from your profile? You will need to link a wallet again to sign smart contract transactions.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Unlink",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await unlinkWallet();
+            } catch (err) {
+              Alert.alert("Error", err.message || "Failed to unlink wallet.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleConnectWallet = async () => {
+    try {
+      await linkWallet();
+    } catch (_) {
+      // Error handled within hook alerts
+    }
+  };
 
   // Menu items with original pastel colors
   const MENU_ITEMS = [
+    {
+      id: "kyc",
+      label: "FICA / KYC & Banking Verification",
+      icon: "shield",
+      bgColor: "#DCFCE7",
+      textColor: "#15803D",
+    },
     {
       id: "edit",
       label: "Edit Profile",
@@ -436,20 +723,31 @@ export default function ProfileScreen({ navigation }) {
   ];
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={[styles.safe, { backgroundColor: "#0A1120" }]}>
+    <SafeAreaView
+      edges={["top", "left", "right"]}
+      style={[styles.safe, { backgroundColor: "#0A1120" }]}
+    >
       {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+        >
           <Feather name="chevron-left" size={24} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
         {/* ── User Avatar & Info ── */}
         <View style={styles.userInfoWrap}>
-          <TouchableOpacity style={styles.avatarCircle} onPress={handlePickAvatar} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={styles.avatarCircle}
+            onPress={handlePickAvatar}
+            activeOpacity={0.85}
+          >
             {uploadingAvatar ? (
               <ActivityIndicator color="#3B82F6" size="small" />
             ) : avatarUrl ? (
@@ -465,6 +763,289 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.userEmail}>{displayEmail}</Text>
         </View>
 
+        {/* ── Persistent Account Verification & Bank Approval Hub ── */}
+        <View
+          style={{
+            backgroundColor: isDark ? "#131A2F" : "#FFFFFF",
+            borderRadius: 16,
+            padding: 16,
+            marginBottom: 16,
+            borderWidth: 1.2,
+            borderColor:
+              kycStatus === "verified"
+                ? "rgba(16, 185, 129, 0.4)"
+                : "rgba(124, 92, 252, 0.45)",
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 11,
+                  backgroundColor:
+                    kycStatus === "verified"
+                      ? "rgba(16, 185, 129, 0.15)"
+                      : "rgba(124, 92, 252, 0.15)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons
+                  name={kycStatus === "verified" ? "checkmark-done-circle" : "shield-checkmark-outline"}
+                  size={20}
+                  color={kycStatus === "verified" ? "#10B981" : "#7C5CFC"}
+                />
+              </View>
+              <View>
+                <Text style={{ fontSize: 15, fontWeight: "800", color: isDark ? "#F8FAFC" : "#0F172A" }}>
+                  {kycStatus === "verified" ? "Account Verified (3/3 Docs)" : "Complete your verification"}
+                </Text>
+                <Text style={{ fontSize: 12, color: isDark ? "#94A3B8" : "#64748B" }}>
+                  {kycStatus === "verified"
+                    ? "Authorized to list items and deposit funds"
+                    : "Required to list items, deposit, or withdraw funds"}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate(SCREENS.VERIFY_ACCOUNT)}
+              style={{
+                flex: 1,
+                backgroundColor: "#7C5CFC",
+                paddingVertical: 11,
+                borderRadius: 11,
+                alignItems: "center",
+                justifyContent: "center",
+                flexDirection: "row",
+                gap: 6,
+              }}
+            >
+              <Ionicons name="document-attach-outline" size={16} color="#FFFFFF" />
+              <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "800" }}>
+                Verify Account (3 Docs)
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => navigation.navigate(SCREENS.BANK_DETAILS)}
+              style={{
+                flex: 1,
+                backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "#EDE9FE",
+                paddingVertical: 11,
+                borderRadius: 11,
+                alignItems: "center",
+                justifyContent: "center",
+                flexDirection: "row",
+                gap: 6,
+              }}
+            >
+              <Ionicons name="card-outline" size={16} color="#7C5CFC" />
+              <Text style={{ color: "#7C5CFC", fontSize: 12.5, fontWeight: "800" }}>
+                Bank Details
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        
+
+        {/* ── Web3 Settlement Wallet Card ── */}
+        <View
+          style={[
+            styles.walletCard,
+            {
+              backgroundColor: isDark ? "#131A2F" : "#FFFFFF",
+              borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+            },
+          ]}
+        >
+          <View style={styles.walletHeaderRow}>
+            <View style={styles.walletTitleGroup}>
+              <View style={styles.walletIconCircle}>
+                <Ionicons name="wallet-outline" size={18} color="#00FBFF" />
+              </View>
+              <View>
+                <Text
+                  style={[
+                    styles.walletCardTitle,
+                    { color: isDark ? "#F8FAFC" : "#0F172A" },
+                  ]}
+                >
+                  Web3 Settlement Wallet
+                </Text>
+                <Text style={styles.walletCardSubtitle}>
+                  {linkedWallet
+                    ? "Linked for purchases, escrows & auctions"
+                    : "Connect MetaMask on Sepolia to authorize transactions"}
+                </Text>
+              </View>
+            </View>
+            {linkedWallet && (
+              <View style={styles.networkBadge}>
+                <View style={styles.networkPulseDot} />
+                <Text style={styles.networkBadgeText}>Sepolia</Text>
+              </View>
+            )}
+          </View>
+
+          {linkedWallet ? (
+            <View style={styles.walletConnectedContent}>
+              <View
+                style={[
+                  styles.addressDisplayRow,
+                  {
+                    backgroundColor: isDark ? "rgba(15, 23, 42, 0.6)" : "#F8FAFC",
+                    borderColor: isDark ? "rgba(255, 255, 255, 0.08)" : "#E2E8F0",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.addressMonoText,
+                    { color: isDark ? "#F8FAFC" : "#1E293B" },
+                  ]}
+                >
+                  {`${linkedWallet.substring(0, 8)}...${linkedWallet.slice(-6)}`}
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.copyBtn,
+                    {
+                      backgroundColor: isDark
+                        ? "rgba(255, 255, 255, 0.08)"
+                        : "#EEF2F6",
+                    },
+                  ]}
+                  onPress={handleCopyWallet}
+                  activeOpacity={0.7}
+                >
+                  <Feather
+                    name={copiedWallet ? "check" : "copy"}
+                    size={14}
+                    color={copiedWallet ? "#10B981" : isDark ? "#94A3B8" : "#64748B"}
+                  />
+                  <Text
+                    style={[
+                      styles.copyBtnText,
+                      { color: copiedWallet ? "#10B981" : isDark ? "#94A3B8" : "#64748B" },
+                    ]}
+                  >
+                    {copiedWallet ? "Copied" : "Copy"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {isMismatch && (
+                <View style={styles.walletWarningBanner}>
+                  <Ionicons name="warning-outline" size={16} color="#FBBF24" />
+                  <Text style={styles.walletWarningText}>
+                    MetaMask is active with account (
+                    {activeMetaMaskAccount
+                      ? `${activeMetaMaskAccount.substring(0, 6)}...${activeMetaMaskAccount.slice(-4)}`
+                      : "unknown"}
+                    ). Switch MetaMask to your linked wallet to sign transactions.
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.walletActionRow}>
+                <TouchableOpacity
+                  style={styles.unlinkBtn}
+                  onPress={handleDisconnectWallet}
+                  disabled={walletActionLoading}
+                  activeOpacity={0.8}
+                >
+                  {walletActionLoading ? (
+                    <ActivityIndicator size="small" color="#EF4444" />
+                  ) : (
+                    <>
+                      <Feather name="link-2" size={14} color="#EF4444" />
+                      <Text style={styles.unlinkBtnText}>Disconnect</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.walletUnconnectedContent}>
+              <Text style={styles.walletEmptyDesc}>
+                No wallet linked to your account. Connect your MetaMask wallet on Ethereum Sepolia to securely verify asset ownership and execute smart contracts.
+              </Text>
+              <TouchableOpacity
+                style={styles.connectWalletBtn}
+                onPress={handleConnectWallet}
+                disabled={walletActionLoading}
+                activeOpacity={0.85}
+              >
+                {walletActionLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="wallet-outline" size={16} color="#FFFFFF" />
+                    <Text style={styles.connectWalletBtnText}>Connect MetaMask</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* ── OFFLINE BANNER ── */}
+        <OfflineBanner
+          isDark={isDark}
+          message="⚡ Offline Mode — Showing saved profile data."
+          style={{ marginBottom: 16 }}
+        />
+
+        {/* ── Theme & Appearance Toggle Card ── */}
+        <View
+          style={{
+            backgroundColor: isDark ? "#131A2F" : "#FFFFFF",
+            borderRadius: 14,
+            padding: 16,
+            marginBottom: 16,
+            borderWidth: 1,
+            borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <View
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                backgroundColor: isDark ? "rgba(251, 191, 36, 0.15)" : "rgba(30, 41, 59, 0.08)",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Feather name={isDark ? "moon" : "sun"} size={19} color={isDark ? "#FBBF24" : "#1E293B"} />
+            </View>
+            <View>
+              <Text style={{ fontSize: 15, fontWeight: "700", color: isDark ? "#F8FAFC" : "#0F172A" }}>
+                Dark Mode
+              </Text>
+              <Text style={{ fontSize: 12, color: isDark ? "#94A3B8" : "#64748B" }}>
+                {isDark ? "Dark theme active" : "Light theme active"}
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={isDark}
+            onValueChange={(val) => setIsDark(val)}
+            trackColor={{ false: "#CBD5E1", true: "#3B82F6" }}
+            thumbColor={isDark ? "#FFFFFF" : "#F8FAFC"}
+          />
+        </View>
+
         {/* ── Menu List ── */}
         <View style={styles.menuContainer}>
           {MENU_ITEMS.map((item, idx) => {
@@ -478,14 +1059,21 @@ export default function ProfileScreen({ navigation }) {
                     styles.menuItem,
                     {
                       backgroundColor: "transparent",
-                      borderBottomWidth: idx === MENU_ITEMS.length - 1 && !isExpanded ? 0 : 1,
+                      borderBottomWidth:
+                        idx === MENU_ITEMS.length - 1 && !isExpanded ? 0 : 1,
                       borderBottomColor: "#F1F5F9",
                     },
                   ]}
                 >
                   <View style={styles.menuItemLeft}>
-                    <Feather name={item.icon} size={18} color={item.textColor} />
-                    <Text style={[styles.menuItemLabel, { color: "#1E293B" }]}>{item.label}</Text>
+                    <Feather
+                      name={item.icon}
+                      size={18}
+                      color={item.textColor}
+                    />
+                    <Text style={[styles.menuItemLabel, { color: "#1E293B" }]}>
+                      {item.label}
+                    </Text>
                   </View>
                   <Feather
                     name={isExpanded ? "chevron-up" : "chevron-down"}
@@ -495,43 +1083,392 @@ export default function ProfileScreen({ navigation }) {
                   />
                 </TouchableOpacity>
 
-                {/* ── Expanded: Edit Profile ── */}
-                {isExpanded && item.id === "edit" && (
+                {/* ── Expanded: FICA / KYC & Banking Verification ── */}
+                {isExpanded && item.id === "kyc" && (
                   <View style={[styles.expandedContent, { backgroundColor: "#F8FAFC" }]}>
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>Personal</Text>
+                    {/* Status Card */}
+                    <View
+                      style={{
+                        padding: 14,
+                        borderRadius: 12,
+                        marginBottom: 16,
+                        backgroundColor:
+                          kycStatus === "verified"
+                            ? "#DCFCE7"
+                            : kycStatus === "pending"
+                            ? "#DBEAFE"
+                            : kycStatus === "rejected"
+                            ? "#FEE2E2"
+                            : "#FEF3C7",
+                        borderWidth: 1,
+                        borderColor:
+                          kycStatus === "verified"
+                            ? "#86EFAC"
+                            : kycStatus === "pending"
+                            ? "#93C5FD"
+                            : kycStatus === "rejected"
+                            ? "#FCA5A5"
+                            : "#FDE68A",
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <Feather
+                          name={
+                            kycStatus === "verified"
+                              ? "check-circle"
+                              : kycStatus === "pending"
+                              ? "clock"
+                              : kycStatus === "rejected"
+                              ? "alert-circle"
+                              : "alert-triangle"
+                          }
+                          size={18}
+                          color={
+                            kycStatus === "verified"
+                              ? "#15803D"
+                              : kycStatus === "pending"
+                              ? "#1D4ED8"
+                              : kycStatus === "rejected"
+                              ? "#B91C1C"
+                              : "#B45309"
+                          }
+                        />
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            fontWeight: "800",
+                            color:
+                              kycStatus === "verified"
+                                ? "#15803D"
+                                : kycStatus === "pending"
+                                ? "#1D4ED8"
+                                : kycStatus === "rejected"
+                                ? "#B91C1C"
+                                : "#B45309",
+                          }}
+                        >
+                          {kycStatus === "verified"
+                            ? "✅ FICA Verified Investor"
+                            : kycStatus === "pending"
+                            ? "⏳ Pending Admin Compliance Review"
+                            : kycStatus === "rejected"
+                            ? "❌ Compliance Dossier Rejected"
+                            : "⚠️ Unverified Investor Account"}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 12, color: "#334155", lineHeight: 18 }}>
+                        {kycStatus === "verified"
+                          ? "Your FICA compliance pack is fully approved. You are cleared for all marketplace listings, fractional trading tranches, and vault cash movements."
+                          : kycStatus === "pending"
+                          ? "Your submitted documents are currently undergoing administrative compliance review. The Admin Portal will approve your account shortly."
+                          : kycStatus === "rejected"
+                          ? `Rejection Reason: ${rejectionReason || "Documentation did not meet compliance criteria. Please resubmit clear photos."}`
+                          : "Financial regulations require submission of your SA ID/Passport, SARS Tax Reference, Proof of Residence, and Bank Details before you can list assets or transact."}
+                      </Text>
+                    </View>
+
+                    {/* Section 1: Required Document Uploads */}
+                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                      1. Required FICA Identity Documents
+                    </Text>
+
+                    {/* SA ID / Passport */}
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                      Government ID / Passport Number
+                    </Text>
                     <TextInput
                       style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      placeholder="e.g. 9001015009087 or ZA Passport"
+                      placeholderTextColor="#94A3B8"
+                      value={kycForm.idNumber}
+                      onChangeText={(v) => setKycForm({ ...kycForm, idNumber: v })}
+                    />
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => pickKycDocument("idDocumentUrl")}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                        backgroundColor: "#FFFFFF",
+                        padding: 12,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: "#CBD5E1",
+                        borderStyle: "dashed",
+                        marginBottom: 14,
+                      }}
+                    >
+                      <Feather name="upload" size={16} color="#2563EB" />
+                      <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
+                        {kycForm.idDocumentUrl ? "✅ ID Document Attached (Tap to replace)" : "Upload ID Document Photo / Scan"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* SARS Tax Reference */}
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                      SARS Tax Reference Number
+                    </Text>
+                    <TextInput
+                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      placeholder="e.g. 9123456789"
+                      placeholderTextColor="#94A3B8"
+                      value={kycForm.taxNumber}
+                      onChangeText={(v) => setKycForm({ ...kycForm, taxNumber: v })}
+                    />
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => pickKycDocument("taxDocumentUrl")}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                        backgroundColor: "#FFFFFF",
+                        padding: 12,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: "#CBD5E1",
+                        borderStyle: "dashed",
+                        marginBottom: 14,
+                      }}
+                    >
+                      <Feather name="upload" size={16} color="#2563EB" />
+                      <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
+                        {kycForm.taxDocumentUrl ? "✅ Tax Notice Attached (Tap to replace)" : "Upload SARS Notice / Certificate"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* Proof of Residence */}
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                      Physical Residential Address
+                    </Text>
+                    <TextInput
+                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      placeholder="Street address, suburb, city, postal code"
+                      placeholderTextColor="#94A3B8"
+                      value={kycForm.residentialAddress}
+                      onChangeText={(v) => setKycForm({ ...kycForm, residentialAddress: v })}
+                    />
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => pickKycDocument("proofOfResidenceUrl")}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                        backgroundColor: "#FFFFFF",
+                        padding: 12,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: "#CBD5E1",
+                        borderStyle: "dashed",
+                        marginBottom: 20,
+                      }}
+                    >
+                      <Feather name="upload" size={16} color="#2563EB" />
+                      <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
+                        {kycForm.proofOfResidenceUrl ? "✅ Utility Bill Attached (Tap to replace)" : "Upload Utility Bill / Bank Statement (< 3 months)"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* Section 2: Verified Banking Details */}
+                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                      2. Verified South African Banking Details
+                    </Text>
+                    <Text style={{ fontSize: 12, color: "#64748B", marginBottom: 10 }}>
+                      Required for instant ZAR escrow payouts, dividends, and vault withdrawals.
+                    </Text>
+
+                    {/* Bank Selector Chips */}
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                      {SA_BANKS.map((bank) => {
+                        const isSelected = kycForm.bankName === bank.name;
+                        return (
+                          <TouchableOpacity
+                            key={bank.name}
+                            activeOpacity={0.8}
+                            onPress={() => handleSelectBank(bank)}
+                            style={{
+                              paddingHorizontal: 12,
+                              paddingVertical: 8,
+                              borderRadius: 8,
+                              backgroundColor: isSelected ? "#2563EB" : "#FFFFFF",
+                              borderWidth: 1,
+                              borderColor: isSelected ? "#2563EB" : "#CBD5E1",
+                            }}
+                          >
+                            <Text style={{ fontSize: 12, fontWeight: "700", color: isSelected ? "#FFFFFF" : "#334155" }}>
+                              {bank.name}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                      Account Holder Name
+                    </Text>
+                    <TextInput
+                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      placeholder="Account Holder Full Name"
+                      placeholderTextColor="#94A3B8"
+                      value={kycForm.accountHolder}
+                      onChangeText={(v) => setKycForm({ ...kycForm, accountHolder: v })}
+                    />
+
+                    <View style={styles.rowInputs}>
+                      <View style={[styles.inputWrap, { flex: 2, marginRight: 8 }]}>
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                          Account Number
+                        </Text>
+                        <TextInput
+                          style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                          placeholder="e.g. 62819203918"
+                          placeholderTextColor="#94A3B8"
+                          keyboardType="numeric"
+                          value={kycForm.accountNumber}
+                          onChangeText={(v) => setKycForm({ ...kycForm, accountNumber: v })}
+                        />
+                      </View>
+                      <View style={[styles.inputWrap, { flex: 1 }]}>
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                          Branch Code
+                        </Text>
+                        <TextInput
+                          style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                          placeholder="250655"
+                          placeholderTextColor="#94A3B8"
+                          keyboardType="numeric"
+                          value={kycForm.branchCode}
+                          onChangeText={(v) => setKycForm({ ...kycForm, branchCode: v })}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Submit Button */}
+                    <TouchableOpacity
+                      activeOpacity={0.88}
+                      onPress={handleSubmitKyc}
+                      disabled={submittingKyc}
+                      style={[
+                        styles.saveBtn,
+                        {
+                          backgroundColor: "#15803D",
+                          marginTop: 14,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 8,
+                        },
+                      ]}
+                    >
+                      {submittingKyc ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <>
+                          <Feather name="shield" size={16} color="#FFFFFF" />
+                          <Text style={[styles.saveBtnText, { color: "#FFFFFF" }]}>
+                            {kycStatus === "verified" ? "Update Compliance Details" : "Submit Compliance Pack for Approval"}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* ── Expanded: Edit Profile ── */}
+                {isExpanded && item.id === "edit" && (
+                  <View
+                    style={[
+                      styles.expandedContent,
+                      { backgroundColor: "#F8FAFC" },
+                    ]}
+                  >
+                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                      Personal
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          color: "#0F172A",
+                          borderColor: "#E2E8F0",
+                          backgroundColor: "#FFFFFF",
+                        },
+                      ]}
                       placeholder="Full Name"
                       placeholderTextColor="#94A3B8"
                       value={form.fullName}
                       onChangeText={(v) => setForm({ ...form, fullName: v })}
                     />
                     <View style={styles.rowInputs}>
-                      <View style={[styles.inputWrap, { flex: 1, marginRight: 8 }]}>
+                      <View
+                        style={[styles.inputWrap, { flex: 1, marginRight: 8 }]}
+                      >
                         <TextInput
-                          style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                          style={[
+                            styles.input,
+                            {
+                              color: "#0F172A",
+                              borderColor: "#E2E8F0",
+                              backgroundColor: "#FFFFFF",
+                            },
+                          ]}
                           placeholder="Gender"
                           placeholderTextColor="#94A3B8"
                           value={form.gender}
                           onChangeText={(v) => setForm({ ...form, gender: v })}
                         />
-                        <Feather name="users" size={14} color="#94A3B8" style={styles.inputIcon} />
+                        <Feather
+                          name="users"
+                          size={14}
+                          color="#94A3B8"
+                          style={styles.inputIcon}
+                        />
                       </View>
-                      <View style={[styles.inputWrap, { flex: 1, marginLeft: 8 }]}>
+                      <View
+                        style={[styles.inputWrap, { flex: 1, marginLeft: 8 }]}
+                      >
                         <TextInput
-                          style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                          style={[
+                            styles.input,
+                            {
+                              color: "#0F172A",
+                              borderColor: "#E2E8F0",
+                              backgroundColor: "#FFFFFF",
+                            },
+                          ]}
                           placeholder="YYYY-MM-DD"
                           placeholderTextColor="#94A3B8"
                           value={form.dob}
                           onChangeText={(v) => setForm({ ...form, dob: v })}
                         />
-                        <Feather name="calendar" size={14} color="#94A3B8" style={styles.inputIcon} />
+                        <Feather
+                          name="calendar"
+                          size={14}
+                          color="#94A3B8"
+                          style={styles.inputIcon}
+                        />
                       </View>
                     </View>
 
-                    <Text style={[styles.sectionHeading, { color: "#334155", marginTop: 12 }]}>Email and password</Text>
+                    <Text
+                      style={[
+                        styles.sectionHeading,
+                        { color: "#334155", marginTop: 12 },
+                      ]}
+                    >
+                      Email and password
+                    </Text>
                     <TextInput
-                      style={[styles.input, { color: "#64748B", borderColor: "#E2E8F0", backgroundColor: "#F1F5F9" }]}
+                      style={[
+                        styles.input,
+                        {
+                          color: "#64748B",
+                          borderColor: "#E2E8F0",
+                          backgroundColor: "#F1F5F9",
+                        },
+                      ]}
                       placeholder="Email"
                       placeholderTextColor="#94A3B8"
                       value={form.email}
@@ -540,25 +1477,50 @@ export default function ProfileScreen({ navigation }) {
                     />
                     <View style={styles.inputWrap}>
                       <TextInput
-                        style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                        style={[
+                          styles.input,
+                          {
+                            color: "#0F172A",
+                            borderColor: "#E2E8F0",
+                            backgroundColor: "#FFFFFF",
+                          },
+                        ]}
                         placeholder="New Password (optional)"
                         placeholderTextColor="#94A3B8"
                         secureTextEntry
                         value={form.password}
                         onChangeText={(v) => setForm({ ...form, password: v })}
                       />
-                      <Feather name="eye-off" size={14} color="#94A3B8" style={styles.inputIcon} />
+                      <Feather
+                        name="eye-off"
+                        size={14}
+                        color="#94A3B8"
+                        style={styles.inputIcon}
+                      />
                     </View>
 
                     <TouchableOpacity
-                      style={[styles.saveBtn, { backgroundColor: item.bgColor }]}
+                      style={[
+                        styles.saveBtn,
+                        { backgroundColor: item.bgColor },
+                      ]}
                       onPress={handleSaveProfile}
                       disabled={savingProfile}
                     >
                       {savingProfile ? (
-                        <ActivityIndicator color={item.textColor} size="small" />
+                        <ActivityIndicator
+                          color={item.textColor}
+                          size="small"
+                        />
                       ) : (
-                        <Text style={[styles.saveBtnText, { color: item.textColor }]}>Save Changes</Text>
+                        <Text
+                          style={[
+                            styles.saveBtnText,
+                            { color: item.textColor },
+                          ]}
+                        >
+                          Save Changes
+                        </Text>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -566,22 +1528,63 @@ export default function ProfileScreen({ navigation }) {
 
                 {/* ── Expanded: Notifications ── */}
                 {isExpanded && item.id === "notifications" && (
-                  <View style={[styles.expandedContent, { backgroundColor: "#F8FAFC" }]}>
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>Notification Preferences</Text>
+                  <View
+                    style={[
+                      styles.expandedContent,
+                      { backgroundColor: "#F8FAFC" },
+                    ]}
+                  >
+                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                      Notification Preferences
+                    </Text>
                     {[
-                      { key: "escrowAlerts", title: "Smart Contract Escrow Alerts", sub: "Status updates on courier transit & appraisal" },
-                      { key: "priceAlerts", title: "Price Movement & Appraisals", sub: "Valuation adjustments for your vault holdings" },
-                      { key: "securityAlerts", title: "Security & Login Alerts", sub: "Notice on new session or wallet authorization" },
-                      { key: "marketing", title: "Luxury Offering Drops", sub: "Exclusive invitations to verified asset drops" },
+                      {
+                        key: "escrowAlerts",
+                        title: "Smart Contract Escrow Alerts",
+                        sub: "Status updates on courier transit & appraisal",
+                      },
+                      {
+                        key: "priceAlerts",
+                        title: "Price Movement & Appraisals",
+                        sub: "Valuation adjustments for your vault holdings",
+                      },
+                      {
+                        key: "securityAlerts",
+                        title: "Security & Login Alerts",
+                        sub: "Notice on new session or wallet authorization",
+                      },
+                      {
+                        key: "marketing",
+                        title: "Luxury Offering Drops",
+                        sub: "Exclusive invitations to verified asset drops",
+                      },
                     ].map((n) => (
                       <View key={n.key} style={styles.prefRow}>
                         <View style={{ flex: 1, marginRight: 10 }}>
-                          <Text style={{ fontSize: 13, fontWeight: "700", color: "#1E293B" }}>{n.title}</Text>
-                          <Text style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>{n.sub}</Text>
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              fontWeight: "700",
+                              color: "#1E293B",
+                            }}
+                          >
+                            {n.title}
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              color: "#64748B",
+                              marginTop: 2,
+                            }}
+                          >
+                            {n.sub}
+                          </Text>
                         </View>
                         <Switch
                           value={notifications[n.key]}
-                          onValueChange={(val) => setNotifications({ ...notifications, [n.key]: val })}
+                          onValueChange={(val) =>
+                            setNotifications({ ...notifications, [n.key]: val })
+                          }
                           trackColor={{ false: "#CBD5E1", true: "#3B82F6" }}
                           thumbColor="#FFFFFF"
                         />
@@ -592,17 +1595,53 @@ export default function ProfileScreen({ navigation }) {
 
                 {/* ── Expanded: Terms of Service ── */}
                 {isExpanded && item.id === "tos" && (
-                  <View style={[styles.expandedContent, { backgroundColor: "#F8FAFC" }]}>
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>Platform Guarantees & Terms</Text>
+                  <View
+                    style={[
+                      styles.expandedContent,
+                      { backgroundColor: "#F8FAFC" },
+                    ]}
+                  >
+                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                      Platform Guarantees & Terms
+                    </Text>
                     {[
-                      { title: "Smart Contract Escrow", text: "100% of purchase payments are secured in SmartAssetEscrow.sol on Ethereum Sepolia until delivery and inspection pass." },
-                      { title: "Anti-Self-Dealing Policy", text: "Users cannot purchase, bid on, or fractionally invest in items they listed. Fractional holdings are capped at 25% per investor." },
-                      { title: "Appraisal & Inspection", text: "Every asset is inspected by Horological & Gemological institutes with immutable ERC-721 certificates delivered to the buyer." },
-                      { title: "100% Buyer Refund Right", text: "If any item fails inspection, 100% of escrow funds are refunded to the buyer on-chain." },
+                      {
+                        title: "Smart Contract Escrow",
+                        text: "100% of purchase payments are secured in SmartAssetEscrow.sol on Ethereum Sepolia until delivery and inspection pass.",
+                      },
+                      {
+                        title: "Anti-Self-Dealing Policy",
+                        text: "Users cannot purchase, bid on, or fractionally invest in items they listed. Fractional holdings are capped at 25% per investor.",
+                      },
+                      {
+                        title: "Appraisal & Inspection",
+                        text: "Every asset is inspected by Horological & Gemological institutes with immutable ERC-721 certificates delivered to the buyer.",
+                      },
+                      {
+                        title: "100% Buyer Refund Right",
+                        text: "If any item fails inspection, 100% of escrow funds are refunded to the buyer on-chain.",
+                      },
                     ].map((t) => (
                       <View key={t.title} style={styles.tosBox}>
-                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#1E293B" }}>{t.title}</Text>
-                        <Text style={{ fontSize: 11, color: "#64748B", marginTop: 3, lineHeight: 16 }}>{t.text}</Text>
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontWeight: "700",
+                            color: "#1E293B",
+                          }}
+                        >
+                          {t.title}
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            color: "#64748B",
+                            marginTop: 3,
+                            lineHeight: 16,
+                          }}
+                        >
+                          {t.text}
+                        </Text>
                       </View>
                     ))}
                   </View>
@@ -610,20 +1649,43 @@ export default function ProfileScreen({ navigation }) {
 
                 {/* ── Expanded: Support ── */}
                 {isExpanded && item.id === "support" && (
-                  <View style={[styles.expandedContent, { backgroundColor: "#F8FAFC" }]}>
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>Lodge a Support Inquiry</Text>
-                    <Text style={{ fontSize: 12, color: "#64748B", marginBottom: 10 }}>
+                  <View
+                    style={[
+                      styles.expandedContent,
+                      { backgroundColor: "#F8FAFC" },
+                    ]}
+                  >
+                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                      Lodge a Support Inquiry
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: "#64748B",
+                        marginBottom: 10,
+                      }}
+                    >
                       Our luxury concierge team responds within 2-4 hours.
                     </Text>
 
                     {/* Category Selection */}
                     <View style={styles.catRow}>
-                      {["Escrow & Payments", "Physical Verification", "Vault & Assets", "General"].map((c) => (
+                      {[
+                        "Escrow & Payments",
+                        "Physical Verification",
+                        "Vault & Assets",
+                        "General",
+                      ].map((c) => (
                         <TouchableOpacity
                           key={c}
                           style={[
                             styles.catBtn,
-                            supportCategory === c ? { backgroundColor: "#BBF7D0", borderColor: "#14532D" } : {},
+                            supportCategory === c
+                              ? {
+                                  backgroundColor: "#BBF7D0",
+                                  borderColor: "#14532D",
+                                }
+                              : {},
                           ]}
                           onPress={() => setSupportCategory(c)}
                         >
@@ -631,7 +1693,8 @@ export default function ProfileScreen({ navigation }) {
                             style={{
                               fontSize: 10,
                               fontWeight: "700",
-                              color: supportCategory === c ? "#14532D" : "#64748B",
+                              color:
+                                supportCategory === c ? "#14532D" : "#64748B",
                             }}
                           >
                             {c}
@@ -641,7 +1704,14 @@ export default function ProfileScreen({ navigation }) {
                     </View>
 
                     <TextInput
-                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      style={[
+                        styles.input,
+                        {
+                          color: "#0F172A",
+                          borderColor: "#E2E8F0",
+                          backgroundColor: "#FFFFFF",
+                        },
+                      ]}
                       placeholder="Subject (e.g. Escrow Inquiry #ORD-8921)"
                       placeholderTextColor="#94A3B8"
                       value={supportSubject}
@@ -667,32 +1737,89 @@ export default function ProfileScreen({ navigation }) {
                     />
 
                     <TouchableOpacity
-                      style={[styles.saveBtn, { backgroundColor: item.bgColor }]}
+                      style={[
+                        styles.saveBtn,
+                        { backgroundColor: item.bgColor },
+                      ]}
                       onPress={handleLodgeSupport}
                       disabled={submittingSupport}
                     >
                       {submittingSupport ? (
-                        <ActivityIndicator color={item.textColor} size="small" />
+                        <ActivityIndicator
+                          color={item.textColor}
+                          size="small"
+                        />
                       ) : (
-                        <Text style={[styles.saveBtnText, { color: item.textColor }]}>Submit Support Ticket</Text>
+                        <Text
+                          style={[
+                            styles.saveBtnText,
+                            { color: item.textColor },
+                          ]}
+                        >
+                          Submit Support Ticket
+                        </Text>
                       )}
                     </TouchableOpacity>
 
                     {/* Active Tickets List */}
                     {supportTickets.length > 0 && (
                       <View style={{ marginTop: 14 }}>
-                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#334155", marginBottom: 6 }}>
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontWeight: "700",
+                            color: "#334155",
+                            marginBottom: 6,
+                          }}
+                        >
                           Your Recent Tickets
                         </Text>
                         {supportTickets.slice(0, 3).map((ticket) => (
                           <View key={ticket.id} style={styles.ticketBox}>
-                            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                              <Text style={{ fontSize: 12, fontWeight: "700", color: "#1E293B" }}>{ticket.subject}</Text>
-                              <Text style={{ fontSize: 10, fontWeight: "700", color: "#10B981" }}>{ticket.status}</Text>
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                justifyContent: "space-between",
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: "700",
+                                  color: "#1E293B",
+                                }}
+                              >
+                                {ticket.subject}
+                              </Text>
+                              <Text
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: "700",
+                                  color: "#10B981",
+                                }}
+                              >
+                                {ticket.status}
+                              </Text>
                             </View>
-                            <Text style={{ fontSize: 10, color: "#94A3B8", marginTop: 2 }}>
-                              {ticket.id} · {ticket.category}
+                            <Text
+                              style={{
+                                fontSize: 10,
+                                color: "#94A3B8",
+                                marginTop: 2,
+                              }}
+                            >
+                              {ticket.id} · {ticket.category} · Priority: {ticket.priority || 'Normal'}
                             </Text>
+                            {(ticket.resolutionNote || ticket.adminResponse) && (
+                              <View style={{ marginTop: 6, padding: 8, borderRadius: 6, backgroundColor: '#DCFCE7', borderWidth: 1, borderColor: '#86EFAC' }}>
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803D', marginBottom: 2 }}>
+                                  Admin Resolution:
+                                </Text>
+                                <Text style={{ fontSize: 11, color: '#166534', lineHeight: 16 }}>
+                                  {ticket.resolutionNote || ticket.adminResponse}
+                                </Text>
+                              </View>
+                            )}
                           </View>
                         ))}
                       </View>
@@ -702,13 +1829,36 @@ export default function ProfileScreen({ navigation }) {
 
                 {/* ── Expanded: Theme & Appearance ── */}
                 {isExpanded && item.id === "theme" && (
-                  <View style={[styles.expandedContent, { backgroundColor: "#F8FAFC" }]}>
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>Theme & Appearance</Text>
+                  <View
+                    style={[
+                      styles.expandedContent,
+                      { backgroundColor: "#F8FAFC" },
+                    ]}
+                  >
+                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                      Theme & Appearance
+                    </Text>
                     <View style={styles.prefRow}>
                       <View style={{ flex: 1, marginRight: 10 }}>
-                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#1E293B" }}>Dark Mode</Text>
-                        <Text style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
-                          {isDark ? "Dark theme active (persisted offline)" : "Light theme active (persisted offline)"}
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: "700",
+                            color: "#1E293B",
+                          }}
+                        >
+                          Dark Mode
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            color: "#64748B",
+                            marginTop: 2,
+                          }}
+                        >
+                          {isDark
+                            ? "Dark theme active (persisted offline)"
+                            : "Light theme active (persisted offline)"}
                         </Text>
                       </View>
                       <Switch
@@ -723,10 +1873,25 @@ export default function ProfileScreen({ navigation }) {
 
                 {/* ── Expanded: Delete Account ── */}
                 {isExpanded && item.id === "delete" && (
-                  <View style={[styles.expandedContent, { backgroundColor: "#FEF2F2" }]}>
-                    <Text style={[styles.sectionHeading, { color: "#991B1B" }]}>Are you sure?</Text>
-                    <Text style={{ fontSize: 13, color: "#991B1B", marginBottom: 12, lineHeight: 18 }}>
-                      Deleting your account is permanent. All your assets, vault holdings, and escrow history will be lost.
+                  <View
+                    style={[
+                      styles.expandedContent,
+                      { backgroundColor: "#FEF2F2" },
+                    ]}
+                  >
+                    <Text style={[styles.sectionHeading, { color: "#991B1B" }]}>
+                      Are you sure?
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        color: "#991B1B",
+                        marginBottom: 12,
+                        lineHeight: 18,
+                      }}
+                    >
+                      Deleting your account is permanent. All your assets, vault
+                      holdings, and escrow history will be lost.
                     </Text>
 
                     <TextInput
@@ -751,16 +1916,25 @@ export default function ProfileScreen({ navigation }) {
                         styles.saveBtn,
                         {
                           backgroundColor:
-                            deleteConfirmText.trim().toUpperCase() === "DELETE" ? "#DC2626" : "#FCA5A5",
+                            deleteConfirmText.trim().toUpperCase() === "DELETE"
+                              ? "#DC2626"
+                              : "#FCA5A5",
                         },
                       ]}
                       onPress={handleDeleteAccount}
-                      disabled={deletingAccount || deleteConfirmText.trim().toUpperCase() !== "DELETE"}
+                      disabled={
+                        deletingAccount ||
+                        deleteConfirmText.trim().toUpperCase() !== "DELETE"
+                      }
                     >
                       {deletingAccount ? (
                         <ActivityIndicator color="#FFFFFF" size="small" />
                       ) : (
-                        <Text style={[styles.saveBtnText, { color: "#FFFFFF" }]}>Confirm Deletion</Text>
+                        <Text
+                          style={[styles.saveBtnText, { color: "#FFFFFF" }]}
+                        >
+                          Confirm Deletion
+                        </Text>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -776,6 +1950,16 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* ── Install MetaMask Modal (Friendly Mobile Install Screen) ── */}
+      <InstallMetaMaskModal
+        visible={installModalVisible}
+        onClose={() => setInstallModalVisible(false)}
+        onRetry={() => {
+          setInstallModalVisible(false);
+          linkWallet();
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -963,5 +2147,154 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: "#10B981",
+  },
+  walletCard: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+  },
+  walletHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  walletTitleGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  walletIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(0, 251, 255, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  walletCardTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  walletCardSubtitle: {
+    fontSize: 12,
+    color: "#94A3B8",
+    marginTop: 2,
+  },
+  networkBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.25)",
+  },
+  networkPulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#10B981",
+  },
+  networkBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#10B981",
+  },
+  walletConnectedContent: {
+    marginTop: 4,
+  },
+  addressDisplayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+  },
+  addressMonoText: {
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  copyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  copyBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  walletWarningBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(251, 191, 36, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(251, 191, 36, 0.25)",
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  walletWarningText: {
+    fontSize: 12,
+    color: "#FCD34D",
+    flex: 1,
+    lineHeight: 16,
+  },
+  walletActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    marginTop: 12,
+  },
+  unlinkBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.2)",
+  },
+  unlinkBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#EF4444",
+  },
+  walletUnconnectedContent: {
+    marginTop: 6,
+  },
+  walletEmptyDesc: {
+    fontSize: 12,
+    color: "#94A3B8",
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  connectWalletBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#6366F1",
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  connectWalletBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
 });

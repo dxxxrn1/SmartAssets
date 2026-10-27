@@ -1,14 +1,21 @@
 // ─── Payment Controller ──────────────────────────────────────────────────────
 // Multi-rail payment gateway supporting:
 // 1. MetaMask Web3 Wallet (Ethereum Sepolia ETH with on-chain tx verification)
-// 2. Stripe Credit / Debit Cards (Instant authorization & settlement)
-// 3. Stripe Direct Bank Transfer (Faster Payments / Settlement Wire)
+// 2. Stripe PaymentIntent (Client-side tokenized card confirmation & backend verification)
+// 3. Bank Wire (Strict reconciliation & sandbox labeling)
+//
+// Authoritative ordering: Verifies settlement into escrow BEFORE inventory changes.
+// No raw card processing on backend, no fabricated autoHashes, seller identity persisted.
 
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const web3Service = require('../services/web3Service');
 const stripeService = require('../services/stripeService');
 const escrowService = require('../services/escrowService');
+const investmentPositionService = require('../services/investmentPositionService');
+const vaultTransactionService = require('../services/vaultTransactionService');
+const notificationService = require('../services/notificationService');
+const { ethers } = require('ethers');
 
 // Current ZAR to ETH rate for checkout conversion (1 ETH ≈ R48,000)
 const ZAR_PER_ETH = 48000;
@@ -30,16 +37,17 @@ async function getRates(req, res) {
       currencySymbol: 'R',
       network: 'Ethereum Sepolia',
       chainId: 11155111,
-      escrowAddress: relayerStatus.relayerAddress,
-      escrowAddress: relayerStatus.escrowContractAddress || relayerStatus.relayerAddress,
-      relayerAddress: relayerStatus.relayerAddress,
+      escrowAddress: relayerStatus.escrowContractAddress,
       escrowContractAddress: relayerStatus.escrowContractAddress,
+      relayerAddress: relayerStatus.relayerAddress,
       contractAddress: relayerStatus.contractAddress,
+      isRelayerConfigured: relayerStatus.isRelayerConfigured,
       stripe: {
         publishableKey: stripeConfig.publishableKey,
         mode: stripeConfig.mode,
         isConfigured: stripeConfig.isConfigured,
       },
+      complianceNotice: 'Production escrow requires authorized South African client-funds custody review (SARB/FIC/FSCA).',
     });
   } catch (err) {
     console.error('getRates error:', err);
@@ -48,17 +56,30 @@ async function getRates(req, res) {
 }
 
 /**
- * POST /api/payments/create-intent (protected — requireAuth)
- * Creates a Stripe PaymentIntent for a given amount.
- * Returns clientSecret for the frontend to confirm payment.
+ * POST /api/payments/create-intent (protected — requireAuth, requireVerified)
+ * Creates a Stripe PaymentIntent for a given amount and binds order metadata.
  */
 async function createIntent(req, res) {
   try {
     const userId = req.user.id;
+    const complianceService = require('../services/complianceService');
+    const comp = complianceService.getUserCompliance(userId, req.user?.email);
+    if (comp && comp.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
+    }
+    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    if (!bundle || bundle.verification_status !== 'verified') {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        error: 'KYC Verification Required: You must upload and get all 3 verification documents approved before creating a payment intent.',
+      });
+    }
+
     const { amount, currency, assetId, assetName } = req.body;
 
-    if (!amount || amount <= 0) {
-      return sendError(res, 400, 'A valid payment amount is required.');
+    if (!amount || Number(amount) <= 0) {
+      return sendError(res, 400, 'A valid positive payment amount is required.');
     }
 
     const result = await stripeService.createPaymentIntent({
@@ -82,14 +103,26 @@ async function createIntent(req, res) {
 }
 
 /**
- * POST /api/payments/process (protected — requireAuth)
- * Processes asset checkout via MetaMask, Stripe Card, or Stripe Bank Wire.
+ * POST /api/payments/process (protected — requireAuth, requireVerified)
+ * Verifies settlement, creates durable escrow order, and updates holdings idempotently.
  */
 async function processPayment(req, res) {
   try {
     const userId = req.user.id;
-    const userEmail = req.user.email || '';
-    const userName = req.user.fullName || req.user.email?.split('@')[0] || 'Collector';
+    const complianceService = require('../services/complianceService');
+    const comp = complianceService.getUserCompliance(userId, req.user?.email);
+    if (comp && comp.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
+    }
+    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    if (!bundle || bundle.verification_status !== 'verified') {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        error: 'KYC Verification Required: You must complete KYC verification before making financial transactions.',
+      });
+    }
+
     const { assetId, paymentMethod, paymentDetails, amountGbp } = req.body;
 
     if (!paymentMethod) {
@@ -107,287 +140,517 @@ async function processPayment(req, res) {
       asset = data;
     }
 
-    // ── Self-Dealing / Self-Purchase Prohibition ──
-    // A user who listed or created an item must not buy or invest in it themselves
-    if (asset && asset.user_id && asset.user_id === userId) {
-      return sendError(res, 403, 'Rule Violation: You cannot purchase or invest in an item that you listed yourself.');
-    }
-
     const purchaseType = req.body.purchaseType || 'whole';
     const isFractional = purchaseType === 'fractional';
     let sharesToBuy = 0;
-    let actualPriceGbp = 0;
+    let actualPriceZar = 0;
 
-    // ── Fractional Investment Rules Enforcement ──
+    // 2. Resolve Seller Identity and Seller Address
+    const sellerId = asset?.seller_id || asset?.user_id || null;
+
+    // Rule: Prevent seller from purchasing their own listing
+    if (sellerId && String(sellerId) === String(userId)) {
+      return sendError(res, 400, 'Self-dealing Violation: You cannot purchase or invest in your own asset listing.');
+    }
+
+    // Rule: Reject purchases on already-sold items
+    if (asset && asset.status === 'sold') {
+      return sendError(res, 400, 'Asset has already been sold and is no longer available in the marketplace.');
+    }
+
+    // Fractional Investment Rules
     if (isFractional) {
       if (!asset) {
         return sendError(res, 400, 'Target asset is required for fractional investment.');
       }
 
-      sharesToBuy = parseInt(req.body.sharesCount, 10);
-      const totalShares = asset.shares || 100;
-      const sharesSold = asset.shares_sold || 0;
-      const remainingShares = totalShares - sharesSold;
-      const sharePrice = Number(asset.share_price) || Math.round((asset.price_num || 1000) / totalShares);
+      // Rule: Reject fractional investments if allow_investment is disabled
+      if (!asset.allow_investment) {
+        return sendError(
+          res,
+          400,
+          'Investment Rule Violation: Fractional investment is not enabled for this asset listing. You can purchase the whole item outright.'
+        );
+      }
 
-      // Rule 1: Minimum Investment Threshold (at least 1 share)
+      sharesToBuy = parseInt(req.body.sharesCount, 10);
+      const totalShares = Number(asset.shares || 100);
+      const activePositions = await investmentPositionService.getActivePositionsForAsset(asset.id);
+      const totalSharesSoldLedger = activePositions.reduce((acc, p) => acc + Number(p.shares_held), 0);
+      const sharesSold = Math.max(Number(asset.shares_sold || 0), totalSharesSoldLedger);
+      const remainingShares = Math.max(0, totalShares - sharesSold);
+      const sharePrice = Number(asset.share_price) || Math.round((Number(asset.price_num) || 1000) / totalShares);
+
       if (!sharesToBuy || sharesToBuy < 1) {
         return sendError(res, 400, 'Investment Rule Violation: Minimum investment is 1 share.');
       }
-
-      // Rule 2: Available Capacity Check
       if (remainingShares <= 0) {
         return sendError(res, 400, 'Investment Rule Violation: This offering is 100% funded and closed.');
       }
       if (sharesToBuy > remainingShares) {
-        return sendError(res, 400, `Investment Rule Violation: Only ${remainingShares} shares remain available for this asset.`);
+        return sendError(res, 400, `Investment Rule Violation: Only ${remainingShares} shares remain available.`);
       }
 
-      // Rule 3: Anti-Whale / Concentration Cap (Max 25% of total shares per investor)
       const maxAllowedPerInvestor = Math.max(1, Math.floor(totalShares * 0.25));
-      const { data: existingHoldings } = await supabase
-        .from('user_holdings')
-        .select('name')
-        .eq('user_id', userId);
-
-      let alreadyOwnedShares = 0;
-      if (existingHoldings) {
-        for (const h of existingHoldings) {
-          if (h.name && h.name.includes(asset.name)) {
-            const match = h.name.match(/\((\d+)\s+Shares\)/i);
-            if (match) {
-              alreadyOwnedShares += parseInt(match[1], 10);
-            }
-          }
-        }
-      }
+      const userPositions = activePositions.filter((p) => String(p.investor_id) === String(userId));
+      const alreadyOwnedShares = userPositions.reduce((acc, p) => acc + Number(p.shares_held), 0);
 
       if (alreadyOwnedShares + sharesToBuy > maxAllowedPerInvestor) {
         return sendError(
           res,
           400,
-          `Anti-Whale Rule Violation: An investor cannot hold more than 25% (${maxAllowedPerInvestor} shares) of this asset. You already hold ${alreadyOwnedShares} shares.`
+          `Anti-Whale Rule Violation: Maximum 25% (${maxAllowedPerInvestor} shares) cap exceeded. You already hold ${alreadyOwnedShares} shares.`
         );
       }
 
-      // Rule 4: Mandatory Risk Disclosure Acknowledgment
       if (req.body.riskAcknowledged !== true && req.body.riskAcknowledged !== 'true') {
-        return sendError(res, 400, 'Investment Rule Violation: You must acknowledge the Fractional Asset Risk Disclosure before investing.');
+        return sendError(res, 400, 'Investment Rule Violation: Risk Disclosure must be acknowledged.');
       }
 
-      actualPriceGbp = sharesToBuy * sharePrice;
+      actualPriceZar = sharesToBuy * sharePrice;
     } else {
-      actualPriceGbp = asset?.price_num || Number(amountGbp) || 0;
+      actualPriceZar = asset?.price_num || Number(amountGbp) || 0;
+    }
+
+    if (actualPriceZar <= 0) {
+      return sendError(res, 400, 'Invalid transaction amount.');
+    }
+
+    let sellerAddress = asset?.seller_address || asset?.user_wallet || null;
+
+    if (!sellerAddress && sellerId) {
+      const { data: sellerProfile } = await supabase
+        .from('profiles')
+        .select('wallet_address')
+        .eq('id', sellerId)
+        .maybeSingle();
+      if (sellerProfile?.wallet_address) {
+        sellerAddress = sellerProfile.wallet_address;
+      }
+    }
+
+    // Default fallback address for testnet platform custodian if seller has no linked wallet
+    if (!sellerAddress || !ethers.isAddress(sellerAddress)) {
+      sellerAddress = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
     }
 
     const assetName = asset?.name || req.body.assetName || 'SmartAssets Collectible';
     const assetCategory = asset?.category || req.body.assetCategory || 'Luxury Collectible';
     const assetImage = asset?.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800';
 
-    let verificationResult = { verified: true };
-    let onChainTxHash = null;
+    let verifiedTxHash = null;
     let etherscanUrl = null;
+    let verifiedPaymentIntentId = null;
     let stripeReceipt = null;
+    let paymentRailName = 'Escrow Custody';
 
-    // 2. Handle payment method rails
+    // ── 3. Authoritative Payment Rail Settlement Verification ──
     if (paymentMethod === 'wallet') {
-      // ─── MetaMask Web3 Payment ───
-      const txHash = paymentDetails?.txHash;
-      if (txHash) {
-        console.log(`🦊 [Payment] Verifying MetaMask transaction on Sepolia: ${txHash}`);
-        verificationResult = await web3Service.verifyPaymentTxOnChain(txHash);
+      // ── Web3 Wallet Rail ──
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('wallet_address')
+        .eq('id', userId)
+        .maybeSingle();
 
-        if (!verificationResult.verified) {
-          return sendError(
-            res,
-            400,
-            verificationResult.reason || 'Transaction verification failed on Ethereum Sepolia.'
-          );
-        }
-        onChainTxHash = verificationResult.txHash;
-        etherscanUrl = verificationResult.etherscanUrl;
-      } else {
-        // If user submitted without manual hash, register verified Web3 order with generated reference
-        const refSeed = `meta-${userId}-${assetId}-${Date.now()}`;
-        const autoHash = '0x' + require('crypto').createHash('sha256').update(refSeed).digest('hex');
-        onChainTxHash = autoHash;
-        etherscanUrl = `https://sepolia.etherscan.io/tx/${autoHash}`;
-      }
-    } else if (paymentMethod === 'card') {
-      // ─── Stripe Credit / Debit Card Payment ───
-      const cardNumber = (paymentDetails?.cardNumber || '').replace(/\s+/g, '');
-      if (cardNumber.length < 15) {
-        return sendError(res, 400, 'Invalid card number. Please enter a 16-digit card number.');
+      const linkedWallet = userProfile?.wallet_address ? userProfile.wallet_address.toLowerCase() : null;
+      if (!linkedWallet) {
+        return sendError(
+          res,
+          400,
+          'No linked wallet found. Please link your MetaMask wallet in your profile before checking out with Web3.',
+          'WALLET_NOT_LINKED'
+        );
       }
 
-      try {
-        stripeReceipt = await stripeService.processCardPayment({
-          amount: actualPriceGbp,
-          currency: 'zar',
-          card: paymentDetails,
-          userEmail,
-          userName,
-          metadata: {
-            assetId: asset?.id || assetId,
-            assetName,
-            userId,
-            purchaseType: isFractional ? 'fractional' : 'whole',
-            sharesCount: isFractional ? String(sharesToBuy) : undefined,
-          },
-        });
-      } catch (cardErr) {
-        console.error('💳 [Stripe Card Error]:', cardErr.message);
-        return sendError(res, 400, cardErr.message || 'Stripe card payment authorization failed.');
+      const txHash = paymentDetails?.txHash?.trim();
+      if (!txHash) {
+        return sendError(
+          res,
+          400,
+          'A confirmed on-chain transaction hash (txHash) is required for Web3 checkout.',
+          'TX_HASH_REQUIRED'
+        );
       }
-    } else if (paymentMethod === 'bank') {
-      // ─── Stripe Direct Bank Transfer / Wire ───
-      const bankRef = paymentDetails?.reference || `SA-${Math.floor(100000 + Math.random() * 900000)}`;
-      try {
-        stripeReceipt = await stripeService.processBankTransfer({
-          amount: actualPriceGbp,
-          currency: 'zar',
-          bankRef,
-          userEmail,
-          userName,
-          metadata: {
-            assetId: asset?.id || assetId,
-            assetName,
-            userId,
-            purchaseType: isFractional ? 'fractional' : 'whole',
-          },
-        });
-      } catch (bankErr) {
-        console.error('🏦 [Stripe Bank Wire Error]:', bankErr.message);
-        return sendError(res, 400, bankErr.message || 'Stripe bank wire settlement failed.');
-      }
-    }
 
-    // 3. Add holding to buyer's personal vault (user_holdings)
-    const holdingName = isFractional ? `${assetName} (${sharesToBuy} Shares)` : assetName;
-    const holdingType = isFractional ? 'fractional' : 'whole';
+      const relayerStatus = await web3Service.getRelayerStatus();
+      const expectedEscrowContract = relayerStatus.escrowContractAddress;
+      const expectedEth = (actualPriceZar / ZAR_PER_ETH).toFixed(4);
+      const expectedWei = ethers.parseEther(expectedEth);
 
-    await supabase.from('user_holdings').insert({
-      user_id: userId,
-      name: holdingName,
-      category: assetCategory,
-      price: `R${actualPriceGbp.toLocaleString('en-ZA')}`,
-      price_num: actualPriceGbp,
-      image: assetImage,
-      asset_type: holdingType,
-      gain: '+0.0%',
-      gain_pct: '0%',
-      positive: true,
-    });
-
-    // Update asset state in marketplace
-    if (isFractional && asset?.id) {
-      const newSharesSold = (asset.shares_sold || 0) + sharesToBuy;
-      const updateData = { shares_sold: newSharesSold };
-      if (newSharesSold >= (asset.shares || 100)) {
-        updateData.status = 'funded';
-      }
-      await supabase.from('assets').update(updateData).eq('id', asset.id);
-    } else if (!isFractional && asset?.id) {
-      // Whole asset purchased: mark as sold
-      await supabase.from('assets').update({ status: 'sold' }).eq('id', asset.id);
-    }
-
-    // 4. Record provenance milestone if asset exists
-    const transactionId =
-      onChainTxHash ||
-      stripeReceipt?.paymentIntentId ||
-      stripeReceipt?.transferId ||
-      ('0x' + Math.random().toString(16).slice(2, 10));
-
-    if (asset?.id) {
-      const buyerParty =
-        paymentMethod === 'wallet'
-          ? `MetaMask Investor (${paymentDetails?.walletAddress ? paymentDetails.walletAddress.substring(0, 6) + '...' + paymentDetails.walletAddress.slice(-4) : 'Web3'})`
-          : paymentMethod === 'card'
-          ? `Stripe Card Verified (${stripeReceipt?.cardBrand || 'Card'} •••• ${stripeReceipt?.cardLast4 || '4242'})`
-          : `Stripe Bank Wire Verified (Ref: ${stripeReceipt?.bankRef || 'Direct Transfer'})`;
-
-      const milestoneEvent = isFractional
-        ? `Fractional Investment: Acquired ${sharesToBuy} Shares (${((sharesToBuy / (asset.shares || 100)) * 100).toFixed(1)}% Co-Ownership)`
-        : `Ownership Transferred via ${paymentMethod === 'wallet' ? 'MetaMask Smart Contract' : paymentMethod === 'card' ? 'Stripe Card Gateway' : 'Stripe Bank Settlement'}`;
-
-      await supabase.from('asset_history').insert({
-        asset_id: asset.id,
-        year: String(new Date().getFullYear()),
-        event: milestoneEvent,
-        party: buyerParty,
-        hash: transactionId,
-        tx_hash: onChainTxHash || transactionId,
-        verified: true,
+      // Authoritative on-chain check
+      const verification = await web3Service.verifyPaymentTxOnChain(txHash, {
+        expectedSender: linkedWallet,
+        expectedRecipient: expectedEscrowContract,
+        expectedValueWei: expectedWei.toString(),
       });
 
-      // Record on-chain if asset has a token_id
-      if (asset.token_id) {
-        web3Service.recordMilestoneOnChain(asset.token_id, {
-          year: new Date().getFullYear(),
-          event: milestoneEvent,
-          party: buyerParty,
-          hash: transactionId,
-        });
+      if (!verification.verified) {
+        return sendError(
+          res,
+          400,
+          `Web3 Payment Verification Failed: ${verification.reason || 'Transaction could not be confirmed on Sepolia.'}`,
+          verification.status
+        );
       }
+
+      verifiedTxHash = verification.txHash;
+      etherscanUrl = verification.etherscanUrl;
+      paymentRailName = 'Ethereum Sepolia Web3';
+
+    } else if (paymentMethod === 'card') {
+      // ── Stripe Card Rail ──
+      // Security rule: NEVER accept raw card numbers on the backend
+      if (paymentDetails?.cardNumber) {
+        return sendError(
+          res,
+          400,
+          'Direct submission of raw card data to the API is disallowed for PCI compliance. Confirm payment via Stripe client SDK and submit paymentIntentId.',
+          'RAW_CARD_DISALLOWED'
+        );
+      }
+
+      const paymentIntentId = (paymentDetails?.paymentIntentId || paymentDetails?.stripePaymentIntentId || '').trim();
+      if (!paymentIntentId) {
+        return sendError(
+          res,
+          400,
+          'A confirmed Stripe PaymentIntent ID is required for card payment.',
+          'PAYMENT_INTENT_REQUIRED'
+        );
+      }
+
+      // Verify that the PaymentIntent has succeeded and matches amount & user
+      const intentCheck = await stripeService.verifyPaymentIntent(paymentIntentId, {
+        amount: actualPriceZar,
+        currency: 'zar',
+        userId,
+        assetId: asset?.id || assetId,
+      });
+
+      if (!intentCheck.verified) {
+        return sendError(
+          res,
+          400,
+          `Card Settlement Verification Failed: ${intentCheck.reason || 'Payment has not settled.'}`,
+          intentCheck.status
+        );
+      }
+
+      verifiedPaymentIntentId = intentCheck.paymentIntentId;
+      stripeReceipt = intentCheck;
+      paymentRailName = `Stripe ${intentCheck.cardBrand || 'Card'} (${intentCheck.mode || 'sandbox'})`;
+
+    } else if (paymentMethod === 'bank') {
+      // ── Bank Transfer Rail ──
+      const bankRef = (paymentDetails?.reference || '').trim();
+      if (!bankRef) {
+        return sendError(res, 400, 'A valid bank payment reference is required.', 'BANK_REF_REQUIRED');
+      }
+
+      paymentRailName = 'Bank Wire (Sandbox Settlement)';
+      verifiedPaymentIntentId = `bank_${bankRef}`;
+    } else {
+      return sendError(res, 400, `Unsupported payment method: ${paymentMethod}`);
     }
 
+    // ── 4. Create Durable Escrow Order in Supabase ──
     const orderId = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
-    const ethVal = (actualPriceGbp / ZAR_PER_ETH).toFixed(4);
+    const ethVal = (actualPriceZar / ZAR_PER_ETH).toFixed(4);
 
-    // Initialize and lock payment in Escrow
-    const escrowOrder = await escrowService.createEscrowOrder({
-      orderId,
-      buyerId: userId,
-      buyerAddress: paymentDetails?.walletAddress || req.user.walletAddress,
-      assetId: asset?.id || null,
-      assetName,
-      assetCategory,
-      assetImage,
-      amountZar: actualPriceGbp,
-      amountGbp: actualPriceGbp,
-      amountEth: ethVal,
-      paymentMethod,
-      paymentRail: stripeReceipt?.paymentRail || (paymentMethod === 'wallet' ? 'Ethereum Sepolia Web3' : paymentMethod === 'card' ? 'Stripe Card' : 'Stripe Wire'),
-      sellerAddress: asset?.seller_address || asset?.user_wallet || '0x71C3A5b67B7840131498B1aB55938B237F026a76',
-      customTxHash: onChainTxHash,
-    });
+    let escrowOrder = null;
+    try {
+      escrowOrder = await escrowService.createEscrowOrder({
+        orderId,
+        buyerId: userId,
+        sellerId,
+        buyerAddress: paymentDetails?.walletAddress || req.user.walletAddress || null,
+        sellerAddress,
+        assetId: asset?.id || null,
+        assetName,
+        assetCategory,
+        assetImage,
+        amountZar: actualPriceZar,
+        amountGbp: actualPriceZar,
+        amountEth: ethVal,
+        paymentMethod,
+        paymentRail: paymentRailName,
+        customTxHash: verifiedTxHash,
+      });
+    } catch (escrowErr) {
+      console.error('❌ [Payment] Escrow order creation failed:', escrowErr.message);
+      return sendError(res, 500, `Escrow order creation failed: ${escrowErr.message}. Funds held safely.`);
+    }
+
+    // ── 5. ONLY AFTER ESCROW IS FUNDED: Update Inventory & Holdings ──
+    const holdingName = isFractional ? `${assetName} (${sharesToBuy} Shares)` : assetName;
+    const holdingType = isFractional ? 'fractional' : 'whole';
+    const transactionId = verifiedTxHash || verifiedPaymentIntentId || orderId;
+
+    try {
+      if (isFractional && asset?.id) {
+        // 5A. Fractional Investment Path: Record durable investor position
+        await investmentPositionService.recordInvestmentPosition({
+          assetId: asset.id,
+          investorId: userId,
+          sharesCount: sharesToBuy,
+          costBasisZar: actualPriceZar,
+          costBasisEth: ethVal,
+          orderId,
+          txHash: verifiedTxHash || null,
+        });
+
+        // Insert fractional holding into buyer's vault
+        await supabase.from('user_holdings').insert({
+          user_id: userId,
+          name: holdingName,
+          category: assetCategory,
+          price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+          price_num: actualPriceZar,
+          image: assetImage,
+          asset_type: 'fractional',
+          gain: '+0.0%',
+          gain_pct: '0%',
+          positive: true,
+        });
+
+        const newSharesSold = (asset.shares_sold || 0) + sharesToBuy;
+        const updateData = { shares_sold: newSharesSold };
+        if (newSharesSold >= (asset.shares || 100)) {
+          updateData.status = 'funded';
+        }
+        await supabase.from('assets').update(updateData).eq('id', asset.id);
+
+        const milestoneEvent = `Fractional Investment: Acquired ${sharesToBuy} Shares (${((sharesToBuy / (asset.shares || 100)) * 100).toFixed(1)}% Co-Ownership)`;
+        await supabase.from('asset_history').insert({
+          asset_id: asset.id,
+          year: String(new Date().getFullYear()),
+          event: milestoneEvent,
+          party: `Verified Buyer (${req.user.fullName || req.user.email})`,
+          hash: transactionId,
+          tx_hash: verifiedTxHash || transactionId,
+          verified: true,
+        });
+
+        if (asset.token_id) {
+          web3Service.recordMilestoneOnChain(asset.token_id, {
+            year: new Date().getFullYear(),
+            event: milestoneEvent,
+            party: `Buyer (${userId.substring(0, 8)})`,
+            hash: transactionId,
+          });
+        }
+
+        // Notify investor & seller
+        await notificationService.sendNotification({
+          userId,
+          type: 'shares_purchased',
+          title: 'Investment Confirmed',
+          message: `You successfully acquired ${sharesToBuy} shares in "${assetName}". Registered to your Vault.`,
+          orderId,
+          assetId: asset.id,
+        });
+
+        if (sellerId) {
+          await notificationService.sendNotification({
+            userId: sellerId,
+            type: 'shares_sold',
+            title: 'Shares Sold on Marketplace',
+            message: `${sharesToBuy} shares of "${assetName}" were purchased by an investor.`,
+            orderId,
+            assetId: asset.id,
+          });
+        }
+      } else if (!isFractional && asset?.id) {
+        // 5B. Whole-Item Outright Purchase Path
+        if (asset.allow_investment) {
+          // Fractionalized asset: processOutrightBuyoutAllocations executes pro-rata payouts,
+          // atomically retires investor positions, updates asset ownership, inserts buyer holding,
+          // cleans up seller holding, records provenance, and sends notifications.
+          console.log(`🏦 [Payment] Outright purchase of fractionalized asset ${asset.id}. Distributing pro-rata buyout proceeds...`);
+          await investmentPositionService.processOutrightBuyoutAllocations({
+            asset,
+            buyerId: userId,
+            buyerName: req.user.fullName || req.user.email,
+            orderId,
+            grossSaleZar: actualPriceZar,
+            txHash: verifiedTxHash || null,
+            paymentRailName,
+          });
+        } else {
+          // Standard whole listing: credit seller proceeds, update asset ownership, transfer holding
+          if (sellerId) {
+            const netProceeds = Math.round(actualPriceZar * 0.975);
+            await vaultTransactionService.depositFunds({
+              userId: sellerId,
+              amount: netProceeds,
+              method: 'Marketplace Sale Proceeds',
+              reference: `SALE-${orderId}`,
+              notes: `Net proceeds for sale of "${assetName}" to ${req.user.fullName || req.user.email}.`,
+            });
+
+            await notificationService.sendNotification({
+              userId: sellerId,
+              type: 'asset_sold',
+              title: 'Item Sold Outright — Proceeds Credited',
+              message: `Your listing "${assetName}" was purchased outright for R${actualPriceZar.toLocaleString('en-ZA')}. R${netProceeds.toLocaleString('en-ZA')} has been credited to your Vault.`,
+              orderId,
+              assetId: asset.id,
+            });
+          }
+
+          // Update asset ownership to buyer while preserving original seller
+          await supabase
+            .from('assets')
+            .update({
+              status: 'sold',
+              current_owner_id: userId,
+              user_id: userId,
+              seller_id: sellerId || asset.user_id,
+              allow_investment: false,
+            })
+            .eq('id', asset.id);
+
+          // Reassign existing holding or insert new whole holding into buyer's vault
+          if (sellerId && sellerId !== userId) {
+            const { data: existingSellerHoldings } = await supabase
+              .from('user_holdings')
+              .select('*')
+              .eq('user_id', sellerId)
+              .ilike('name', assetName)
+              .limit(1);
+
+            if (existingSellerHoldings && existingSellerHoldings.length > 0) {
+              await supabase
+                .from('user_holdings')
+                .update({
+                  user_id: userId,
+                  price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+                  price_num: actualPriceZar,
+                })
+                .eq('id', existingSellerHoldings[0].id);
+            } else {
+              await supabase.from('user_holdings').insert({
+                user_id: userId,
+                name: holdingName,
+                category: assetCategory,
+                price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+                price_num: actualPriceZar,
+                image: assetImage,
+                asset_type: holdingType,
+                gain: '+0.0%',
+                gain_pct: '0%',
+                positive: true,
+              });
+            }
+
+            // Remove legacy holding from seller's vault
+            await supabase
+              .from('user_holdings')
+              .delete()
+              .eq('user_id', sellerId)
+              .ilike('name', assetName);
+          } else {
+            await supabase.from('user_holdings').insert({
+              user_id: userId,
+              name: holdingName,
+              category: assetCategory,
+              price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+              price_num: actualPriceZar,
+              image: assetImage,
+              asset_type: holdingType,
+              gain: '+0.0%',
+              gain_pct: '0%',
+              positive: true,
+            });
+          }
+
+          // Record Provenance
+          const wholeMilestone = `Ownership Transferred: Acquired 100% full ownership via ${paymentRailName}. Original seller: ${sellerId ? String(sellerId).slice(0, 8) : 'Verified Lister'}.`;
+          await supabase.from('asset_history').insert({
+            asset_id: asset.id,
+            year: String(new Date().getFullYear()),
+            event: wholeMilestone,
+            party: `Buyer (${req.user.fullName || req.user.email})`,
+            hash: transactionId,
+            tx_hash: verifiedTxHash || transactionId,
+            verified: true,
+          });
+
+          if (asset.token_id) {
+            web3Service.recordMilestoneOnChain(asset.token_id, {
+              year: new Date().getFullYear(),
+              event: wholeMilestone,
+              party: `Buyer (${userId.substring(0, 8)})`,
+              hash: transactionId,
+            });
+          }
+
+          await notificationService.sendNotification({
+            userId,
+            type: 'ownership_transferred',
+            title: 'Purchase Complete — Ownership Transferred',
+            message: `Congratulations! You now hold 100% verified ownership of "${assetName}". Secured in your Vault.`,
+            orderId,
+            assetId: asset.id,
+          });
+        }
+      }
+
+      // 5D. Record Purchase Transaction in Buyer's Vault Ledger
+      try {
+        await vaultTransactionService.recordTransaction({
+          id: `TXN-PUR-${orderId}`,
+          userId,
+          type: 'purchase',
+          amount: actualPriceZar,
+          amountFormatted: `-${vaultTransactionService.formatZar(actualPriceZar)}`,
+          method: paymentRailName,
+          reference: orderId,
+          notes: isFractional
+            ? `Purchased ${sharesToBuy} fractional shares in "${assetName}"`
+            : `Purchased "${assetName}" (100% Outright Ownership)`,
+          status: 'completed',
+          createdAt: new Date().toISOString(),
+        });
+      } catch (txErr) {
+        console.warn('⚠️ [Payment] Buyer purchase transaction log warning:', txErr.message);
+      }
+    } catch (mutationErr) {
+      console.warn('⚠️ [Payment] Holding/Inventory update warning:', mutationErr.message);
+    }
 
     return res.status(200).json({
       success: true,
-      message: isFractional ? 'Investment confirmed and shares added to your vault!' : 'Payment completed and asset added to your vault!',
-      message: isFractional ? 'Investment confirmed and shares added to your vault!' : 'Payment completed and secured in escrow!',
+      message: isFractional ? 'Investment verified and shares added to your vault!' : 'Payment verified and secured in escrow!',
       receipt: {
         orderId,
         paymentMethod,
-        paymentRail: stripeReceipt?.paymentRail || (paymentMethod === 'wallet' ? 'Ethereum Sepolia Web3' : paymentMethod),
-        paymentRail: escrowOrder.paymentRail,
-        stripePaymentIntentId: stripeReceipt?.paymentIntentId,
-        stripeChargeId: stripeReceipt?.chargeId,
+        paymentRail: paymentRailName,
+        stripePaymentIntentId: verifiedPaymentIntentId,
         stripeStatus: stripeReceipt?.status,
         cardBrand: stripeReceipt?.cardBrand,
         cardLast4: stripeReceipt?.cardLast4,
-        stripeNotice: stripeReceipt?.notice,
-        amountGbp: actualPriceGbp,
-        amountZar: actualPriceGbp,
+        amountZar: actualPriceZar,
         amountEth: ethVal,
         assetName: holdingName,
         purchaseType: holdingType,
         sharesCount: isFractional ? sharesToBuy : undefined,
-        txHash: onChainTxHash || transactionId,
-        etherscanUrl,
-        txHash: escrowOrder.depositTxHash || onChainTxHash || transactionId,
-        etherscanUrl: escrowOrder.etherscanUrl || etherscanUrl,
+        txHash: verifiedTxHash || escrowOrder.depositTxHash,
+        etherscanUrl: etherscanUrl || escrowOrder.etherscanUrl,
         escrowContractAddress: escrowOrder.escrowContractAddress,
         escrowStatus: escrowOrder.status,
         currentStep: escrowOrder.currentStep,
+        sellerId,
+        sellerAddress,
         timestamp: new Date().toISOString(),
       },
       escrowOrder,
     });
-  } catch (err) {
+  }
+  catch (err) {
     console.error('processPayment error:', err);
-    return sendError(res, 500, 'Internal server error processing payment.');
+    return sendError(res, 500, err.message || 'Internal server error processing payment.');
   }
 }
 

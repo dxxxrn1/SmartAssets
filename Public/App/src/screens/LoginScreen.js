@@ -14,13 +14,22 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useColors } from '../constants/theme';
 import { SCREENS } from '../constants/navigation';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { API_BASE_URL, forgotPasswordApi } from '../services/api';
+import { useNetwork, OfflineBanner } from '../context/NetworkContext';
+import { API_BASE_URL, forgotPasswordApi, getWalletNonceApi } from '../services/api';
 import { isOnlineSync, checkInternetConnection } from '../utils/network';
+import CompleteProfileModal from '../components/CompleteProfileModal';
+import InstallMetaMaskModal from '../components/InstallMetaMaskModal';
+import {
+  isMetaMaskAppInstalled,
+  connectMobileWallet,
+  signPersonalMessage,
+} from '../services/mobileWalletService';
 
 const DEFAULT_DEMO_WALLET =
   '0x71C8360f3a14672D62372c388657B43933c039A4';
@@ -28,7 +37,20 @@ const DEFAULT_DEMO_WALLET =
 export default function LoginScreen({ navigation, isDark: propIsDark }) {
   const { isDark, toggleTheme } = useTheme();
   const c = useColors(isDark);
-  const { login, loginWithWallet } = useAuth();
+  const { login, loginWithWallet, sessionNotice, clearSessionNotice } = useAuth();
+  const { isConnected, isOffline, checkConnection } = useNetwork();
+
+  // Network check helper before auth actions
+  const verifyOnline = async () => {
+    const online = await checkConnection();
+    if (!online || isOffline || !isConnected) {
+      const msg = 'No internet connection. Please connect to the internet to sign in.';
+      setError(msg);
+      Alert.alert('No Internet Connection', msg);
+      return false;
+    }
+    return true;
+  };
 
   // Normal login
   const [email, setEmail] = useState('');
@@ -42,6 +64,12 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
   const [customWalletAddress, setCustomWalletAddress] = useState('');
   const [connectingWallet, setConnectingWallet] = useState(false);
   const [walletStatus, setWalletStatus] = useState('');
+
+  // Complete Profile modal for new wallets
+  const [completeProfileVisible, setCompleteProfileVisible] = useState(false);
+  const [pendingWalletAddress, setPendingWalletAddress] = useState('');
+  const [pendingVerificationToken, setPendingVerificationToken] = useState('');
+  const [installModalVisible, setInstallModalVisible] = useState(false);
 
   // Forgot password
   const [forgotModalVisible, setForgotModalVisible] = useState(false);
@@ -58,7 +86,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     setError('');
 
     if (!isOnlineSync()) {
-      setError('No internet connection. Please connect to the internet to sign in.');
+      setError('No internet connection. Please connect to Wi-Fi or mobile data to sign in.');
       return;
     }
 
@@ -69,32 +97,27 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
 
     setLoading(true);
 
-    const isConnected = await checkInternetConnection();
-    if (!isConnected) {
-      setLoading(false);
-      setError('No internet connection. Please connect to the internet to sign in.');
-      return;
-    }
-
     try {
       await login(email.trim().toLowerCase(), password);
     } catch (err) {
       if (
         err?.message?.includes('Network') ||
         err?.message?.includes('Failed to fetch') ||
-        err?.message?.includes('Cannot connect')
+        err?.message?.includes('Cannot connect') ||
+        err?.message?.includes('ConnectException')
       ) {
-        setError('No internet connection. Please connect to the internet to sign in.');
+        setError(err.message || 'Cannot connect to SmartAssets backend. Please make sure your phone and PC are on the same Wi-Fi.');
       } else {
         setError(
           err?.message ||
-            'Login failed. Please verify your email and password.'
+          'Login failed. Please verify your email and password.'
         );
       }
     } finally {
       setLoading(false);
     }
   };
+
 
   // --------------------------------------------------
   // FORGOT PASSWORD
@@ -141,7 +164,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       if (!data.success) {
         throw new Error(
           data.message ||
-            'Could not send the reset link. Please try again.'
+          'Could not send the reset link. Please try again.'
         );
       }
 
@@ -149,7 +172,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     } catch (err) {
       setForgotError(
         err?.message ||
-          'Could not send the reset link. Please try again.'
+        'Could not send the reset link. Please try again.'
       );
     } finally {
       setForgotLoading(false);
@@ -178,44 +201,70 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
   const handleWalletConnectPress = async () => {
     setError('');
 
-    // Web browser with MetaMask installed
-    if (
-      Platform.OS === 'web' &&
-      typeof window !== 'undefined' &&
-      window.ethereum
-    ) {
-      setConnectingWallet(true);
-      setWalletStatus('Requesting MetaMask permissions...');
-
-      try {
-        const accounts = await window.ethereum.request({
-          method: 'eth_requestAccounts',
-        });
-
-        if (accounts && accounts[0]) {
-          setWalletStatus('Authenticating with Supabase...');
-
-          await loginWithWallet(accounts[0]);
-
-          return;
-        }
-
-        throw new Error('No MetaMask account was selected.');
-      } catch (err) {
-        setError(
-          err?.message ||
-            'MetaMask connection was cancelled.'
-        );
-      } finally {
-        setConnectingWallet(false);
-        setWalletStatus('');
-      }
-
+    const isOnline = await verifyOnline();
+    if (!isOnline) {
       return;
     }
 
-    // Mobile or browser without MetaMask
-    setWalletModalVisible(true);
+    // Check if MetaMask mobile app or browser extension is installed
+    const isInstalled = await isMetaMaskAppInstalled();
+    if (!isInstalled && Platform.OS !== 'web') {
+      setInstallModalVisible(true);
+      return;
+    }
+
+    setConnectingWallet(true);
+    setWalletStatus('Connecting to MetaMask...');
+
+    try {
+      // Connect to MetaMask app via deep link
+      const targetAddress = await connectMobileWallet();
+      if (!targetAddress) {
+        throw new Error('No account selected in MetaMask.');
+      }
+
+      // 1. Fetch challenge nonce from backend
+      setWalletStatus('Requesting challenge nonce...');
+      const challenge = await getWalletNonceApi(targetAddress);
+      if (!challenge?.success || !challenge?.message || !challenge?.nonce) {
+        throw new Error(challenge?.error || 'Could not retrieve wallet challenge.');
+      }
+
+      // 2. Request cryptographic signature from user via MetaMask personal_sign (opens app via deep link)
+      setWalletStatus('Please sign verification message in MetaMask...');
+      const signature = await signPersonalMessage(challenge.message, targetAddress);
+
+      // 3. Verify signature and login with linked account
+      setWalletStatus('Verifying account credentials...');
+      const res = await loginWithWallet({
+        walletAddress: targetAddress,
+        signature,
+        nonce: challenge.nonce,
+      });
+
+      if (res?.needsProfile || res?.needsAccount) {
+        setPendingWalletAddress(targetAddress);
+        setPendingVerificationToken(res.verificationToken || '');
+        setCompleteProfileVisible(true);
+        return;
+      }
+
+      return;
+    } catch (err) {
+      if (err?.message === 'METAMASK_NOT_INSTALLED') {
+        setInstallModalVisible(true);
+      } else if (err?.code === 4001 || err?.message?.toLowerCase().includes('reject') || err?.message?.toLowerCase().includes('cancel')) {
+        setError('MetaMask signature was cancelled.');
+      } else {
+        setError(
+          err?.message ||
+          'MetaMask sign-in failed.'
+        );
+      }
+    } finally {
+      setConnectingWallet(false);
+      setWalletStatus('');
+    }
   };
 
   const handleDemoWalletLogin = async () => {
@@ -240,7 +289,14 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     }
 
     try {
-      await loginWithWallet(DEFAULT_DEMO_WALLET);
+      const res = await loginWithWallet(DEFAULT_DEMO_WALLET);
+      if (res?.needsAccount) {
+        const msg = 'This demo wallet is not linked to any SmartAssets account. Please sign in with your email and password first, then link your wallet in Profile.';
+        setError(msg);
+        if (Platform.OS === 'web') alert(msg); else Alert.alert('Wallet Not Linked', msg);
+        setWalletModalVisible(false);
+        return;
+      }
     } catch (err) {
       if (
         err?.message?.includes('Network') ||
@@ -251,7 +307,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       } else {
         setError(
           err?.message ||
-            'Demo wallet login failed.'
+          'Demo wallet login failed.'
         );
       }
     } finally {
@@ -290,7 +346,14 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     }
 
     try {
-      await loginWithWallet(cleanWallet);
+      const res = await loginWithWallet(cleanWallet);
+      if (res?.needsProfile || res?.needsAccount) {
+        setPendingWalletAddress(cleanWallet);
+        setPendingVerificationToken(res.verificationToken || '');
+        setWalletModalVisible(false);
+        setCompleteProfileVisible(true);
+        return;
+      }
     } catch (err) {
       if (
         err?.message?.includes('Network') ||
@@ -301,7 +364,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
       } else {
         setError(
           err?.message ||
-            'Wallet login failed.'
+          'Wallet login failed.'
         );
       }
     } finally {
@@ -332,9 +395,20 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
     <SafeAreaView
       style={[
         styles.safeArea,
-        { backgroundColor: c.background },
+        { backgroundColor: c.canvas || (isDark ? '#0F172A' : '#F3EEFF') },
       ]}
     >
+      <LinearGradient
+        colors={
+          isDark
+            ? ['#0F172A', '#131A2F', '#1E1B4B', '#0A0E1A']
+            : ['#e4e0ffff', '#e0daffff', '#f5dfefff', '#fff5efff', '#ffffffff']
+        }
+        locations={isDark ? [0, 0.35, 0.7, 1] : [0, 0.22, 0.52, 0.78, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.85, y: 1 }}
+        style={[StyleSheet.absoluteFillObject, { pointerEvents: 'none' }]}
+      />
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={
@@ -351,18 +425,18 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
           {/* HEADER */}
           <View style={styles.header}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 16 }}>
-              <View
-                style={[
-                  styles.logoBox,
-                  { backgroundColor: c.primary, marginBottom: 0 },
-                ]}
+              <LinearGradient
+                colors={['#976af0', '#00fbff']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.logoBox, { marginBottom: 0 }]}
               >
-                <Feather
-                  name="shield"
-                  size={26}
+                <Ionicons
+                  name="diamond"
+                  size={24}
                   color="#FFFFFF"
                 />
-              </View>
+              </LinearGradient>
 
               <TouchableOpacity
                 onPress={toggleTheme}
@@ -426,6 +500,13 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
               </View>
             )}
           </View>
+
+          {/* OFFLINE BANNER */}
+          <OfflineBanner
+            isDark={isDark}
+            message="You are currently offline. Please connect to the internet to sign in."
+            style={{ maxWidth: 480, alignSelf: 'center', width: '100%', marginBottom: 16 }}
+          />
 
           {/* LOGIN CARD */}
           <View
@@ -562,6 +643,30 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
             </TouchableOpacity>
 
             {/* ERROR */}
+            {sessionNotice ? (
+              <View
+                style={[
+                  styles.errorBox,
+                  {
+                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                    borderColor: '#F59E0B',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginBottom: 12,
+                  },
+                ]}
+              >
+                <Feather name="alert-triangle" size={16} color="#F59E0B" />
+                <Text style={[styles.errorText, { color: '#F59E0B', flex: 1, fontWeight: '600' }]}>
+                  {sessionNotice}
+                </Text>
+                <TouchableOpacity onPress={clearSessionNotice}>
+                  <Feather name="x" size={16} color="#F59E0B" />
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             {error ? (
               <View
                 style={[
@@ -1135,6 +1240,28 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
           </View>
         </View>
       </Modal>
+
+      {/* --------------------------------------------------
+          COMPLETE PROFILE MODAL (MetaMask Web3 Registration)
+      -------------------------------------------------- */}
+      <CompleteProfileModal
+        visible={completeProfileVisible}
+        onClose={() => setCompleteProfileVisible(false)}
+        walletAddress={pendingWalletAddress}
+        verificationToken={pendingVerificationToken}
+      />
+
+      {/* --------------------------------------------------
+          INSTALL METAMASK MODAL (Friendly Mobile Install Screen)
+      -------------------------------------------------- */}
+      <InstallMetaMaskModal
+        visible={installModalVisible}
+        onClose={() => setInstallModalVisible(false)}
+        onRetry={() => {
+          setInstallModalVisible(false);
+          handleWalletConnectPress();
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -1162,6 +1289,21 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 28,
+    position: 'relative',
+    width: '100%',
+  },
+
+  themeToggleBtn: {
+    position: 'absolute',
+    top: 0,
+    right: 4,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
   },
 
   logoBox: {
@@ -1282,7 +1424,7 @@ const styles = StyleSheet.create({
   },
 
   primaryBtnText: {
-    color: '#004C3C',
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
   },

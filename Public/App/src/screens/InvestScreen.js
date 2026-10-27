@@ -1,9 +1,11 @@
-// ─── InvestScreen (Fractional Investment Marketplace) ────────────────────────
-// SmartAssets Modern Glassmorphism Theme (Mockup 2025/2026)
-// Featuring Luminous Mesh Gradient Canvas, Violet-to-Magenta Investment Hero,
-// Category Pills, Funding Progress Bars, and Verified Asset Offering Cards.
+// ─── InvestScreen (Fintech Share Trading & Wishlist) ─────────────────────────
+// Pure fintech trading and portfolio management:
+// 1. Dynamic Top Summary Bar (Total Invested, Available Cash, Dynamic Portfolio Allocation)
+// 2. Tab Switch: [Share Trading] vs [My Wishlist]
+// 3. Full-width horizontal trading rows with funding progress, share pricing, and direct Buy/Sell
+// 4. Client-side persistent wishlist management (zero Supabase mutations)
 
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,185 +14,149 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
-  useWindowDimensions,
   RefreshControl,
   Platform,
+  Alert,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { SCREENS } from "../constants/navigation";
-import { getMarketAssets, getUserVault } from "../services/api";
+import { getMarketAssets, getUserVault, resolveImageUrl } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import KycGatekeeperModal from "../components/KycGatekeeperModal";
 import storage, { STORAGE_KEYS } from "../utils/storage";
+import { getMarketAssetsCache } from "../services/storage";
 
-// ── Currency Formatter (British Pounds £) ─────────────────────────────────────
-const formatGBP = (val, fallback = "£100") => {
+// ── Currency Formatter (South African Rands R) ───────────────────────────────
+const formatZAR = (val, fallback = "R0") => {
   if (val === undefined || val === null || val === "") return fallback;
-  if (typeof val === "string" && val.startsWith("£")) return val;
-  if (typeof val === "string" && val.startsWith("R")) {
-    return "£" + val.replace(/^R\s?/, "");
+  if (typeof val === "string") {
+    let str = val.trim();
+    if (str.startsWith("£")) {
+      str = str.replace(/^£\s?/, "");
+    }
+    const cleanNum = parseFloat(str.replace(/[^0-9.-]+/g, ""));
+    if (!isNaN(cleanNum)) {
+      return "R" + cleanNum.toLocaleString("en-ZA", { maximumFractionDigits: 0 });
+    }
+    if (str.startsWith("R")) return str;
+    return "R" + str;
   }
   const num =
     typeof val === "number"
       ? val
       : parseFloat(String(val).replace(/[^0-9.-]+/g, ""));
-  if (isNaN(num)) return String(val);
-  return "£" + num.toLocaleString("en-GB", { maximumFractionDigits: 0 });
+  if (isNaN(num)) return fallback;
+  return "R" + num.toLocaleString("en-ZA", { maximumFractionDigits: 0 });
 };
+const formatGBP = formatZAR;
 
-const FILTER_CATEGORIES = [
-  { id: "All", label: "All" },
-  { id: "Watches", label: "Watches" },
-  { id: "Cars", label: "Cars" },
-  { id: "Art", label: "Art" },
-  { id: "Wine", label: "Wine" },
-  { id: "Real Estate", label: "Real Estate" },
-];
+// Real verified investment offerings are loaded strictly from Supabase
+const DEFAULT_OFFERINGS = [];
 
-// Fallback verified investment offerings with authentic investment metrics
-const DEFAULT_OFFERINGS = [
-  {
-    id: "offering-1",
-    name: "Rolex Daytona 116500LN",
-    category: "WATCHES",
-    filterCat: "Watches",
-    image:
-      "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=600&q=80",
-    price: "£34,500",
-    share_price: "£100",
-    total_shares: 345,
-    shares_sold: 282,
-    funded_pct: 82,
-    est_roi: "+12.4% Est. ROI",
-    demand: "+18% Demand",
-    liquidity: "24 days",
-    confidence: "96% confidence",
-  },
-  {
-    id: "offering-2",
-    name: "1967 Ferrari 330 GTC",
-    category: "CARS",
-    filterCat: "Cars",
-    image:
-      "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=600&q=80",
-    price: "£890,000",
-    share_price: "£250",
-    total_shares: 3560,
-    shares_sold: 2314,
-    funded_pct: 65,
-    est_roi: "+14.2% Est. ROI",
-    demand: "+22% Demand",
-    liquidity: "30 days",
-    confidence: "94% confidence",
-  },
-  {
-    id: "offering-3",
-    name: "Untitled, 1984 (Basquiat)",
-    category: "ART",
-    filterCat: "Art",
-    image:
-      "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=600&q=80",
-    price: "£124,000",
-    share_price: "£100",
-    total_shares: 1240,
-    shares_sold: 1100,
-    funded_pct: 89,
-    est_roi: "+11.5% Est. ROI",
-    demand: "+15% Demand",
-    liquidity: "18 days",
-    confidence: "91% confidence",
-  },
-  {
-    id: "offering-4",
-    name: "Domaine de la Romanée-Conti 1990",
-    category: "WINE",
-    filterCat: "Wine",
-    image:
-      "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&q=80",
-    price: "£28,900",
-    share_price: "£50",
-    total_shares: 578,
-    shares_sold: 260,
-    funded_pct: 45,
-    est_roi: "+9.8% Est. ROI",
-    demand: "+12% Demand",
-    liquidity: "40 days",
-    confidence: "95% confidence",
-  },
-  {
-    id: "offering-5",
-    name: "Patek Philippe Nautilus 5711",
-    category: "WATCHES",
-    filterCat: "Watches",
-    image:
-      "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=600&q=80",
-    price: "£98,000",
-    share_price: "£200",
-    total_shares: 490,
-    shares_sold: 460,
-    funded_pct: 94,
-    est_roi: "+15.2% Est. ROI",
-    demand: "+26% Demand",
-    liquidity: "14 days",
-    confidence: "98% confidence",
-  },
-  {
-    id: "offering-6",
-    name: "Mayfair Prime Residence",
-    category: "REAL ESTATE",
-    filterCat: "Real Estate",
-    image:
-      "https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=600&q=80",
-    price: "£1,450,000",
-    share_price: "£500",
-    total_shares: 2900,
-    shares_sold: 1595,
-    funded_pct: 55,
-    est_roi: "+8.9% Est. ROI",
-    demand: "+9% Demand",
-    liquidity: "60 days",
-    confidence: "93% confidence",
-  },
-];
+const WISHLIST_STORAGE_KEY = "@smartassets_wishlist";
 
 export default function InvestScreen({ navigation }) {
-  const { width: screenWidth } = useWindowDimensions();
-  const isDesktop = screenWidth >= 860;
-  const cardWidth = isDesktop
-    ? (screenWidth - 36 - 32) / 3
-    : (screenWidth - 36 - 16) / 2;
-
   const { user, token } = useAuth();
-  const [activeFilter, setActiveFilter] = useState("All");
-  const [offerings, setOfferings] = useState(DEFAULT_OFFERINGS);
+  const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState("trading"); // 'trading' | 'wishlist'
+  const [offerings, setOfferings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [userHoldings, setUserHoldings] = useState([]);
+  const [vaultSummary, setVaultSummary] = useState(null);
+  const [wishlistIds, setWishlistIds] = useState([]);
 
+  // Load wishlist from storage on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const stored = await storage.getJSON(WISHLIST_STORAGE_KEY, null);
+        if (Array.isArray(stored)) {
+          setWishlistIds(stored);
+        }
+      } catch (_) {}
+    })();
+  }, []);
+
+  // Toggle Wishlist item and persist
+  const toggleWishlist = useCallback((assetId) => {
+    setWishlistIds((prev) => {
+      const exists = prev.includes(assetId);
+      const next = exists ? prev.filter((id) => id !== assetId) : [...prev, assetId];
+      storage.setJSON(WISHLIST_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const [availableCash, setAvailableCash] = useState(0);
+  const [totalInvested, setTotalInvested] = useState(0);
+
+  // Load live market assets and user vault
   const loadData = useCallback(async () => {
     try {
       const res = await getMarketAssets("All", "");
       if (res?.assets && Array.isArray(res.assets) && res.assets.length > 0) {
-        // Map any assets into fractional offering structure
-        const mapped = res.assets.map((a, i) => ({
-          ...a,
-          share_price: a.share_price ? formatGBP(a.share_price) : "£100",
-          total_shares: a.shares || a.total_shares || 500,
-          shares_sold: a.shares_sold || a.sharesSold || 350,
-          funded_pct:
-            a.fundedPct || Math.round(Math.min(95, 40 + ((i * 12) % 55))),
-          est_roi: a.est_roi || "+11.8% Est. ROI",
-          confidence: a.confidence || "95% confidence",
-        }));
+        // Filter strictly for active listings with fractional investment explicitly enabled and shares available
+        const investable = res.assets.filter((a) => {
+          const isEnabled = Boolean(a.allow_investment || a.allowInvestment);
+          const isAvailable = a.status !== "sold";
+          const hasShares = Number(a.shares) > 0;
+          return isEnabled && isAvailable && hasShares;
+        });
+
+        const mapped = investable.map((a) => {
+          const totalShares = Number(a.shares || a.total_shares || a.totalShares || 100);
+          const sharesSold = Number(a.shares_sold ?? a.sharesSold ?? 0);
+          const remainingShares = Math.max(0, totalShares - sharesSold);
+          const sharePriceNum =
+            Number(a.share_price) ||
+            Number(a.sharePrice) ||
+            Math.round((Number(a.price_num) || 1000) / totalShares);
+
+          return {
+            ...a,
+            allow_investment: true,
+            allowInvestment: true,
+            shares: totalShares,
+            total_shares: totalShares,
+            totalShares: totalShares,
+            shares_sold: sharesSold,
+            sharesSold: sharesSold,
+            remaining_shares: remainingShares,
+            remainingShares: remainingShares,
+            share_price: formatZAR(sharePriceNum),
+            sharePrice: sharePriceNum,
+            sharePriceNum,
+            funded_pct: Math.min(100, Math.round((sharesSold / totalShares) * 100)),
+          };
+        });
         setOfferings(mapped);
       } else {
-        setOfferings(DEFAULT_OFFERINGS);
+        setOfferings([]);
       }
     } catch (_) {
-      setOfferings(DEFAULT_OFFERINGS);
+      setOfferings([]);
     }
+
+    try {
+      const cachedCash = await storage.getJSON(STORAGE_KEYS.ESCROW_CASH);
+      if (typeof cachedCash === "number") {
+        setAvailableCash(cachedCash);
+      }
+
+      const cachedFractions = await storage.getJSON(STORAGE_KEYS.CO_OWNED_ASSETS);
+      if (Array.isArray(cachedFractions) && cachedFractions.length > 0) {
+        const stakesSum = cachedFractions.reduce(
+          (sum, f) => sum + (Number(f.myStake) || 0),
+          0
+        );
+        if (stakesSum > 0) setTotalInvested(stakesSum);
+      }
+    } catch (_) {}
 
     if (token) {
       try {
@@ -198,11 +164,27 @@ export default function InvestScreen({ navigation }) {
         if (vaultRes?.holdings && Array.isArray(vaultRes.holdings)) {
           setUserHoldings(vaultRes.holdings);
         }
+        if (vaultRes?.summary) {
+          setVaultSummary(vaultRes.summary);
+          if (vaultRes.summary.availableBalanceNum && typeof vaultRes.summary.availableBalanceNum === "number") {
+            setAvailableCash(vaultRes.summary.availableBalanceNum);
+          }
+        }
       } catch (_) {}
     }
     setLoading(false);
     setRefreshing(false);
   }, [token]);
+
+  // Immediately hydrate from AsyncStorage cache so user sees offerings while offline
+  useEffect(() => {
+    getMarketAssetsCache().then((cached) => {
+      if (cached && cached.length > 0 && offerings.length === 0) {
+        setOfferings(cached);
+        setLoading(false);
+      }
+    });
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -215,26 +197,175 @@ export default function InvestScreen({ navigation }) {
     loadData();
   };
 
-  // Filter offerings
-  const filteredOfferings = useMemo(() => {
-    if (activeFilter === "All") return offerings;
-    const f = activeFilter.toLowerCase();
-    return offerings.filter((o) => {
-      const c = String(o.category || o.filterCat || "").toLowerCase();
-      if (f === "watches") return c.includes("watch");
-      if (f === "cars") return c.includes("car") || c.includes("vehicle");
-      if (f === "art") return c.includes("art");
-      if (f === "wine") return c.includes("wine");
-      if (f === "real estate") return c.includes("real");
-      return c.includes(f);
+  // ── Financial Math: Total Invested & Available Cash (R0 Currency Formatted Default) ──
+  const totalInvestedFormatted = useMemo(() => {
+    return formatZAR(totalInvested, "R0");
+  }, [totalInvested]);
+
+  const availableCashFormatted = useMemo(() => {
+    return formatZAR(availableCash, "R0");
+  }, [availableCash]);
+
+  // ── Dynamic Portfolio Allocation Breakdown ──────────────────────────────────
+  const allocation = useMemo(() => {
+    const CATEGORY_COLORS = {
+      watches: "#8B5CF6",
+      cars: "#06B6D4",
+      art: "#EC4899",
+      wine: "#F59E0B",
+      "real estate": "#10B981",
+      sneakers: "#3B82F6",
+      electronics: "#6366F1",
+    };
+
+    if (userHoldings && userHoldings.length > 0) {
+      const totals = {};
+      let sum = 0;
+      userHoldings.forEach((h) => {
+        const cat = (h.category || "Watches").toLowerCase();
+        let key = "watches";
+        if (cat.includes("car")) key = "cars";
+        else if (cat.includes("art")) key = "art";
+        else if (cat.includes("wine")) key = "wine";
+        else if (cat.includes("real")) key = "real estate";
+        else if (cat.includes("sneaker")) key = "sneakers";
+        else if (cat.includes("electronic")) key = "electronics";
+        else key = cat;
+
+        const val =
+          Number(h.price_num) ||
+          parseFloat(String(h.price || "").replace(/[^0-9.-]+/g, "")) ||
+          1000;
+        totals[key] = (totals[key] || 0) + val;
+        sum += val;
+      });
+
+      if (sum > 0) {
+        return Object.entries(totals).map(([key, val]) => {
+          const pct = Math.round((val / sum) * 100);
+          const label = key.charAt(0).toUpperCase() + key.slice(1);
+          return {
+            category: label,
+            percentage: pct,
+            color: CATEGORY_COLORS[key] || "#8B5CF6",
+            valueFormatted: formatGBP(val),
+          };
+        });
+      }
+    }
+
+    // Default portfolio allocation baseline
+    return [
+      { category: "Watches", percentage: 52, color: "#8B5CF6", valueFormatted: "R77,220" },
+      { category: "Art", percentage: 28, color: "#EC4899", valueFormatted: "R41,580" },
+      { category: "Cars", percentage: 20, color: "#06B6D4", valueFormatted: "R29,700" },
+    ];
+  }, [userHoldings]);
+
+  // Wishlist items filtered from offerings
+  const wishlistItems = useMemo(() => {
+    return offerings.filter((o) => wishlistIds.includes(o.id));
+  }, [offerings, wishlistIds]);
+
+  // Handle Direct Share Actions — navigates directly to Fractional Investment page
+  const handleBuyShares = (offering) => {
+    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+      setKycGatekeeperVisible(true);
+      return;
+    }
+    const totalShares = Number(offering.shares || offering.total_shares || offering.totalShares || 100);
+    const sharesSold = Number(offering.sharesSold ?? offering.shares_sold ?? 0);
+    const sharePriceNum =
+      Number(offering.sharePriceNum) ||
+      parseFloat(String(offering.share_price || offering.sharePrice || "").replace(/[^0-9.]/g, "")) || 100;
+
+    navigation.navigate(SCREENS.CHECKOUT, {
+      asset: {
+        ...offering,
+        allow_investment: true,
+        allowInvestment: true,
+        shares: totalShares,
+        total_shares: totalShares,
+        totalShares: totalShares,
+        sharesSold: sharesSold,
+        shares_sold: sharesSold,
+        sharePrice: sharePriceNum,
+        share_price: sharePriceNum,
+      },
+      isFractional: true,
     });
-  }, [offerings, activeFilter]);
+  };
+
+  const handleSellShares = (offering) => {
+    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+      setKycGatekeeperVisible(true);
+      return;
+    }
+    const sharePriceNum =
+      Number(offering.sharePriceNum) ||
+      parseFloat(String(offering.share_price || "").replace(/[^0-9.]/g, "")) || 100;
+
+    Alert.alert(
+      "Share Custody & Liquidity",
+      `Your shares in "${offering.name}" are registered in durable Vault custody at an oracle value of R${sharePriceNum}/share.\n\n` +
+      `When this collectible is bought outright, your full pro-rata share of the verified net proceeds will automatically credit directly to your Vault cash balance.`,
+      [
+        { text: "Got It", style: "default" },
+      ]
+    );
+  };
+
+  const handleOpenDetails = (item) => {
+    if (!item) return;
+    const priceNum =
+      typeof item.price === "number"
+        ? item.price
+        : parseFloat(String(item.price || "10000").replace(/[^0-9.-]+/g, "")) ||
+          10000;
+    const sharePriceVal = item.share_price || item.sharePrice || "R100";
+    const totalSharesVal =
+      item.total_shares || item.shares || Math.max(10, Math.round(priceNum / 100));
+
+    navigation.navigate(SCREENS.ASSET_DETAIL, {
+      asset: {
+        ...item,
+        id: item.id,
+        name: item.name || item.title || "Fractional Asset",
+        title: item.name || item.title || "Fractional Asset",
+        category: item.category || item.filterCat || "Watches",
+        price: item.price || `R${priceNum.toLocaleString("en-ZA")}`,
+        price_num: priceNum,
+        share_price: sharePriceVal,
+        sharePrice: sharePriceVal,
+        total_shares: totalSharesVal,
+        shares: totalSharesVal,
+        shares_sold: item.shares_sold || Math.round(totalSharesVal * 0.75),
+        funded_pct: item.funded_pct || 75,
+        image: item.image,
+        description:
+          item.description ||
+          `Premium fractional offering verified on-chain via ERC-721 smart contract on Sepolia. Fully secured in high-security custodial vault storage with live oracle valuation and multi-signature escrow custody.`,
+        year: item.year || "2021",
+        condition: item.condition || "Mint Condition (Grade A+)",
+        owner: item.owner || "SmartAssets Liquidity Pool",
+        healthScore: item.healthScore || 96,
+        isVerified: true,
+      },
+    });
+  };
 
   const userName =
     user?.firstName ||
     user?.fullName?.split(" ")[0] ||
     user?.email?.split("@")[0] ||
     "James";
+
+  const userPhoto =
+    user?.avatarUrl ||
+    user?.avatar_url ||
+    user?.avatar ||
+    user?.photoURL ||
+    user?.profileImage;
 
   const userInitials = (
     user?.fullName
@@ -247,23 +378,24 @@ export default function InvestScreen({ navigation }) {
   ).toUpperCase();
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
-      {/* ── Background Mesh Gradient ─────────────────────────────────────────── */}
-      <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-        <LinearGradient
-          colors={[
-            "rgba(216, 214, 253, 1)",
-            "#d5cdffff",
-            "#fae3f4ff",
-            "#fff0e6ff",
-            "#FFF7EF",
-          ]}
-          locations={[0, 0.2, 0.5, 0.8, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-      </View>
+    <View style={styles.rootContainer}>
+      {/* ── Background Mesh Gradient (5-Stop Luminous Mesh) ── */}
+      <LinearGradient
+        colors={[
+          "#e4e0ffff", // Soft luminous lavender
+          "#e0daffff", // Soft purple aura
+          "#f5dfefff", // Soft lilac-pink
+          "#fff5efff", // Soft peach aura
+          "#ffffffff", // Ambient cream
+        ]}
+        locations={[0, 0.22, 0.52, 0.78, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
+
+      <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -277,7 +409,7 @@ export default function InvestScreen({ navigation }) {
           />
         }
       >
-        {/* ── TOP APP BAR ──────────────────────────────────────────────────────── */}
+        {/* ── TOP APP BAR / BRAND HEADER (Matches Home) ─────────────────────────── */}
         <View style={styles.appBar}>
           <TouchableOpacity
             style={styles.brandGroup}
@@ -297,233 +429,411 @@ export default function InvestScreen({ navigation }) {
 
           <View style={styles.appBarRight}>
             <TouchableOpacity
-              style={styles.userPill}
+              style={styles.profileAvatarBtn}
               onPress={() => navigation.navigate(SCREENS.PROFILE)}
               activeOpacity={0.8}
             >
-              <View style={styles.initialsCircle}>
-                <Text style={styles.initialsText}>{userInitials}</Text>
-              </View>
-              <Text style={styles.userPillName} numberOfLines={1}>
-                {userName}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.addAssetBtn}
-              onPress={() => navigation.navigate(SCREENS.LIST_ASSET)}
-              activeOpacity={0.85}
-            >
-              <Ionicons
-                name="add"
-                size={16}
-                color="#FFFFFF"
-                style={{ marginRight: 2 }}
-              />
-              <Text style={styles.addAssetBtnText}>Add asset</Text>
+              {userPhoto ? (
+                <Image
+                  source={{ uri: resolveImageUrl(userPhoto) }}
+                  style={styles.profileAvatarImg}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.profileAvatarFallback}>
+                  <Text style={styles.profileInitialsText}>{userInitials}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
 
         {/* ══════════════════════════════════════════════════════════════════════
-            HERO CARD: FRACTIONAL INVEST (Classic Purple-to-Cyan Gradient)
+            TOP SUMMARY BAR (Total Invested, Available Cash, Dynamic Allocation)
         ══════════════════════════════════════════════════════════════════════ */}
-        <View style={styles.heroContainer}>
+        <View style={styles.topSummaryCard}>
           <LinearGradient
             colors={["#7C3AED", "#5B36F5", "#2563EB", "#00C2FF"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0.85 }}
-            style={styles.heroGradient}
+            style={styles.topSummaryGradient}
           >
-            {/* Tag */}
-            <View style={styles.heroTagBadge}>
-              <Ionicons
-                name="trending-up"
-                size={12}
-                color="#FFFFFF"
-                style={{ marginRight: 4 }}
-              />
-              <Text style={styles.heroTagText}>FRACTIONAL INVEST</Text>
+            <View style={styles.summaryTopRow}>
+              <View style={styles.summaryCol}>
+                <Text style={styles.summaryLabel}>TOTAL INVESTED</Text>
+                <Text style={styles.summaryValue}>{totalInvestedFormatted}</Text>
+              </View>
+              <View style={styles.summaryDividerVertical} />
+              <View style={styles.summaryCol}>
+                <Text style={styles.summaryLabel}>AVAILABLE CASH</Text>
+                <Text style={styles.summaryValueCash}>{availableCashFormatted}</Text>
+              </View>
             </View>
 
-            {/* Title */}
-            <Text style={styles.heroTitle}>Own a piece of iconic luxury.</Text>
-            <Text style={styles.heroSubtitle}>
-              Invest in verified watches, classic cars, and fine art from
-              £100/share with automated yield distribution.
-            </Text>
+            {/* Dynamic Portfolio Allocation Bar */}
+            <View style={styles.allocContainer}>
+              <View style={styles.allocHeaderRow}>
+                <Text style={styles.allocTitle}>PORTFOLIO ALLOCATION</Text>
+                <Text style={styles.allocSubtitle}>
+                  {allocation.length} Active Classes
+                </Text>
+              </View>
 
-            {/* Key Metrics Row inside Hero */}
-            <View style={styles.heroMetricsRow}>
-              <View style={styles.heroMetricCol}>
-                <Text style={styles.heroMetricNum}>6</Text>
-                <Text style={styles.heroMetricLabel}>Live Rounds</Text>
+              {/* Segmented Track */}
+              <View style={styles.allocTrack}>
+                {allocation.map((item, idx) => (
+                  <View
+                    key={item.category}
+                    style={[
+                      styles.allocSegment,
+                      {
+                        backgroundColor: item.color,
+                        width: `${Math.max(item.percentage, 4)}%`,
+                        borderTopLeftRadius: idx === 0 ? 6 : 0,
+                        borderBottomLeftRadius: idx === 0 ? 6 : 0,
+                        borderTopRightRadius:
+                          idx === allocation.length - 1 ? 6 : 0,
+                        borderBottomRightRadius:
+                          idx === allocation.length - 1 ? 6 : 0,
+                      },
+                    ]}
+                  />
+                ))}
               </View>
-              <View style={styles.heroMetricDivider} />
-              <View style={styles.heroMetricCol}>
-                <Text style={styles.heroMetricNum}>+12.4%</Text>
-                <Text style={styles.heroMetricLabel}>Avg Return</Text>
-              </View>
-              <View style={styles.heroMetricDivider} />
-              <View style={styles.heroMetricCol}>
-                <Text style={styles.heroMetricNum}>£100</Text>
-                <Text style={styles.heroMetricLabel}>Min Entry</Text>
+
+              {/* Dynamic Legend */}
+              <View style={styles.allocLegendRow}>
+                {allocation.map((item) => (
+                  <View key={item.category} style={styles.legendItem}>
+                    <View
+                      style={[
+                        styles.legendDot,
+                        { backgroundColor: item.color },
+                      ]}
+                    />
+                    <Text style={styles.legendText}>
+                      {item.category} {item.percentage}%
+                    </Text>
+                  </View>
+                ))}
               </View>
             </View>
           </LinearGradient>
         </View>
 
         {/* ══════════════════════════════════════════════════════════════════════
-            OFFERINGS SECTION
+            TOGGLE SWITCH: [Share Trading] vs [My Wishlist]
         ══════════════════════════════════════════════════════════════════════ */}
-        <View style={styles.sectionWrap}>
-          <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={styles.sectionTag}>ACTIVE ROUNDS</Text>
-              <Text style={styles.sectionTitle}>
-                {filteredOfferings.length} investment opportunities
+        <View style={styles.toggleRow}>
+          <TouchableOpacity
+            style={[
+              styles.toggleBtn,
+              activeTab === "trading" && styles.toggleBtnActive,
+            ]}
+            onPress={() => setActiveTab("trading")}
+            activeOpacity={0.85}
+          >
+            <Feather
+              name="trending-up"
+              size={15}
+              color={activeTab === "trading" ? "#FFFFFF" : "#64748B"}
+              style={{ marginRight: 6 }}
+            />
+            <Text
+              style={[
+                styles.toggleBtnText,
+                activeTab === "trading" && styles.toggleBtnTextActive,
+              ]}
+            >
+              Share Trading
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.toggleBtn,
+              activeTab === "wishlist" && styles.toggleBtnActive,
+            ]}
+            onPress={() => setActiveTab("wishlist")}
+            activeOpacity={0.85}
+          >
+            <Ionicons
+              name={activeTab === "wishlist" ? "heart" : "heart-outline"}
+              size={16}
+              color={activeTab === "wishlist" ? "#FFFFFF" : "#64748B"}
+              style={{ marginRight: 6 }}
+            />
+            <Text
+              style={[
+                styles.toggleBtnText,
+                activeTab === "wishlist" && styles.toggleBtnTextActive,
+              ]}
+            >
+              My Wishlist {wishlistItems.length > 0 ? `(${wishlistItems.length})` : ""}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ══════════════════════════════════════════════════════════════════════
+            TAB CONTENT: [SHARE TRADING]
+        ══════════════════════════════════════════════════════════════════════ */}
+        {activeTab === "trading" && (
+          <View style={styles.tradeListContainer}>
+            <View style={styles.listHeaderRow}>
+              <Text style={styles.listTitle}>Live Fractional Rounds</Text>
+              <Text style={styles.listSubtitle}>
+                {offerings.length} Active Offerings
               </Text>
             </View>
 
-            {/* Filter Pills */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filterPillsScroll}
-            >
-              {FILTER_CATEGORIES.map((tab) => {
-                const isActive = activeFilter === tab.id;
+            {loading ? (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="large" color="#6D28D9" />
+                <Text style={styles.loadingText}>Loading share trading…</Text>
+              </View>
+            ) : (
+              offerings.map((offering) => {
+                const formattedPrice = formatZAR(offering.price);
+                const sharePrice = formatZAR(offering.share_price, "R100");
+                const pct = offering.funded_pct || 75;
+                const isWishlisted = wishlistIds.includes(offering.id);
+
                 return (
-                  <TouchableOpacity
-                    key={tab.id}
-                    style={[
-                      styles.filterPill,
-                      isActive
-                        ? styles.filterPillActive
-                        : styles.filterPillInactive,
-                    ]}
-                    onPress={() => setActiveFilter(tab.id)}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={[
-                        styles.filterPillText,
-                        isActive
-                          ? styles.filterPillTextActive
-                          : styles.filterPillTextInactive,
-                      ]}
+                  <View key={offering.id} style={styles.tradeCard}>
+                    {/* Top Row: Thumbnail + Info */}
+                    <View style={styles.tradeCardTop}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => handleOpenDetails(offering)}
+                      >
+                        <Image
+                          source={{ uri: resolveImageUrl(offering.image) }}
+                          style={styles.tradeThumb}
+                          resizeMode="cover"
+                        />
+                      </TouchableOpacity>
+
+                      <View style={styles.tradeInfo}>
+                        <View style={styles.tradeCatRow}>
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => handleOpenDetails(offering)}
+                            style={{ flex: 1 }}
+                          >
+                            <Text style={styles.tradeCatText}>
+                              {String(offering.category || "ASSET").toUpperCase()}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => toggleWishlist(offering.id)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            style={styles.heartBtn}
+                          >
+                            <Ionicons
+                              name={isWishlisted ? "heart" : "heart-outline"}
+                              size={18}
+                              color={isWishlisted ? "#EF4444" : "#94A3B8"}
+                            />
+                          </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          onPress={() => handleOpenDetails(offering)}
+                        >
+                          <View style={styles.tradeTitleRow}>
+                            <Text style={styles.tradeTitle} numberOfLines={1}>
+                              {offering.name}
+                            </Text>
+                            <Feather name="chevron-right" size={16} color="#94A3B8" />
+                          </View>
+
+                          {/* Price & Share Price Row */}
+                          <View style={styles.tradePriceRow}>
+                            <View>
+                              <Text style={styles.tradeMetricLabel}>
+                                Share Price
+                              </Text>
+                              <Text style={styles.tradeSharePrice}>
+                                {sharePrice}/sh
+                              </Text>
+                            </View>
+                            <View style={{ alignItems: "flex-end" }}>
+                              <Text style={styles.tradeMetricLabel}>
+                                Valuation
+                              </Text>
+                              <Text style={styles.tradeValuation}>
+                                {formattedPrice}
+                              </Text>
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Middle: Funding Progress Bar */}
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => handleOpenDetails(offering)}
+                      style={styles.tradeProgressContainer}
                     >
-                      {tab.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-
-          {/* Cards Grid */}
-          <View style={styles.gridWrap}>
-            {filteredOfferings.map((offering) => {
-              const formattedPrice = formatGBP(offering.price);
-              const sharePrice = formatGBP(offering.share_price, "£100");
-              const pct = offering.funded_pct || 75;
-              const roi = offering.est_roi || "+12.4% Est. ROI";
-
-              return (
-                <TouchableOpacity
-                  key={offering.id}
-                  style={[styles.offeringCard, { width: cardWidth }]}
-                  onPress={() =>
-                    navigation.navigate(SCREENS.ASSET_DETAIL, {
-                      asset: offering,
-                    })
-                  }
-                  activeOpacity={0.88}
-                >
-                  {/* Image with Badges */}
-                  <View style={styles.cardImgWrap}>
-                    <Image
-                      source={{ uri: offering.image }}
-                      style={styles.cardImg}
-                      resizeMode="cover"
-                    />
-                    {/* Verified Badge */}
-                    <View style={styles.verifiedBadge}>
-                      <Ionicons
-                        name="shield-checkmark"
-                        size={11}
-                        color="#FFFFFF"
-                        style={{ marginRight: 3 }}
-                      />
-                      <Text style={styles.verifiedText}>Verified</Text>
-                    </View>
-
-                    {/* ROI Badge */}
-                    <View style={styles.roiBadge}>
-                      <Text style={styles.roiText}>{roi}</Text>
-                    </View>
-                  </View>
-
-                  {/* Body */}
-                  <View style={styles.cardBody}>
-                    {/* Category & Confidence */}
-                    <View style={styles.cardTopRow}>
-                      <Text style={styles.cardCat}>
-                        {String(offering.category || "ASSET").toUpperCase()}
-                      </Text>
-                      <Text style={styles.cardConfidence}>
-                        {offering.confidence || "96% confidence"}
-                      </Text>
-                    </View>
-
-                    {/* Title */}
-                    <Text style={styles.cardTitle} numberOfLines={2}>
-                      {offering.name}
-                    </Text>
-
-                    {/* Funding Progress Bar */}
-                    <View style={styles.progressContainer}>
-                      <View style={styles.progressHeaderRow}>
-                        <Text style={styles.progressLabel}>
+                      <View style={styles.tradeProgressHeader}>
+                        <Text style={styles.tradeProgressLabel}>
                           Funding Progress
                         </Text>
-                        <Text style={styles.progressPct}>{pct}%</Text>
+                        <Text style={styles.tradeProgressPct}>{pct}% Funded</Text>
                       </View>
-                      <View style={styles.progressTrack}>
+                      <View style={styles.tradeProgressTrack}>
                         <LinearGradient
-                          colors={["#976af0", "#00fbff"]}
+                          colors={["#7C3AED", "#00C2FF"]}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 0 }}
-                          style={[styles.progressFill, { width: `${pct}%` }]}
+                          style={[
+                            styles.tradeProgressFill,
+                            { width: `${pct}%` },
+                          ]}
                         />
                       </View>
-                    </View>
+                    </TouchableOpacity>
 
-                    {/* Valuation & Share Price Row */}
-                    <View style={styles.cardBottomRow}>
-                      <View>
-                        <Text style={styles.metricLabel}>Share Price</Text>
-                        <Text style={styles.sharePriceValue}>{sharePrice}</Text>
-                      </View>
-                      <View style={{ alignItems: "flex-end" }}>
-                        <Text style={styles.metricLabel}>Target Valuation</Text>
-                        <Text style={styles.targetValuationValue}>
-                          {formattedPrice}
+                    {/* Bottom: Action Buttons */}
+                    <View style={styles.tradeActionsRow}>
+                      <TouchableOpacity
+                        style={styles.buySharesBtn}
+                        onPress={() => handleBuyShares(offering)}
+                        activeOpacity={0.85}
+                      >
+                        <LinearGradient
+                          colors={["#443A7A", "#100b55ff"]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={styles.buySharesGradient}
+                        >
+                          <Ionicons
+                            name="cart-outline"
+                            size={15}
+                            color="#FFFFFF"
+                            style={{ marginRight: 6 }}
+                          />
+                          <Text style={styles.buySharesText}>Buy Shares</Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.sellSharesBtn}
+                        onPress={() => handleSellShares(offering)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.sellSharesText}>Sell Shares</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════════
+            TAB CONTENT: [MY WISHLIST]
+        ══════════════════════════════════════════════════════════════════════ */}
+        {activeTab === "wishlist" && (
+          <View style={styles.wishlistContainer}>
+            <View style={styles.listHeaderRow}>
+              <Text style={styles.listTitle}>Tracked Collectibles</Text>
+              <Text style={styles.listSubtitle}>
+                {wishlistItems.length} Saved Items
+              </Text>
+            </View>
+
+            {wishlistItems.length === 0 ? (
+              <View style={styles.emptyWishlistCard}>
+                <View style={styles.emptyHeartCircle}>
+                  <Ionicons name="heart-outline" size={32} color="#94A3B8" />
+                </View>
+                <Text style={styles.emptyWishlistTitle}>
+                  Your wishlist is empty
+                </Text>
+                <Text style={styles.emptyWishlistSub}>
+                  Tap the heart icon on any asset in Share Trading or the
+                  Marketplace to track it here.
+                </Text>
+                <TouchableOpacity
+                  style={styles.browseTradingBtn}
+                  onPress={() => setActiveTab("trading")}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.browseTradingBtnText}>
+                    Explore Share Trading
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              wishlistItems.map((item) => (
+                <View key={item.id} style={styles.wishlistCard}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => handleOpenDetails(item)}
+                  >
+                    <Image
+                      source={{ uri: resolveImageUrl(item.image) }}
+                      style={styles.wishlistThumb}
+                      resizeMode="cover"
+                    />
+                  </TouchableOpacity>
+
+                  <View style={styles.wishlistContent}>
+                    <View style={styles.wishlistHeaderRow}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => handleOpenDetails(item)}
+                        style={{ flex: 1 }}
+                      >
+                        <Text style={styles.wishlistCat}>
+                          {String(item.category || "ASSET").toUpperCase()}
                         </Text>
-                      </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => toggleWishlist(item.id)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="heart" size={20} color="#EF4444" />
+                      </TouchableOpacity>
                     </View>
 
-                    {/* Action Button */}
                     <TouchableOpacity
-                      style={styles.investActionBtn}
-                      onPress={() =>
-                        navigation.navigate(SCREENS.ASSET_DETAIL, {
-                          asset: offering,
-                        })
-                      }
+                      activeOpacity={0.85}
+                      onPress={() => handleOpenDetails(item)}
+                    >
+                      <View style={styles.tradeTitleRow}>
+                        <Text style={styles.wishlistTitle} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Feather name="chevron-right" size={15} color="#94A3B8" />
+                      </View>
+
+                      <View style={styles.wishlistMetricsRow}>
+                        <View>
+                          <Text style={styles.wishlistPriceLabel}>Valuation</Text>
+                          <Text style={styles.wishlistPrice}>
+                            {formatGBP(item.price)}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: "flex-end" }}>
+                          <Text style={styles.wishlistPriceLabel}>Share Price</Text>
+                          <Text style={styles.wishlistSharePrice}>
+                            {formatZAR(item.share_price, "R100")}/sh
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.quickInvestBtn}
+                      onPress={() => handleBuyShares(item)}
                       activeOpacity={0.85}
                     >
-                      <Text style={styles.investActionBtnText}>Invest now</Text>
+                      <Text style={styles.quickInvestBtnText}>Invest</Text>
                       <Feather
                         name="arrow-right"
                         size={13}
@@ -532,23 +842,39 @@ export default function InvestScreen({ navigation }) {
                       />
                     </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
-              );
-            })}
+                </View>
+              ))
+            )}
           </View>
-        </View>
+        )}
 
-        {/* Bottom space */}
+        {/* Bottom space for floating bottom bar */}
         <View style={{ height: 110 }} />
       </ScrollView>
+
+      <KycGatekeeperModal
+        visible={kycGatekeeperVisible}
+        onClose={() => setKycGatekeeperVisible(false)}
+        isSuspended={Boolean(user?.isSuspended)}
+        onCompleteVerification={() =>
+          navigation.navigate(SCREENS.PROFILE, { openKyc: true })
+        }
+      />
     </SafeAreaView>
+
+
+  </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    backgroundColor: "#F3EEFF",
+  },
   safeArea: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "transparent",
   },
   scrollContent: {
     paddingHorizontal: 18,
@@ -560,7 +886,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 20,
+    marginBottom: 16,
     marginTop: 4,
   },
   brandGroup: {
@@ -591,164 +917,167 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  userPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.85)",
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.8)",
-  },
-  initialsCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+  profileAvatarBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "#7C3AED",
     backgroundColor: "#EDE9FE",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 6,
-  },
-  initialsText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#6D28D9",
-  },
-  userPillName: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#0F172A",
-  },
-  addAssetBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#6D28D9",
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    shadowColor: "#6D28D9",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
     elevation: 3,
   },
-  addAssetBtnText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#FFFFFF",
+  profileAvatarImg: {
+    width: "100%",
+    height: "100%",
+  },
+  profileAvatarFallback: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EDE9FE",
+  },
+  profileInitialsText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#6D28D9",
   },
 
-  // ── Hero ────────────────────────────────────────────────────────────────────
-  heroContainer: {
-    borderRadius: 24,
+  // ── Top Summary Card ────────────────────────────────────────────────────────
+  topSummaryCard: {
+    borderRadius: 22,
     overflow: "hidden",
     shadowColor: "#5835F5",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.28,
-    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
     elevation: 8,
-    marginBottom: 24,
+    marginBottom: 18,
   },
-  heroGradient: {
-    paddingVertical: 26,
-    paddingHorizontal: 22,
-    alignItems: "center",
+  topSummaryGradient: {
+    paddingVertical: 20,
+    paddingHorizontal: 20,
   },
-  heroTagBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.22)",
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    marginBottom: 12,
-  },
-  heroTagText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    letterSpacing: 0.8,
-  },
-  heroTitle: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: "#FFFFFF",
-    textAlign: "center",
-    letterSpacing: -0.5,
-  },
-  heroSubtitle: {
-    fontSize: 13,
-    color: "rgba(255, 255, 255, 0.88)",
-    textAlign: "center",
-    marginTop: 6,
-    lineHeight: 18,
-    maxWidth: 480,
-  },
-  heroMetricsRow: {
+  summaryTopRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(255, 255, 255, 0.16)",
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    marginTop: 20,
-    width: "100%",
   },
-  heroMetricCol: {
+  summaryCol: {
     flex: 1,
-    alignItems: "center",
   },
-  heroMetricNum: {
-    fontSize: 18,
+  summaryLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.85)",
+    letterSpacing: 1.0,
+  },
+  summaryValue: {
+    fontSize: 28,
     fontWeight: "800",
     color: "#FFFFFF",
+    marginTop: 4,
+    letterSpacing: -0.6,
   },
-  heroMetricLabel: {
-    fontSize: 11,
-    color: "rgba(255, 255, 255, 0.8)",
-    marginTop: 2,
+  summaryValueCash: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#34D399",
+    marginTop: 4,
+    letterSpacing: -0.6,
   },
-  heroMetricDivider: {
+  summaryDividerVertical: {
     width: 1,
-    height: 24,
+    height: 48,
     backgroundColor: "rgba(255, 255, 255, 0.22)",
+    marginHorizontal: 16,
   },
 
-  // ── Offerings Section ───────────────────────────────────────────────────────
-  sectionWrap: {
-    marginTop: 4,
+  // Allocation Bar
+  allocContainer: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.18)",
   },
-  sectionHeaderRow: {
-    marginBottom: 16,
+  allocHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
   },
-  sectionTag: {
-    fontSize: 11,
+  allocTitle: {
+    fontSize: 12,
     fontWeight: "700",
-    color: "#7C3AED",
-    letterSpacing: 1,
-    marginBottom: 2,
+    color: "rgba(255, 255, 255, 0.9)",
+    letterSpacing: 0.9,
   },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#0F172A",
-    letterSpacing: -0.4,
+  allocSubtitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#C4B5FD",
   },
-  filterPillsScroll: {
+  allocTrack: {
+    height: 9,
+    flexDirection: "row",
+    borderRadius: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    overflow: "hidden",
+  },
+  allocSegment: {
+    height: "100%",
+  },
+  allocLegendRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginTop: 12,
+  },
+  legendItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginTop: 12,
-    paddingBottom: 4,
   },
-  filterPill: {
-    paddingVertical: 7,
-    paddingHorizontal: 16,
-    borderRadius: 999,
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
   },
-  filterPillActive: {
+  legendText: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.95)",
+    fontWeight: "600",
+  },
+
+  // ── Toggle Switch: [Share Trading] vs [My Wishlist] ─────────────────────────
+  toggleRow: {
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.9)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+    marginBottom: 20,
+  },
+  toggleBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  toggleBtnActive: {
     backgroundColor: "#5835F5",
     shadowColor: "#5835F5",
     shadowOffset: { width: 0, height: 3 },
@@ -756,191 +1085,534 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
-  filterPillInactive: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.9)",
-  },
-  filterPillText: {
+  toggleBtnText: {
     fontSize: 13,
     fontWeight: "600",
-  },
-  filterPillTextActive: {
-    color: "#FFFFFF",
-  },
-  filterPillTextInactive: {
     color: "#64748B",
   },
+  toggleBtnTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
 
-  // Grid & Cards
-  gridWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  // ── Share Trading Content ───────────────────────────────────────────────────
+  tradeListContainer: {
     gap: 14,
   },
-  offeringCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.8)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  cardImgWrap: {
-    height: 180,
-    width: "100%",
-    position: "relative",
-    backgroundColor: "#F1F5F9",
-  },
-  cardImg: {
-    width: "100%",
-    height: "100%",
-  },
-  verifiedBadge: {
-    position: "absolute",
-    top: 10,
-    left: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.65)",
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 999,
-  },
-  verifiedText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  roiBadge: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.92)",
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 999,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  roiText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#10B981",
-  },
-
-  // Card Body
-  cardBody: {
-    padding: 14,
-  },
-  cardTopRow: {
+  listHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 4,
   },
-  cardCat: {
+  listTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.3,
+  },
+  listSubtitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+
+  tradeCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.85)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  tradeCardTop: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  tradeThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 14,
+    backgroundColor: "#F1F5F9",
+  },
+  tradeInfo: {
+    flex: 1,
+    justifyContent: "space-between",
+  },
+  tradeCatRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  tradeCatText: {
     fontSize: 11,
     fontWeight: "700",
     color: "#7C3AED",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
-  cardConfidence: {
-    fontSize: 11,
-    color: "#64748B",
-    fontWeight: "500",
+  heartBtn: {
+    padding: 2,
   },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#0F172A",
-    lineHeight: 20,
-    marginBottom: 12,
-    minHeight: 40,
-  },
-
-  // Progress Bar
-  progressContainer: {
-    marginBottom: 12,
-  },
-  progressHeaderRow: {
+  tradeTitleRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 2,
     marginBottom: 6,
   },
-  progressLabel: {
-    fontSize: 11,
-    color: "#64748B",
-    fontWeight: "500",
-  },
-  progressPct: {
-    fontSize: 11,
+  tradeTitle: {
+    flex: 1,
+    fontSize: 16,
     fontWeight: "700",
-    color: "#6D28D9",
+    color: "#0F172A",
+    marginRight: 6,
   },
-  progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#F1F5F9",
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    borderRadius: 3,
-  },
-
-  // Bottom stats
-  cardBottomRow: {
+  tradePriceRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(241, 245, 249, 0.9)",
-    marginBottom: 12,
   },
-  metricLabel: {
-    fontSize: 11,
+  tradeMetricLabel: {
+    fontSize: 12,
     color: "#64748B",
   },
-  sharePriceValue: {
-    fontSize: 15,
+  tradeSharePrice: {
+    fontSize: 16,
     fontWeight: "800",
     color: "#0F172A",
-    marginTop: 1,
   },
-  targetValuationValue: {
+  tradeValuation: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#64748B",
-    marginTop: 1,
+    color: "#475569",
   },
 
-  // CTA
-  investActionBtn: {
+  // Funding Progress Bar
+  tradeProgressContainer: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(241, 245, 249, 0.9)",
+  },
+  tradeProgressHeader: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#5835F5",
-    paddingVertical: 10,
-    borderRadius: 12,
-    shadowColor: "#5835F5",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  tradeProgressLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  tradeProgressPct: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#6D28D9",
+  },
+  tradeProgressTrack: {
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#F1F5F9",
+    overflow: "hidden",
+  },
+  tradeProgressFill: {
+    height: "100%",
+    borderRadius: 4,
+  },
+
+  // Actions Row
+  tradeActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16,
+  },
+  buySharesBtn: {
+    flex: 2,
+    borderRadius: 14,
+    overflow: "hidden",
+    shadowColor: "#6D28D9",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.22,
     shadowRadius: 6,
     elevation: 3,
   },
-  investActionBtnText: {
+  buySharesGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+  },
+  buySharesText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  sellSharesBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.9)",
+  },
+  sellSharesText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#475569",
+  },
+
+  // ── Wishlist Content ────────────────────────────────────────────────────────
+  wishlistContainer: {
+    gap: 14,
+  },
+  wishlistCard: {
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.85)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+    gap: 12,
+  },
+  wishlistThumb: {
+    width: 88,
+    height: 88,
+    borderRadius: 14,
+    backgroundColor: "#F1F5F9",
+  },
+  wishlistContent: {
+    flex: 1,
+    justifyContent: "space-between",
+  },
+  wishlistHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  wishlistCat: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#7C3AED",
+    letterSpacing: 0.8,
+  },
+  wishlistTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginVertical: 2,
+    marginRight: 6,
+  },
+  wishlistMetricsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginVertical: 2,
+  },
+  wishlistPriceLabel: {
+    fontSize: 9,
+    color: "#64748B",
+  },
+  wishlistPrice: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  wishlistSharePrice: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6D28D9",
+  },
+  quickInvestBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#5835F5",
+    paddingVertical: 7,
+    borderRadius: 10,
+    marginTop: 4,
+  },
+  quickInvestBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  // Empty Wishlist Card
+  emptyWishlistCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 32,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.9)",
+  },
+  emptyHeartCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  emptyWishlistTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  emptyWishlistSub: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 18,
+    maxWidth: 280,
+  },
+  browseTradingBtn: {
+    backgroundColor: "#5835F5",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 999,
+    marginTop: 18,
+  },
+  browseTradingBtnText: {
     fontSize: 13,
     fontWeight: "700",
     color: "#FFFFFF",
+  },
+
+  // State wrappers
+  loadingWrap: {
+    paddingVertical: 40,
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 13,
+    color: "#64748B",
+  },
+
+  // ── Buy Shares Modal Styles ──
+  buyModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
+    justifyContent: "flex-end",
+  },
+  buyModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: 28,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  buyModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 22,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  buyModalIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#F3E8FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buyModalTitle: {
+    fontSize: 17,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  buyModalSubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+    fontWeight: "600",
+  },
+  buyModalCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buyModalBody: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  buyOfferingMiniCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  buyOfferingThumb: {
+    width: 54,
+    height: 54,
+    borderRadius: 12,
+  },
+  buyOfferingCat: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#7C3AED",
+    letterSpacing: 0.5,
+  },
+  buyOfferingTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginTop: 2,
+  },
+  buyOfferingSharePrice: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  buyOfferingRoundMeta: {
+    fontSize: 12,
+    color: "#64748B",
+    marginLeft: 6,
+    fontWeight: "600",
+  },
+  stepperContainer: {
+    marginTop: 18,
+    alignItems: "center",
+  },
+  stepperLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#64748B",
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  stepperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 20,
+  },
+  stepperBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  stepperBtnDisabled: {
+    opacity: 0.4,
+  },
+  stepperCountWrap: {
+    alignItems: "center",
+    minWidth: 80,
+  },
+  stepperCountNum: {
+    fontSize: 32,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  stepperCountSub: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  buyFinancialSheet: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 8,
+  },
+  buyFinancialRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  buyFinancialLabel: {
+    fontSize: 13,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+  buyFinancialValueBold: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  buyFinancialValueCash: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#2563EB",
+  },
+  buyFinancialDivider: {
+    height: 1,
+    backgroundColor: "#E2E8F0",
+    marginVertical: 4,
+  },
+  buyFinancialValueRem: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#15803D",
+  },
+  insufficientPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEE2E2",
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 12,
+  },
+  insufficientText: {
+    fontSize: 12,
+    color: "#DC2626",
+    fontWeight: "700",
+    flex: 1,
+  },
+  confirmBuyBtn: {
+    marginTop: 18,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  confirmBuyBtnDisabled: {
+    opacity: 0.6,
+  },
+  confirmBuyGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 15,
+  },
+  confirmBuyText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
   },
 });
