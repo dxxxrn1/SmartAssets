@@ -738,11 +738,6 @@ export default function HomeScreen({ navigation }) {
             >
               <View style={styles.portfolioHeader}>
                 <Text style={styles.portfolioLabel}>PORTFOLIO VALUE</Text>
-                {vaultSummary.isCached && (
-                  <View style={styles.cachedBadge}>
-                    <Text style={styles.cachedBadgeText}>CACHED</Text>
-                  </View>
-                )}
               </View>
 
               <Text style={styles.portfolioValueNumber}>

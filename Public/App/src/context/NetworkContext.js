@@ -96,7 +96,7 @@ export function OfflineBanner({ message, style, isDark = false }) {
 
   if (!isOffline) return null;
 
-  const defaultMsg = "⚡ Offline Mode — Showing cached data. Connect to the internet for live updates.";
+  const defaultMsg = "Offline Mode — Showing cached data. Connect to the internet for live updates.";
 
   return (
     <View

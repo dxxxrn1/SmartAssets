@@ -1114,6 +1114,13 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
           <Text style={styles.userEmail}>{displayEmail}</Text>
         </View>
 
+        {/* ── OFFLINE BANNER ── */}
+        <OfflineBanner
+          isDark={isDark}
+          message="Offline Mode — Showing saved profile data."
+          style={{ marginBottom: 16, marginHorizontal: 20 }}
+        />
+
         {/* ── Persistent Account Verification & Bank Approval Hub ── */}
         <View
           style={{
@@ -1351,15 +1358,6 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
             </View>
           )}
         </View>
-
-        {/* ── OFFLINE BANNER ── */}
-        <OfflineBanner
-          isDark={isDark}
-          message="⚡ Offline Mode — Showing saved profile data."
-          style={{ marginBottom: 16, marginHorizontal: 20 }}
-        />
-
-
 
         {/* ── Menu List ── */}
         <View
