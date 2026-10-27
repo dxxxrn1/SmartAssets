@@ -80,12 +80,18 @@ export default function VaultScreen({ navigation }) {
   const [fractionalItems, setFractionalItems] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
   const [escrowCash, setEscrowCash] = useState(0);
+  const [escrowLockedCash, setEscrowLockedCash] = useState(0);
+  const [sellerPendingCash, setSellerPendingCash] = useState(0);
 
   const [holdings, setHoldings] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({
     availableBalanceFormatted: "R0",
     availableBalanceNum: 0,
+    escrowBalanceFormatted: "R0",
+    escrowBalanceNum: 0,
+    sellerPendingEscrowFormatted: "R0",
+    sellerPendingEscrowNum: 0,
     portfolioValueFormatted: "R0",
     portfolioValueNum: 0,
     totalValueFormatted: "R0",
@@ -103,7 +109,9 @@ export default function VaultScreen({ navigation }) {
     (sum, it) => sum + (Number(it.myStake) || 0),
     0
   );
-  const totalCollectionValueNum = personalTotal + fractionalTotal + escrowCash;
+  const totalAssetsValueNum = personalTotal + fractionalTotal;
+  const totalAssetsValueFormatted = formatGBP(totalAssetsValueNum);
+  const totalCollectionValueNum = totalAssetsValueNum + escrowCash + escrowLockedCash;
   const totalCollectionValueFormatted = formatGBP(totalCollectionValueNum);
 
   // Modals
@@ -325,7 +333,7 @@ export default function VaultScreen({ navigation }) {
       }
 
       const now = Date.now();
-      if (now - lastVaultFetchRef.current < 45000) {
+      if (now - lastVaultFetchRef.current < 3000) {
         setLoading(false);
         return;
       }
@@ -338,25 +346,20 @@ export default function VaultScreen({ navigation }) {
             const s = res.summary || {};
             setHoldings(h);
 
-            // Merge cloud holdings into personal and fractional tabs
-            setPersonalItems((prevP) => {
-              setFractionalItems((prevF) => {
-                const { personal: mergedP, fractional: mergedF } =
-                  processHoldingsIntoTabs(h, [], []);
-                storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, mergedP);
-                storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, mergedF);
-                return mergedF;
-              });
-              const { personal: mergedP } = processHoldingsIntoTabs(
-                h,
-                [],
-                []
-              );
-              return mergedP;
-            });
+            // Authoritatively update personal and fractional tabs from server holdings
+            const { personal: mergedP, fractional: mergedF } =
+              processHoldingsIntoTabs(h, [], []);
+            setPersonalItems(mergedP);
+            setFractionalItems(mergedF);
+            storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, mergedP);
+            storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, mergedF);
 
             const cashVal = typeof s.availableBalanceNum === 'number' ? s.availableBalanceNum : 0;
+            const escVal = typeof s.escrowBalanceNum === 'number' ? s.escrowBalanceNum : 0;
+            const sellVal = typeof s.sellerPendingEscrowNum === 'number' ? s.sellerPendingEscrowNum : 0;
             setEscrowCash(cashVal);
+            setEscrowLockedCash(escVal);
+            setSellerPendingCash(sellVal);
             storage.setJSON(STORAGE_KEYS.ESCROW_CASH, cashVal);
 
             setSummary((prev) => ({
@@ -369,6 +372,12 @@ export default function VaultScreen({ navigation }) {
               portfolioValueFormatted:
                 formatGBP(s.portfolioValueFormatted) ||
                 prev.portfolioValueFormatted,
+              escrowBalanceFormatted:
+                formatGBP(s.escrowBalanceFormatted) ||
+                prev.escrowBalanceFormatted,
+              sellerPendingEscrowFormatted:
+                formatGBP(s.sellerPendingEscrowFormatted) ||
+                prev.sellerPendingEscrowFormatted,
               totalCount: s.totalCount || h.length,
             }));
 
@@ -513,7 +522,11 @@ export default function VaultScreen({ navigation }) {
           await storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, mergedP);
           await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, mergedF);
           const cashVal = typeof s.availableBalanceNum === 'number' ? s.availableBalanceNum : 0;
+          const escVal = typeof s.escrowBalanceNum === 'number' ? s.escrowBalanceNum : 0;
+          const sellVal = typeof s.sellerPendingEscrowNum === 'number' ? s.sellerPendingEscrowNum : 0;
           setEscrowCash(cashVal);
+          setEscrowLockedCash(escVal);
+          setSellerPendingCash(sellVal);
           await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, cashVal);
           await storage.setJSON(STORAGE_KEYS.VAULT, {
             holdings: h,
@@ -787,25 +800,53 @@ export default function VaultScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Main Headline: Total Collection Value (Assets + R250 Cash) */}
-            <Text style={styles.heroHeadlineLabel}>TOTAL COLLECTION VALUE</Text>
+            {/* Main Headline: Asset Portfolio Value */}
+            <Text style={styles.heroHeadlineLabel}>PORTFOLIO ASSETS VALUE</Text>
             <Text style={styles.totalBalanceNum}>
-              {totalCollectionValueFormatted}
+              {totalAssetsValueFormatted}
             </Text>
 
-            {/* Subtitle Pill: Escrow Wallet: R250 + Gain Badge */}
+            {/* Subtitle Pill: Available Cash + Escrow Status + Gain */}
             <View style={styles.heroSubtitleRow}>
               <View style={styles.escrowWalletPill}>
                 <Ionicons
-                  name="shield-checkmark"
+                  name="wallet-outline"
                   size={13}
                   color="#00C2FF"
                   style={{ marginRight: 5 }}
                 />
                 <Text style={styles.escrowWalletPillText}>
-                  Escrow Wallet: R{escrowCash}
+                  Cash: R{escrowCash.toLocaleString()}
                 </Text>
               </View>
+
+              {escrowLockedCash > 0 && (
+                <View style={[styles.escrowWalletPill, { backgroundColor: 'rgba(16, 185, 129, 0.25)' }]}>
+                  <Ionicons
+                    name="shield-checkmark"
+                    size={13}
+                    color="#10B981"
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={[styles.escrowWalletPillText, { color: '#E2E8F0' }]}>
+                    In Escrow: R{escrowLockedCash.toLocaleString()}
+                  </Text>
+                </View>
+              )}
+
+              {sellerPendingCash > 0 && (
+                <View style={[styles.escrowWalletPill, { backgroundColor: 'rgba(245, 158, 11, 0.25)' }]}>
+                  <Ionicons
+                    name="time-outline"
+                    size={13}
+                    color="#F59E0B"
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={[styles.escrowWalletPillText, { color: '#E2E8F0' }]}>
+                    Pending Sales: R{sellerPendingCash.toLocaleString()}
+                  </Text>
+                </View>
+              )}
 
               <TouchableOpacity
                 style={styles.gainPill}

@@ -429,20 +429,49 @@ export default function CheckoutScreen({ navigation, route }) {
             </View>
 
             <Text style={styles.successTitle}>
-              {isFractional ? 'Investment Confirmed!' : 'Purchase Complete!'}
+              {isFractional
+                ? 'Investment Confirmed!'
+                : receiptData?.escrowStatus === 'pending_payment'
+                ? 'Order Placed — Pending Settlement'
+                : 'Escrow Payment Secured!'}
             </Text>
             <Text style={styles.successSub}>
               {isFractional
                 ? `${sharesCount} shares (${((sharesCount / totalShares) * 100).toFixed(1)}% ownership) in ${asset.name} registered to your Vault.`
-                : `${asset.name} has been secured and transferred to your personal Vault.`}
+                : receiptData?.escrowStatus === 'pending_payment'
+                ? `Your order for "${asset.name}" has been recorded. Once your bank settlement is verified by SmartAssets treasury, funds will be locked in escrow and the seller will ship your item.`
+                : `Payment for "${asset.name}" is secured in SmartAssets Escrow. The seller has been notified to ship. Ownership transfers after you inspect and accept the merchandise.`}
             </Text>
 
             {/* Receipt Card */}
             <View style={styles.receiptCard}>
               <View style={styles.receiptHeaderRow}>
-                <Text style={styles.receiptCardTitle}>OFFICIAL SETTLEMENT RECEIPT</Text>
-                <View style={styles.settledBadge}>
-                  <Text style={styles.settledBadgeText}>SETTLED</Text>
+                <Text style={styles.receiptCardTitle}>
+                  {receiptData?.escrowStatus === 'pending_payment'
+                    ? 'ESCROW ORDER RECORD'
+                    : 'OFFICIAL SETTLEMENT RECEIPT'}
+                </Text>
+                <View
+                  style={[
+                    styles.settledBadge,
+                    receiptData?.escrowStatus === 'pending_payment' && {
+                      backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                      borderColor: '#F59E0B',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.settledBadgeText,
+                      receiptData?.escrowStatus === 'pending_payment' && { color: '#F59E0B' },
+                    ]}
+                  >
+                    {receiptData?.escrowStatus === 'pending_payment'
+                      ? 'PENDING SETTLEMENT'
+                      : isFractional
+                      ? 'SETTLED'
+                      : 'IN ESCROW'}
+                  </Text>
                 </View>
               </View>
 

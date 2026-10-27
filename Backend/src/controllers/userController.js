@@ -66,8 +66,20 @@ async function getVault(req, res) {
 
       const cleanGain = badgeText.replace(/<!--[\s\S]*?-->/g, '').trim();
 
+      let assetId = item.asset_id || null;
+      if (!assetId && item.gain && item.gain.includes('<!--meta:')) {
+        const match = item.gain.match(/<!--meta:([\s\S]*?)-->/);
+        if (match) {
+          try {
+            const meta = JSON.parse(match[1]);
+            if (meta.assetId) assetId = meta.assetId;
+          } catch (_) {}
+        }
+      }
+
       return {
         ...item,
+        asset_id: assetId,
         image: normalizeImageUrl(item.image, req),
         initialValue,
         initialValueFormatted: `R${initialValue.toLocaleString('en-ZA')}`,
@@ -84,13 +96,52 @@ async function getVault(req, res) {
     const availableBalanceNum = await vaultTxService.getUserBalance(userId);
     const availableBalanceFormatted = vaultTxService.formatZar(availableBalanceNum);
 
+    // Compute separate escrow balances for funds locked in custody
+    let escrowBalanceNum = 0;
+    let sellerPendingEscrowNum = 0;
+    try {
+      const activeEscrowStatuses = [
+        'payment_secured',
+        'in_transit',
+        'in_inspection',
+        'delivered',
+        'accepted',
+        'disputed',
+      ];
+
+      const { data: buyerEscrows } = await supabase
+        .from('escrow_orders')
+        .select('amount_zar, status')
+        .eq('buyer_id', userId)
+        .in('status', activeEscrowStatuses);
+
+      if (buyerEscrows && Array.isArray(buyerEscrows)) {
+        escrowBalanceNum = buyerEscrows.reduce((sum, o) => sum + (Number(o.amount_zar) || 0), 0);
+      }
+
+      const { data: sellerEscrows } = await supabase
+        .from('escrow_orders')
+        .select('amount_zar, status')
+        .eq('seller_id', userId)
+        .in('status', activeEscrowStatuses);
+
+      if (sellerEscrows && Array.isArray(sellerEscrows)) {
+        sellerPendingEscrowNum = sellerEscrows.reduce((sum, o) => sum + (Number(o.amount_zar) || 0), 0);
+      }
+    } catch (_escErr) {
+      console.warn('⚠️ [UserController] Escrow balance lookup fallback:', _escErr.message);
+    }
+
+    const escrowBalanceFormatted = vaultTxService.formatZar(escrowBalanceNum);
+    const sellerPendingEscrowFormatted = vaultTxService.formatZar(sellerPendingEscrowNum);
+
     // Compute personal portfolio summary
     const portfolioValueNum = items.reduce((sum, item) => sum + (Number(item.price_num) || 0), 0);
     const wholeCount = items.filter((i) => i.asset_type !== 'fractional').length;
     const fractionalCount = items.filter((i) => i.asset_type === 'fractional').length;
 
     const formattedPortfolio = vaultTxService.formatZar(portfolioValueNum);
-    const totalCombinedNum = availableBalanceNum + portfolioValueNum;
+    const totalCombinedNum = availableBalanceNum + escrowBalanceNum + portfolioValueNum;
     const totalCombinedFormatted = vaultTxService.formatZar(totalCombinedNum);
     const transactions = await vaultTxService.fetchUserTransactions(userId);
 
@@ -101,9 +152,13 @@ async function getVault(req, res) {
       summary: {
         availableBalanceNum,
         availableBalanceFormatted,
+        escrowBalanceNum,
+        escrowBalanceFormatted,
+        sellerPendingEscrowNum,
+        sellerPendingEscrowFormatted,
         portfolioValueNum,
         portfolioValueFormatted: formattedPortfolio,
-        totalValueFormatted: availableBalanceFormatted, // Main available display
+        totalValueFormatted: availableBalanceFormatted, // Liquid cash available
         totalValueNum: availableBalanceNum,
         combinedTotalNum: totalCombinedNum,
         combinedTotalFormatted: totalCombinedFormatted,

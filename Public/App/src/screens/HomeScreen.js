@@ -179,13 +179,14 @@ export default function HomeScreen({ navigation }) {
         (sum, it) => sum + (Number(it.myStake) || 0),
         0,
       );
-      const combinedTotalNum = pTotal + fTotal + cashNum;
+      const assetsValueNum = pTotal + fTotal;
+      const combinedTotalNum = assetsValueNum + cashNum;
       const combinedCount = personalList.length + fractionalList.length;
 
       setVaultSummary((prev) => ({
         ...prev,
-        portfolioValueFormatted: formatGBP(combinedTotalNum),
-        portfolioValueNum: combinedTotalNum,
+        portfolioValueFormatted: formatGBP(assetsValueNum),
+        portfolioValueNum: assetsValueNum,
         totalValueFormatted: formatGBP(combinedTotalNum),
         availableBalanceFormatted: formatGBP(cashNum),
         availableBalanceNum: cashNum,
