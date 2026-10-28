@@ -13,6 +13,10 @@ const { uploadImageToCloud, saveBase64Image, normalizeImageUrl } = require('../u
 const ordersMap = new Map();
 let hydrated = false;
 
+const isUuid = (val) =>
+  typeof val === 'string' &&
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(val);
+
 function buildTimeline({
   now,
   amountEth,
@@ -23,17 +27,20 @@ function buildTimeline({
   trackingNumber = null,
   currentStatus = 'payment_secured',
 }) {
+  const isSettled = currentStatus !== 'pending_payment';
   return [
     {
       step: 1,
       id: 'funded',
-      title: 'Payment Secured in Escrow',
-      description: `${amountEth} ETH locked in Escrow Contract. Protected from withdrawal until delivery and inspection.`,
-      timestamp: now,
-      txHash,
+      title: isSettled ? 'Payment Secured in Escrow' : 'Payment Settlement Pending',
+      description: isSettled
+        ? `${amountEth} ETH locked in Escrow Contract. Protected from withdrawal until delivery and inspection.`
+        : 'Payment settlement is awaiting independent verification before funds are secured in custody.',
+      timestamp: isSettled ? now : null,
+      txHash: isSettled ? txHash : null,
       buyerId,
       sellerId,
-      completed: true,
+      completed: isSettled,
     },
     {
       step: 2,
@@ -42,7 +49,7 @@ function buildTimeline({
       description: carrier && trackingNumber
         ? `Shipped via ${carrier} (Tracking: ${trackingNumber}) to custody center / recipient.`
         : 'Seller prepares collectible for insured armored courier dispatch.',
-      completed: currentStatus !== 'payment_secured',
+      completed: isSettled && currentStatus !== 'payment_secured' && currentStatus !== 'pending_payment',
       carrier,
       trackingNumber,
     },
@@ -51,21 +58,21 @@ function buildTimeline({
       id: 'in_inspection',
       title: 'Authentication & Physical Inspection',
       description: 'Certified Horologists & Gemological Institute conduct physical verification and serial appraisal.',
-      completed: ['in_inspection', 'delivered', 'accepted', 'released'].includes(currentStatus),
+      completed: isSettled && ['in_inspection', 'delivered', 'accepted', 'released'].includes(currentStatus),
     },
     {
       step: 4,
       id: 'accepted',
       title: 'Buyer Delivery Acceptance',
       description: 'Buyer confirms delivery and verifies condition against appraisal certificate.',
-      completed: ['accepted', 'released'].includes(currentStatus),
+      completed: isSettled && ['accepted', 'released'].includes(currentStatus),
     },
     {
       step: 5,
       id: 'released',
       title: 'Funds Released to Seller',
       description: 'Payment transferred to seller; ownership and Certificate of Authenticity permanently finalized.',
-      completed: currentStatus === 'released',
+      completed: isSettled && currentStatus === 'released',
     },
   ];
 }
@@ -146,17 +153,20 @@ async function createEscrowOrder({
   sellerAddress,
   buyerAddress,
   customTxHash,
+  status = 'payment_secured',
+  isSettled = true,
 }) {
   const finalOrderId = orderId || 'ORD-' + Math.floor(100000 + Math.random() * 900000);
   const zarVal = Number(amountZar || amountGbp || 25000);
   const ethVal = amountEth || (zarVal / 48000).toFixed(4);
   const now = new Date().toISOString();
+  const initialStatus = (status === 'pending_payment' || !isSettled) ? 'pending_payment' : 'payment_secured';
 
   let depositTxHash = customTxHash || null;
   let contractAddress = null;
 
-  // On Web3 rail without pre-existing verified txHash, execute on-chain deposit
-  if (paymentMethod === 'wallet' && !depositTxHash) {
+  // On Web3 rail without pre-existing verified txHash, execute on-chain deposit if verified
+  if (paymentMethod === 'wallet' && !depositTxHash && initialStatus === 'payment_secured') {
     const onChainLock = await web3Service.lockEscrowDeposit({
       orderId: finalOrderId,
       sellerAddress,
@@ -178,7 +188,7 @@ async function createEscrowOrder({
     txHash: depositTxHash,
     buyerId,
     sellerId,
-    currentStatus: 'payment_secured',
+    currentStatus: initialStatus,
   });
 
   const escrowOrder = {
@@ -196,8 +206,8 @@ async function createEscrowOrder({
     amountEth: ethVal,
     paymentMethod: paymentMethod || 'wallet',
     paymentRail: paymentRail || (paymentMethod === 'wallet' ? 'Ethereum Sepolia Web3' : 'Stripe Card'),
-    status: 'payment_secured',
-    currentStep: 1,
+    status: initialStatus,
+    currentStep: initialStatus === 'payment_secured' ? 1 : 0,
     totalSteps: 5,
     depositTxHash,
     etherscanUrl: depositTxHash ? `https://sepolia.etherscan.io/tx/${depositTxHash}` : null,
@@ -254,27 +264,38 @@ async function createEscrowOrder({
   // 2. Cache in memory
   ordersMap.set(finalOrderId, escrowOrder);
 
-  // 3. Notify seller that funds are secured
+  // 3. Notify seller ONLY after verified settlement custody
   if (sellerId) {
-    await notificationService.sendNotification({
-      userId: sellerId,
-      type: 'order_funded',
-      title: 'Escrow Funds Secured',
-      message: `Payment of R${zarVal.toLocaleString()} for "${escrowOrder.assetName}" is secured in Escrow. Please prepare insured courier dispatch.`,
-      orderId: finalOrderId,
-      assetId,
-    });
+    if (initialStatus === 'payment_secured') {
+      await notificationService.sendNotification({
+        userId: sellerId,
+        type: 'order_funded',
+        title: 'Escrow Funds Secured',
+        message: `Payment of R${zarVal.toLocaleString()} for "${escrowOrder.assetName}" is secured in Escrow. Please prepare insured courier dispatch.`,
+        orderId: finalOrderId,
+        assetId,
+      });
+    } else {
+      await notificationService.sendNotification({
+        userId: sellerId,
+        type: 'order_pending_payment',
+        title: 'Order Awaiting Settlement',
+        message: `An order for "${escrowOrder.assetName}" was initiated via ${escrowOrder.paymentRail}. Funds are awaiting verification. Do not dispatch merchandise until funds are confirmed secured.`,
+        orderId: finalOrderId,
+        assetId,
+      });
+    }
   }
 
   // 4. Record audit log
   auditLogService.logEvent({
-    eventType: 'ESCROW_ORDER_CREATED',
+    eventType: initialStatus === 'payment_secured' ? 'ESCROW_ORDER_CREATED' : 'ESCROW_ORDER_PENDING',
     actorId: buyerId || 'buyer',
     category: 'Escrow',
-    description: `Escrow order ${finalOrderId} created with deposit of R${zarVal.toLocaleString()} (${ethVal} ETH)`,
+    description: `Escrow order ${finalOrderId} (${initialStatus}) created with deposit of R${zarVal.toLocaleString()} (${ethVal} ETH)`,
   });
 
-  console.log(`🔒 [EscrowService] Created escrow order ${finalOrderId} for R${zarVal} (${ethVal} ETH)`);
+  console.log(`🔒 [EscrowService] Created escrow order ${finalOrderId} (${initialStatus}) for R${zarVal} (${ethVal} ETH)`);
   return escrowOrder;
 }
 
@@ -661,8 +682,8 @@ async function releaseEscrow(orderId, requester = {}) {
   }
 
   // Crucial check: require buyer acceptance or admin resolution
-  const requesterId = requester.userId || requester.id;
-  const isAdmin = requester.role === 'admin';
+  const requesterId = typeof requester === 'string' ? requester : (requester.userId || requester.id);
+  const isAdmin = typeof requester === 'object' && requester?.role === 'admin';
 
   if (!isAdmin) {
     if (!order.buyerId || String(order.buyerId) !== String(requesterId)) {
@@ -689,7 +710,139 @@ async function releaseEscrow(orderId, requester = {}) {
     }
   } else {
     // Fiat release reference
-    releaseTxHash = 'PAYOUT-STRIPE-' + Math.floor(100000 + Math.random() * 900000);
+    releaseTxHash = 'PAYOUT-ESCROW-' + Math.floor(100000 + Math.random() * 900000);
+  }
+
+  // 1. Authoritative payout to seller's available balance upon release (2.5% platform fee deducted)
+  if (order.sellerId) {
+    const netProceeds = Math.round(Number(order.amountZar || 0) * 0.975);
+    try {
+      const vaultTxService = require('./vaultTransactionService');
+      await vaultTxService.depositFunds({
+        userId: order.sellerId,
+        amount: netProceeds,
+        method: 'Escrow Payout',
+        reference: `RELEASE-${orderId}`,
+        notes: `Net proceeds (R${netProceeds.toLocaleString('en-ZA')}) for sale of "${order.assetName}".`,
+      });
+    } catch (depositErr) {
+      console.warn(`⚠️ [EscrowService] Seller balance deposit notice: ${depositErr.message}`);
+    }
+  }
+
+  // 2. Transfer asset ownership and user_holdings exactly once
+  const isUuid = (val) =>
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(val || ''));
+
+  if (order.assetId) {
+    try {
+      const { data: assetData } = await supabase
+        .from('assets')
+        .select('*')
+        .eq('id', order.assetId)
+        .maybeSingle();
+
+      if (assetData?.allow_investment) {
+        // Fractional asset: process pro-rata buyout payouts and retire positions
+        const investmentPositionService = require('./investmentPositionService');
+        await investmentPositionService.processOutrightBuyoutAllocations({
+          asset: assetData,
+          buyerId: order.buyerId,
+          buyerName: requester.name || requester.fullName || `Buyer (${String(order.buyerId).slice(0, 8)})`,
+          orderId,
+          grossSaleZar: order.amountZar,
+          txHash: releaseTxHash,
+          paymentRailName: order.paymentRail || 'Escrow Release',
+        });
+      } else {
+        // Standard whole asset transfer:
+        // Update assets table: set current_owner_id = buyerId, user_id = buyerId, status = 'sold'
+        if (order.assetId) {
+          try {
+            await supabase
+              .from('assets')
+              .update({
+                status: 'sold',
+                current_owner_id: order.buyerId,
+                user_id: order.buyerId,
+                allow_investment: false,
+              })
+              .eq('id', order.assetId);
+          } catch (_assetErr) {
+            console.warn('⚠️ [EscrowService] Asset table update note:', _assetErr.message);
+          }
+        }
+
+        // Delete seller holding
+        if (order.sellerId) {
+          if (order.assetId) {
+            await supabase
+              .from('user_holdings')
+              .delete()
+              .eq('user_id', order.sellerId)
+              .ilike('gain', `%${order.assetId}%`);
+          }
+
+          if (order.assetName) {
+            await supabase
+              .from('user_holdings')
+              .delete()
+              .eq('user_id', order.sellerId)
+              .ilike('name', order.assetName);
+          }
+        }
+
+        // Insert buyer holding with stable asset_id
+        if (order.buyerId) {
+          const holdingMeta = {
+            initialValue: order.amountZar,
+            liveMarketValue: order.amountZar,
+            badgeText: '+0.0% Market Gain',
+            badgeType: 'positive',
+            assetId: order.assetId,
+            orderId,
+            txHash: releaseTxHash,
+          };
+
+          const holdingPayload = {
+            user_id: order.buyerId,
+            name: order.assetName,
+            category: order.assetCategory || 'Luxury Asset',
+            price: `R${Number(order.amountZar || 0).toLocaleString('en-ZA')}`,
+            price_num: Number(order.amountZar || 0),
+            image: order.assetImage,
+            asset_type: 'whole',
+            gain: `+0.0%<!--meta:${JSON.stringify(holdingMeta)}-->`,
+            gain_pct: '0%',
+            positive: true,
+          };
+
+          let { error: insertHoldErr } = await supabase.from('user_holdings').insert({
+            ...holdingPayload,
+            asset_id: order.assetId || null,
+          });
+
+          if (insertHoldErr && (insertHoldErr.code === '42703' || insertHoldErr.code === 'PGRST204' || insertHoldErr.message?.includes('asset_id'))) {
+            await supabase.from('user_holdings').insert(holdingPayload);
+          }
+        }
+
+        const milestone = `Ownership Transferred: Acquired 100% full ownership via Escrow Release. Payout of R${Number(order.amountZar || 0).toLocaleString('en-ZA')} released to seller.`;
+        if (order.assetId) {
+          await supabase.from('asset_history').insert({
+            asset_id: order.assetId,
+            year: String(new Date().getFullYear()),
+            event: milestone,
+            party: `Buyer (${order.buyerId ? String(order.buyerId).slice(0, 8) : 'Verified'})`,
+            hash: releaseTxHash,
+            tx_hash: releaseTxHash,
+            verified: true,
+          });
+        }
+      }
+    } catch (transferErr) {
+      console.warn('⚠️ [EscrowService] Ownership transfer notice:', transferErr.message);
+    }
   }
 
   const now = new Date().toISOString();
@@ -726,13 +879,23 @@ async function releaseEscrow(orderId, requester = {}) {
 
   ordersMap.set(orderId, order);
 
-  // Notify seller of payout
+  // Notify buyer and seller
   if (order.sellerId) {
     await notificationService.sendNotification({
       userId: order.sellerId,
       type: 'funds_released',
       title: 'Escrow Payout Settled',
       message: `R${order.amountZar.toLocaleString()} has been released to your seller account for "${order.assetName}".`,
+      orderId,
+    });
+  }
+
+  if (order.buyerId) {
+    await notificationService.sendNotification({
+      userId: order.buyerId,
+      type: 'ownership_transferred',
+      title: 'Ownership Transferred',
+      message: `Congratulations! Ownership of "${order.assetName}" has been permanently transferred to your Vault.`,
       orderId,
     });
   }
@@ -765,14 +928,14 @@ async function refundEscrow(orderId, reason, requester = {}) {
     throw new Error('Cannot refund an order whose funds have already been released to the seller.');
   }
 
-  const requesterId = requester.userId || requester.id;
-  const isAdmin = requester.role === 'admin';
+  const requesterId = typeof requester === 'string' ? requester : (requester?.userId || requester?.id);
+  const isAdmin = typeof requester === 'object' && requester?.role === 'admin';
   const isSeller = order.sellerId && String(order.sellerId) === String(requesterId);
   const isBuyer = order.buyerId && String(order.buyerId) === String(requesterId);
 
-  // Only seller or admin can refund, OR buyer if order is in payment_secured and pre-dispatch cancellation
+  // Only seller or admin can refund, OR buyer if order is in payment_secured/pending_payment and pre-dispatch cancellation
   if (!isAdmin && !isSeller) {
-    if (!isBuyer || order.status !== 'payment_secured') {
+    if (!isBuyer || (order.status !== 'payment_secured' && order.status !== 'pending_payment')) {
       throw new Error('Unauthorized: Only the seller or platform administrator can authorize an escrow refund.');
     }
   }
@@ -789,7 +952,54 @@ async function refundEscrow(orderId, reason, requester = {}) {
       throw new Error(`On-chain refund failed: ${err.message}`);
     }
   } else {
-    refundTxHash = 'REFUND-STRIPE-' + Math.floor(100000 + Math.random() * 900000);
+    refundTxHash = 'REFUND-ESCROW-' + Math.floor(100000 + Math.random() * 900000);
+  }
+
+  // Return funds to buyer's available vault balance
+  if (order.buyerId && order.amountZar > 0) {
+    try {
+      const vaultTxService = require('./vaultTransactionService');
+      await vaultTxService.depositFunds({
+        userId: order.buyerId,
+        amount: order.amountZar,
+        method: 'Escrow Refund',
+        reference: `REFUND-${orderId}`,
+        notes: `100% refund for "${order.assetName}". Reason: ${reason || 'Order canceled or failed inspection.'}`,
+      });
+    } catch (refundDepErr) {
+      console.warn(`⚠️ [EscrowService] Buyer refund deposit notice: ${refundDepErr.message}`);
+    }
+  }
+
+  // Restore asset to active status and restore seller as current owner (buyer does not gain ownership)
+  if (order.assetId) {
+    try {
+      await supabase
+        .from('assets')
+        .update({
+          status: 'active',
+          current_owner_id: order.sellerId,
+          user_id: order.sellerId,
+        })
+        .eq('id', order.assetId);
+
+      // Ensure buyer does NOT have the holding
+      if (order.buyerId) {
+        await supabase
+          .from('user_holdings')
+          .delete()
+          .eq('user_id', order.buyerId)
+          .ilike('gain', `%${order.assetId}%`);
+
+        await supabase
+          .from('user_holdings')
+          .delete()
+          .eq('user_id', order.buyerId)
+          .ilike('name', order.assetName);
+      }
+    } catch (revertErr) {
+      console.warn('⚠️ [EscrowService] Asset revert notice:', revertErr.message);
+    }
   }
 
   const now = new Date().toISOString();
@@ -821,7 +1031,7 @@ async function refundEscrow(orderId, reason, requester = {}) {
       userId: order.buyerId,
       type: 'funds_refunded',
       title: 'Escrow Refund Completed',
-      message: `100% of escrow funds for "${order.assetName}" have been refunded to your payment rail.`,
+      message: `100% of escrow funds (R${Number(order.amountZar || 0).toLocaleString('en-ZA')}) for "${order.assetName}" have been refunded to your payment rail.`,
       orderId,
     });
   }

@@ -37,7 +37,7 @@ const DEFAULT_DEMO_WALLET =
 export default function LoginScreen({ navigation, isDark: propIsDark }) {
   const { isDark, toggleTheme } = useTheme();
   const c = useColors(isDark);
-  const { login, loginWithWallet, sessionNotice, clearSessionNotice } = useAuth();
+  const { login, loginWithWallet } = useAuth();
   const { isConnected, isOffline, checkConnection } = useNetwork();
 
   // Network check helper before auth actions
@@ -642,30 +642,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
               </Text>
             </TouchableOpacity>
 
-            {/* ERROR */}
-            {sessionNotice ? (
-              <View
-                style={[
-                  styles.errorBox,
-                  {
-                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                    borderColor: '#F59E0B',
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 8,
-                    marginBottom: 12,
-                  },
-                ]}
-              >
-                <Feather name="alert-triangle" size={16} color="#F59E0B" />
-                <Text style={[styles.errorText, { color: '#F59E0B', flex: 1, fontWeight: '600' }]}>
-                  {sessionNotice}
-                </Text>
-                <TouchableOpacity onPress={clearSessionNotice}>
-                  <Feather name="x" size={16} color="#F59E0B" />
-                </TouchableOpacity>
-              </View>
-            ) : null}
+
 
             {error ? (
               <View

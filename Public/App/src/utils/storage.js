@@ -18,6 +18,7 @@ export const STORAGE_KEYS = {
   VAULT_ACTIVITY_LOG: '@smartassets_vault_activity_log',
   LAST_ACTIVE_AT: '@smartassets_last_active_at',
   SESSION_EXPIRED_MESSAGE: '@smartassets_session_expired_msg',
+  NOTIFICATION_PREFERENCES: '@smartassets_notification_preferences',
 };
 
 const memoryFallback = new Map();

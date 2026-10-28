@@ -20,6 +20,9 @@ const { ethers } = require('ethers');
 // Current ZAR to ETH rate for checkout conversion (1 ETH ≈ R48,000)
 const ZAR_PER_ETH = 48000;
 
+// Mutex lock to serialize concurrent checkout attempts on the same asset
+const activeCheckoutLocks = new Set();
+
 /**
  * GET /api/payments/rates
  * Returns exchange rates, Escrow wallet info, and Stripe configuration.
@@ -129,6 +132,30 @@ async function processPayment(req, res) {
       return sendError(res, 400, 'Payment method is required (wallet, card, or bank).');
     }
 
+    // Mutex lock to prevent simultaneous race conditions on the same asset
+    if (assetId && activeCheckoutLocks.has(String(assetId))) {
+      return sendError(
+        res,
+        409,
+        'Another transaction is currently processing this asset. Please try again in a moment.',
+        'CONCURRENT_CHECKOUT'
+      );
+    }
+    if (assetId) {
+      activeCheckoutLocks.add(String(assetId));
+    }
+
+    let assetLockedInDb = false;
+
+    const unlockAssetIfLocked = async () => {
+      if (assetLockedInDb && assetId) {
+        try {
+          await supabase.from('assets').update({ status: 'active' }).eq('id', assetId);
+          assetLockedInDb = false;
+        } catch (_) {}
+      }
+    };
+
     // 1. Fetch asset being purchased
     let asset = null;
     if (assetId) {
@@ -153,19 +180,46 @@ async function processPayment(req, res) {
       return sendError(res, 400, 'Self-dealing Violation: You cannot purchase or invest in your own asset listing.');
     }
 
-    // Rule: Reject purchases on already-sold items
-    if (asset && asset.status === 'sold') {
-      return sendError(res, 400, 'Asset has already been sold and is no longer available in the marketplace.');
+    // Rule: Reject purchases on already-sold or in-escrow items
+    if (asset && (asset.status === 'sold' || asset.status === 'in_escrow')) {
+      return sendError(
+        res,
+        409,
+        `Asset is no longer available (${asset.status === 'in_escrow' ? 'currently in escrow' : 'already sold'}).`,
+        'ASSET_UNAVAILABLE'
+      );
+    }
+
+    // For whole-item purchase, atomically lock status to 'in_escrow' in the database
+    if (!isFractional && asset?.id) {
+      const { data: lockResult, error: lockErr } = await supabase
+        .from('assets')
+        .update({ status: 'in_escrow' })
+        .eq('id', asset.id)
+        .eq('status', 'active')
+        .select();
+
+      if (lockErr || !lockResult || lockResult.length === 0) {
+        return sendError(
+          res,
+          409,
+          'Asset is no longer available (it was acquired or locked concurrently).',
+          'ASSET_UNAVAILABLE'
+        );
+      }
+      assetLockedInDb = true;
     }
 
     // Fractional Investment Rules
     if (isFractional) {
       if (!asset) {
+        await unlockAssetIfLocked();
         return sendError(res, 400, 'Target asset is required for fractional investment.');
       }
 
       // Rule: Reject fractional investments if allow_investment is disabled
       if (!asset.allow_investment) {
+        await unlockAssetIfLocked();
         return sendError(
           res,
           400,
@@ -182,12 +236,15 @@ async function processPayment(req, res) {
       const sharePrice = Number(asset.share_price) || Math.round((Number(asset.price_num) || 1000) / totalShares);
 
       if (!sharesToBuy || sharesToBuy < 1) {
+        await unlockAssetIfLocked();
         return sendError(res, 400, 'Investment Rule Violation: Minimum investment is 1 share.');
       }
       if (remainingShares <= 0) {
+        await unlockAssetIfLocked();
         return sendError(res, 400, 'Investment Rule Violation: This offering is 100% funded and closed.');
       }
       if (sharesToBuy > remainingShares) {
+        await unlockAssetIfLocked();
         return sendError(res, 400, `Investment Rule Violation: Only ${remainingShares} shares remain available.`);
       }
 
@@ -196,6 +253,7 @@ async function processPayment(req, res) {
       const alreadyOwnedShares = userPositions.reduce((acc, p) => acc + Number(p.shares_held), 0);
 
       if (alreadyOwnedShares + sharesToBuy > maxAllowedPerInvestor) {
+        await unlockAssetIfLocked();
         return sendError(
           res,
           400,
@@ -204,6 +262,7 @@ async function processPayment(req, res) {
       }
 
       if (req.body.riskAcknowledged !== true && req.body.riskAcknowledged !== 'true') {
+        await unlockAssetIfLocked();
         return sendError(res, 400, 'Investment Rule Violation: Risk Disclosure must be acknowledged.');
       }
 
@@ -213,6 +272,7 @@ async function processPayment(req, res) {
     }
 
     if (actualPriceZar <= 0) {
+      await unlockAssetIfLocked();
       return sendError(res, 400, 'Invalid transaction amount.');
     }
 
@@ -243,6 +303,8 @@ async function processPayment(req, res) {
     let verifiedPaymentIntentId = null;
     let stripeReceipt = null;
     let paymentRailName = 'Escrow Custody';
+    let isSettled = false;
+    let initialEscrowStatus = 'pending_payment';
 
     // ── 3. Authoritative Payment Rail Settlement Verification ──
     if (paymentMethod === 'wallet') {
@@ -255,6 +317,7 @@ async function processPayment(req, res) {
 
       const linkedWallet = userProfile?.wallet_address ? userProfile.wallet_address.toLowerCase() : null;
       if (!linkedWallet) {
+        await unlockAssetIfLocked();
         return sendError(
           res,
           400,
@@ -265,6 +328,7 @@ async function processPayment(req, res) {
 
       const txHash = paymentDetails?.txHash?.trim();
       if (!txHash) {
+        await unlockAssetIfLocked();
         return sendError(
           res,
           400,
@@ -286,6 +350,7 @@ async function processPayment(req, res) {
       });
 
       if (!verification.verified) {
+        await unlockAssetIfLocked();
         return sendError(
           res,
           400,
@@ -297,11 +362,14 @@ async function processPayment(req, res) {
       verifiedTxHash = verification.txHash;
       etherscanUrl = verification.etherscanUrl;
       paymentRailName = 'Ethereum Sepolia Web3';
+      isSettled = true;
+      initialEscrowStatus = 'payment_secured';
 
     } else if (paymentMethod === 'card') {
       // ── Stripe Card Rail ──
       // Security rule: NEVER accept raw card numbers on the backend
       if (paymentDetails?.cardNumber) {
+        await unlockAssetIfLocked();
         return sendError(
           res,
           400,
@@ -312,6 +380,7 @@ async function processPayment(req, res) {
 
       const paymentIntentId = (paymentDetails?.paymentIntentId || paymentDetails?.stripePaymentIntentId || '').trim();
       if (!paymentIntentId) {
+        await unlockAssetIfLocked();
         return sendError(
           res,
           400,
@@ -329,6 +398,7 @@ async function processPayment(req, res) {
       });
 
       if (!intentCheck.verified) {
+        await unlockAssetIfLocked();
         return sendError(
           res,
           400,
@@ -340,17 +410,26 @@ async function processPayment(req, res) {
       verifiedPaymentIntentId = intentCheck.paymentIntentId;
       stripeReceipt = intentCheck;
       paymentRailName = `Stripe ${intentCheck.cardBrand || 'Card'} (${intentCheck.mode || 'sandbox'})`;
+      isSettled = true;
+      initialEscrowStatus = 'payment_secured';
 
     } else if (paymentMethod === 'bank') {
       // ── Bank Transfer Rail ──
       const bankRef = (paymentDetails?.reference || '').trim();
       if (!bankRef) {
+        await unlockAssetIfLocked();
         return sendError(res, 400, 'A valid bank payment reference is required.', 'BANK_REF_REQUIRED');
       }
 
-      paymentRailName = 'Bank Wire (Sandbox Settlement)';
+      // Bank wire reference submitted by client — settlement is NOT verified yet.
+      // Funds are NOT in SmartAssets verified custody until manual/automated treasury verification.
+      // Order is created as pending_payment; seller is NOT notified that funds are secured.
+      isSettled = false;
+      initialEscrowStatus = 'pending_payment';
+      paymentRailName = 'Bank Wire (Awaiting Settlement Verification)';
       verifiedPaymentIntentId = `bank_${bankRef}`;
     } else {
+      await unlockAssetIfLocked();
       return sendError(res, 400, `Unsupported payment method: ${paymentMethod}`);
     }
 
@@ -376,9 +455,12 @@ async function processPayment(req, res) {
         paymentMethod,
         paymentRail: paymentRailName,
         customTxHash: verifiedTxHash,
+        status: initialEscrowStatus,
+        isSettled,
       });
     } catch (escrowErr) {
       console.error('❌ [Payment] Escrow order creation failed:', escrowErr.message);
+      await unlockAssetIfLocked();
       return sendError(res, 500, `Escrow order creation failed: ${escrowErr.message}. Funds held safely.`);
     }
 
@@ -478,119 +560,43 @@ async function processPayment(req, res) {
             paymentRailName,
           });
         } else {
-          // Standard whole listing: credit seller proceeds, update asset ownership, transfer holding
-          if (sellerId) {
-            const netProceeds = Math.round(actualPriceZar * 0.975);
-            await vaultTransactionService.depositFunds({
-              userId: sellerId,
-              amount: netProceeds,
-              method: 'Marketplace Sale Proceeds',
-              reference: `SALE-${orderId}`,
-              notes: `Net proceeds for sale of "${assetName}" to ${req.user.fullName || req.user.email}.`,
-            });
+          // Standard whole listing:
+          // In accordance with SmartAssets verified escrow rules:
+          // - Funds are secured in escrow (or pending bank settlement verification).
+          // - Asset is locked in 'in_escrow' status.
+          // - Seller balance is NOT credited at checkout (proceeds remain in escrow until release).
+          // - Asset ownership (current_owner_id) is NOT transferred at checkout.
+          // - Buyer does NOT receive holding until release.
+          // - Seller retains holding until release.
 
-            await notificationService.sendNotification({
-              userId: sellerId,
-              type: 'asset_sold',
-              title: 'Item Sold Outright — Proceeds Credited',
-              message: `Your listing "${assetName}" was purchased outright for R${actualPriceZar.toLocaleString('en-ZA')}. R${netProceeds.toLocaleString('en-ZA')} has been credited to your Vault.`,
-              orderId,
-              assetId: asset.id,
-            });
-          }
-
-          // Update asset ownership to buyer while preserving original seller
-          await supabase
-            .from('assets')
-            .update({
-              status: 'sold',
-              current_owner_id: userId,
-              user_id: userId,
-              seller_id: sellerId || asset.user_id,
-              allow_investment: false,
-            })
-            .eq('id', asset.id);
-
-          // Reassign existing holding or insert new whole holding into buyer's vault
-          if (sellerId && sellerId !== userId) {
-            const { data: existingSellerHoldings } = await supabase
-              .from('user_holdings')
-              .select('*')
-              .eq('user_id', sellerId)
-              .ilike('name', assetName)
-              .limit(1);
-
-            if (existingSellerHoldings && existingSellerHoldings.length > 0) {
-              await supabase
-                .from('user_holdings')
-                .update({
-                  user_id: userId,
-                  price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
-                  price_num: actualPriceZar,
-                })
-                .eq('id', existingSellerHoldings[0].id);
-            } else {
-              await supabase.from('user_holdings').insert({
-                user_id: userId,
-                name: holdingName,
-                category: assetCategory,
-                price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
-                price_num: actualPriceZar,
-                image: assetImage,
-                asset_type: holdingType,
-                gain: '+0.0%',
-                gain_pct: '0%',
-                positive: true,
-              });
-            }
-
-            // Remove legacy holding from seller's vault
-            await supabase
-              .from('user_holdings')
-              .delete()
-              .eq('user_id', sellerId)
-              .ilike('name', assetName);
-          } else {
-            await supabase.from('user_holdings').insert({
-              user_id: userId,
-              name: holdingName,
-              category: assetCategory,
-              price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
-              price_num: actualPriceZar,
-              image: assetImage,
-              asset_type: holdingType,
-              gain: '+0.0%',
-              gain_pct: '0%',
-              positive: true,
-            });
-          }
-
-          // Record Provenance
-          const wholeMilestone = `Ownership Transferred: Acquired 100% full ownership via ${paymentRailName}. Original seller: ${sellerId ? String(sellerId).slice(0, 8) : 'Verified Lister'}.`;
+          const wholeMilestone = `Escrow Initiated: Buyer initiated purchase via ${paymentRailName}. Status: ${isSettled ? 'Funds Secured in Escrow' : 'Awaiting Settlement'}. Order ${orderId}.`;
           await supabase.from('asset_history').insert({
             asset_id: asset.id,
             year: String(new Date().getFullYear()),
             event: wholeMilestone,
-            party: `Buyer (${req.user.fullName || req.user.email})`,
+            party: `Escrow Custody (${paymentRailName})`,
             hash: transactionId,
             tx_hash: verifiedTxHash || transactionId,
-            verified: true,
+            verified: isSettled,
           });
 
-          if (asset.token_id) {
+          if (asset.token_id && isSettled) {
             web3Service.recordMilestoneOnChain(asset.token_id, {
               year: new Date().getFullYear(),
               event: wholeMilestone,
-              party: `Buyer (${userId.substring(0, 8)})`,
+              party: `Escrow (${orderId})`,
               hash: transactionId,
             });
           }
 
+          // Notify buyer of escrow order creation
           await notificationService.sendNotification({
             userId,
-            type: 'ownership_transferred',
-            title: 'Purchase Complete — Ownership Transferred',
-            message: `Congratulations! You now hold 100% verified ownership of "${assetName}". Secured in your Vault.`,
+            type: 'escrow_created',
+            title: isSettled ? 'Payment Secured in Escrow' : 'Order Placed — Pending Settlement',
+            message: isSettled
+              ? `Your payment for "${assetName}" is secured in SmartAssets Escrow. Seller will ship the item. Inspect and accept upon arrival to release funds and claim ownership.`
+              : `Your order for "${assetName}" has been recorded. Once your bank settlement is verified by SmartAssets, funds will be locked in escrow and the seller will ship your item.`,
             orderId,
             assetId: asset.id,
           });
@@ -609,8 +615,8 @@ async function processPayment(req, res) {
           reference: orderId,
           notes: isFractional
             ? `Purchased ${sharesToBuy} fractional shares in "${assetName}"`
-            : `Purchased "${assetName}" (100% Outright Ownership)`,
-          status: 'completed',
+            : `Payment placed in escrow for "${assetName}" (Order ${orderId})`,
+          status: isSettled ? 'in_escrow' : 'pending_settlement',
           createdAt: new Date().toISOString(),
         });
       } catch (txErr) {
@@ -622,7 +628,11 @@ async function processPayment(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: isFractional ? 'Investment verified and shares added to your vault!' : 'Payment verified and secured in escrow!',
+      message: isFractional
+        ? 'Investment verified and shares added to your vault!'
+        : isSettled
+        ? 'Payment verified and secured in escrow! The seller has been notified to ship.'
+        : 'Bank reference submitted. Awaiting settlement verification by SmartAssets treasury.',
       receipt: {
         orderId,
         paymentMethod,
@@ -641,16 +651,20 @@ async function processPayment(req, res) {
         escrowContractAddress: escrowOrder.escrowContractAddress,
         escrowStatus: escrowOrder.status,
         currentStep: escrowOrder.currentStep,
+        isSettled,
         sellerId,
         sellerAddress,
         timestamp: new Date().toISOString(),
       },
       escrowOrder,
     });
-  }
-  catch (err) {
+  } catch (err) {
     console.error('processPayment error:', err);
     return sendError(res, 500, err.message || 'Internal server error processing payment.');
+  } finally {
+    if (req.body?.assetId) {
+      activeCheckoutLocks.delete(String(req.body.assetId));
+    }
   }
 }
 

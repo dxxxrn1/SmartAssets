@@ -53,7 +53,11 @@ export default function OnboardingScreen({ navigation, isDark }) {
         <View style={styles.content}>
           {/* ── Hero image ── */}
           <View style={[styles.imageWrap, { backgroundColor: c.card, borderColor: c.border }]}>
-            <Image source={{ uri: slide.image }} style={styles.image} resizeMode="cover" />
+            <Image
+              source={typeof slide.image === 'string' ? { uri: slide.image } : slide.image}
+              style={styles.image}
+              resizeMode="cover"
+            />
           </View>
 
           {/* ── Progress dots ── */}
@@ -96,9 +100,13 @@ export default function OnboardingScreen({ navigation, isDark }) {
             </LinearGradient>
           </TouchableOpacity>
 
-          {step < ONBOARDING_SLIDES.length - 1 && (
+          {step < ONBOARDING_SLIDES.length - 1 ? (
+            <TouchableOpacity onPress={() => navigation.navigate(SCREENS.REGISTER)}>
+              <Text style={[styles.skipLabel, { color: c.muted }]}>Skip to Create Account</Text>
+            </TouchableOpacity>
+          ) : (
             <TouchableOpacity onPress={() => navigation.navigate(SCREENS.LOGIN)}>
-              <Text style={[styles.skipLabel, { color: c.muted }]}>Skip to Sign In</Text>
+              <Text style={[styles.skipLabel, { color: c.muted }]}>Already have an account? Sign In</Text>
             </TouchableOpacity>
           )}
         </View>

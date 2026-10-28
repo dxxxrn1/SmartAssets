@@ -165,7 +165,8 @@ export function useLinkedWallet() {
   }, [token, updateUser, requestSignatureFromWallet]);
 
   // ── Unlink / Disconnect Wallet ─────────────────────────────────────────────
-  const unlinkWallet = useCallback(async () => {
+  const unlinkWallet = useCallback(async (options = {}) => {
+    const { silent = false } = options || {};
     setError(null);
     setLoading(true);
 
@@ -177,10 +178,13 @@ export function useLinkedWallet() {
 
       updateUser({ walletAddress: null, wallet_address: null });
 
-      if (Platform.OS === 'web') {
-        alert('Wallet unlinked successfully.');
-      } else {
-        Alert.alert('Wallet Disconnected', 'Your wallet has been disconnected from your profile.');
+      if (!silent) {
+        if (Platform.OS === 'web') {
+          // If not silent, show notification
+          alert('Wallet unlinked successfully.');
+        } else {
+          Alert.alert('Wallet Disconnected', 'Your wallet has been disconnected from your profile.');
+        }
       }
 
       return res;

@@ -236,10 +236,16 @@ export default function AssetDetailScreen({ navigation, route }) {
     }
   }, [initialAsset.id]);
 
+  const effectiveOwnerId = asset.current_owner_id || asset.user_id || asset.userId;
   const isOwner = Boolean(
-    user?.id && (user.id === asset.userId || user.id === asset.user_id),
+    user?.id && String(user.id) === String(effectiveOwnerId)
   );
-  const isInvestmentEnabled = Boolean(asset.allow_investment || asset.allowInvestment);
+  const isSeller = Boolean(
+    user?.id && (String(user.id) === String(asset.seller_id) || (String(user.id) === String(asset.user_id) && !asset.current_owner_id))
+  );
+  const isSold = asset.status === 'sold';
+  const isInEscrow = asset.status === 'in_escrow';
+  const isInvestmentEnabled = Boolean(asset.allow_investment || asset.allowInvestment) && !isSold && !isInEscrow;
 
   const handleOpenLiveRoomPreview = () => {
     const rawImage =
@@ -1222,8 +1228,19 @@ export default function AssetDetailScreen({ navigation, route }) {
           )}
 
           <TouchableOpacity
-            style={[styles.bottomOfferBtn, !isInvestmentEnabled && { flex: 1 }]}
+            style={[
+              styles.bottomOfferBtn,
+              !isInvestmentEnabled && { flex: 1 },
+              (isSold || (isInEscrow && !isOwner && !isSeller) || (isOwner && !isSold && !isInEscrow)) && { opacity: 0.65 },
+            ]}
+            disabled={isSold || (isInEscrow && !isOwner && !isSeller) || (isOwner && !isSold && !isInEscrow)}
             onPress={() => {
+              if (isInEscrow && (isOwner || isSeller)) {
+                navigation.navigate(SCREENS.ESCROW_TRACKER, {
+                  asset,
+                });
+                return;
+              }
               navigation.navigate(SCREENS.CHECKOUT, {
                 asset,
                 isFractional: false,
@@ -1233,14 +1250,22 @@ export default function AssetDetailScreen({ navigation, route }) {
           >
             <View style={styles.bottomOfferGradient}>
               <Text style={styles.bottomOfferText}>
-                {isOwner ? "View in Escrow" : "Buy Entire Item"}
+                {isSold
+                  ? "Sold Out"
+                  : isInEscrow
+                  ? (isOwner || isSeller ? "Track Active Escrow" : "In Escrow")
+                  : isOwner
+                  ? "Your Listing"
+                  : "Buy Entire Item"}
               </Text>
-              <Feather
-                name="arrow-right"
-                size={15}
-                color="#FFFFFF"
-                style={{ marginLeft: 6 }}
-              />
+              {!isSold && !(isInEscrow && !isOwner && !isSeller) && !isOwner && (
+                <Feather
+                  name="arrow-right"
+                  size={15}
+                  color="#FFFFFF"
+                  style={{ marginLeft: 6 }}
+                />
+              )}
             </View>
           </TouchableOpacity>
         </View>

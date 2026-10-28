@@ -2,7 +2,7 @@
 // Captures user gestures to reset the 5-minute inactivity timer without blocking touches,
 // and presents a 30-second warning banner before automatic session termination.
 
-import React, { useRef } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -19,24 +19,65 @@ export default function InactivityWatcher({ children }) {
   const { isAuthenticated, inactivityWarning, secondsRemaining, recordActivity } = useAuth();
   const { isDark } = useTheme();
 
-  // Create a passive PanResponder that registers touches on capture phase
-  // and returns FALSE so child touchables, buttons, inputs, and lists function normally.
+  // Mutable ref always holding the latest auth and watcher state
+  // to prevent stale closures in long-lived PanResponder and DOM callbacks
+  const stateRef = useRef({ isAuthenticated, recordActivity, inactivityWarning });
+  stateRef.current = { isAuthenticated, recordActivity, inactivityWarning };
+
+  const lastRecordedRef = useRef(0);
+
+  // Active interaction handler that resets the inactivity timer
+  const handleInteraction = useCallback(() => {
+    const { isAuthenticated: authed, recordActivity: record, inactivityWarning: warningActive } = stateRef.current;
+    if (!authed || typeof record !== 'function') return;
+
+    const now = Date.now();
+    // If warning banner is actively shown, dismiss immediately with 0ms delay.
+    // Otherwise throttle to at most once per 500ms to avoid excessive churn during 60fps gestures.
+    if (warningActive || now - lastRecordedRef.current >= 500) {
+      lastRecordedRef.current = now;
+      record();
+    }
+  }, []);
+
+  // Passive PanResponder that registers gestures in capture phase
+  // and returns FALSE so child touchables, buttons, inputs, and scroll views function normally.
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponderCapture: () => {
-        if (isAuthenticated) {
-          recordActivity();
-        }
+        handleInteraction();
         return false;
       },
       onMoveShouldSetPanResponderCapture: () => {
-        if (isAuthenticated) {
-          recordActivity();
-        }
+        handleInteraction();
         return false;
       },
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: () => false,
+      onPanResponderTerminationRequest: () => true,
     })
   ).current;
+
+  // React Native Web global activity listeners (pointer clicks, typing, trackpad wheel, scrolling)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const onWebActivity = () => {
+      handleInteraction();
+    };
+
+    window.addEventListener('pointerdown', onWebActivity, { capture: true, passive: true });
+    window.addEventListener('keydown', onWebActivity, { capture: true, passive: true });
+    window.addEventListener('wheel', onWebActivity, { capture: true, passive: true });
+    window.addEventListener('scroll', onWebActivity, { capture: true, passive: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', onWebActivity, { capture: true });
+      window.removeEventListener('keydown', onWebActivity, { capture: true });
+      window.removeEventListener('wheel', onWebActivity, { capture: true });
+      window.removeEventListener('scroll', onWebActivity, { capture: true });
+    };
+  }, [handleInteraction]);
 
   return (
     <View style={styles.rootContainer} {...panResponder.panHandlers}>

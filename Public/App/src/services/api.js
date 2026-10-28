@@ -927,6 +927,27 @@ export async function getKycStatusApi(token) {
 }
 
 /**
+ * Retrieve user's notification preferences.
+ */
+export async function getNotificationPreferencesApi(token) {
+  return apiRequest("/user/notifications/preferences", { method: "GET" }, token);
+}
+
+/**
+ * Update user's notification preferences.
+ */
+export async function updateNotificationPreferencesApi(preferences, token) {
+  return apiRequest(
+    "/user/notifications/preferences",
+    {
+      method: "PUT",
+      body: JSON.stringify({ preferences }),
+    },
+    token,
+  );
+}
+
+/**
  * Logout session on backend to record audit trail.
  */
 export async function logoutSessionApi(token, email = null) {

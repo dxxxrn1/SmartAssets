@@ -12,8 +12,7 @@ export const ONBOARDING_SLIDES = [
     title: "Every Asset, Verified",
     sub: "Professional appraisers review physical condition, provenance, and authenticity before listing.",
     icon: "search",
-    image:
-      "https://images.unsplash.com/photo-1614680376593-902f74cf0d41?w=600&h=420&fit=crop&auto=format",
+    image: require("../../assets/farhat-altaf-S-5NzAmEHpg-unsplash.jpg"),
   },
   {
     title: "Blockchain Certificates",

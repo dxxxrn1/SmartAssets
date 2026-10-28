@@ -27,9 +27,15 @@ import {
   getUserSupportTicketsApi,
   submitKycApi,
   getKycStatusApi,
+  uploadVerificationDocApi,
+  getVerificationStatusApi,
+  getNotificationPreferencesApi,
+  updateNotificationPreferencesApi,
 } from "../services/api";
 import useLinkedWallet from "../hooks/useLinkedWallet";
 import InstallMetaMaskModal from "../components/InstallMetaMaskModal";
+import CrossPlatformDialog from "../components/CrossPlatformDialog";
+import storage, { STORAGE_KEYS } from "../utils/storage";
 import { SCREENS } from "../constants/navigation";
 
 // Helper to filter out synthetic MetaMask strings and raw hex addresses from user name fields
@@ -94,6 +100,76 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
   const [rejectionReason, setRejectionReason] = useState(null);
   const [submittingKyc, setSubmittingKyc] = useState(false);
   const [supportModalVisible, setSupportModalVisible] = useState(false);
+
+  // ── Cross-Platform Confirmation & Feedback Dialog State ────────────────────
+  const [dialog, setDialog] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "default",
+    isConfirm: false,
+    confirmText: "Confirm",
+    cancelText: "Cancel",
+    isDestructive: false,
+    loading: false,
+    onConfirm: null,
+    onCancel: null,
+    children: null,
+  });
+
+  const showAlert = ({ title, message, type = "info", onDismiss }) => {
+    setDialog({
+      visible: true,
+      title,
+      message,
+      type,
+      isConfirm: false,
+      confirmText: "OK",
+      cancelText: "Cancel",
+      isDestructive: false,
+      loading: false,
+      onConfirm: () => {
+        setDialog((d) => ({ ...d, visible: false }));
+        if (onDismiss) onDismiss();
+      },
+      onCancel: () => {
+        setDialog((d) => ({ ...d, visible: false }));
+        if (onDismiss) onDismiss();
+      },
+      children: null,
+    });
+  };
+
+  const showConfirm = ({
+    title,
+    message,
+    confirmText = "Confirm",
+    cancelText = "Cancel",
+    isDestructive = false,
+    onConfirm,
+    onCancel,
+    children = null,
+  }) => {
+    setDialog({
+      visible: true,
+      title,
+      message,
+      type: isDestructive ? "error" : "default",
+      isConfirm: true,
+      confirmText,
+      cancelText,
+      isDestructive,
+      loading: false,
+      onConfirm,
+      onCancel: onCancel || (() => setDialog((d) => ({ ...d, visible: false }))),
+      children,
+    });
+  };
+
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [uploadingDocSlot, setUploadingDocSlot] = useState(null);
+  const [loadingNotifs, setLoadingNotifs] = useState(false);
+  const [savingNotifKey, setSavingNotifKey] = useState(null);
 
   const [kycForm, setKycForm] = useState({
     idNumber: "",
@@ -208,24 +284,60 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
     }
   }, [token]);
 
+  // Load and synchronize notification preferences from local storage and backend
+  useEffect(() => {
+    async function loadNotificationPrefs() {
+      try {
+        setLoadingNotifs(true);
+        const cached = await storage.getJSON(STORAGE_KEYS.NOTIFICATION_PREFERENCES);
+        if (cached && typeof cached === "object") {
+          setNotifications((prev) => ({ ...prev, ...cached }));
+        }
+
+        if (token) {
+          const res = await getNotificationPreferencesApi(token);
+          if (res?.success && res.preferences) {
+            setNotifications(res.preferences);
+            await storage.setJSON(STORAGE_KEYS.NOTIFICATION_PREFERENCES, res.preferences);
+          }
+        }
+      } catch (e) {
+        console.warn("[ProfileScreen] Error loading notification preferences:", e.message);
+      } finally {
+        setLoadingNotifs(false);
+      }
+    }
+    loadNotificationPrefs();
+  }, [token]);
+
+  // ── Back Navigation Handler ──
+  const handleBack = () => {
+    if (navigation && typeof navigation.canGoBack === "function" && navigation.canGoBack()) {
+      navigation.goBack();
+    } else if (navigation) {
+      navigation.navigate(SCREENS.HOME);
+    }
+  };
+
   // ── Photo / Avatar Upload Handler ──
-  // On web, Alert.alert is a no-op, so we skip the prompt and go straight to library picker.
   const handlePickAvatar = () => {
     if (Platform.OS === "web") {
-      // On web, go directly to the file picker (camera not available)
       pickFromLibrary();
     } else {
-      Alert.alert("Profile Photo", "Upload or take a new profile photo:", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Take Photo",
-          onPress: () => capturePhoto(),
+      showConfirm({
+        title: "Profile Photo",
+        message: "Choose how you want to update your profile photo:",
+        confirmText: "Choose from Library",
+        cancelText: "Take Photo",
+        onConfirm: () => {
+          setDialog((d) => ({ ...d, visible: false }));
+          pickFromLibrary();
         },
-        {
-          text: "Choose from Library",
-          onPress: () => pickFromLibrary(),
+        onCancel: () => {
+          setDialog((d) => ({ ...d, visible: false }));
+          capturePhoto();
         },
-      ]);
+      });
     }
   };
 
@@ -233,16 +345,17 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert(
-          "Permission Required",
-          "Camera access is needed to capture a profile photo.",
-        );
+        showAlert({
+          title: "Permission Required",
+          message: "Camera access is needed to capture a profile photo.",
+          type: "warning",
+        });
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.4,
+        quality: 0.5,
         base64: true,
       });
 
@@ -250,28 +363,32 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
         await uploadAvatar(result.assets[0]);
       }
     } catch (err) {
-      Alert.alert("Camera Error", err.message || "Could not launch camera.");
+      showAlert({
+        title: "Camera Error",
+        message: err.message || "Could not launch camera.",
+        type: "error",
+      });
     }
   };
 
   const pickFromLibrary = async () => {
     try {
-      // On web, permission is always granted, but we still call it for mobile
       if (Platform.OS !== "web") {
         const { status } =
           await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== "granted") {
-          Alert.alert(
-            "Permission Required",
-            "Photo library access is needed to pick an avatar.",
-          );
+          showAlert({
+            title: "Permission Required",
+            message: "Photo library access is needed to pick an avatar.",
+            type: "warning",
+          });
           return;
         }
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.4,
+        quality: 0.5,
         base64: true,
       });
 
@@ -280,23 +397,18 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
       }
     } catch (err) {
       console.error("pickFromLibrary error:", err);
-      if (Platform.OS === "web") {
-        alert("Could not select photo: " + (err.message || "Unknown error"));
-      } else {
-        Alert.alert("Library Error", err.message || "Could not select photo.");
-      }
+      showAlert({
+        title: "Library Error",
+        message: err.message || "Could not select photo.",
+        type: "error",
+      });
     }
   };
 
   /**
    * Converts an ImagePicker asset to a data:image URI string.
-   * Handles all platforms:
-   *   - Mobile: asset.base64 is populated → prefix with data:image/jpeg;base64,
-   *   - Web: asset.base64 is often null, but asset.uri is already a data: URI
-   *   - Web fallback: asset.uri is a blob: URL → fetch + FileReader to convert
    */
   const assetToDataUri = async (asset) => {
-    // 1. asset.base64 is available (typical on mobile)
     if (asset.base64) {
       if (asset.base64.startsWith("data:")) {
         return asset.base64;
@@ -304,12 +416,10 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
       return `data:image/jpeg;base64,${asset.base64}`;
     }
 
-    // 2. asset.uri is already a data: URI (typical on Expo Web)
     if (asset.uri && asset.uri.startsWith("data:")) {
       return asset.uri;
     }
 
-    // 3. asset.uri is a blob: or file: URL → convert via fetch + FileReader
     if (asset.uri) {
       try {
         const response = await fetch(asset.uri);
@@ -321,10 +431,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
           reader.readAsDataURL(blob);
         });
       } catch (err) {
-        console.warn(
-          "assetToDataUri: blob conversion failed, using raw uri:",
-          err,
-        );
+        console.warn("assetToDataUri fallback failed:", err);
         return asset.uri;
       }
     }
@@ -333,17 +440,23 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
   };
 
   const uploadAvatar = async (asset) => {
+    const previousAvatar = user?.avatarUrl || user?.avatar_url || null;
     try {
       setUploadingAvatar(true);
 
       const dataUri = await assetToDataUri(asset);
       if (!dataUri) {
-        throw new Error(
-          "Could not process the selected image. Please try again.",
-        );
+        throw new Error("Could not process the selected image. Please try again.");
       }
 
-      // Optimistically show the new avatar immediately
+      // Validate image size (max 5 MB)
+      const base64Part = dataUri.split(",")[1] || "";
+      const approxBytes = base64Part.length * 0.75;
+      if (approxBytes > 5 * 1024 * 1024) {
+        throw new Error("Avatar image size must be under 5 MB.");
+      }
+
+      // Optimistically show the new avatar
       updateUser({ avatarUrl: dataUri, avatar_url: dataUri });
 
       // Send to backend
@@ -351,31 +464,28 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
       if (res?.success) {
         const saved = res?.user?.avatarUrl || res?.user?.avatar_url || dataUri;
         updateUser({ avatarUrl: saved, avatar_url: saved });
-        if (Platform.OS === "web") {
-          alert("Profile photo saved successfully!");
-        } else {
-          Alert.alert(
-            "Avatar Updated",
-            "Your profile photo has been saved to your account.",
-          );
-        }
+        showAlert({
+          title: "Avatar Updated",
+          message: "Your profile photo has been saved to your account.",
+          type: "success",
+        });
       } else {
-        // Server responded but not success — avatar is already showing locally
-        console.warn("Server did not confirm avatar save:", res);
+        // Roll back on failure
+        updateUser({ avatarUrl: previousAvatar, avatar_url: previousAvatar });
+        showAlert({
+          title: "Upload Failed",
+          message: res?.error || "Could not save photo to server. Your previous photo was restored.",
+          type: "error",
+        });
       }
     } catch (err) {
       console.error("Avatar upload failed:", err);
-      if (Platform.OS === "web") {
-        alert(
-          "Upload notice: " +
-            (err.message || "Could not save photo to server."),
-        );
-      } else {
-        Alert.alert(
-          "Upload Notice",
-          err.message || "Could not save photo to server.",
-        );
-      }
+      updateUser({ avatarUrl: previousAvatar, avatar_url: previousAvatar });
+      showAlert({
+        title: "Upload Notice",
+        message: err.message || "Could not save photo to server. Your previous photo was restored.",
+        type: "error",
+      });
     } finally {
       setUploadingAvatar(false);
     }
@@ -383,8 +493,13 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
 
   // ── Save Profile Details ──
   const handleSaveProfile = async () => {
+    if (savingProfile) return;
     if (!form.fullName.trim()) {
-      Alert.alert("Validation", "Please enter your full name.");
+      showAlert({
+        title: "Validation",
+        message: "Please enter your full name.",
+        type: "warning",
+      });
       return;
     }
 
@@ -395,6 +510,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
           fullName: form.fullName.trim(),
           gender: form.gender.trim(),
           dob: form.dob.trim(),
+          phone: form.phone.trim(),
           password: form.password ? form.password : undefined,
         },
         token,
@@ -405,35 +521,110 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
           fullName: form.fullName.trim(),
           gender: form.gender.trim(),
           dob: form.dob.trim(),
+          phone: form.phone.trim(),
         });
         setForm((prev) => ({ ...prev, password: "" }));
-        Alert.alert("Success", "Your profile details have been saved.");
+        showAlert({
+          title: "Success",
+          message: "Your profile details have been saved.",
+          type: "success",
+        });
         toggleSection(null);
       } else {
-        Alert.alert("Error", res?.error || "Could not update profile.");
+        showAlert({
+          title: "Error",
+          message: res?.error || "Could not update profile.",
+          type: "error",
+        });
       }
     } catch (err) {
-      Alert.alert("Error", err.message || "Failed to update profile.");
+      showAlert({
+        title: "Error",
+        message: err.message || "Failed to update profile.",
+        type: "error",
+      });
     } finally {
       setSavingProfile(false);
     }
   };
 
-  // ── SmartAssets FICA / KYC Document Picker ──
-  const pickKycDocument = async (field) => {
+  // ── SmartAssets FICA / KYC Document Picker & Server-Side Upload ──
+  const pickKycDocument = async (field, docType, label) => {
+    if (uploadingDocSlot) return;
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: false,
-        quality: 0.5,
+        quality: 0.8,
         base64: true,
       });
       if (!result.canceled && result.assets?.[0]) {
         const asset = result.assets[0];
-        const dataUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
-        setKycForm((prev) => ({ ...prev, [field]: dataUri }));
+        const dataUri = await assetToDataUri(asset);
+        if (!dataUri) {
+          throw new Error("Could not process the selected document file.");
+        }
+
+        // Validate size (max 10MB)
+        const base64Part = dataUri.split(",")[1] || "";
+        const sizeBytes = base64Part.length * 0.75;
+        if (sizeBytes > 10 * 1024 * 1024) {
+          throw new Error("Document file exceeds the maximum size limit of 10 MB.");
+        }
+
+        // Validate MIME type
+        const mimeMatch = dataUri.match(/^data:([\w/+.-]+);base64,/);
+        const mime = mimeMatch ? mimeMatch[1].toLowerCase() : "";
+        const validMimes = [
+          "image/jpeg",
+          "image/jpg",
+          "image/png",
+          "image/webp",
+          "application/pdf",
+        ];
+        if (mime && !validMimes.includes(mime)) {
+          throw new Error("Invalid file format. Please upload a genuine JPG, PNG, WEBP, or PDF file.");
+        }
+
+        setUploadingDocSlot(docType);
+
+        // Upload through protected verification endpoint
+        const uploadRes = await uploadVerificationDocApi(
+          {
+            docType,
+            fileData: dataUri,
+            fileName: asset.fileName || `${docType}_document.jpg`,
+            mimeType: mime || "image/jpeg",
+          },
+          token,
+        );
+
+        if (uploadRes?.success) {
+          const docRecord = uploadRes.document || {};
+          const durableRef =
+            docRecord.file_path || docRecord.storage_bucket_path || docRecord.id || `${docType}_uploaded`;
+          setKycForm((prev) => ({
+            ...prev,
+            [field]: durableRef,
+            [`${docType}Attached`]: true,
+            [`${docType}Name`]: asset.fileName || `${label} Uploaded`,
+          }));
+          showAlert({
+            title: "Document Uploaded",
+            message: `${label} uploaded and registered with the compliance review desk.`,
+            type: "success",
+          });
+        } else {
+          throw new Error(uploadRes?.error || "Failed to upload verification document.");
+        }
       }
     } catch (err) {
-      Alert.alert("File Selection Error", err.message || "Could not select document.");
+      showAlert({
+        title: "Document Upload Error",
+        message: err.message || "Could not upload document.",
+        type: "error",
+      });
+    } finally {
+      setUploadingDocSlot(null);
     }
   };
 
@@ -446,20 +637,85 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
   };
 
   const handleSubmitKyc = async () => {
+    if (submittingKyc) return;
     if (!kycForm.idNumber.trim()) {
-      Alert.alert("Required", "Please provide your SA ID or Passport Number.");
+      showAlert({
+        title: "Required Field",
+        message: "Please provide your SA ID or Passport Number.",
+        type: "warning",
+      });
+      return;
+    }
+    if (!kycForm.idDocumentUrl) {
+      showAlert({
+        title: "Required Document",
+        message: "Please upload your Government ID or Passport photo/scan.",
+        type: "warning",
+      });
       return;
     }
     if (!kycForm.taxNumber.trim()) {
-      Alert.alert("Required", "Please provide your SARS Tax Reference Number.");
+      showAlert({
+        title: "Required Field",
+        message: "Please provide your SARS Tax Reference Number.",
+        type: "warning",
+      });
+      return;
+    }
+    if (!kycForm.taxDocumentUrl) {
+      showAlert({
+        title: "Required Document",
+        message: "Please upload your SARS Notice or Tax Certificate.",
+        type: "warning",
+      });
       return;
     }
     if (!kycForm.residentialAddress.trim()) {
-      Alert.alert("Required", "Please provide your Physical Residential Address.");
+      showAlert({
+        title: "Required Field",
+        message: "Please provide your Physical Residential Address.",
+        type: "warning",
+      });
+      return;
+    }
+    if (!kycForm.proofOfResidenceUrl) {
+      showAlert({
+        title: "Required Document",
+        message: "Please upload your Utility Bill or Bank Statement as Proof of Residence.",
+        type: "warning",
+      });
+      return;
+    }
+    if (!kycForm.bankName) {
+      showAlert({
+        title: "Required Field",
+        message: "Please select your South African bank.",
+        type: "warning",
+      });
+      return;
+    }
+    if (!kycForm.accountHolder.trim()) {
+      showAlert({
+        title: "Required Field",
+        message: "Please enter your Account Holder Name.",
+        type: "warning",
+      });
       return;
     }
     if (!kycForm.accountNumber.trim()) {
-      Alert.alert("Required", "Please enter your Bank Account Number for payouts.");
+      showAlert({
+        title: "Required Field",
+        message: "Please enter your Bank Account Number for payouts.",
+        type: "warning",
+      });
+      return;
+    }
+    if (!kycForm.branchCode.trim()) {
+      showAlert({
+        title: "Required Field",
+        message: "Please enter the Branch Code.",
+        type: "warning",
+      });
       return;
     }
 
@@ -483,39 +739,91 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
 
       const res = await submitKycApi(payload, token);
       if (res?.success) {
-        setKycStatus("pending");
+        // Fetch fresh authoritative status from server
+        let freshStatus = "pending";
+        try {
+          const fresh = await getVerificationStatusApi(token);
+          if (fresh?.verification_status) {
+            freshStatus = fresh.verification_status;
+          }
+        } catch (_) {}
+
+        setKycStatus(freshStatus);
         updateUser({
-          kycStatus: "pending",
+          kycStatus: freshStatus,
+          verification_status: freshStatus,
           bankingDetails: payload.bankingDetails,
         });
-        Alert.alert(
-          "✅ Compliance Pack Submitted!",
-          "Your FICA identity documents and verified banking details are now in the Admin Operations review queue. You will be cleared to transact upon approval."
-        );
+
+        showAlert({
+          title: "Compliance Pack Submitted",
+          message: "Your FICA identity documents and verified banking details are in the Admin Operations review queue. You will be cleared to transact upon approval.",
+          type: "success",
+        });
       } else {
-        Alert.alert("Notice", res?.error || "KYC submission failed.");
+        showAlert({
+          title: "Submission Notice",
+          message: res?.error || "KYC submission failed. Please verify your details.",
+          type: "error",
+        });
       }
     } catch (err) {
-      Alert.alert("Error", err.message || "Failed to submit KYC compliance pack.");
+      showAlert({
+        title: "Submission Error",
+        message: err.message || "Failed to submit KYC compliance pack.",
+        type: "error",
+      });
     } finally {
       setSubmittingKyc(false);
     }
   };
 
+  // ── Toggle Notification Preference Handler ──
+  const handleToggleNotification = async (key, val) => {
+    const prev = { ...notifications };
+    const next = { ...notifications, [key]: val };
+    setNotifications(next);
+    setSavingNotifKey(key);
+
+    try {
+      await storage.setJSON(STORAGE_KEYS.NOTIFICATION_PREFERENCES, next);
+      if (token) {
+        const res = await updateNotificationPreferencesApi(next, token);
+        if (!res?.success) {
+          throw new Error(res?.error || "Failed to save preference.");
+        }
+      }
+    } catch (err) {
+      // Rollback
+      setNotifications(prev);
+      await storage.setJSON(STORAGE_KEYS.NOTIFICATION_PREFERENCES, prev);
+      showAlert({
+        title: "Save Failed",
+        message: "Could not save notification preference to server. Reverted.",
+        type: "error",
+      });
+    } finally {
+      setSavingNotifKey(null);
+    }
+  };
+
   // ── Lodge Support Ticket ──
   const handleLodgeSupport = async () => {
+    if (submittingSupport) return;
     if (!supportSubject.trim()) {
-      Alert.alert(
-        "Required",
-        "Please provide a subject for your support inquiry.",
-      );
+      showAlert({
+        title: "Required Field",
+        message: "Please provide a subject for your support inquiry.",
+        type: "warning",
+      });
       return;
     }
     if (!supportMessage.trim()) {
-      Alert.alert(
-        "Required",
-        "Please provide message details for your inquiry.",
-      );
+      showAlert({
+        title: "Required Field",
+        message: "Please provide message details for your inquiry.",
+        type: "warning",
+      });
       return;
     }
 
@@ -535,15 +843,24 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
         setSupportTickets((prev) => [res.ticket, ...prev]);
         setSupportSubject("");
         setSupportMessage("");
-        Alert.alert(
-          "Ticket Lodged",
-          `Reference: ${res.ticket.id}\n\nOur concierge desk has received your inquiry and will reply within 2-4 hours.`,
-        );
+        showAlert({
+          title: "Ticket Lodged",
+          message: `Reference: ${res.ticket.id}\n\nOur concierge desk has received your inquiry and will reply within 2-4 hours.`,
+          type: "success",
+        });
       } else {
-        Alert.alert("Notice", res?.error || "Support inquiry submitted.");
+        showAlert({
+          title: "Support Notice",
+          message: res?.error || "Could not lodge support inquiry.",
+          type: "error",
+        });
       }
     } catch (err) {
-      Alert.alert("Error", err.message || "Failed to lodge support ticket.");
+      showAlert({
+        title: "Support Error",
+        message: err.message || "Failed to lodge support ticket.",
+        type: "error",
+      });
     } finally {
       setSubmittingSupport(false);
     }
@@ -551,58 +868,84 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
 
   // ── Delete Account ──
   const handleDeleteAccount = () => {
+    if (deletingAccount) return;
     if (deleteConfirmText.trim().toUpperCase() !== "DELETE") {
-      Alert.alert(
-        "Confirmation Required",
-        'Please type "DELETE" into the box to authorize account deletion.',
-      );
+      showAlert({
+        title: "Confirmation Required",
+        message: 'Please type "DELETE" into the box to authorize account deletion.',
+        type: "warning",
+      });
       return;
     }
 
-    Alert.alert(
-      "Confirm Account Deletion",
-      "Are you absolutely sure? All your assets, vault holdings, and account history will be permanently deleted.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Yes, Delete Account",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setDeletingAccount(true);
-              const res = await deleteAccountApi(token);
-              if (res?.success) {
-                Alert.alert(
-                  "Account Deleted",
-                  "Your account has been deleted.",
-                  [{ text: "OK", onPress: () => logout() }],
-                );
-              } else {
-                logout();
-              }
-            } catch (err) {
-              Alert.alert(
-                "Delete Error",
-                err.message || "Could not delete account.",
-              );
-            } finally {
-              setDeletingAccount(false);
-            }
-          },
-        },
-      ],
-    );
+    showConfirm({
+      title: "Confirm Account Deletion",
+      message: "Are you absolutely sure? All your assets, vault holdings, and account history will be permanently deleted.",
+      confirmText: "Yes, Delete Account",
+      cancelText: "Cancel",
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          setDialog((d) => ({ ...d, loading: true }));
+          setDeletingAccount(true);
+          const res = await deleteAccountApi(token);
+          if (res?.success) {
+            setDialog((d) => ({ ...d, visible: false, loading: false }));
+            showAlert({
+              title: "Account Deleted",
+              message: "Your account and personal data have been permanently removed.",
+              type: "success",
+              onDismiss: () => logout(),
+            });
+          } else {
+            // NEVER log out if deletion was unsuccessful! Keep the user signed in and explain failure.
+            setDialog((d) => ({ ...d, visible: false, loading: false }));
+            showAlert({
+              title: "Delete Error",
+              message: res?.error || "Could not delete account. Please contact compliance support.",
+              type: "error",
+            });
+          }
+        } catch (err) {
+          setDialog((d) => ({ ...d, visible: false, loading: false }));
+          showAlert({
+            title: "Delete Error",
+            message: err.message || "Could not delete account.",
+            type: "error",
+          });
+        } finally {
+          setDeletingAccount(false);
+        }
+      },
+    });
   };
 
   const handleLogout = () => {
-    Alert.alert("Log Out", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log Out",
-        style: "destructive",
-        onPress: () => logout(),
+    if (loggingOut) return;
+    showConfirm({
+      title: "Log Out",
+      message: "Are you sure you want to log out of your SmartAssets account?",
+      confirmText: "Log Out",
+      cancelText: "Cancel",
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          setDialog((d) => ({ ...d, loading: true }));
+          setLoggingOut(true);
+          await logout();
+          setDialog((d) => ({ ...d, visible: false, loading: false }));
+        } catch (err) {
+          setDialog((d) => ({ ...d, visible: false, loading: false }));
+          showAlert({
+            title: "Logout Error",
+            message: err?.message || "Failed to log out. Please try again.",
+            type: "error",
+          });
+        } finally {
+          setLoggingOut(false);
+        }
       },
-    ]);
+    });
   };
 
   // Dynamic values: strictly display real user details (never "MetaMask" or placeholder email)
@@ -632,33 +975,43 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
       }
       setCopiedWallet(true);
       setTimeout(() => setCopiedWallet(false), 2000);
-      if (Platform.OS !== "web") {
-        Alert.alert("Wallet Address", linkedWallet);
-      }
     } catch (_) {
-      Alert.alert("Wallet Address", linkedWallet);
+      showAlert({
+        title: "Wallet Address",
+        message: linkedWallet,
+        type: "info",
+      });
     }
   };
 
   const handleDisconnectWallet = () => {
-    Alert.alert(
-      "Disconnect Wallet",
-      "Are you sure you want to unlink this wallet from your profile? You will need to link a wallet again to sign smart contract transactions.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Unlink",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await unlinkWallet();
-            } catch (err) {
-              Alert.alert("Error", err.message || "Failed to unlink wallet.");
-            }
-          },
-        },
-      ]
-    );
+    if (walletActionLoading) return;
+    showConfirm({
+      title: "Disconnect Wallet",
+      message: "Are you sure you want to unlink this wallet from your profile? You will need to link a wallet again to sign smart contract transactions.",
+      confirmText: "Disconnect",
+      cancelText: "Cancel",
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          setDialog((d) => ({ ...d, loading: true }));
+          await unlinkWallet({ silent: true });
+          setDialog((d) => ({ ...d, visible: false, loading: false }));
+          showAlert({
+            title: "Wallet Disconnected",
+            message: "Your Web3 wallet has been unlinked from your profile.",
+            type: "success",
+          });
+        } catch (err) {
+          setDialog((d) => ({ ...d, visible: false, loading: false }));
+          showAlert({
+            title: "Error Disconnecting",
+            message: err.message || "Failed to unlink wallet.",
+            type: "error",
+          });
+        }
+      },
+    });
   };
 
   const handleConnectWallet = async () => {
@@ -707,13 +1060,6 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
       textColor: "#14532D",
     },
     {
-      id: "theme",
-      label: "Theme & Appearance",
-      icon: "moon",
-      bgColor: "#E0E7FF",
-      textColor: "#3730A3",
-    },
-    {
       id: "delete",
       label: "Delete Account",
       icon: "trash-2",
@@ -723,17 +1069,18 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
   ];
 
   return (
-    <SafeAreaView
-      edges={["top", "left", "right"]}
-      style={[styles.safe, { backgroundColor: "#0A1120" }]}
-    >
+    <SafeAreaView style={styles.safe}>
       {/* ── Header ── */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           style={styles.backBtn}
         >
-          <Feather name="chevron-left" size={24} color="#FFFFFF" />
+          <Feather
+            name="chevron-left"
+            size={24}
+            color="#FFFFFF"
+          />
         </TouchableOpacity>
       </View>
 
@@ -753,7 +1100,11 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
             ) : avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={styles.avatar} />
             ) : (
-              <Feather name="user" size={32} color="#FFFFFF" />
+              <Feather
+                name="user"
+                size={32}
+                color="#FFFFFF"
+              />
             )}
             <View style={styles.avatarCameraBadge}>
               <Feather name="camera" size={12} color="#FFFFFF" />
@@ -763,22 +1114,35 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
           <Text style={styles.userEmail}>{displayEmail}</Text>
         </View>
 
+        {/* ── OFFLINE BANNER ── */}
+        <OfflineBanner
+          isDark={isDark}
+          message="Offline Mode — Showing saved profile data."
+          style={{ marginBottom: 16, marginHorizontal: 20 }}
+        />
+
         {/* ── Persistent Account Verification & Bank Approval Hub ── */}
         <View
           style={{
             backgroundColor: isDark ? "#131A2F" : "#FFFFFF",
-            borderRadius: 16,
+            borderRadius: 20,
             padding: 16,
             marginBottom: 16,
+            marginHorizontal: 20,
             borderWidth: 1.2,
             borderColor:
               kycStatus === "verified"
                 ? "rgba(16, 185, 129, 0.4)"
                 : "rgba(124, 92, 252, 0.45)",
+            shadowColor: "#312E81",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.08,
+            shadowRadius: 8,
+            elevation: 2,
           }}
         >
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
               <View
                 style={{
                   width: 38,
@@ -798,7 +1162,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                   color={kycStatus === "verified" ? "#10B981" : "#7C5CFC"}
                 />
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 15, fontWeight: "800", color: isDark ? "#F8FAFC" : "#0F172A" }}>
                   {kycStatus === "verified" ? "Account Verified (3/3 Docs)" : "Complete your verification"}
                 </Text>
@@ -813,7 +1177,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
 
           <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
             <TouchableOpacity
-              onPress={() => navigation.navigate(SCREENS.VERIFY_ACCOUNT)}
+              onPress={() => navigation?.navigate?.(SCREENS.VERIFY_ACCOUNT)}
               style={{
                 flex: 1,
                 backgroundColor: "#7C5CFC",
@@ -832,7 +1196,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => navigation.navigate(SCREENS.BANK_DETAILS)}
+              onPress={() => navigation?.navigate?.(SCREENS.BANK_DETAILS)}
               style={{
                 flex: 1,
                 backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "#EDE9FE",
@@ -995,59 +1359,16 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
           )}
         </View>
 
-        {/* ── OFFLINE BANNER ── */}
-        <OfflineBanner
-          isDark={isDark}
-          message="⚡ Offline Mode — Showing saved profile data."
-          style={{ marginBottom: 16 }}
-        />
-
-        {/* ── Theme & Appearance Toggle Card ── */}
-        <View
-          style={{
-            backgroundColor: isDark ? "#131A2F" : "#FFFFFF",
-            borderRadius: 14,
-            padding: 16,
-            marginBottom: 16,
-            borderWidth: 1,
-            borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <View
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 10,
-                backgroundColor: isDark ? "rgba(251, 191, 36, 0.15)" : "rgba(30, 41, 59, 0.08)",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Feather name={isDark ? "moon" : "sun"} size={19} color={isDark ? "#FBBF24" : "#1E293B"} />
-            </View>
-            <View>
-              <Text style={{ fontSize: 15, fontWeight: "700", color: isDark ? "#F8FAFC" : "#0F172A" }}>
-                Dark Mode
-              </Text>
-              <Text style={{ fontSize: 12, color: isDark ? "#94A3B8" : "#64748B" }}>
-                {isDark ? "Dark theme active" : "Light theme active"}
-              </Text>
-            </View>
-          </View>
-          <Switch
-            value={isDark}
-            onValueChange={(val) => setIsDark(val)}
-            trackColor={{ false: "#CBD5E1", true: "#3B82F6" }}
-            thumbColor={isDark ? "#FFFFFF" : "#F8FAFC"}
-          />
-        </View>
-
         {/* ── Menu List ── */}
-        <View style={styles.menuContainer}>
+        <View
+          style={[
+            styles.menuContainer,
+            {
+              backgroundColor: isDark ? "#131A2F" : "#FFFFFF",
+              borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+            },
+          ]}
+        >
           {MENU_ITEMS.map((item, idx) => {
             const isExpanded = expandedSection === item.id;
             return (
@@ -1174,7 +1495,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
 
                     {/* SA ID / Passport */}
                     <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
-                      Government ID / Passport Number
+                      Government ID / Passport Number (Required)
                     </Text>
                     <TextInput
                       style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
@@ -1185,7 +1506,8 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                     />
                     <TouchableOpacity
                       activeOpacity={0.8}
-                      onPress={() => pickKycDocument("idDocumentUrl")}
+                      onPress={() => pickKycDocument("idDocumentUrl", "id", "ID Document")}
+                      disabled={uploadingDocSlot === "id"}
                       style={{
                         flexDirection: "row",
                         alignItems: "center",
@@ -1194,20 +1516,31 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         padding: 12,
                         borderRadius: 10,
                         borderWidth: 1,
-                        borderColor: "#CBD5E1",
-                        borderStyle: "dashed",
+                        borderColor: kycForm.idDocumentUrl ? "#10B981" : "#CBD5E1",
+                        borderStyle: kycForm.idDocumentUrl ? "solid" : "dashed",
                         marginBottom: 14,
                       }}
                     >
-                      <Feather name="upload" size={16} color="#2563EB" />
-                      <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
-                        {kycForm.idDocumentUrl ? "✅ ID Document Attached (Tap to replace)" : "Upload ID Document Photo / Scan"}
-                      </Text>
+                      {uploadingDocSlot === "id" ? (
+                        <>
+                          <ActivityIndicator size="small" color="#2563EB" />
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
+                            Uploading and verifying ID Document...
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Feather name={kycForm.idDocumentUrl ? "check-circle" : "upload"} size={16} color={kycForm.idDocumentUrl ? "#10B981" : "#2563EB"} />
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: kycForm.idDocumentUrl ? "#10B981" : "#2563EB" }}>
+                            {kycForm.idDocumentUrl ? "✅ ID Document Attached (Server Verified — Tap to replace)" : "Upload ID Document Photo / Scan (Required)"}
+                          </Text>
+                        </>
+                      )}
                     </TouchableOpacity>
 
                     {/* SARS Tax Reference */}
                     <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
-                      SARS Tax Reference Number
+                      SARS Tax Reference Number (Required)
                     </Text>
                     <TextInput
                       style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
@@ -1218,7 +1551,8 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                     />
                     <TouchableOpacity
                       activeOpacity={0.8}
-                      onPress={() => pickKycDocument("taxDocumentUrl")}
+                      onPress={() => pickKycDocument("taxDocumentUrl", "tax", "SARS Tax Notice")}
+                      disabled={uploadingDocSlot === "tax"}
                       style={{
                         flexDirection: "row",
                         alignItems: "center",
@@ -1227,20 +1561,31 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         padding: 12,
                         borderRadius: 10,
                         borderWidth: 1,
-                        borderColor: "#CBD5E1",
-                        borderStyle: "dashed",
+                        borderColor: kycForm.taxDocumentUrl ? "#10B981" : "#CBD5E1",
+                        borderStyle: kycForm.taxDocumentUrl ? "solid" : "dashed",
                         marginBottom: 14,
                       }}
                     >
-                      <Feather name="upload" size={16} color="#2563EB" />
-                      <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
-                        {kycForm.taxDocumentUrl ? "✅ Tax Notice Attached (Tap to replace)" : "Upload SARS Notice / Certificate"}
-                      </Text>
+                      {uploadingDocSlot === "tax" ? (
+                        <>
+                          <ActivityIndicator size="small" color="#2563EB" />
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
+                            Uploading and verifying SARS Tax Notice...
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Feather name={kycForm.taxDocumentUrl ? "check-circle" : "upload"} size={16} color={kycForm.taxDocumentUrl ? "#10B981" : "#2563EB"} />
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: kycForm.taxDocumentUrl ? "#10B981" : "#2563EB" }}>
+                            {kycForm.taxDocumentUrl ? "✅ Tax Notice Attached (Server Verified — Tap to replace)" : "Upload SARS Notice / Certificate (Required)"}
+                          </Text>
+                        </>
+                      )}
                     </TouchableOpacity>
 
                     {/* Proof of Residence */}
                     <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
-                      Physical Residential Address
+                      Physical Residential Address (Required)
                     </Text>
                     <TextInput
                       style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
@@ -1251,7 +1596,8 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                     />
                     <TouchableOpacity
                       activeOpacity={0.8}
-                      onPress={() => pickKycDocument("proofOfResidenceUrl")}
+                      onPress={() => pickKycDocument("proofOfResidenceUrl", "proof_of_residence", "Utility Bill / Statement")}
+                      disabled={uploadingDocSlot === "proof_of_residence"}
                       style={{
                         flexDirection: "row",
                         alignItems: "center",
@@ -1260,15 +1606,26 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         padding: 12,
                         borderRadius: 10,
                         borderWidth: 1,
-                        borderColor: "#CBD5E1",
-                        borderStyle: "dashed",
+                        borderColor: kycForm.proofOfResidenceUrl ? "#10B981" : "#CBD5E1",
+                        borderStyle: kycForm.proofOfResidenceUrl ? "solid" : "dashed",
                         marginBottom: 20,
                       }}
                     >
-                      <Feather name="upload" size={16} color="#2563EB" />
-                      <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
-                        {kycForm.proofOfResidenceUrl ? "✅ Utility Bill Attached (Tap to replace)" : "Upload Utility Bill / Bank Statement (< 3 months)"}
-                      </Text>
+                      {uploadingDocSlot === "proof_of_residence" ? (
+                        <>
+                          <ActivityIndicator size="small" color="#2563EB" />
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563EB" }}>
+                            Uploading and verifying Proof of Residence...
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Feather name={kycForm.proofOfResidenceUrl ? "check-circle" : "upload"} size={16} color={kycForm.proofOfResidenceUrl ? "#10B981" : "#2563EB"} />
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: kycForm.proofOfResidenceUrl ? "#10B981" : "#2563EB" }}>
+                            {kycForm.proofOfResidenceUrl ? "✅ Utility Bill Attached (Server Verified — Tap to replace)" : "Upload Utility Bill / Bank Statement (< 3 months) (Required)"}
+                          </Text>
+                        </>
+                      )}
                     </TouchableOpacity>
 
                     {/* Section 2: Verified Banking Details */}
@@ -1534,29 +1891,35 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                       { backgroundColor: "#F8FAFC" },
                     ]}
                   >
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
-                      Notification Preferences
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                      <Text style={[styles.sectionHeading, { color: "#334155", marginBottom: 0 }]}>
+                        Notification Preferences
+                      </Text>
+                      {loadingNotifs && <ActivityIndicator size="small" color="#3B82F6" />}
+                    </View>
+                    <Text style={{ fontSize: 11.5, color: "#64748B", marginBottom: 14 }}>
+                      Preferences are synchronized to your account and active across all your devices.
                     </Text>
                     {[
                       {
                         key: "escrowAlerts",
                         title: "Smart Contract Escrow Alerts",
-                        sub: "Status updates on courier transit & appraisal",
+                        sub: "Real-time updates on courier transit, appraisal, and fund release",
                       },
                       {
                         key: "priceAlerts",
                         title: "Price Movement & Appraisals",
-                        sub: "Valuation adjustments for your vault holdings",
+                        sub: "Valuation adjustments for your vault holdings and watchlists",
                       },
                       {
                         key: "securityAlerts",
                         title: "Security & Login Alerts",
-                        sub: "Notice on new session or wallet authorization",
+                        sub: "Notices on new session, password change, or wallet authorization",
                       },
                       {
                         key: "marketing",
                         title: "Luxury Offering Drops",
-                        sub: "Exclusive invitations to verified asset drops",
+                        sub: "Invitations when rare verified assets are minted or listed",
                       },
                     ].map((n) => (
                       <View key={n.key} style={styles.prefRow}>
@@ -1580,14 +1943,16 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                             {n.sub}
                           </Text>
                         </View>
-                        <Switch
-                          value={notifications[n.key]}
-                          onValueChange={(val) =>
-                            setNotifications({ ...notifications, [n.key]: val })
-                          }
-                          trackColor={{ false: "#CBD5E1", true: "#3B82F6" }}
-                          thumbColor="#FFFFFF"
-                        />
+                        {savingNotifKey === n.key ? (
+                          <ActivityIndicator size="small" color="#3B82F6" />
+                        ) : (
+                          <Switch
+                            value={Boolean(notifications[n.key])}
+                            onValueChange={(val) => handleToggleNotification(n.key, val)}
+                            trackColor={{ false: "#CBD5E1", true: "#3B82F6" }}
+                            thumbColor="#FFFFFF"
+                          />
+                        )}
                       </View>
                     ))}
                   </View>
@@ -1602,24 +1967,27 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                     ]}
                   >
                     <Text style={[styles.sectionHeading, { color: "#334155" }]}>
-                      Platform Guarantees & Terms
+                      Terms of Service & Platform Policies (Informational)
+                    </Text>
+                    <Text style={{ fontSize: 12, color: "#64748B", marginBottom: 12, lineHeight: 18 }}>
+                      The following operational policies govern escrow custody, anti-fraud rules, certified appraisals, and buyer rights on the SmartAssets network.
                     </Text>
                     {[
                       {
                         title: "Smart Contract Escrow",
-                        text: "100% of purchase payments are secured in SmartAssetEscrow.sol on Ethereum Sepolia until delivery and inspection pass.",
+                        text: "100% of purchase payments are held in escrow on Ethereum Sepolia until delivery and inspection pass verification.",
                       },
                       {
                         title: "Anti-Self-Dealing Policy",
                         text: "Users cannot purchase, bid on, or fractionally invest in items they listed. Fractional holdings are capped at 25% per investor.",
                       },
                       {
-                        title: "Appraisal & Inspection",
-                        text: "Every asset is inspected by Horological & Gemological institutes with immutable ERC-721 certificates delivered to the buyer.",
+                        title: "Appraisal & Inspection Standards",
+                        text: "Physical assets undergo appraisal by verified partner institutes with verifiable certificates issued upon delivery.",
                       },
                       {
-                        title: "100% Buyer Refund Right",
-                        text: "If any item fails inspection, 100% of escrow funds are refunded to the buyer on-chain.",
+                        title: "Buyer Refund Protection",
+                        text: "If an item fails inspection or condition checks during transit, escrow funds are returned to the buyer according to platform resolution rules.",
                       },
                     ].map((t) => (
                       <View key={t.title} style={styles.tosBox}>
@@ -1827,50 +2195,6 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                   </View>
                 )}
 
-                {/* ── Expanded: Theme & Appearance ── */}
-                {isExpanded && item.id === "theme" && (
-                  <View
-                    style={[
-                      styles.expandedContent,
-                      { backgroundColor: "#F8FAFC" },
-                    ]}
-                  >
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
-                      Theme & Appearance
-                    </Text>
-                    <View style={styles.prefRow}>
-                      <View style={{ flex: 1, marginRight: 10 }}>
-                        <Text
-                          style={{
-                            fontSize: 13,
-                            fontWeight: "700",
-                            color: "#1E293B",
-                          }}
-                        >
-                          Dark Mode
-                        </Text>
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            color: "#64748B",
-                            marginTop: 2,
-                          }}
-                        >
-                          {isDark
-                            ? "Dark theme active (persisted offline)"
-                            : "Light theme active (persisted offline)"}
-                        </Text>
-                      </View>
-                      <Switch
-                        value={isDark}
-                        onValueChange={toggleTheme}
-                        trackColor={{ false: "#CBD5E1", true: "#3B82F6" }}
-                        thumbColor="#FFFFFF"
-                      />
-                    </View>
-                  </View>
-                )}
-
                 {/* ── Expanded: Delete Account ── */}
                 {isExpanded && item.id === "delete" && (
                   <View
@@ -1944,9 +2268,20 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
           })}
 
           {/* ── Log Out Button ── */}
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={20} color="#10B981" />
-            <Text style={styles.logoutText}>Log out</Text>
+          <TouchableOpacity
+            style={[styles.logoutBtn, loggingOut && { opacity: 0.6 }]}
+            onPress={handleLogout}
+            disabled={loggingOut}
+            activeOpacity={0.8}
+          >
+            {loggingOut ? (
+              <ActivityIndicator size="small" color="#10B981" />
+            ) : (
+              <>
+                <Ionicons name="log-out-outline" size={20} color="#10B981" />
+                <Text style={styles.logoutText}>Log out</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -1960,6 +2295,23 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
           linkWallet();
         }}
       />
+
+      {/* ── Cross-Platform Confirmation & Feedback Dialog ── */}
+      <CrossPlatformDialog
+        visible={dialog.visible}
+        title={dialog.title}
+        message={dialog.message}
+        type={dialog.type}
+        isConfirm={dialog.isConfirm}
+        confirmText={dialog.confirmText}
+        cancelText={dialog.cancelText}
+        isDestructive={dialog.isDestructive}
+        loading={dialog.loading}
+        onConfirm={dialog.onConfirm}
+        onCancel={dialog.onCancel}
+      >
+        {dialog.children}
+      </CrossPlatformDialog>
     </SafeAreaView>
   );
 }
@@ -1967,6 +2319,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
+    backgroundColor: "#0A0E1A",
   },
   header: {
     flexDirection: "row",
@@ -2035,6 +2388,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#312E81",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   menuItemWrap: {},
   menuItem: {
@@ -2151,9 +2511,14 @@ const styles = StyleSheet.create({
   walletCard: {
     marginHorizontal: 20,
     marginBottom: 16,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
     borderWidth: 1,
+    shadowColor: "#312E81",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   walletHeaderRow: {
     flexDirection: "row",
