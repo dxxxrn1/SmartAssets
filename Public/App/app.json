@@ -15,13 +15,18 @@
         "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos",
         "NSPhotoLibraryAddUsageDescription": "Allow $(PRODUCT_NAME) to save photos",
         "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use your microphone",
-        "LSApplicationQueriesSchemes": ["metamask", "smartassets"]
+        "LSApplicationQueriesSchemes": [
+          "metamask",
+          "smartassets"
+        ]
       }
     },
     "android": {
       "package": "com.smartassets.app",
       "usesCleartextTraffic": true,
-      "permissions": ["android.permission.CAMERA"],
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -30,7 +35,10 @@
               "scheme": "smartassets"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ],
       "adaptiveIcon": {
@@ -68,10 +76,13 @@
         "@reactvision/react-viro",
         {
           "android": {
-            "xRMode": ["AR"]
+            "xRMode": [
+              "AR"
+            ]
           }
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "extra": {
       "eas": {

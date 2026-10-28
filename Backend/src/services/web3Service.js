@@ -6,6 +6,7 @@
 const { ethers } = require('ethers');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 const SEPOLIA_RPC_URL =
@@ -154,48 +155,104 @@ async function getRelayerStatus() {
 }
 
 /**
+ * Verifies whether the SmartAssetCertificate artifact is configured for Sepolia (11155111)
+ * and whether bytecode is actually deployed at that address.
+ */
+async function checkCertificateDeploymentOnSepolia() {
+  const artifact = loadContractArtifact();
+  if (!artifact) {
+    return { isDeployed: false, configuredChainId: SEPOLIA_CHAIN_ID, reason: 'Artifact SmartAssetCertificate.json missing.' };
+  }
+  if (artifact.chainId !== SEPOLIA_CHAIN_ID) {
+    return {
+      isDeployed: false,
+      configuredChainId: SEPOLIA_CHAIN_ID,
+      artifactChainId: artifact.chainId,
+      networkName: artifact.networkName,
+      contractAddress: artifact.contractAddress,
+      reason: `SmartAssetCertificate artifact is configured for ${artifact.networkName || 'local'} (Chain ID ${artifact.chainId}), not Ethereum Sepolia (${SEPOLIA_CHAIN_ID}).`,
+    };
+  }
+  if (!artifact.contractAddress || !ethers.isAddress(artifact.contractAddress)) {
+    return {
+      isDeployed: false,
+      reason: 'Invalid or missing contractAddress in SmartAssetCertificate artifact.',
+    };
+  }
+  if (!provider) {
+    return {
+      isDeployed: false,
+      reason: 'Ethereum Sepolia JsonRpcProvider is not initialized.',
+    };
+  }
+  try {
+    const code = await provider.getCode(artifact.contractAddress);
+    if (!code || code === '0x' || code === '0x0') {
+      return {
+        isDeployed: false,
+        contractAddress: artifact.contractAddress,
+        chainId: SEPOLIA_CHAIN_ID,
+        reason: `No smart contract bytecode deployed at address ${artifact.contractAddress} on Sepolia. Operator contract deployment required.`,
+      };
+    }
+    return {
+      isDeployed: true,
+      contractAddress: artifact.contractAddress,
+      chainId: SEPOLIA_CHAIN_ID,
+      networkName: 'sepolia',
+    };
+  } catch (err) {
+    return {
+      isDeployed: false,
+      reason: `Sepolia RPC error verifying contract code: ${err.message}`,
+    };
+  }
+}
+
+/**
  * Mint a real ERC-721 Certificate of Authenticity NFT on Ethereum Sepolia.
+ * Enforces valid recipient wallet and verified Sepolia deployment.
  */
 async function mintAssetNFT(params) {
   const {
     recipientAddress,
     assetId,
+    metadataDigest,
     name,
     category,
     priceNum,
     certNumber,
     year,
     condition,
-    image,
+    testSimulateMint,
   } = params;
+
+  // 1. Enforce valid recipient wallet: NEVER silently fall back to relayer!
+  if (!recipientAddress || typeof recipientAddress !== 'string' || !ethers.isAddress(recipientAddress.trim())) {
+    throw new Error('INVALID_RECIPIENT_WALLET: A valid recipient Ethereum address is required. Minting will not fall back to relayer wallet.');
+  }
+  const recipient = ethers.getAddress(recipientAddress.trim());
+  if (recipient === ethers.ZeroAddress) {
+    throw new Error('INVALID_RECIPIENT_WALLET: Recipient wallet cannot be the Ethereum zero address.');
+  }
+
+  // 2. Enforce contract deployed on Sepolia before checking relayer funds
+  const deployment = await checkCertificateDeploymentOnSepolia();
+  if (!deployment.isDeployed) {
+    throw new Error(`SEPOLIA_CONTRACT_NOT_DEPLOYED: ${deployment.reason}`);
+  }
 
   if (!relayerWallet || !provider) {
     throw new Error('Web3 relayer is not configured. Cannot mint NFT on-chain.');
   }
 
-  let recipient = recipientAddress;
-  if (!recipient || !ethers.isAddress(recipient)) {
-    recipient = await relayerWallet.getAddress();
-  }
+  // 3. Stable HTTPS metadata URL pointing to canonical metadata endpoint
+  const publicBaseUrl = (process.env.PUBLIC_WEB_BASE_URL || process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL || 'https://verify.smartassets.io').replace(/\/+$/, '');
+  const tokenURI = `${publicBaseUrl}/api/assets/${encodeURIComponent(assetId)}/metadata`;
 
-  const metadata = {
-    name: `${name} — Certificate of Authenticity`,
-    description: `Official on-chain Certificate of Authenticity for ${name}, verified by SmartAssets platform.`,
-    image: image || '',
-    attributes: [
-      { trait_type: 'Certificate Number', value: certNumber },
-      { trait_type: 'Category', value: category },
-      { trait_type: 'Appraised Value (ZAR)', value: priceNum },
-      { trait_type: 'Year', value: year || new Date().getFullYear() },
-      { trait_type: 'Condition', value: condition || 'Mint' },
-      { trait_type: 'SmartAssets ID', value: assetId || '' },
-    ],
-  };
-
-  const tokenURI = `data:application/json;base64,${Buffer.from(JSON.stringify(metadata)).toString('base64')}`;
   const contract = getContractInstance();
   if (!contract) {
-    throw new Error('SmartAssetCertificate contract not deployed or artifact missing.');
+    throw new Error('SmartAssetCertificate contract instance could not be created.');
   }
 
   const balance = await provider.getBalance(await relayerWallet.getAddress());
@@ -206,9 +263,9 @@ async function mintAssetNFT(params) {
   const tx = await contract.mintCertificate(
     recipient,
     tokenURI,
-    certNumber,
-    category,
-    Math.round(priceNum)
+    certNumber || `SA-${String(assetId).slice(0, 8).toUpperCase()}`,
+    category || 'Luxury Collectible',
+    Math.round(priceNum || 0)
   );
 
   const receipt = await tx.wait(1);
@@ -239,6 +296,8 @@ async function mintAssetNFT(params) {
     etherscanUrl: `https://sepolia.etherscan.io/tx/${receipt.hash}`,
     contractAddress: await contract.getAddress(),
     recipient,
+    assetId,
+    metadataDigest,
   };
 }
 
@@ -681,12 +740,50 @@ async function refundEscrowOnChain({ orderId }) {
   };
 }
 
+/**
+ * Test helper to simulate minting verification without real network funds.
+ */
+async function testSimulateMint({
+  recipientAddress,
+  assetId,
+  name,
+  category,
+  priceNum,
+  certNumber,
+  year,
+  condition,
+  image,
+  metadataDigest,
+}) {
+  if (!recipientAddress || !ethers.isAddress(recipientAddress) || recipientAddress === ethers.ZeroAddress) {
+    throw new Error('INVALID_RECIPIENT_WALLET: A valid non-zero Ethereum Sepolia wallet address is required.');
+  }
+  const recipient = ethers.getAddress(recipientAddress);
+  const mockTx = '0x' + crypto.randomBytes(32).toString('hex');
+  const publicBaseUrl = (process.env.PUBLIC_WEB_BASE_URL || process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL || 'https://verify.smartassets.io').replace(/\/+$/, '');
+  const tokenURI = `${publicBaseUrl}/api/assets/${encodeURIComponent(assetId)}/metadata`;
+
+  return {
+    onChain: true,
+    tokenId: 101,
+    txHash: mockTx,
+    etherscanUrl: `https://sepolia.etherscan.io/tx/${mockTx}`,
+    contractAddress: '0x1234567890123456789012345678901234567890',
+    recipient,
+    assetId,
+    metadataDigest,
+    tokenURI,
+  };
+}
+
 module.exports = {
   getRelayerStatus,
   orderIdToBigInt,
   getContractInstance,
   getEscrowContractInstance,
+  checkCertificateDeploymentOnSepolia,
   mintAssetNFT,
+  testSimulateMint,
   recordMilestoneOnChain,
   verifyPaymentTxOnChain,
   lockEscrowDeposit,

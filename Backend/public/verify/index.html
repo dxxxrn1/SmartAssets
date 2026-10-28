@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartAssets — Digital Certificate of Authenticity</title>
+  <meta name="description" content="Official SmartAssets Public Product Verification Page. Verify canonical provenance, vault custody, and authenticity.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #6C47FF;
+      --primary-light: #8B6BFF;
+      --primary-dark: #4F27E2;
+      --cyan: #00F5D4;
+      --teal: #10B981;
+      --bg-top: #F8FAFC;
+      --surface: #FFFFFF;
+      --text-main: #0F172A;
+      --text-muted: #64748B;
+      --border: rgba(226, 232, 240, 0.9);
+      --border-highlight: rgba(108, 71, 255, 0.15);
+      --radius: 20px;
+      --shadow: 0 10px 30px -5px rgba(30, 27, 75, 0.08), 0 4px 6px -2px rgba(30, 27, 75, 0.04);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(circle at top left, #E4E0FF 0%, #F5DFEF 25%, #FFF5EF 50%, #FFFFFF 100%);
+      background-attachment: fixed;
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 48px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 680px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      padding: 0 4px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text-main);
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #6C47FF, #00F5D4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 18px;
+      box-shadow: 0 4px 12px rgba(108, 71, 255, 0.25);
+    }
+
+    .brand-name {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .badge-registry {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #10B981;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    }
+
+    .badge-registry .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10B981;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.2); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    /* Certificate Card */
+    .cert-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      margin-bottom: 24px;
+      position: relative;
+    }
+
+    .cert-ribbon {
+      height: 6px;
+      background: linear-gradient(90deg, #6C47FF 0%, #976af0 50%, #00F5D4 100%);
+    }
+
+    .cert-content {
+      padding: 28px 24px;
+    }
+
+    .cert-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      border-bottom: 1px solid #F1F5F9;
+      padding-bottom: 20px;
+      margin-bottom: 20px;
+    }
+
+    .cert-kicker {
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .cert-title {
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      color: var(--text-main);
+    }
+
+    .seal-badge {
+      width: 48px;
+      height: 48px;
+      border-radius: 24px;
+      background: #ECFDF5;
+      border: 1.5px solid #A7F3D0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #10B981;
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+
+    /* Hero Asset Row */
+    .asset-hero {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      background: #F8FAFC;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 20px;
+    }
+
+    .asset-img {
+      width: 84px;
+      height: 84px;
+      border-radius: 12px;
+      object-fit: cover;
+      background: #E2E8F0;
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .asset-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .asset-name {
+      font-size: 17px;
+      font-weight: 800;
+      line-height: 1.3;
+      margin-bottom: 6px;
+      word-break: break-word;
+    }
+
+    .asset-status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #ECFDF5;
+      color: #15803D;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+
+    /* Specifications Grid */
+    .spec-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 480px) {
+      .spec-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .spec-box {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+
+    .spec-label {
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--text-muted);
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .spec-value {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-main);
+      word-break: break-word;
+    }
+
+    /* Blockchain & Registry Proof Box */
+    .proof-box {
+      background: #FAF5FF;
+      border: 1.5px solid #E9D5FF;
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+    }
+
+    .proof-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .proof-label {
+      font-size: 11px;
+      font-weight: 800;
+      color: #6B21A8;
+      letter-spacing: 0.8px;
+    }
+
+    .proof-status {
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    .status-anchored {
+      background: #ECFDF5;
+      color: #047857;
+      border: 1px solid #A7F3D0;
+    }
+
+    .status-offchain {
+      background: #F1F5F9;
+      color: #475569;
+      border: 1px solid #CBD5E1;
+    }
+
+    .proof-hash {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #581C87;
+      word-break: break-all;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #E9D5FF;
+      margin-bottom: 10px;
+    }
+
+    .etherscan-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    .etherscan-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Provenance History */
+    .history-card {
+      margin-top: 20px;
+      border-top: 1px solid #F1F5F9;
+      padding-top: 18px;
+    }
+
+    .history-title {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--text-main);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .timeline-item {
+      display: flex;
+      gap: 12px;
+      font-size: 13px;
+    }
+
+    .timeline-year {
+      font-weight: 800;
+      color: var(--primary);
+      min-width: 44px;
+    }
+
+    .timeline-body {
+      flex: 1;
+    }
+
+    .timeline-event {
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 2px;
+    }
+
+    .timeline-party {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* Actions Bar */
+    .actions-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(108, 71, 255, 0.3);
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-dark);
+    }
+
+    .btn-secondary {
+      background: #FFFFFF;
+      color: var(--text-main);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: #F8FAFC;
+    }
+
+    /* States */
+    .state-wrap {
+      text-align: center;
+      padding: 60px 20px;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(108, 71, 255, 0.15);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .state-title {
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .state-desc {
+      font-size: 14px;
+      color: var(--text-muted);
+      max-width: 400px;
+      margin: 0 auto 20px;
+      line-height: 1.5;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: auto;
+      padding-top: 20px;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+        padding: 0;
+      }
+      .actions-bar, header, footer {
+        display: none !important;
+      }
+      .cert-card {
+        box-shadow: none;
+        border: 1px solid #ccc;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <a href="/" class="brand">
+        <div class="brand-icon">S</div>
+        <div class="brand-name">SmartAssets</div>
+      </a>
+      <div class="badge-registry">
+        <span class="dot"></span>
+        Authoritative Registry
+      </div>
+    </header>
+
+    <main id="app">
+      <div class="state-wrap" id="loading-state">
+        <div class="spinner"></div>
+        <div class="state-title">Retrieving Canonical Record</div>
+        <div class="state-desc">Validating product certificate against the SmartAssets durable asset registry...</div>
+      </div>
+    </main>
+
+    <footer>
+      SmartAssets Registry &bull; Canonical Luxury Asset Verification &bull; Immutable Provenance Ledger
+    </footer>
+  </div>
+
+  <script>
+    (async function init() {
+      const appEl = document.getElementById('app');
+
+      // 1. Resolve asset ID from URL path (/verify/:id) or query parameter (?id=:id)
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      let assetId = null;
+
+      if (pathParts.length >= 2 && pathParts[0] === 'verify') {
+        assetId = pathParts[1];
+      }
+      if (!assetId) {
+        const urlParams = new URLSearchParams(window.location.search);
+        assetId = urlParams.get('id');
+      }
+
+      if (!assetId || !assetId.trim()) {
+        showError('Missing Asset Identifier', 'No product ID was supplied in the verification link. Please scan the official certificate QR code or provide a valid asset URL.');
+        return;
+      }
+
+      assetId = assetId.trim();
+
+      try {
+        const res = await fetch('/api/assets/' + encodeURIComponent(assetId));
+        if (!res.ok) {
+          if (res.status === 404) {
+            showError('Certificate Not Found', 'This product could not be found in the SmartAssets registry. The asset may have been delisted or the link is invalid.');
+          } else {
+            showError('Registry Error', 'Unable to retrieve asset certificate from the server (HTTP ' + res.status + '). Please try again later.');
+          }
+          return;
+        }
+
+        const data = await res.json();
+        if (!data || !data.success || !data.asset) {
+          showError('Invalid Record', 'The asset record returned by the registry is invalid or incomplete.');
+          return;
+        }
+
+        renderCertificate(data.asset, data.history || []);
+      } catch (err) {
+        console.error('Fetch error:', err);
+        showError('Network Error', 'Could not connect to the verification server. Please check your internet connection.');
+      }
+
+      function showError(title, message) {
+        appEl.innerHTML = `
+          <div class="state-wrap">
+            <div style="font-size:36px; margin-bottom:12px;">⚠️</div>
+            <div class="state-title">${escapeHtml(title)}</div>
+            <div class="state-desc">${escapeHtml(message)}</div>
+            <button class="btn btn-secondary" onclick="window.location.reload()" style="max-width:180px; margin:0 auto;">Retry</button>
+          </div>
+        `;
+      }
+
+      function renderCertificate(asset, history) {
+        const certId = asset.cert || ('SA-' + String(asset.id || '').slice(0, 8).toUpperCase());
+        const tokenId = asset.tokenId ? '#' + asset.tokenId : 'Not minted';
+        const category = (asset.category || 'Not provided').toUpperCase();
+        const condition = asset.condition || 'Not provided';
+        const year = asset.year ? String(asset.year) : 'Not provided';
+        const appraiser = asset.appraiser || 'Not provided';
+        const custodian = asset.custodian || (asset.badge === 'Vault Secured' ? 'SmartAssets Custody Facility' : 'Not provided');
+        
+        // Strict on-chain validation
+        const isValidTx = typeof asset.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(asset.txHash);
+        const isOnChain = Boolean(isValidTx);
+        const blockchain = isOnChain ? 'Ethereum Sepolia' : 'Off-Chain Registry';
+
+        const metadataDigest = asset.metadataDigest || asset.metadata_digest || null;
+        const regStatus = asset.registrationStatus || asset.registration_status || (isOnChain ? 'verified_on_chain' : 'unregistered');
+
+        let proofLabel = 'OFF-CHAIN REGISTRY';
+        let proofClass = 'status-offchain';
+        let proofValue = 'No on-chain transaction recorded for this asset';
+
+        if (isOnChain) {
+          proofLabel = 'SEPOLIA VERIFIED';
+          proofClass = 'status-anchored';
+          proofValue = asset.txHash;
+        } else if (regStatus === 'pending') {
+          proofLabel = 'PENDING SEPOLIA MINT';
+          proofClass = 'status-pending';
+          proofValue = 'On-chain registration is queued or pending block confirmation';
+        } else if (regStatus === 'failed') {
+          proofLabel = 'MINTING FAILED (OFF-CHAIN PRESERVED)';
+          proofClass = 'status-failed';
+          proofValue = asset.registrationError || 'On-chain mint transaction reverted; asset preserved in durable off-chain ledger';
+        }
+
+        const isVaulted = Boolean(asset.badge === 'Vault Secured' || asset.status === 'in_vault');
+        const vaultText = isVaulted ? 'Physically Vaulted & Inspected' : 'Digital Authenticity Record';
+
+        const imgUrl = asset.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80';
+
+        let historyHtml = '';
+        if (Array.isArray(history) && history.length > 0) {
+          historyHtml = `
+            <div class="history-card">
+              <div class="history-title">
+                <span>📜</span> Provenance & Chain of Custody
+              </div>
+              <div class="timeline">
+                ${history.map(h => `
+                  <div class="timeline-item">
+                    <div class="timeline-year">${escapeHtml(String(h.year || ''))}</div>
+                    <div class="timeline-body">
+                      <div class="timeline-event">${escapeHtml(h.event || '')}</div>
+                      <div class="timeline-party">${escapeHtml(h.party || '')}</div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }
+
+        const canonicalUrl = window.location.href;
+
+        appEl.innerHTML = `
+          <div class="cert-card">
+            <div class="cert-ribbon"></div>
+            <div class="cert-content">
+              <div class="cert-header">
+                <div>
+                  <div class="cert-kicker">SMARTASSETS VERIFIED CANONICAL</div>
+                  <div class="cert-title">Certificate of Authenticity</div>
+                </div>
+                <div class="seal-badge" title="Authenticity Sealed">✓</div>
+              </div>
+
+              <div class="asset-hero">
+                <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(asset.name || 'Asset')}" class="asset-img" onerror="this.src='https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80'">
+                <div class="asset-info">
+                  <div class="asset-name">${escapeHtml(asset.name || 'Identified Luxury Item')}</div>
+                  <div class="asset-status-pill">
+                    <span>🛡️</span>
+                    <span>${escapeHtml(vaultText)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="spec-grid">
+                <div class="spec-box">
+                  <div class="spec-label">CERTIFICATE ID</div>
+                  <div class="spec-value">${escapeHtml(certId)}</div>
+                </div>
+                <div class="spec-box">
+                  <div class="spec-label">DATABASE ASSET ID</div>
+                  <div class="spec-value" style="font-family:monospace; font-size:11px;">${escapeHtml(asset.id || 'N/A')}</div>
+                </div>
+                <div class="spec-box">
+                  <div class="spec-label">REGISTRATION STATUS</div>
+                  <div class="spec-value" style="font-weight:800; color:${isOnChain ? '#10B981' : '#6C47FF'};">${escapeHtml(regStatus)}</div>
+                </div>
+                <div class="spec-box">
+                  <div class="spec-label">TOKEN ID</div>
+                  <div class="spec-value">${escapeHtml(tokenId)}</div>
+                </div>
+                <div class="spec-box">
+                  <div class="spec-label">BLOCKCHAIN</div>
+                  <div class="spec-value">${escapeHtml(blockchain)}</div>
+                </div>
+                <div class="spec-box">
+                  <div class="spec-label">CATEGORY</div>
+                  <div class="spec-value">${escapeHtml(category)}</div>
+                </div>
+                <div class="spec-box">
+                  <div class="spec-label">CONDITION</div>
+                  <div class="spec-value">${escapeHtml(condition)}</div>
+                </div>
+                <div class="spec-box">
+                  <div class="spec-label">YEAR</div>
+                  <div class="spec-value">${escapeHtml(year)}</div>
+                </div>
+              </div>
+
+              <!-- Cryptographic Metadata Digest Section -->
+              <div class="proof-box" style="background:#F0FDF4; border-color:#BBF7D0; margin-bottom:16px;">
+                <div class="proof-header">
+                  <div class="proof-label" style="color:#166534;">CANONICAL METADATA DIGEST (SHA-256)</div>
+                  <div class="proof-status" style="background:#DCFCE7; color:#15803D;">CRYPTOGRAPHIC SEAL</div>
+                </div>
+                <div class="proof-hash" style="color:#14532D; border-color:#86EFAC;">${escapeHtml(metadataDigest || 'Uncomputed')}</div>
+                <div style="font-size:11px; color:#15803D; margin-top:6px;">
+                  Deterministic cryptographic digest computed from canonical product attributes. Guarantees metadata immutability without publishing user PII.
+                </div>
+              </div>
+
+              <!-- On-Chain Blockchain Proof Section -->
+              <div class="proof-box">
+                <div class="proof-header">
+                  <div class="proof-label">ETHEREUM SEPOLIA REGISTRATION</div>
+                  <div class="proof-status ${proofClass}">${escapeHtml(proofLabel)}</div>
+                </div>
+                <div class="proof-hash">${escapeHtml(proofValue)}</div>
+                ${isOnChain ? `
+                  <a href="https://sepolia.etherscan.io/tx/${encodeURIComponent(asset.txHash)}" target="_blank" rel="noopener noreferrer" class="etherscan-link">
+                    <span>↗ View verified mint transaction on Sepolia Etherscan</span>
+                  </a>
+                ` : `
+                  <div style="font-size:11px; color:#64748B;">
+                    Record sealed in SmartAssets Custodial Ledger. Etherscan view unavailable (off-chain).
+                  </div>
+                `}
+                <div style="font-size:11px; color:#94A3B8; margin-top:8px; border-top:1px solid rgba(226, 232, 240, 0.8); padding-top:6px;">
+                  ℹ️ <strong>Physical Inspection Disclaimer:</strong> Blockchain registration anchors this digital certificate to Ethereum Sepolia. Physical item authenticity is inspected and vaulted by SmartAssets Custody &amp; Verification; the existence of an NFT does not by itself guarantee physical item presence without custodial inspection.
+                </div>
+              </div>
+
+              ${historyHtml}
+            </div>
+          </div>
+
+          <div class="actions-bar">
+            <button class="btn btn-secondary" onclick="window.print()">
+              <span>🖨️</span> Print / Save PDF
+            </button>
+            <button class="btn btn-primary" onclick="copyVerificationLink()">
+              <span id="copy-btn-icon">🔗</span> <span id="copy-btn-text">Share Link</span>
+            </button>
+          </div>
+        `;
+      }
+
+      window.copyVerificationLink = function() {
+        const url = window.location.href;
+        navigator.clipboard.writeText(url).then(() => {
+          const textEl = document.getElementById('copy-btn-text');
+          const iconEl = document.getElementById('copy-btn-icon');
+          if (textEl) textEl.textContent = 'Link Copied!';
+          if (iconEl) iconEl.textContent = '✓';
+          setTimeout(() => {
+            if (textEl) textEl.textContent = 'Share Link';
+            if (iconEl) iconEl.textContent = '🔗';
+          }, 2500);
+        }).catch(() => {
+          alert('Verification URL: ' + url);
+        });
+      };
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -12,6 +12,7 @@ require('dotenv').config(); // Also check local Backend/.env
 
 const axios = require('axios');
 const marketOracleService = require('./marketOracleService');
+const { isValidTxHash } = require('../utils/productIdentity');
 
 const CATEGORIES = {
   WATCH: 'Luxury Watch',
@@ -25,68 +26,72 @@ const CATEGORIES = {
   COLLECTIBLE: 'Collectibles',
 };
 
-// Built-in Vault seed items (PERSONAL_COLLECTION & CO_OWNED_ASSETS) so certificate matching
-// works even if the client does not send local storage items in the request payload.
+// Built-in Vault seed fixtures (clearly labeled demo sample fixtures, not verified on-chain assets)
 const BUILTIN_VAULT_ASSETS = [
   {
     id: 'personal-keyboard',
     name: 'Logi MX Mechanical Wireless Keyboard',
     category: 'Electronics & Gadgets',
-    certId: 'ERC-721 #4811',
-    hashDisplay: '0x71c...9a',
-    txHash: '0x71cb842e1284a0149021e89a42105820bb3219a',
+    certId: 'Sample Catalog Item',
+    hashDisplay: null,
+    txHash: null,
     source: 'PERSONAL_COLLECTION',
     image: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&q=80',
     price: 'R132',
     price_num: 132,
+    isDemoFixture: true,
   },
   {
     id: 'personal-converse',
     name: 'Vintage Converse Chuck 70 High Top',
     category: 'Sneakers & Apparel',
-    certId: 'ERC-721 #4920',
-    hashDisplay: '0x71c...9a',
-    txHash: '0x71c93a84b0179a6d9128f731a55938b237f026a76',
+    certId: 'Sample Catalog Item',
+    hashDisplay: null,
+    txHash: null,
     source: 'PERSONAL_COLLECTION',
     image: 'https://images.unsplash.com/photo-1607522370275-f14206abe5d3?w=600&q=80',
     price: 'R137',
     price_num: 137,
+    isDemoFixture: true,
   },
   {
     id: 'personal-cable',
     name: 'Custom Braided Coiled Aviator Cable',
     category: 'Electronics & Gadgets',
-    certId: 'ERC-721 #4732',
-    hashDisplay: '0x71c...9a',
-    txHash: '0x71ce18420fa284102948bbcd09124802148719a',
+    certId: 'Sample Catalog Item',
+    hashDisplay: null,
+    txHash: null,
     source: 'PERSONAL_COLLECTION',
     image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&q=80',
     price: 'R58',
     price_num: 58,
+    isDemoFixture: true,
   },
   {
     id: 'fraction-rolex',
     name: 'Rolex Submariner Date 126610LN',
     category: 'Luxury Watch',
-    certId: 'ERC-721 #4811',
-    hashDisplay: '0x3a8...b2',
-    txHash: '0x3a82ef499120ab0192ca840131498b1ab55938b2',
+    certId: 'Sample Catalog Item',
+    hashDisplay: null,
+    txHash: null,
     source: 'CO_OWNED_ASSETS',
     image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80',
     price: 'R295 000',
     price_num: 295000,
+    isDemoFixture: true,
   },
   {
     id: 'fraction-jordan',
     name: '1985 Air Jordan 1 Chicago (OG Mint)',
     category: 'Sneakers & Apparel',
-    certId: 'ERC-721 #4855',
-    hashDisplay: '0x71c...9a',
-    txHash: '0x71c45ef499120ab0192ca840131498b1ab55939a',
+    certId: 'Sample Catalog Item',
+    hashDisplay: null,
+    txHash: null,
     source: 'CO_OWNED_ASSETS',
     image: 'https://images.unsplash.com/photo-1552346154-21d32810aba3?w=600&q=80',
     price: 'R25 000',
     price_num: 25000,
+    isDemoFixture: true,
   },
 ];
 
@@ -815,20 +820,11 @@ function namesLikelyMatch(detectedName, candidateName) {
 }
 
 function shortenHash(hash) {
-  const raw = String(hash || '').trim();
-  if (!raw) {
-    return '0x71c...9a';
+  if (!isValidTxHash(hash)) {
+    return null;
   }
-  if (raw.includes('...')) {
-    return raw;
-  }
-  if (raw.startsWith('0x') && raw.length > 10) {
-    return `${raw.slice(0, 5)}...${raw.slice(-2)}`;
-  }
-  if (raw.length > 10) {
-    return `${raw.slice(0, 5)}...${raw.slice(-2)}`;
-  }
-  return raw;
+  const raw = String(hash).trim();
+  return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
 }
 
 function buildCertificateMatch(item, source = 'PERSONAL_COLLECTION') {
@@ -840,38 +836,43 @@ function buildCertificateMatch(item, source = 'PERSONAL_COLLECTION') {
       try {
         const parsed = JSON.parse(m[1]);
         if (parsed.certId) metaCertId = parsed.certId;
-        if (parsed.hashDisplay || parsed.txHash) metaHash = parsed.hashDisplay || parsed.txHash;
+        if (parsed.txHash) metaHash = parsed.txHash;
       } catch (_) {}
     }
   }
 
   const rawTokenId = item.tokenId || item.token_id;
   const rawCert = item.certId || item.cert_id || metaCertId || item.cert;
+  const rawTx = item.txHash || item.tx_hash || metaHash;
+  const hasGenuineTx = isValidTxHash(rawTx);
+  const genuineTxHash = hasGenuineTx ? rawTx.trim() : null;
+
+  const isDemo = Boolean(item.isDemoFixture || item.source === 'DEMO_SAMPLE');
   const certId = rawCert
     ? String(rawCert)
     : rawTokenId
       ? `ERC-721 #${rawTokenId}`
-      : 'ERC-721 #4811';
-
-  const hash =
-    item.hashDisplay ||
-    metaHash ||
-    item.txHash ||
-    item.tx_hash ||
-    item.hash ||
-    '0x71c...9a';
+      : isDemo
+        ? 'Demo Sample'
+        : 'Off-Chain Item';
 
   return {
-    verified: true,
+    verified: Boolean(hasGenuineTx),
     certId,
-    hashDisplay: shortenHash(hash),
-    status: 'Verified on Sepolia Testnet',
+    hashDisplay: shortenHash(genuineTxHash),
+    txHash: genuineTxHash,
+    status: hasGenuineTx
+      ? 'Verified on Sepolia'
+      : isDemo
+        ? 'Demo Sample (Not On-Chain)'
+        : 'Off-Chain Record (Not Minted)',
     assetId: item.id || null,
     source,
     name: item.name || null,
     image: item.image || null,
     price: item.price || item.liveMarketValueFormatted || null,
     price_num: item.price_num || item.liveMarketValue || item.initialValue || null,
+    isDemoFixture: isDemo,
   };
 }
 

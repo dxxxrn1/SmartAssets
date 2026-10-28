@@ -570,8 +570,9 @@ export default function VaultScreen({ navigation }) {
         type: "escrow_deposit",
         title: "Escrow Deposit Confirmed",
         assetName: "Escrow Wallet Balance",
-        hash: "0x" + Math.random().toString(16).substring(2, 10) + "71c9a",
-        hashDisplay: "0x71c...9a",
+        reference: "ESC-" + Date.now(),
+        hash: null,
+        hashDisplay: null,
         amount: `+R${amt.toLocaleString()}`,
         timestamp: "Just now",
         status: "Escrow Protected",
@@ -1350,25 +1351,26 @@ export default function VaultScreen({ navigation }) {
 
                 // 2. Real Authenticity Certificates from Supabase holdings
                 (holdings || []).forEach((h) => {
+                  const rawTx = h.txHash || h.tx_hash;
+                  const hasTx = typeof rawTx === "string" && /^0x[0-9a-fA-F]{64}$/.test(rawTx.trim());
                   const certId =
                     h.certId ||
-                    `ERC-721 #${String(h.id || "").slice(-4) || "5001"}`;
-                  const hash =
-                    h.hashDisplay ||
-                    (h.id
-                      ? `0x${String(h.id).replace(/-/g, "").slice(0, 8)}...`
-                      : "0x71c...9a");
+                    (hasTx ? `ERC-721 #${String(h.id || "").slice(-4)}` : "Authenticity Record");
+                  const hash = hasTx ? rawTx.trim() : null;
+                  const hashDisplay = hasTx ? `${hash.slice(0, 6)}...${hash.slice(-4)}` : null;
                   combinedLogs.push({
                     id: `cert-${h.id}`,
                     type: "certificate",
                     title: "Authenticity Certificate",
-                    status: "ERC-721 Verified",
+                    status: hasTx ? "ERC-721 Verified" : "Off-Chain Sealed",
                     assetName: h.name || "Verified Collectible",
-                    detail: `${certId} • Smart Contract Cryptographically Verified`,
-                    hash: h.txHash || hash,
-                    hashDisplay: hash,
+                    detail: hasTx
+                      ? `${certId} • Smart Contract Cryptographically Verified`
+                      : `${certId} • SmartAssets Custody Certified`,
+                    hash: hash,
+                    hashDisplay: hashDisplay,
                     amount: formatGBP(h.price_num || h.price || 0),
-                    badgeColor: "#7C3AED",
+                    badgeColor: hasTx ? "#7C3AED" : "#64748B",
                     timestamp: h.created_at
                       ? new Date(h.created_at).toLocaleDateString("en-ZA", {
                           month: "short",
@@ -1482,10 +1484,11 @@ export default function VaultScreen({ navigation }) {
 
                     {/* Hash and Meta Row */}
                     <View style={styles.activityFooterRow}>
+                    {log.hashDisplay ? (
                       <TouchableOpacity
                         style={styles.hashPill}
                         onPress={() => {
-                          const msg = `Transaction Reference / Hash: ${log.hash || "0x71c93a84b01...e89a"}`;
+                          const msg = `Transaction Reference / Hash: ${log.hash || log.hashDisplay}`;
                           Platform.OS === "web"
                             ? alert(msg)
                             : Alert.alert("Transaction Reference", msg);
@@ -1499,9 +1502,10 @@ export default function VaultScreen({ navigation }) {
                           style={{ marginRight: 4 }}
                         />
                         <Text style={styles.hashPillText}>
-                          {log.hashDisplay || "0x71c...9a"}
+                          {log.hashDisplay}
                         </Text>
                       </TouchableOpacity>
+                    ) : null}
 
                       <View
                         style={{

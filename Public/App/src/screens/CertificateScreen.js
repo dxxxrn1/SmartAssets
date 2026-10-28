@@ -1,7 +1,9 @@
 // ─── CertificateScreen ────────────────────────────────────────────────────────
-// Digital Asset Certificate of Authenticity — Cryptographically verified passport
+// Digital Asset Certificate of Authenticity — Authoritative Asset Record
+// Loads durable product records, displays scannable QR verification,
+// generates real PDF certificates, and enforces honest on-chain verification.
 
-import React from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,11 +13,22 @@ import {
   Linking,
   Image,
   Alert,
+  Share,
+  Platform,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { resolveImageUrl } from "../services/api";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
+import { resolveImageUrl, getAssetDetails } from "../services/api";
+import {
+  buildCertificateData,
+  resolveVerificationUrl,
+  generateQrDataUriAsync,
+  generateCertificatePdfAsync,
+} from "../utils/certificateUtils";
 
 const CANVAS_MESH = [
   "#e4e0ffff", // Soft luminous lavender
@@ -26,51 +39,195 @@ const CANVAS_MESH = [
 ];
 
 export default function CertificateScreen({ navigation, route }) {
-  const asset = route?.params?.asset ?? {};
+  const initialAsset = route?.params?.asset || null;
+  const targetAssetId =
+    route?.params?.assetId ||
+    route?.params?.asset?.id ||
+    route?.params?.id ||
+    null;
 
-  const certId =
-    asset.cert || `SA-${(asset.id || "2024").slice(0, 8).toUpperCase()}`;
-  const tokenId = asset.tokenId ? `#${asset.tokenId}` : "#1";
-  const primaryImage = resolveImageUrl(
-    asset.image || asset.primary_image || (asset.images && asset.images[0]),
+  const [assetRecord, setAssetRecord] = useState(initialAsset);
+  const [loading, setLoading] = useState(!initialAsset && Boolean(targetAssetId));
+  const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(
+    !targetAssetId ? "Missing Asset Identifier: No product ID was supplied." : null
+  );
+  const [qrDataUri, setQrDataUri] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Authoritative data loading from backend
+  const loadAuthoritativeRecord = useCallback(
+    async (isRefresh = false) => {
+      if (!targetAssetId) return;
+
+      if (isRefresh) {
+        setRefreshing(true);
+      } else if (!assetRecord) {
+        setLoading(true);
+      }
+
+      try {
+        setErrorMessage(null);
+        const res = await getAssetDetails(targetAssetId);
+        if (res && res.success && res.asset) {
+          setAssetRecord(res.asset);
+        } else if (res && res.asset) {
+          setAssetRecord(res.asset);
+        } else {
+          throw new Error("Asset record could not be found in the registry.");
+        }
+      } catch (err) {
+        console.warn("[CertificateScreen] Authoritative fetch error:", err.message);
+        // Only show blocking error if we don't even have initial navigation snapshot
+        if (!assetRecord) {
+          setErrorMessage(
+            err.message || "Failed to load authoritative product certificate."
+          );
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [targetAssetId, assetRecord]
   );
 
-  const certFields = [
-    ["CERTIFICATE ID", certId],
-    ["TOKEN ID", tokenId],
-    ["BLOCKCHAIN", "Ethereum Sepolia"],
-    ["CATEGORY", (asset.category || "Luxury Collectible").toUpperCase()],
-    ["CONDITION", asset.condition || "Grade A+ (Mint)"],
-    ["YEAR", String(asset.year || "2019")],
-    ["APPRAISER", "SmartAssets Oracle Bureau"],
-    ["VAULT CUSTODIAN", "London Vault Facility #4"],
-  ];
+  useEffect(() => {
+    if (targetAssetId) {
+      loadAuthoritativeRecord(false);
+    }
+  }, [targetAssetId]);
 
-  const hashString =
-    asset.hash ||
-    asset.txHash ||
-    "0x" +
-      (asset.id
-        ? asset.id.replace(/-/g, "")
-        : "7a8f3b2c1d4e5f6a7b8c9d0e1f2a3b4c");
+  // Build sanitized, authoritative certificate data
+  const certData = buildCertificateData(assetRecord || {});
+  const { url: verificationUrl, isConfigured: isUrlConfigured, error: configError } =
+    resolveVerificationUrl(certData.id || targetAssetId || "");
 
-  const handleDownloadPdf = () => {
-    Alert.alert(
-      "Certificate Exported",
-      `Digital certificate ${certId} generated as cryptographically signed PDF.`,
-    );
+  // Generate real QR code image data URI whenever verification URL resolves
+  useEffect(() => {
+    let active = true;
+    if (isUrlConfigured && verificationUrl) {
+      generateQrDataUriAsync(verificationUrl)
+        .then((uri) => {
+          if (active) setQrDataUri(uri);
+        })
+        .catch((err) => {
+          console.warn("[CertificateScreen] QR generation error:", err.message);
+          if (active) setQrDataUri(null);
+        });
+    } else {
+      setQrDataUri(null);
+    }
+    return () => {
+      active = false;
+    };
+  }, [isUrlConfigured, verificationUrl]);
+
+  // Primary image
+  const primaryImage = resolveImageUrl(
+    certData.image ||
+      (certData.rawAsset?.images && certData.rawAsset.images[0]) ||
+      null
+  );
+
+  // Download PDF handler
+  const handleDownloadPdf = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+
+    try {
+      // Ensure we have a QR data URI; generate if missing
+      let activeQrUri = qrDataUri;
+      if (!activeQrUri && verificationUrl) {
+        try {
+          activeQrUri = await generateQrDataUriAsync(verificationUrl);
+        } catch (_) {}
+      }
+
+      const { uri } = await generateCertificatePdfAsync(
+        certData,
+        activeQrUri,
+        verificationUrl,
+        Print
+      );
+
+      const canShare = await Sharing.isAvailableAsync().catch(() => false);
+      if (canShare) {
+        await Sharing.shareAsync(uri, {
+          UTI: ".pdf",
+          mimeType: "application/pdf",
+          dialogTitle: `SmartAssets Certificate — ${certData.certId}`,
+        });
+      } else if (Platform.OS === "web") {
+        Alert.alert(
+          "Certificate Ready",
+          `Digital certificate for ${certData.name} has been prepared.`
+        );
+      } else {
+        Alert.alert(
+          "Certificate Generated",
+          `Digital certificate PDF saved at: ${uri}`
+        );
+      }
+    } catch (err) {
+      console.error("[CertificateScreen] PDF export failed:", err);
+      Alert.alert(
+        "Export Failed",
+        `Could not generate digital certificate PDF: ${err.message || "Unknown error"}`
+      );
+    } finally {
+      setIsExporting(false);
+    }
   };
 
-  const handleShare = () => {
-    Alert.alert(
-      "Share Certificate",
-      `Certificate link copied for ${asset.name || "Authenticated Collectible"}.`,
-    );
+  // Share link handler
+  const handleShare = async () => {
+    if (!isUrlConfigured || !verificationUrl) {
+      Alert.alert(
+        "Verification Link Unavailable",
+        configError ||
+          "Public verification base URL is not configured. Please set EXPO_PUBLIC_VERIFICATION_BASE_URL in your environment configuration to enable link sharing."
+      );
+      return;
+    }
+
+    try {
+      const shareResult = await Share.share(
+        {
+          message: `Verify authenticity of ${certData.name} on the SmartAssets Authoritative Registry:\n${verificationUrl}`,
+          url: verificationUrl,
+          title: `SmartAssets Certificate — ${certData.name}`,
+        },
+        {
+          dialogTitle: `Share Certificate for ${certData.name}`,
+        }
+      );
+
+      if (shareResult.action === Share.sharedAction) {
+        // Shared successfully
+      }
+    } catch (err) {
+      Alert.alert("Share Failed", err.message || "Could not share certificate link.");
+    }
+  };
+
+  // Etherscan CTA handler
+  const handleEtherscanPress = () => {
+    if (certData.isOnChain && certData.etherscanUrl) {
+      Linking.openURL(certData.etherscanUrl).catch(() => {
+        Alert.alert("Navigation Error", "Could not open Sepolia Etherscan link.");
+      });
+    } else {
+      Alert.alert(
+        "Off-Chain Registry Record",
+        "This asset is recorded and authenticated directly in the SmartAssets Custodial Ledger. It has not been minted or transferred on Ethereum Sepolia."
+      );
+    }
   };
 
   return (
     <View style={styles.root}>
-      {/* ── Background Mesh Gradient (Matches HomeScreen.js) ── */}
+      {/* ── Background Mesh Gradient ── */}
       <LinearGradient
         colors={CANVAS_MESH}
         locations={[0, 0.22, 0.52, 0.78, 1]}
@@ -87,6 +244,7 @@ export default function CertificateScreen({ navigation, route }) {
             style={styles.backBtn}
             onPress={() => navigation.goBack()}
             activeOpacity={0.8}
+            accessibilityLabel="Go back"
           >
             <Feather name="arrow-left" size={18} color="#0F172A" />
           </TouchableOpacity>
@@ -106,180 +264,316 @@ export default function CertificateScreen({ navigation, route }) {
             style={styles.shareBtn}
             activeOpacity={0.8}
             onPress={handleShare}
+            accessibilityLabel="Share certificate link"
           >
             <Feather name="share-2" size={16} color="#0F172A" />
           </TouchableOpacity>
         </View>
 
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* ══════════════════════════════════════════════════════════════════════
-              AUTHENTICITY CERTIFICATE CARD (Physical Passport Style)
-          ══════════════════════════════════════════════════════════════════════ */}
-          <View style={styles.certCard}>
-            {/* Top Purple Brand Ribbon */}
-            <LinearGradient
-              colors={["#6C47FF", "#976af0", "#00fbff"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.certRibbon}
-            />
+        {/* ── Loading State ── */}
+        {loading && !assetRecord ? (
+          <View style={styles.stateCenterContainer}>
+            <ActivityIndicator size="large" color="#6C47FF" />
+            <Text style={styles.stateTitle}>Loading Authoritative Record</Text>
+            <Text style={styles.stateSubtitle}>
+              Querying durable product specifications and provenance history...
+            </Text>
+          </View>
+        ) : errorMessage && !assetRecord ? (
+          /* ── Error / Missing ID State ── */
+          <View style={styles.stateCenterContainer}>
+            <View style={styles.errorIconWrap}>
+              <Feather name="alert-triangle" size={28} color="#DC2626" />
+            </View>
+            <Text style={styles.stateTitle}>Certificate Unavailable</Text>
+            <Text style={styles.stateSubtitle}>{errorMessage}</Text>
+            {targetAssetId ? (
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => loadAuthoritativeRecord(true)}
+              >
+                <Feather name="refresh-cw" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.retryBtnText}>Retry Connection</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => navigation.goBack()}
+              >
+                <Text style={styles.retryBtnText}>Go Back</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* ══════════════════════════════════════════════════════════════════════
+                AUTHENTICITY CERTIFICATE CARD (Physical Passport Style)
+            ══════════════════════════════════════════════════════════════════════ */}
+            <View style={styles.certCard}>
+              {/* Top Purple Brand Ribbon */}
+              <LinearGradient
+                colors={["#6C47FF", "#976af0", "#00fbff"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.certRibbon}
+              />
 
-            <View style={styles.certInner}>
-              {/* Seal & Verified Header */}
-              <View style={styles.certHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.certKicker}>
-                    SMARTASSETS VERIFIED AUTHENTIC
-                  </Text>
-                  <Text style={styles.certTitle}>
-                    Certificate of Authenticity
-                  </Text>
+              <View style={styles.certInner}>
+                {/* Seal & Verified Header */}
+                <View style={styles.certHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.certKicker}>
+                      SMARTASSETS VERIFIED CANONICAL
+                    </Text>
+                    <Text style={styles.certTitle}>
+                      Certificate of Authenticity
+                    </Text>
+                  </View>
+                  <View style={styles.sealCircle}>
+                    <Ionicons name="shield-checkmark" size={22} color="#10B981" />
+                  </View>
                 </View>
-                <View style={styles.sealCircle}>
-                  <Ionicons name="shield-checkmark" size={22} color="#10B981" />
-                </View>
-              </View>
 
-              {/* Asset Spotlight Hero Row */}
-              <View style={styles.assetSpotlightRow}>
-                <Image
-                  source={{ uri: primaryImage }}
-                  style={styles.assetThumb}
-                  resizeMode="cover"
-                />
-                <View style={styles.assetSpotlightText}>
-                  <Text style={styles.assetName} numberOfLines={2}>
-                    {asset.name || "Authentic Collectible"}
-                  </Text>
-                  <View style={styles.verifiedTag}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={12}
-                      color="#16A34A"
-                      style={{ marginRight: 4 }}
+                {/* Asset Spotlight Hero Row */}
+                <View style={styles.assetSpotlightRow}>
+                  {primaryImage ? (
+                    <Image
+                      source={{ uri: primaryImage }}
+                      style={styles.assetThumb}
+                      resizeMode="cover"
                     />
-                    <Text style={styles.verifiedTagText}>
-                      Physically Vaulted & Inspected
+                  ) : (
+                    <View style={[styles.assetThumb, styles.thumbFallback]}>
+                      <Feather name="package" size={24} color="#94A3B8" />
+                    </View>
+                  )}
+                  <View style={styles.assetSpotlightText}>
+                    <Text style={styles.assetName} numberOfLines={2}>
+                      {certData.name}
+                    </Text>
+                    <View style={styles.verifiedTag}>
+                      <Ionicons
+                        name={certData.isVaulted ? "shield-checkmark" : "document-text"}
+                        size={12}
+                        color={certData.isVaulted ? "#16A34A" : "#6C47FF"}
+                        style={{ marginRight: 4 }}
+                      />
+                      <Text
+                        style={[
+                          styles.verifiedTagText,
+                          !certData.isVaulted && { color: "#6C47FF" },
+                        ]}
+                      >
+                        {certData.vaultStatusLabel}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* 2x4 Specifications Grid */}
+                <View style={styles.fieldsGrid}>
+                  {certData.certFields.map(([label, value]) => (
+                    <View key={label} style={styles.fieldBox}>
+                      <Text style={styles.fieldLabel}>{label}</Text>
+                      <Text style={styles.fieldVal} numberOfLines={1}>
+                        {value}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* QR / Canonical Product Verification Section */}
+                <View style={styles.qrVerificationBox}>
+                  <View style={styles.qrHeaderRow}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="qr-code-outline" size={16} color="#6C47FF" />
+                      <Text style={styles.qrHeaderTitle}>CANONICAL PRODUCT QR</Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.qrHeaderBadge,
+                        !isUrlConfigured && styles.qrHeaderBadgeMuted,
+                      ]}
+                    >
+                      {isUrlConfigured ? "SCANNABLE VERIFICATION" : "UNCONFIGURED"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.qrBodyRow}>
+                    {isUrlConfigured && qrDataUri ? (
+                      <View style={styles.qrImageFrame}>
+                        <Image
+                          source={{ uri: qrDataUri }}
+                          style={styles.qrImage}
+                          resizeMode="contain"
+                          accessibilityLabel="Scannable verification QR code"
+                        />
+                      </View>
+                    ) : (
+                      <View style={styles.qrImagePlaceholder}>
+                        <Feather name="link-2" size={24} color="#94A3B8" />
+                        <Text style={styles.qrPlaceholderText}>
+                          {isUrlConfigured ? "Generating..." : "Config Required"}
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={styles.qrTextCol}>
+                      <Text style={styles.qrHelpTitle}>
+                        {isUrlConfigured
+                          ? "Scan to inspect authoritative product dossier"
+                          : "Public verification URL not configured"}
+                      </Text>
+                      <Text style={styles.qrHelpDesc}>
+                        {isUrlConfigured
+                          ? "Mobile cameras or external scanners open the standalone HTTPS verification record for this asset."
+                          : "Set EXPO_PUBLIC_VERIFICATION_BASE_URL to generate the public verification QR and web dossier link."}
+                      </Text>
+                      {isUrlConfigured && verificationUrl ? (
+                        <TouchableOpacity
+                          style={styles.urlCopyChip}
+                          onPress={handleShare}
+                          activeOpacity={0.8}
+                        >
+                          <Feather name="copy" size={11} color="#6C47FF" style={{ marginRight: 4 }} />
+                          <Text style={styles.urlCopyText} numberOfLines={1}>
+                            {verificationUrl}
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+
+                {/* Canonical Metadata Digest Box (SHA-256) */}
+                {certData.metadataDigest ? (
+                  <View style={styles.digestBox}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <View style={styles.hashHeaderRow}>
+                        <Text style={styles.digestLabel}>CANONICAL METADATA DIGEST</Text>
+                        <Text style={styles.digestStatus}>SHA-256 SEALED</Text>
+                      </View>
+                      <Text style={styles.digestValue} numberOfLines={2} selectable>
+                        {certData.metadataDigest}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                {/* On-Chain Record / Registry Proof Box */}
+                <View style={styles.hashBox}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <View style={styles.hashHeaderRow}>
+                      <Text style={styles.hashLabel}>ON-CHAIN RECORD PROOF</Text>
+                      <Text
+                        style={[
+                          styles.hashStatus,
+                          !certData.isOnChain && styles.hashStatusOffChain,
+                        ]}
+                      >
+                        {certData.chainProofLabel}
+                      </Text>
+                    </View>
+                    <Text style={styles.hashValue} numberOfLines={2}>
+                      {certData.chainProofValue}
                     </Text>
                   </View>
                 </View>
-              </View>
 
-              {/* 2x4 Specifications Grid */}
-              <View style={styles.fieldsGrid}>
-                {certFields.map(([label, value]) => (
-                  <View key={label} style={styles.fieldBox}>
-                    <Text style={styles.fieldLabel}>{label}</Text>
-                    <Text style={styles.fieldVal} numberOfLines={1}>
-                      {value}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-
-              {/* QR / Blockchain Proof Box */}
-              <View style={styles.hashBox}>
-                <View style={styles.qrWrap}>
-                  <Ionicons
-                    name="qr-code-outline"
-                    size={28}
-                    color="#6C47FF"
+                {/* Security Statement */}
+                <View style={styles.statementRow}>
+                  <Feather
+                    name="lock"
+                    size={12}
+                    color="#64748B"
+                    style={{ marginRight: 6 }}
                   />
-                </View>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <View style={styles.hashHeaderRow}>
-                    <Text style={styles.hashLabel}>ON-CHAIN RECORD PROOF</Text>
-                    <Text style={styles.hashStatus}>SEPOLIA VERIFIED</Text>
-                  </View>
-                  <Text style={styles.hashValue} numberOfLines={2}>
-                    {hashString}
+                  <Text style={styles.statementText}>
+                    Authoritative Digital Certificate of Authenticity. Registered in SmartAssets Provenance Ledger.
                   </Text>
                 </View>
               </View>
 
-              {/* Security Watermark Statement */}
-              <View style={styles.statementRow}>
-                <Feather
-                  name="lock"
-                  size={12}
-                  color="#64748B"
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={styles.statementText}>
-                  Cryptographically secured dual-layer passport. Non-fungible vault registration.
-                </Text>
-              </View>
+              {/* Bottom Purple Brand Ribbon */}
+              <LinearGradient
+                colors={["#00fbff", "#976af0", "#6C47FF"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.certRibbon}
+              />
             </View>
 
-            {/* Bottom Purple Brand Ribbon */}
-            <LinearGradient
-              colors={["#00fbff", "#976af0", "#6C47FF"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.certRibbon}
-            />
-          </View>
+            {/* ══════════════════════════════════════════════════════════════════════
+                ACTION BUTTONS
+            ══════════════════════════════════════════════════════════════════════ */}
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={handleDownloadPdf}
+                activeOpacity={0.8}
+                disabled={isExporting}
+              >
+                {isExporting ? (
+                  <ActivityIndicator size="small" color="#0F172A" style={{ marginRight: 8 }} />
+                ) : (
+                  <Feather
+                    name="download"
+                    size={16}
+                    color="#0F172A"
+                    style={{ marginRight: 8 }}
+                  />
+                )}
+                <Text style={styles.secondaryBtnText}>
+                  {isExporting ? "Generating PDF..." : "Download PDF"}
+                </Text>
+              </TouchableOpacity>
 
-          {/* ══════════════════════════════════════════════════════════════════════
-              ACTION BUTTONS
-          ══════════════════════════════════════════════════════════════════════ */}
-          <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={handleShare}
+                activeOpacity={0.8}
+              >
+                <Feather
+                  name="share-2"
+                  size={16}
+                  color="#0F172A"
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={styles.secondaryBtnText}>Share Link</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* ── Primary Etherscan CTA ── */}
             <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={handleDownloadPdf}
-              activeOpacity={0.8}
+              style={[
+                styles.primaryEtherscanBtn,
+                !certData.isOnChain && styles.disabledEtherscanBtn,
+              ]}
+              onPress={handleEtherscanPress}
+              activeOpacity={certData.isOnChain ? 0.85 : 0.95}
             >
-              <Feather
-                name="download"
-                size={16}
-                color="#0F172A"
+              <Ionicons
+                name={certData.isOnChain ? "open-outline" : "shield-outline"}
+                size={18}
+                color={certData.isOnChain ? "#FFFFFF" : "#64748B"}
                 style={{ marginRight: 8 }}
               />
-              <Text style={styles.secondaryBtnText}>Download PDF</Text>
+              <Text
+                style={[
+                  styles.primaryEtherscanText,
+                  !certData.isOnChain && styles.disabledEtherscanText,
+                ]}
+              >
+                {certData.isOnChain
+                  ? "View on Sepolia Etherscan"
+                  : "On-Chain Explorer Unavailable (Off-chain registry)"}
+              </Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={handleShare}
-              activeOpacity={0.8}
-            >
-              <Feather
-                name="share-2"
-                size={16}
-                color="#0F172A"
-                style={{ marginRight: 8 }}
-              />
-              <Text style={styles.secondaryBtnText}>Share Link</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ── Primary Etherscan CTA ── */}
-          <TouchableOpacity
-            style={styles.primaryEtherscanBtn}
-            onPress={() =>
-              Linking.openURL(
-                asset.etherscanUrl ||
-                  (asset.txHash
-                    ? `https://sepolia.etherscan.io/tx/${asset.txHash}`
-                    : "https://sepolia.etherscan.io"),
-              )
-            }
-            activeOpacity={0.85}
-          >
-            <Ionicons
-              name="open-outline"
-              size={18}
-              color="#FFFFFF"
-              style={{ marginRight: 8 }}
-            />
-            <Text style={styles.primaryEtherscanText}>
-              View on Sepolia Etherscan
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
+          </ScrollView>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -348,6 +642,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
     gap: 16,
+  },
+
+  // State Center (Loading / Error)
+  stateCenterContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  errorIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#FEE2E2",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  stateTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    textAlign: "center",
+  },
+  stateSubtitle: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  retryBtn: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#6C47FF",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+  },
+  retryBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
 
   // Certificate Card
@@ -420,6 +758,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#E2E8F0",
   },
+  thumbFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
   assetSpotlightText: {
     flex: 1,
     gap: 4,
@@ -469,7 +811,140 @@ const styles = StyleSheet.create({
     color: "#0F172A",
   },
 
-  // QR / Blockchain Hash
+  // Scannable QR Verification Box
+  qrVerificationBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    padding: 14,
+    gap: 12,
+  },
+  qrHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  qrHeaderTitle: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#6C47FF",
+    letterSpacing: 0.8,
+  },
+  qrHeaderBadge: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#10B981",
+    backgroundColor: "#ECFDF5",
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+  },
+  qrHeaderBadgeMuted: {
+    color: "#64748B",
+    backgroundColor: "#F1F5F9",
+  },
+  qrBodyRow: {
+    flexDirection: "row",
+    gap: 14,
+    alignItems: "center",
+  },
+  qrImageFrame: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 4,
+  },
+  qrImage: {
+    width: "100%",
+    height: "100%",
+  },
+  qrImagePlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 6,
+    gap: 4,
+  },
+  qrPlaceholderText: {
+    fontSize: 9,
+    color: "#64748B",
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  qrTextCol: {
+    flex: 1,
+    gap: 4,
+  },
+  qrHelpTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  qrHelpDesc: {
+    fontSize: 11,
+    color: "#64748B",
+    lineHeight: 15,
+  },
+  urlCopyChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    marginTop: 4,
+  },
+  urlCopyText: {
+    fontSize: 10,
+    fontFamily: "monospace",
+    color: "#6C47FF",
+    flex: 1,
+  },
+
+  // Canonical Metadata Digest Box
+  digestBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#F0FDF4",
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+  },
+  digestLabel: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#166534",
+    letterSpacing: 0.8,
+  },
+  digestStatus: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#15803D",
+  },
+  digestValue: {
+    fontSize: 11,
+    fontFamily: "monospace",
+    color: "#14532D",
+    lineHeight: 15,
+  },
+
+  // Blockchain Hash / Registry Box
   hashBox: {
     flexDirection: "row",
     alignItems: "center",
@@ -477,16 +952,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F3FF",
     borderRadius: 16,
     padding: 12,
-    borderWidth: 1,
-    borderColor: "#DDD6FE",
-  },
-  qrWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
     borderWidth: 1,
     borderColor: "#DDD6FE",
   },
@@ -506,9 +971,12 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#10B981",
   },
+  hashStatusOffChain: {
+    color: "#64748B",
+  },
   hashValue: {
     fontSize: 11,
-    fontFamily: "Courier",
+    fontFamily: "monospace",
     fontWeight: "700",
     color: "#1E1B4B",
     marginTop: 2,
@@ -572,5 +1040,17 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: "#FFFFFF",
     letterSpacing: 0.2,
+  },
+  disabledEtherscanBtn: {
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  disabledEtherscanText: {
+    color: "#64748B",
+    fontWeight: "700",
+    fontSize: 13,
   },
 });

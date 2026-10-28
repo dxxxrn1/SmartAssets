@@ -162,6 +162,10 @@ app.use('/uploads/kyc', (req, res, next) => {
 
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads/assets')));
 app.use('/admin', express.static(path.resolve(__dirname, '../public/admin')));
+app.use('/verify', express.static(path.resolve(__dirname, '../public/verify')));
+app.get('/verify/:id', (req, res) => {
+  res.sendFile(path.resolve(__dirname, '../public/verify/index.html'));
+});
 
 // ── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);

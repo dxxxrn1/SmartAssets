@@ -110,10 +110,10 @@ export default function ScanAndKnowScreen({ navigation }) {
         id: item.id,
         name: item.name,
         category: item.category,
-        certId: item.certId || item.cert || "ERC-721 #4811",
-        txHash: item.txHash || item.tx_hash,
-        hashDisplay: item.hashDisplay || "0x71c...9a",
-        tokenId: item.tokenId || item.token_id,
+        certId: item.certId || item.cert || null,
+        txHash: item.txHash || item.tx_hash || null,
+        hashDisplay: item.hashDisplay || null,
+        tokenId: item.tokenId || item.token_id || null,
         image: item.image,
         price: item.liveMarketValueFormatted || item.price,
         price_num: item.liveMarketValue || item.price_num || item.initialValue,
@@ -223,11 +223,11 @@ export default function ScanAndKnowScreen({ navigation }) {
     setScanning(false);
   };
 
-  const verified = Boolean(result?.certificateMatch?.verified);
   const cert = result?.certificateMatch || {};
-  const certIdDisplay = cert.certId || "ERC-721 #4811";
-  const hashDisplay = cert.hashDisplay || "0x71c...9a";
-  const certStatus = cert.status || "Verified on Sepolia Testnet";
+  const verified = Boolean(cert.verified && cert.txHash);
+  const certIdDisplay = cert.certId || (cert.tokenId ? `ERC-721 #${cert.tokenId}` : "Digital Certificate");
+  const hashDisplay = cert.hashDisplay || null;
+  const certStatus = cert.status || (verified ? "Verified on Sepolia" : "Off-Chain Record");
 
   const lowFormatted = ensureZarFormatted(
     result?.lowFormatted || result?.market?.lowFormatted,
@@ -441,7 +441,7 @@ export default function ScanAndKnowScreen({ navigation }) {
                   <View style={styles.sepoliaSubRow}>
                     <Ionicons name="link-outline" size={13} color="#6EE7B7" />
                     <Text style={styles.sepoliaSubText}>
-                      {`${hashDisplay} • ${certStatus}`}
+                      {hashDisplay ? `${hashDisplay} • ${certStatus}` : certStatus}
                     </Text>
                   </View>
                 </View>

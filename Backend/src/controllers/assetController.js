@@ -4,6 +4,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { ethers } = require('ethers');
 const supabase = require('../connection/supabaseClient');
 const { sendError } = require('../utils/errorHandler');
 const web3Service = require('../services/web3Service');
@@ -13,6 +15,7 @@ const marketOracleService = require('../services/marketOracleService');
 const { uploadImageToCloud, saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
 const { sanitizePostgrestFilter } = require('../middlewares/securityMiddleware');
 const investmentPositionService = require('../services/investmentPositionService');
+const { computeMetadataDigest, isValidTxHash } = require('../utils/productIdentity');
 
 // In-memory server cache to protect Supabase database egress from repetitive queries
 let assetsCache = null;
@@ -162,9 +165,12 @@ async function getAssets(req, res) {
         gain: row.gain || '+0.0%',
         // On-chain blockchain fields
         tokenId: row.token_id || null,
-        txHash: row.tx_hash || null,
+        metadataDigest: row.metadata_digest || null,
+        registrationStatus: row.registration_status || (isValidTxHash(row.tx_hash) ? 'verified_on_chain' : 'unregistered'),
+        registrationError: row.registration_error || null,
+        txHash: isValidTxHash(row.tx_hash) ? row.tx_hash : null,
         contractAddress: row.contract_address || null,
-        etherscanUrl: row.etherscan_url || (row.tx_hash ? `https://sepolia.etherscan.io/tx/${row.tx_hash}` : null),
+        etherscanUrl: isValidTxHash(row.tx_hash) ? (row.etherscan_url || `https://sepolia.etherscan.io/tx/${row.tx_hash}`) : null,
         // Owner/Creator
         userId: row.user_id || null,
         sellerId: row.seller_id || row.user_id || null,
@@ -293,7 +299,12 @@ async function getAssetById(req, res) {
       history = histData || [];
     }
 
-    // If no history found, provide standard provenance chain
+    const hasGenuineTx = isValidTxHash(asset.tx_hash);
+    const sanitizedTxHash = hasGenuineTx ? asset.tx_hash.trim() : null;
+    const sanitizedEtherscanUrl = sanitizedTxHash ? `https://sepolia.etherscan.io/tx/${sanitizedTxHash}` : null;
+    const registrationStatus = asset.registration_status || (hasGenuineTx ? 'verified_on_chain' : 'unregistered');
+
+    // If no history found, provide standard provenance chain without fabricated hashes
     if (history.length === 0) {
       history = [
         {
@@ -301,10 +312,10 @@ async function getAssetById(req, res) {
           year: String(asset.year || new Date().getFullYear()),
           event: asset.user_id ? 'Authenticated & Deposited in SmartAssets Secure Vault' : 'Marketplace Listing & Authenticity Certified',
           party: 'SmartAssets Custody & Verification',
-          hash: '0x' + (asset.id ? String(asset.id).replace(/-/g, '').slice(0, 24) : '7a8b9c0d1e2f3a4b'),
-          tx_hash: asset.tx_hash || null,
-          etherscanUrl: asset.tx_hash ? `https://sepolia.etherscan.io/tx/${asset.tx_hash}` : null,
-          verified: true,
+          hash: asset.metadata_digest || ('0x' + crypto.createHash('sha256').update(`initial:${asset.id}`).digest('hex')),
+          tx_hash: sanitizedTxHash,
+          etherscanUrl: sanitizedEtherscanUrl,
+          verified: Boolean(hasGenuineTx),
         },
       ];
     }
@@ -368,11 +379,14 @@ async function getAssetById(req, res) {
         shares: totalShares,
         sharesSold: sharesSold,
         sharePrice: sharePrice,
-        // On-chain blockchain fields
-        tokenId: asset.token_id || null,
-        txHash: asset.tx_hash || null,
+        // Cryptographic identity & on-chain blockchain fields
+        metadataDigest: asset.metadata_digest || null,
+        registrationStatus,
+        registrationError: asset.registration_error || null,
+        tokenId: asset.token_id || asset.nft_token_id || null,
+        txHash: sanitizedTxHash,
         contractAddress: asset.contract_address || null,
-        etherscanUrl: asset.etherscan_url || (asset.tx_hash ? `https://sepolia.etherscan.io/tx/${asset.tx_hash}` : null),
+        etherscanUrl: sanitizedEtherscanUrl,
         userId: asset.user_id || null,
         sellerId: asset.seller_id || asset.user_id || null,
         currentOwnerId: asset.current_owner_id || asset.user_id || null,
@@ -381,16 +395,20 @@ async function getAssetById(req, res) {
         aiScanScore: asset.ai_scan_score ?? null,
         aiScanStatus: asset.ai_scan_status || (asset.badge === 'Verified' || asset.badge === 'Verified On-Chain' ? 'passed' : null),
       },
-      history: history.map((h) => ({
-        id: h.id,
-        year: String(h.year),
-        event: h.event,
-        party: h.party,
-        hash: h.hash,
-        txHash: h.tx_hash || null,
-        etherscanUrl: h.tx_hash ? `https://sepolia.etherscan.io/tx/${h.tx_hash}` : null,
-        verified: h.verified,
-      })),
+      history: history.map((h) => {
+        const histTxValid = isValidTxHash(h.tx_hash);
+        const histTxHash = histTxValid ? h.tx_hash.trim() : null;
+        return {
+          id: h.id,
+          year: String(h.year),
+          event: h.event,
+          party: h.party,
+          hash: h.hash,
+          txHash: histTxHash,
+          etherscanUrl: histTxHash ? `https://sepolia.etherscan.io/tx/${histTxHash}` : null,
+          verified: Boolean(histTxValid),
+        };
+      }),
     });
   } catch (err) {
     console.error('getAssetById error:', err);
@@ -545,12 +563,12 @@ async function createAsset(req, res) {
 
     // Step 2: Live Market Oracle Check
     const lookupQuery = visionCheck.detectedObjectName || visionCheck.canonicalName || name;
-    const effectiveCondition = condition || visionCheck.conditionGrade || 'mint';
+    const oracleCondition = condition || visionCheck.conditionGrade || 'mint';
     const marketComps = await marketOracleService.fetchMarketComps(
       lookupQuery,
       category || visionCheck.category,
       'ZAR',
-      effectiveCondition
+      oracleCondition
     );
 
     // Step 3: Market Valuation Check (>50% above market high requires explicit confirmation)
@@ -566,18 +584,31 @@ async function createAsset(req, res) {
       });
     }
 
-    // Check if user has a connected MetaMask wallet address
-    let recipientAddress = null;
-    try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('wallet_address')
-        .eq('id', userId)
-        .single();
-      recipientAddress = profile?.wallet_address || null;
-    } catch {
-      // Ignore if profile lookup fails
+    // Resolve and strictly validate lister wallet address
+    let recipientAddress = req.body.recipientAddress || null;
+    if (!recipientAddress && userId) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('wallet_address')
+          .eq('id', userId)
+          .maybeSingle();
+        recipientAddress = profile?.wallet_address || null;
+      } catch {
+        // Ignore if profile lookup fails
+      }
     }
+
+    const hasValidListerWallet = Boolean(
+      recipientAddress &&
+      typeof recipientAddress === 'string' &&
+      ethers.isAddress(recipientAddress.trim()) &&
+      recipientAddress.trim() !== ethers.ZeroAddress
+    );
+    const safeListerWallet = hasValidListerWallet ? ethers.getAddress(recipientAddress.trim()) : null;
+
+    // 1. Generate stable UUID product identity upfront (never use product name as ID)
+    const assetId = crypto.randomUUID();
 
     // Generate unique Certificate identifier
     const catCode = (category || 'COL').replace(/\s+/g, '').substring(0, 3).toUpperCase();
@@ -613,25 +644,22 @@ async function createAsset(req, res) {
       finalDescription = `${finalDescription}\n<!--smartTake:${JSON.stringify({ smartTakeTitle, smartTakeBody })}-->`;
     }
 
-    // Mint ERC-721 Certificate of Authenticity on Ethereum Sepolia (if relayer configured)
-    let mintRes = null;
-    try {
-      console.log(`⛓️ [Blockchain] Minting Certificate for ${name} on Ethereum Sepolia...`);
-      mintRes = await web3Service.mintAssetNFT({
-        recipientAddress,
-        assetId: name,
-        name,
-        category: category || 'Luxury Collectible',
-        priceNum,
-        certNumber,
-        year: parseInt(year, 10) || new Date().getFullYear(),
-        condition: condition || 'Mint / Verified',
-        image: savedImageUrl,
-      });
-      console.log(`✅ [Blockchain] NFT Minted! Token ID: #${mintRes.tokenId}, Tx: ${mintRes.txHash}`);
-    } catch (mintErr) {
-      console.warn(`⚠️ [Blockchain] On-chain minting skipped or unavailable: ${mintErr.message}`);
-    }
+    const parsedYear = parseInt(year, 10) || visionCheck.year || new Date().getFullYear();
+    const effectiveCondition = visionCheck.conditionGrade || condition || 'Grade A+ (9.5/10) • Mint';
+    const effectiveCategory = category || visionCheck.category || 'Uncategorised';
+    const canonicalProductName = visionCheck.canonicalName || name;
+
+    // 2. Compute deterministic canonical metadata representation and SHA-256 cryptographic digest
+    const { metadataDigest } = computeMetadataDigest({
+      id: assetId,
+      name: canonicalProductName,
+      category: effectiveCategory,
+      price_num: priceNum,
+      year: parsedYear,
+      condition: effectiveCondition,
+      image: savedImageUrl,
+      seller_id: userId,
+    });
 
     const allowInvestment = req.body.allowInvestment === true || req.body.allowInvestment === 'true';
     let totalShares = null;
@@ -654,17 +682,24 @@ async function createAsset(req, res) {
       }
     }
 
+    // Determine initial truthful registration status before minting attempt
+    const initialRegistrationStatus = safeListerWallet ? 'pending' : 'unregistered';
+    const initialRegistrationError = safeListerWallet
+      ? null
+      : 'No valid Ethereum Sepolia wallet linked to seller account. Connect wallet to register on-chain.';
+
     // Base asset row compatible with current database schema
     const baseRow = {
-      name: visionCheck.canonicalName || name,
-      category: category || visionCheck.category || 'Uncategorised',
+      id: assetId,
+      name: canonicalProductName,
+      category: effectiveCategory,
       price: `R${priceNum.toLocaleString('en-ZA')}`,
       price_num: priceNum,
-      year: parseInt(year, 10) || visionCheck.year || new Date().getFullYear(),
-      condition: visionCheck.conditionGrade || condition || 'Grade A+ (9.5/10) • Mint',
+      year: parsedYear,
+      condition: effectiveCondition,
       description: finalDescription,
       image: savedImageUrl,
-      badge: mintRes ? 'Verified On-Chain' : 'Certified',
+      badge: 'Certified',
       cert: certNumber,
       status: 'active',
       user_id: userId,
@@ -676,33 +711,28 @@ async function createAsset(req, res) {
       shares_sold: 0,
       ai_scan_score: 0.02,
       ai_scan_status: 'passed',
+      metadata_digest: metadataDigest,
+      registration_status: initialRegistrationStatus,
+      registration_error: initialRegistrationError,
     };
 
-    // Try inserting with on-chain columns if minted
-    const rowToInsert = { ...baseRow };
-    if (mintRes) {
-      rowToInsert.token_id = String(mintRes.tokenId);
-      rowToInsert.tx_hash = mintRes.txHash;
-      rowToInsert.contract_address = mintRes.contractAddress;
-      rowToInsert.etherscan_url = mintRes.etherscanUrl;
-    }
-
+    // 3. Create the product record FIRST so it has a stable database ID
     let { data: newAsset, error: insertErr } = await supabase
       .from('assets')
-      .insert(rowToInsert)
+      .insert(baseRow)
       .select()
       .single();
 
     // If new columns are not yet in Supabase schema cache, retry with progressively stripped rows
     if (insertErr && (insertErr.code === 'PGRST204' || insertErr.message?.includes('column'))) {
-      // First retry without on-chain columns
-      let retry = await supabase.from('assets').insert(baseRow).select().single();
+      const { metadata_digest, registration_status, registration_error, ...legacyCols } = baseRow;
+      let retry = await supabase.from('assets').insert(legacyCols).select().single();
       newAsset = retry.data;
       insertErr = retry.error;
 
       // Second retry: if allow_investment or new columns not in schema cache, strip them
       if (insertErr && (insertErr.code === 'PGRST204' || insertErr.message?.includes('column'))) {
-        const { allow_investment, seller_id, current_owner_id, ...legacyRow } = baseRow;
+        const { allow_investment, seller_id, current_owner_id, ...legacyRow } = legacyCols;
         retry = await supabase.from('assets').insert(legacyRow).select().single();
         newAsset = retry.data;
         insertErr = retry.error;
@@ -710,7 +740,7 @@ async function createAsset(req, res) {
 
       // Third retry: if ai_scan columns also not in schema, strip them as well
       if (insertErr && (insertErr.code === 'PGRST204' || insertErr.message?.includes('column'))) {
-        const { ai_scan_score, ai_scan_status, allow_investment, seller_id, current_owner_id, ...coreRow } = baseRow;
+        const { ai_scan_score, ai_scan_status, allow_investment, seller_id, current_owner_id, ...coreRow } = legacyCols;
         retry = await supabase.from('assets').insert(coreRow).select().single();
         newAsset = retry.data;
         insertErr = retry.error;
@@ -722,18 +752,82 @@ async function createAsset(req, res) {
       return sendError(res, 500, 'Failed to create asset listing.');
     }
 
-    // Insert provenance history events
+    // 4. Real Sepolia registration (attempted only AFTER database record is durably saved)
+    let mintRes = null;
+    let finalRegistrationStatus = initialRegistrationStatus;
+    let finalRegistrationError = initialRegistrationError;
+
+    if (safeListerWallet) {
+      // Confirm Sepolia deployment and contract bytecode
+      const depCheck = await web3Service.checkCertificateDeploymentOnSepolia();
+      if (!depCheck.isDeployed) {
+        finalRegistrationStatus = 'unregistered';
+        finalRegistrationError = `Sepolia contract not deployed: ${depCheck.reason}. Listing saved off-chain.`;
+        console.warn(`⚠️ [Blockchain] Sepolia registration skipped: ${finalRegistrationError}`);
+        try {
+          await supabase.from('assets').update({
+            registration_status: finalRegistrationStatus,
+            registration_error: finalRegistrationError,
+          }).eq('id', assetId);
+        } catch (_) {}
+      } else {
+        try {
+          console.log(`⛓️ [Blockchain] Minting Certificate for asset ${assetId} on Ethereum Sepolia to recipient ${safeListerWallet}...`);
+          mintRes = await web3Service.mintAssetNFT({
+            recipientAddress: safeListerWallet,
+            assetId,
+            name: canonicalProductName,
+            category: effectiveCategory,
+            priceNum,
+            certNumber,
+            year: parsedYear,
+            condition: effectiveCondition,
+            image: savedImageUrl,
+            metadataDigest,
+          });
+
+          if (mintRes && mintRes.txHash) {
+            finalRegistrationStatus = 'verified_on_chain';
+            finalRegistrationError = null;
+            console.log(`✅ [Blockchain] NFT Minted! Token ID: #${mintRes.tokenId}, Tx: ${mintRes.txHash}`);
+
+            // Update database record with verified on-chain identifiers
+            await supabase.from('assets').update({
+              token_id: String(mintRes.tokenId),
+              tx_hash: mintRes.txHash,
+              contract_address: mintRes.contractAddress,
+              etherscan_url: mintRes.etherscanUrl,
+              registration_status: 'verified_on_chain',
+              registration_error: null,
+              badge: 'Verified On-Chain',
+            }).eq('id', assetId);
+          }
+        } catch (mintErr) {
+          finalRegistrationStatus = 'failed';
+          finalRegistrationError = mintErr.message || 'Minting transaction failed or was reverted.';
+          console.warn(`⚠️ [Blockchain] On-chain minting failed: ${mintErr.message}`);
+          try {
+            await supabase.from('assets').update({
+              registration_status: 'failed',
+              registration_error: finalRegistrationError,
+            }).eq('id', assetId);
+          } catch (_) {}
+        }
+      }
+    }
+
+    // 5. Insert provenance history events with cryptographic digests (never random mock hashes or unverified tx claims)
     if (Array.isArray(history) && history.length > 0) {
       const historyRows = history.map((h) => {
-        const hHash = '0x' + Math.random().toString(16).slice(2, 10) + '...' + Math.random().toString(16).slice(2, 6);
+        const eventDigest = '0x' + crypto.createHash('sha256').update(`${assetId}:${h.year}:${h.event}:${h.party}`).digest('hex');
         return {
           asset_id: newAsset.id,
           year: parseInt(h.year, 10) || new Date().getFullYear(),
           event: h.event || 'Provenance milestone',
           party: h.party || 'Verified Custodian',
-          hash: hHash,
-          tx_hash: mintRes?.txHash || null,
-          verified: true,
+          hash: eventDigest,
+          tx_hash: null, // Provenance milestones are off-chain custody events unless a specific on-chain tx occurred
+          verified: false,
         };
       });
 
@@ -748,20 +842,20 @@ async function createAsset(req, res) {
       }
     }
 
-    // Also add the asset to the creator's personal vault (user_holdings) with cert metadata
+    // Also add the asset to the creator's personal vault (user_holdings) with truthful metadata
     const holdingMeta = {
       initialValue: priceNum,
       liveMarketValue: priceNum,
       badgeText: '+0.0% Market Gain',
       badgeType: 'positive',
       certId: mintRes?.tokenId ? `ERC-721 #${mintRes.tokenId}` : `Cert #${certNumber}`,
-      hashDisplay: mintRes?.txHash ? `${String(mintRes.txHash).slice(0, 5)}...${String(mintRes.txHash).slice(-2)}` : null,
-      txHash: mintRes?.txHash || null,
+      hashDisplay: isValidTxHash(mintRes?.txHash) ? `${mintRes.txHash.slice(0, 6)}...${mintRes.txHash.slice(-4)}` : null,
+      txHash: isValidTxHash(mintRes?.txHash) ? mintRes.txHash : null,
     };
     await supabase.from('user_holdings').insert({
       user_id: userId,
-      name,
-      category: category || 'Uncategorised',
+      name: canonicalProductName,
+      category: effectiveCategory,
       price: `R${priceNum.toLocaleString('en-ZA')}`,
       price_num: priceNum,
       image: newAsset.image,
@@ -777,9 +871,15 @@ async function createAsset(req, res) {
       success: true,
       message: mintRes
         ? 'Asset listed and NFT Certificate minted on Ethereum Sepolia!'
-        : 'Asset listed and certified successfully!',
+        : finalRegistrationStatus === 'unregistered'
+          ? 'Asset listed successfully in off-chain registry (Sepolia contract not deployed or wallet missing).'
+          : 'Asset listed successfully. On-chain registration status: ' + finalRegistrationStatus,
       asset: {
         ...newAsset,
+        id: assetId,
+        metadataDigest,
+        registrationStatus: finalRegistrationStatus,
+        registrationError: finalRegistrationError,
         allow_investment: allowInvestment,
         allowInvestment: allowInvestment,
         shares: totalShares,
@@ -790,9 +890,9 @@ async function createAsset(req, res) {
         smartTakeTitle: newAsset.smart_take_title || smartTakeTitle || null,
         smartTakeBody: newAsset.smart_take_body || smartTakeBody || null,
         tokenId: mintRes?.tokenId || null,
-        txHash: mintRes?.txHash || null,
-        etherscanUrl: mintRes?.etherscanUrl || null,
-        contractAddress: mintRes?.contractAddress || null,
+        txHash: isValidTxHash(mintRes?.txHash) ? mintRes.txHash : null,
+        etherscanUrl: isValidTxHash(mintRes?.txHash) ? mintRes.etherscanUrl : null,
+        contractAddress: isValidTxHash(mintRes?.txHash) ? mintRes.contractAddress : null,
         aiScanScore: 0.02,
         aiScanStatus: 'passed',
         marketComps,
@@ -1240,9 +1340,236 @@ async function delistAsset(req, res) {
   }
 }
 
+/**
+ * GET /api/assets/:id/metadata
+ * Authoritative ERC-721 / OpenSea public JSON metadata endpoint.
+ * Serves canonical product metadata for on-chain tokenURI pointers.
+ * Excludes all private user PII, KYC data, and secret keys.
+ */
+async function getAssetMetadata(req, res) {
+  try {
+    const { id } = req.params;
+    if (!id || !id.trim()) {
+      return sendError(res, 400, 'Asset ID is required.');
+    }
+
+    const { data: asset, error } = await supabase
+      .from('assets')
+      .select('*')
+      .eq('id', id.trim())
+      .maybeSingle();
+
+    if (error || !asset) {
+      return sendError(res, 404, 'Asset not found in registry.');
+    }
+
+    const baseUrl = (process.env.PUBLIC_APP_URL || process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL || 'http://localhost:5000').replace(/\/+$/, '');
+    const verificationUrl = `${baseUrl}/verify/${encodeURIComponent(asset.id)}`;
+    const isValidTx = isValidTxHash(asset.tx_hash);
+
+    const metadata = {
+      name: asset.name,
+      description: asset.description ? asset.description.replace(/<!--[\s\S]*?-->/g, '').trim() : '',
+      image: asset.image,
+      external_url: verificationUrl,
+      attributes: [
+        { trait_type: 'Asset ID', value: asset.id },
+        { trait_type: 'Category', value: asset.category },
+        { trait_type: 'Condition', value: asset.condition },
+        { trait_type: 'Year', value: asset.year },
+        { trait_type: 'Initial Valuation (ZAR)', value: asset.price_num },
+        { trait_type: 'Metadata Digest', value: asset.metadata_digest || 'Uncomputed' },
+        { trait_type: 'Registration Status', value: asset.registration_status || (isValidTx ? 'verified_on_chain' : 'unregistered') },
+      ],
+      smart_assets: {
+        asset_id: asset.id,
+        metadata_digest: asset.metadata_digest || null,
+        token_id: asset.token_id || asset.nft_token_id || null,
+        tx_hash: isValidTx ? asset.tx_hash : null,
+        registration_status: asset.registration_status || (isValidTx ? 'verified_on_chain' : 'unregistered'),
+        verification_url: verificationUrl,
+      },
+    };
+
+    return res.json(metadata);
+  } catch (err) {
+    console.error('getAssetMetadata error:', err);
+    return sendError(res, 500, 'Internal server error fetching asset metadata.');
+  }
+}
+
+/**
+ * POST /api/assets/:id/retry-mint (requireAuth)
+ * Safely and idempotently retry on-chain ERC-721 minting on Ethereum Sepolia.
+ * Enforces:
+ * 1) Caller must be the seller of the asset or admin.
+ * 2) Product must not already be verified on-chain (prevents duplicate minting).
+ * 3) Lister must have an explicitly linked valid Sepolia wallet address.
+ * 4) Contract must be deployed on Sepolia (chain 11155111).
+ */
+async function retryMint(req, res) {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    if (!id || !id.trim()) {
+      return sendError(res, 400, 'Asset ID is required.');
+    }
+
+    const { data: asset, error: fetchErr } = await supabase
+      .from('assets')
+      .select('*')
+      .eq('id', id.trim())
+      .maybeSingle();
+
+    if (fetchErr || !asset) {
+      return sendError(res, 404, 'Asset not found.');
+    }
+
+    // Only original seller or listing creator can retry minting
+    const sellerId = asset.seller_id || asset.user_id;
+    if (String(sellerId) !== String(userId) && req.user?.role !== 'admin') {
+      return sendError(
+        res,
+        403,
+        'Unauthorized: Only the listing owner may trigger on-chain minting retry.',
+        'FORBIDDEN_NOT_SELLER'
+      );
+    }
+
+    // Idempotency check: if already verified on-chain, avoid duplicate minting
+    if (asset.registration_status === 'verified_on_chain' || (asset.token_id && isValidTxHash(asset.tx_hash))) {
+      return res.status(200).json({
+        success: true,
+        alreadyMinted: true,
+        message: 'Asset is already verified on-chain. Duplicate minting prevented.',
+        asset: {
+          id: asset.id,
+          registrationStatus: 'verified_on_chain',
+          tokenId: asset.token_id,
+          txHash: asset.tx_hash,
+          etherscanUrl: asset.etherscan_url || `https://sepolia.etherscan.io/tx/${asset.tx_hash}`,
+        },
+      });
+    }
+
+    // Resolve lister wallet
+    let recipientAddress = req.body?.recipientAddress || null;
+    if (!recipientAddress && userId) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('wallet_address')
+          .eq('id', userId)
+          .maybeSingle();
+        recipientAddress = profile?.wallet_address || null;
+      } catch (_) {}
+    }
+
+    if (!recipientAddress || !ethers.isAddress(recipientAddress) || recipientAddress === ethers.ZeroAddress) {
+      return sendError(
+        res,
+        400,
+        'A valid Ethereum Sepolia wallet address must be linked to your account before minting.',
+        'INVALID_RECIPIENT_WALLET'
+      );
+    }
+    const safeRecipient = ethers.getAddress(recipientAddress);
+
+    // Verify Sepolia deployment
+    const depCheck = await web3Service.checkCertificateDeploymentOnSepolia();
+    if (!depCheck.isDeployed) {
+      return sendError(
+        res,
+        503,
+        `Cannot mint on Sepolia: ${depCheck.reason}. The contract must be deployed to Sepolia before minting.`,
+        'SEPOLIA_CONTRACT_NOT_DEPLOYED'
+      );
+    }
+
+    // Ensure metadata digest exists
+    let digest = asset.metadata_digest;
+    if (!digest) {
+      const computed = computeMetadataDigest({
+        id: asset.id,
+        name: asset.name,
+        category: asset.category,
+        price_num: asset.price_num,
+        year: asset.year,
+        condition: asset.condition,
+        image: asset.image,
+        seller_id: asset.seller_id || asset.user_id,
+      });
+      digest = computed.metadataDigest;
+    }
+
+    // Mark as pending
+    await supabase.from('assets').update({
+      registration_status: 'pending',
+      registration_error: null,
+      metadata_digest: digest,
+    }).eq('id', asset.id);
+
+    // Execute minting
+    let mintRes;
+    try {
+      mintRes = await web3Service.mintAssetNFT({
+        recipientAddress: safeRecipient,
+        assetId: asset.id,
+        name: asset.name,
+        category: asset.category,
+        priceNum: asset.price_num,
+        certNumber: asset.cert,
+        year: asset.year,
+        condition: asset.condition,
+        image: asset.image,
+        metadataDigest: digest,
+      });
+    } catch (mintErr) {
+      await supabase.from('assets').update({
+        registration_status: 'failed',
+        registration_error: mintErr.message,
+      }).eq('id', asset.id);
+      return sendError(res, 502, `Sepolia minting failed: ${mintErr.message}`, 'MINTING_FAILED');
+    }
+
+    // Mined successfully! Update asset record
+    const updatePayload = {
+      registration_status: 'verified_on_chain',
+      token_id: String(mintRes.tokenId),
+      tx_hash: mintRes.txHash,
+      contract_address: mintRes.contractAddress,
+      etherscan_url: mintRes.etherscanUrl,
+      registration_error: null,
+      badge: 'Verified On-Chain',
+    };
+
+    await supabase.from('assets').update(updatePayload).eq('id', asset.id);
+    invalidateAssetsCache();
+
+    return res.json({
+      success: true,
+      message: 'Asset successfully minted and verified on Ethereum Sepolia!',
+      asset: {
+        ...asset,
+        ...updatePayload,
+        metadataDigest: digest,
+        registrationStatus: 'verified_on_chain',
+        tokenId: String(mintRes.tokenId),
+        txHash: mintRes.txHash,
+      },
+    });
+  } catch (err) {
+    console.error('retryMint error:', err);
+    return sendError(res, 500, 'Internal server error retrying mint.');
+  }
+}
+
 module.exports = {
   getAssets,
   getAssetById,
+  getAssetMetadata,
+  retryMint,
   getAssetHealthReport,
   createAsset,
   verifyAssetUpload,
