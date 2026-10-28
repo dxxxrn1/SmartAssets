@@ -488,6 +488,14 @@ export async function getAssetDetails(assetId) {
 }
 
 /**
+ * Fetch authoritative digital certificate dossier and cryptographic verification status.
+ * @param {string} assetId
+ */
+export async function getCertificateDossierApi(assetId) {
+  return apiRequest(`/certificates/${assetId}`, { method: "GET" });
+}
+
+/**
  * Fetch authoritative AI Vision & Market Oracle Health Report for an asset.
  * @param {string} assetId
  */

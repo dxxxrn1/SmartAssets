@@ -176,12 +176,14 @@ async function checkCertificateDeploymentOnSepolia() {
   if (!artifact.contractAddress || !ethers.isAddress(artifact.contractAddress)) {
     return {
       isDeployed: false,
+      configuredChainId: SEPOLIA_CHAIN_ID,
       reason: 'Invalid or missing contractAddress in SmartAssetCertificate artifact.',
     };
   }
   if (!provider) {
     return {
       isDeployed: false,
+      configuredChainId: SEPOLIA_CHAIN_ID,
       reason: 'Ethereum Sepolia JsonRpcProvider is not initialized.',
     };
   }
@@ -190,6 +192,7 @@ async function checkCertificateDeploymentOnSepolia() {
     if (!code || code === '0x' || code === '0x0') {
       return {
         isDeployed: false,
+        configuredChainId: SEPOLIA_CHAIN_ID,
         contractAddress: artifact.contractAddress,
         chainId: SEPOLIA_CHAIN_ID,
         reason: `No smart contract bytecode deployed at address ${artifact.contractAddress} on Sepolia. Operator contract deployment required.`,
@@ -197,6 +200,7 @@ async function checkCertificateDeploymentOnSepolia() {
     }
     return {
       isDeployed: true,
+      configuredChainId: SEPOLIA_CHAIN_ID,
       contractAddress: artifact.contractAddress,
       chainId: SEPOLIA_CHAIN_ID,
       networkName: 'sepolia',
@@ -204,6 +208,7 @@ async function checkCertificateDeploymentOnSepolia() {
   } catch (err) {
     return {
       isDeployed: false,
+      configuredChainId: SEPOLIA_CHAIN_ID,
       reason: `Sepolia RPC error verifying contract code: ${err.message}`,
     };
   }

@@ -22,7 +22,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { resolveImageUrl, getAssetDetails } from "../services/api";
+import { resolveImageUrl, getAssetDetails, getCertificateDossierApi, getBaseUrl } from "../services/api";
 import {
   buildCertificateData,
   resolveVerificationUrl,
@@ -68,14 +68,47 @@ export default function CertificateScreen({ navigation, route }) {
 
       try {
         setErrorMessage(null);
-        const res = await getAssetDetails(targetAssetId);
-        if (res && res.success && res.asset) {
-          setAssetRecord(res.asset);
-        } else if (res && res.asset) {
-          setAssetRecord(res.asset);
-        } else {
-          throw new Error("Asset record could not be found in the registry.");
+        let loaded = null;
+
+        // 1. Try querying full certificate dossier first
+        try {
+          const certRes = await getCertificateDossierApi(targetAssetId);
+          if (certRes && certRes.success && certRes.dossier && certRes.dossier.found) {
+            const d = certRes.dossier;
+            loaded = {
+              ...(d.product || {}),
+              ...(d.certificate || {}),
+              certificateLifecycleStatus: d.lifecycleStatus,
+              certificateEvidence: d.evidence,
+              certificateIssuer: d.certificate?.issuer,
+              certificateSignature: d.certificate?.signature,
+              certificateKeyId: d.certificate?.keyId,
+              certificateVersion: d.certificate?.version,
+              certificateIssuedAt: d.certificate?.issuedAt,
+              certificateRevoked: d.certificate?.revocation?.revoked,
+              certificateRevokedAt: d.certificate?.revocation?.revokedAt,
+              certificateRevocationReason: d.certificate?.revocation?.reason,
+              contractAddress: d.blockchainAnchoring?.contractAddress,
+              tokenId: d.blockchainAnchoring?.tokenId,
+              txHash: d.blockchainAnchoring?.txHash,
+              metadataDigest: d.certificate?.metadataDigest,
+            };
+          }
+        } catch (_) {}
+
+        // 2. Fall back to standard getAssetDetails
+        if (!loaded) {
+          const res = await getAssetDetails(targetAssetId);
+          if (res && res.success && res.asset) {
+            loaded = res.asset;
+          } else if (res && res.asset) {
+            loaded = res.asset;
+          } else {
+            throw new Error("Asset record could not be found in the registry.");
+          }
         }
+
+        setAssetRecord(loaded);
       } catch (err) {
         console.warn("[CertificateScreen] Authoritative fetch error:", err.message);
         // Only show blocking error if we don't even have initial navigation snapshot
@@ -98,10 +131,22 @@ export default function CertificateScreen({ navigation, route }) {
     }
   }, [targetAssetId]);
 
+  // Derive verification base URL: explicit env variable first, then fallback to active API host
+  const activeVerificationBase = (() => {
+    if (typeof process !== "undefined" && process.env && process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL) {
+      return process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL;
+    }
+    try {
+      const apiBase = typeof getBaseUrl === "function" ? getBaseUrl() : "";
+      if (apiBase) return apiBase.replace(/\/api\/?$/, "");
+    } catch (_) {}
+    return "";
+  })();
+
   // Build sanitized, authoritative certificate data
   const certData = buildCertificateData(assetRecord || {});
   const { url: verificationUrl, isConfigured: isUrlConfigured, error: configError } =
-    resolveVerificationUrl(certData.id || targetAssetId || "");
+    resolveVerificationUrl(certData.id || targetAssetId || "", activeVerificationBase);
 
   // Generate real QR code image data URI whenever verification URL resolves
   useEffect(() => {
@@ -315,7 +360,13 @@ export default function CertificateScreen({ navigation, route }) {
             <View style={styles.certCard}>
               {/* Top Purple Brand Ribbon */}
               <LinearGradient
-                colors={["#6C47FF", "#976af0", "#00fbff"]}
+                colors={
+                  certData.isRevoked
+                    ? ["#E11D48", "#F43F5E"]
+                    : certData.isCertified
+                    ? ["#6C47FF", "#976af0", "#00fbff"]
+                    : ["#F59E0B", "#FCD34D"]
+                }
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.certRibbon}
@@ -325,17 +376,73 @@ export default function CertificateScreen({ navigation, route }) {
                 {/* Seal & Verified Header */}
                 <View style={styles.certHeader}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.certKicker}>
-                      SMARTASSETS VERIFIED CANONICAL
+                    <Text
+                      style={[
+                        styles.certKicker,
+                        certData.isRevoked && { color: "#E11D48" },
+                        !certData.isCertified && !certData.isRevoked && { color: "#B45309" },
+                      ]}
+                    >
+                      {certData.isRevoked
+                        ? "STATUS: FORMALLY REVOKED"
+                        : certData.isCertified
+                        ? "SMARTASSETS VERIFIED CANONICAL"
+                        : "SMARTASSETS DRAFT DOSSIER"}
                     </Text>
                     <Text style={styles.certTitle}>
-                      Certificate of Authenticity
+                      {certData.isRevoked
+                        ? "Certificate Revoked"
+                        : certData.isCertified
+                        ? "Certificate of Authenticity"
+                        : "Product Dossier (Uncertified)"}
                     </Text>
                   </View>
-                  <View style={styles.sealCircle}>
-                    <Ionicons name="shield-checkmark" size={22} color="#10B981" />
+                  <View
+                    style={[
+                      styles.sealCircle,
+                      certData.isRevoked && { backgroundColor: "#FFF1F2", borderColor: "#FECDD3" },
+                      !certData.isCertified && !certData.isRevoked && { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" },
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        certData.isRevoked
+                          ? "close-circle"
+                          : certData.isCertified
+                          ? "shield-checkmark"
+                          : "document-text"
+                      }
+                      size={22}
+                      color={
+                        certData.isRevoked
+                          ? "#E11D48"
+                          : certData.isCertified
+                          ? "#10B981"
+                          : "#B45309"
+                      }
+                    />
                   </View>
                 </View>
+
+                {/* Revoked Banner */}
+                {certData.isRevoked ? (
+                  <View style={styles.revokedBanner}>
+                    <Text style={styles.revokedBannerTitle}>⚠️ CERTIFICATE REVOKED BY ISSUING AUTHORITY</Text>
+                    <Text style={styles.revokedBannerText}>
+                      Reason: {certData.revocationReason || "Formally revoked by compliance."}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Draft / Uncertified Banner */}
+                {!certData.isCertified && !certData.isRevoked ? (
+                  <View style={styles.draftBanner}>
+                    <Text style={styles.draftBannerTitle}>ℹ️ DRAFT RECORD — NO CERTIFICATE ISSUED</Text>
+                    <Text style={styles.draftBannerText}>
+                      {certData.statementText}
+                    </Text>
+                  </View>
+                ) : null}
 
                 {/* Asset Spotlight Hero Row */}
                 <View style={styles.assetSpotlightRow}>
@@ -492,14 +599,20 @@ export default function CertificateScreen({ navigation, route }) {
                     style={{ marginRight: 6 }}
                   />
                   <Text style={styles.statementText}>
-                    Authoritative Digital Certificate of Authenticity. Registered in SmartAssets Provenance Ledger.
+                    {certData.statementText}
                   </Text>
                 </View>
               </View>
 
-              {/* Bottom Purple Brand Ribbon */}
+              {/* Bottom Brand Ribbon */}
               <LinearGradient
-                colors={["#00fbff", "#976af0", "#6C47FF"]}
+                colors={
+                  certData.isRevoked
+                    ? ["#F43F5E", "#E11D48"]
+                    : certData.isCertified
+                    ? ["#00fbff", "#976af0", "#6C47FF"]
+                    : ["#FCD34D", "#F59E0B"]
+                }
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.certRibbon}
@@ -1052,5 +1165,43 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontWeight: "700",
     fontSize: 13,
+  },
+  revokedBanner: {
+    backgroundColor: "#FFF1F2",
+    borderWidth: 1,
+    borderColor: "#FECDD3",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  revokedBannerTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#BE123C",
+    marginBottom: 4,
+  },
+  revokedBannerText: {
+    fontSize: 11,
+    color: "#9F1239",
+    lineHeight: 15,
+  },
+  draftBanner: {
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  draftBannerTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#92400E",
+    marginBottom: 4,
+  },
+  draftBannerText: {
+    fontSize: 11,
+    color: "#B45309",
+    lineHeight: 15,
   },
 });

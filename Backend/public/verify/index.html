@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SmartAssets — Digital Certificate of Authenticity</title>
-  <meta name="description" content="Official SmartAssets Public Product Verification Page. Verify canonical provenance, vault custody, and authenticity.">
+  <meta name="description" content="Official SmartAssets Public Product Verification Page. Independently verify product identity, cryptographic digital signatures, inspection evidence, and blockchain ledger anchoring.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -15,27 +15,22 @@
       --primary-dark: #4F27E2;
       --cyan: #00F5D4;
       --teal: #10B981;
-      --bg-top: #F8FAFC;
-      --surface: #FFFFFF;
-      --text-main: #0F172A;
-      --text-muted: #64748B;
+      --amber: #F59E0B;
+      --rose: #E11D48;
+      --slate-dark: #0F172A;
+      --slate-muted: #64748B;
       --border: rgba(226, 232, 240, 0.9);
-      --border-highlight: rgba(108, 71, 255, 0.15);
       --radius: 20px;
       --shadow: 0 10px 30px -5px rgba(30, 27, 75, 0.08), 0 4px 6px -2px rgba(30, 27, 75, 0.04);
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: radial-gradient(circle at top left, #E4E0FF 0%, #F5DFEF 25%, #FFF5EF 50%, #FFFFFF 100%);
       background-attachment: fixed;
-      color: var(--text-main);
+      color: var(--slate-dark);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -46,7 +41,7 @@
 
     .container {
       width: 100%;
-      max-width: 680px;
+      max-width: 720px;
     }
 
     header {
@@ -62,7 +57,7 @@
       align-items: center;
       gap: 10px;
       text-decoration: none;
-      color: var(--text-main);
+      color: var(--slate-dark);
     }
 
     .brand-icon {
@@ -113,9 +108,8 @@
       100% { opacity: 1; transform: scale(1); }
     }
 
-    /* Certificate Card */
     .cert-card {
-      background: var(--surface);
+      background: #FFFFFF;
       border-radius: var(--radius);
       border: 1px solid var(--border);
       box-shadow: var(--shadow);
@@ -127,6 +121,14 @@
     .cert-ribbon {
       height: 6px;
       background: linear-gradient(90deg, #6C47FF 0%, #976af0 50%, #00F5D4 100%);
+    }
+
+    .cert-ribbon.revoked {
+      background: linear-gradient(90deg, #E11D48 0%, #F43F5E 100%);
+    }
+
+    .cert-ribbon.draft {
+      background: linear-gradient(90deg, #64748B 0%, #94A3B8 100%);
     }
 
     .cert-content {
@@ -155,7 +157,7 @@
       font-size: 22px;
       font-weight: 900;
       letter-spacing: -0.5px;
-      color: var(--text-main);
+      color: var(--slate-dark);
     }
 
     .seal-badge {
@@ -170,6 +172,48 @@
       color: #10B981;
       font-size: 24px;
       flex-shrink: 0;
+    }
+
+    .seal-badge.revoked {
+      background: #FFF1F2;
+      border-color: #FECDD3;
+      color: #E11D48;
+    }
+
+    .seal-badge.draft {
+      background: #F1F5F9;
+      border-color: #CBD5E1;
+      color: #64748B;
+    }
+
+    /* Warning Banner for Revoked or Draft */
+    .banner-warning {
+      background: #FFF1F2;
+      border: 1px solid #FECDD3;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      color: #9F1239;
+    }
+
+    .banner-warning-title {
+      font-size: 13px;
+      font-weight: 800;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .banner-warning-desc {
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .banner-draft {
+      background: #FFFBEB;
+      border: 1px solid #FDE68A;
+      color: #92400E;
     }
 
     /* Hero Asset Row */
@@ -213,10 +257,15 @@
       gap: 4px;
       background: #ECFDF5;
       color: #15803D;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
       padding: 3px 10px;
       border-radius: 999px;
+    }
+
+    .asset-status-pill.unvaulted {
+      background: #F1F5F9;
+      color: #475569;
     }
 
     /* Specifications Grid */
@@ -243,7 +292,7 @@
     .spec-label {
       font-size: 10px;
       font-weight: 800;
-      color: var(--text-muted);
+      color: var(--slate-muted);
       letter-spacing: 0.8px;
       text-transform: uppercase;
       margin-bottom: 4px;
@@ -252,229 +301,189 @@
     .spec-value {
       font-size: 13px;
       font-weight: 700;
-      color: var(--text-main);
+      color: var(--slate-dark);
       word-break: break-word;
     }
 
-    /* Blockchain & Registry Proof Box */
-    .proof-box {
-      background: #FAF5FF;
-      border: 1.5px solid #E9D5FF;
+    /* Proof Section Boxes */
+    .section-card {
+      border: 1px solid #E2E8F0;
       border-radius: 14px;
-      padding: 14px 16px;
-      margin-bottom: 20px;
+      padding: 16px;
+      margin-bottom: 16px;
+      background: #FFFFFF;
     }
 
-    .proof-header {
+    .section-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 8px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #F1F5F9;
+      padding-bottom: 8px;
     }
 
-    .proof-label {
-      font-size: 11px;
+    .section-title {
+      font-size: 12px;
       font-weight: 800;
-      color: #6B21A8;
       letter-spacing: 0.8px;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .proof-status {
-      font-size: 11px;
+    .status-badge {
+      font-size: 10px;
       font-weight: 800;
-      padding: 2px 8px;
+      padding: 3px 8px;
       border-radius: 6px;
+      text-transform: uppercase;
     }
 
-    .status-anchored {
+    .badge-verified {
+      background: #DCFCE7;
+      color: #15803D;
+      border: 1px solid #86EFAC;
+    }
+
+    .badge-anchored {
       background: #ECFDF5;
       color: #047857;
-      border: 1px solid #A7F3D0;
+      border: 1px solid #6EE7B7;
     }
 
-    .status-offchain {
+    .badge-offchain {
       background: #F1F5F9;
       color: #475569;
       border: 1px solid #CBD5E1;
     }
 
-    .proof-hash {
+    .badge-pending {
+      background: #FEF3C7;
+      color: #B45309;
+      border: 1px solid #FCD34D;
+    }
+
+    .badge-revoked {
+      background: #FFE4E6;
+      color: #BE123C;
+      border: 1px solid #FDA4AF;
+    }
+
+    .mono-value {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      color: #581C87;
-      word-break: break-all;
-      background: rgba(255, 255, 255, 0.8);
+      font-size: 11px;
+      color: var(--slate-dark);
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
       padding: 8px 10px;
       border-radius: 8px;
-      border: 1px solid #E9D5FF;
-      margin-bottom: 10px;
+      word-break: break-all;
+      margin-bottom: 8px;
+    }
+
+    .field-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .field-row .label {
+      color: var(--slate-muted);
+      font-weight: 600;
+    }
+
+    .field-row .val {
+      font-weight: 700;
+      color: var(--slate-dark);
     }
 
     .etherscan-link {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      font-weight: 700;
+      gap: 4px;
       color: var(--primary);
       text-decoration: none;
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 6px;
     }
 
     .etherscan-link:hover {
       text-decoration: underline;
     }
 
-    /* Provenance History */
-    .history-card {
-      margin-top: 20px;
+    .disclaimer-text {
+      font-size: 11px;
+      color: #94A3B8;
+      line-height: 1.4;
+      margin-top: 8px;
+      padding-top: 8px;
       border-top: 1px solid #F1F5F9;
-      padding-top: 18px;
-    }
-
-    .history-title {
-      font-size: 14px;
-      font-weight: 800;
-      color: var(--text-main);
-      margin-bottom: 14px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .timeline {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .timeline-item {
-      display: flex;
-      gap: 12px;
-      font-size: 13px;
-    }
-
-    .timeline-year {
-      font-weight: 800;
-      color: var(--primary);
-      min-width: 44px;
-    }
-
-    .timeline-body {
-      flex: 1;
-    }
-
-    .timeline-event {
-      font-weight: 600;
-      color: var(--text-main);
-      margin-bottom: 2px;
-    }
-
-    .timeline-party {
-      font-size: 12px;
-      color: var(--text-muted);
     }
 
     /* Actions Bar */
     .actions-bar {
       display: flex;
       gap: 12px;
-      margin-bottom: 20px;
+      margin-top: 20px;
     }
 
     .btn {
       flex: 1;
+      height: 48px;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 14px;
-      border-radius: 12px;
-      font-size: 14px;
-      font-weight: 700;
       cursor: pointer;
       border: none;
-      text-decoration: none;
-      transition: all 0.15s ease;
+      transition: all 0.2s;
     }
 
     .btn-primary {
       background: var(--primary);
-      color: #fff;
+      color: #FFFFFF;
       box-shadow: 0 4px 14px rgba(108, 71, 255, 0.3);
-    }
-
-    .btn-primary:hover {
-      background: var(--primary-dark);
     }
 
     .btn-secondary {
       background: #FFFFFF;
-      color: var(--text-main);
-      border: 1px solid var(--border);
+      color: var(--slate-dark);
+      border: 1px solid #E2E8F0;
     }
 
-    .btn-secondary:hover {
-      background: #F8FAFC;
-    }
-
-    /* States */
-    .state-wrap {
-      text-align: center;
-      padding: 60px 20px;
-      background: var(--surface);
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow);
-    }
-
-    .spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid rgba(108, 71, 255, 0.15);
-      border-top-color: var(--primary);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin: 0 auto 16px;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    .state-title {
-      font-size: 18px;
-      font-weight: 800;
-      margin-bottom: 8px;
-    }
-
-    .state-desc {
-      font-size: 14px;
-      color: var(--text-muted);
-      max-width: 400px;
-      margin: 0 auto 20px;
-      line-height: 1.5;
+    .btn:hover {
+      opacity: 0.95;
+      transform: translateY(-1px);
     }
 
     footer {
       text-align: center;
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-top: auto;
-      padding-top: 20px;
+      font-size: 11px;
+      color: var(--slate-muted);
+      margin-top: 32px;
+      line-height: 1.6;
+    }
+
+    .state-wrap {
+      background: #FFFFFF;
+      border-radius: var(--radius);
+      padding: 48px 24px;
+      text-align: center;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
     }
 
     @media print {
-      body {
-        background: #fff;
-        padding: 0;
-      }
-      .actions-bar, header, footer {
-        display: none !important;
-      }
-      .cert-card {
-        box-shadow: none;
-        border: 1px solid #ccc;
-      }
+      body { background: #FFFFFF; padding: 0; }
+      .actions-bar, header .badge-registry { display: none !important; }
+      .cert-card { box-shadow: none; border: 1px solid #CCC; }
     }
   </style>
 </head>
@@ -483,24 +492,24 @@
     <header>
       <a href="/" class="brand">
         <div class="brand-icon">S</div>
-        <div class="brand-name">SmartAssets</div>
+        <span class="brand-name">SmartAssets</span>
       </a>
       <div class="badge-registry">
         <span class="dot"></span>
-        Authoritative Registry
+        <span>AUTHORITATIVE VERIFICATION</span>
       </div>
     </header>
 
     <main id="app">
-      <div class="state-wrap" id="loading-state">
-        <div class="spinner"></div>
-        <div class="state-title">Retrieving Canonical Record</div>
-        <div class="state-desc">Validating product certificate against the SmartAssets durable asset registry...</div>
+      <div class="state-wrap">
+        <div style="font-size:32px; margin-bottom:12px;">⏳</div>
+        <div style="font-weight:800; font-size:18px; margin-bottom:6px;">Verifying Digital Certificate</div>
+        <div style="font-size:13px; color:#64748B;">Querying authoritative registry and validating cryptographic signature...</div>
       </div>
     </main>
 
     <footer>
-      SmartAssets Registry &bull; Canonical Luxury Asset Verification &bull; Immutable Provenance Ledger
+      SmartAssets Verification Authority &bull; Cryptographic PKI &bull; Ethereum Sepolia Provenance Ledger
     </footer>
   </div>
 
@@ -521,32 +530,42 @@
       }
 
       if (!assetId || !assetId.trim()) {
-        showError('Missing Asset Identifier', 'No product ID was supplied in the verification link. Please scan the official certificate QR code or provide a valid asset URL.');
+        showError('Missing Product Identifier', 'No product ID was supplied in the verification link. Please scan the official certificate QR code or provide a valid asset URL.');
         return;
       }
 
       assetId = assetId.trim();
 
       try {
-        const res = await fetch('/api/assets/' + encodeURIComponent(assetId));
-        if (!res.ok) {
-          if (res.status === 404) {
-            showError('Certificate Not Found', 'This product could not be found in the SmartAssets registry. The asset may have been delisted or the link is invalid.');
-          } else {
-            showError('Registry Error', 'Unable to retrieve asset certificate from the server (HTTP ' + res.status + '). Please try again later.');
+        // Try fetching dedicated certificate dossier first
+        let res = await fetch('/api/certificates/' + encodeURIComponent(assetId));
+        let dossier = null;
+
+        if (res.ok) {
+          const data = await res.json();
+          dossier = data?.dossier || null;
+        }
+
+        // Fallback to /api/assets/:id if certificates endpoint didn't find it
+        if (!dossier) {
+          res = await fetch('/api/assets/' + encodeURIComponent(assetId));
+          if (!res.ok) {
+            showError('Certificate Record Not Found', 'This product could not be found in the SmartAssets registry. The asset may have been delisted or the link is invalid.');
+            return;
           }
-          return;
+          const assetData = await res.json();
+          const asset = assetData?.asset;
+          if (!asset) {
+            showError('Invalid Record', 'The asset record returned by the registry is invalid or incomplete.');
+            return;
+          }
+          // Convert asset to standardized dossier format
+          dossier = buildDossierFromAsset(asset);
         }
 
-        const data = await res.json();
-        if (!data || !data.success || !data.asset) {
-          showError('Invalid Record', 'The asset record returned by the registry is invalid or incomplete.');
-          return;
-        }
-
-        renderCertificate(data.asset, data.history || []);
+        renderCertificateDossier(dossier);
       } catch (err) {
-        console.error('Fetch error:', err);
+        console.error('Verification error:', err);
         showError('Network Error', 'Could not connect to the verification server. Please check your internet connection.');
       }
 
@@ -554,178 +573,346 @@
         appEl.innerHTML = `
           <div class="state-wrap">
             <div style="font-size:36px; margin-bottom:12px;">⚠️</div>
-            <div class="state-title">${escapeHtml(title)}</div>
-            <div class="state-desc">${escapeHtml(message)}</div>
-            <button class="btn btn-secondary" onclick="window.location.reload()" style="max-width:180px; margin:0 auto;">Retry</button>
+            <div style="font-size:18px; font-weight:800; margin-bottom:6px;">${escapeHtml(title)}</div>
+            <div style="font-size:13px; color:#64748B; margin-bottom:18px;">${escapeHtml(message)}</div>
+            <button class="btn btn-secondary" onclick="window.location.reload()" style="max-width:180px; margin:0 auto;">Retry Connection</button>
           </div>
         `;
       }
 
-      function renderCertificate(asset, history) {
-        const certId = asset.cert || ('SA-' + String(asset.id || '').slice(0, 8).toUpperCase());
-        const tokenId = asset.tokenId ? '#' + asset.tokenId : 'Not minted';
-        const category = (asset.category || 'Not provided').toUpperCase();
-        const condition = asset.condition || 'Not provided';
-        const year = asset.year ? String(asset.year) : 'Not provided';
-        const appraiser = asset.appraiser || 'Not provided';
-        const custodian = asset.custodian || (asset.badge === 'Vault Secured' ? 'SmartAssets Custody Facility' : 'Not provided');
-        
-        // Strict on-chain validation
-        const isValidTx = typeof asset.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(asset.txHash);
-        const isOnChain = Boolean(isValidTx);
-        const blockchain = isOnChain ? 'Ethereum Sepolia' : 'Off-Chain Registry';
+      function buildDossierFromAsset(asset) {
+        const hasTx = Boolean(asset.txHash && /^0x[0-9a-fA-F]{64}$/.test(asset.txHash));
+        const isRevoked = Boolean(asset.certificateRevoked);
+        let lifecycleStatus = asset.certificateLifecycleStatus || (isRevoked ? 'revoked' : (hasTx ? 'anchored' : (asset.certificateSignature ? 'issued' : 'draft')));
 
-        const metadataDigest = asset.metadataDigest || asset.metadata_digest || null;
-        const regStatus = asset.registrationStatus || asset.registration_status || (isOnChain ? 'verified_on_chain' : 'unregistered');
+        return {
+          found: true,
+          assetId: asset.id,
+          lifecycleStatus,
+          product: {
+            id: asset.id,
+            name: asset.name,
+            category: asset.category,
+            condition: asset.condition,
+            year: asset.year,
+            image: asset.image,
+            initialValuationZar: asset.price_num || 0,
+          },
+          certificate: asset.certificateSignature ? {
+            certificateId: asset.certificateId || asset.cert,
+            version: asset.certificateVersion || '1.0.0',
+            issuedAt: asset.certificateIssuedAt,
+            metadataDigest: asset.metadataDigest,
+            signature: asset.certificateSignature,
+            keyId: asset.certificateKeyId,
+            algorithm: 'RSASSA-PKCS1-v1_5 / SHA-256',
+            issuer: asset.certificateIssuer || { name: 'SmartAssets Verification Authority', id: 'smartassets-authority-org' },
+            revocation: {
+              revoked: isRevoked,
+              revokedAt: asset.certificateRevokedAt,
+              reason: asset.certificateRevocationReason,
+            },
+          } : null,
+          evidence: asset.certificateEvidence ? {
+            appraiserName: asset.certificateEvidence.appraiser_name || asset.appraiser || 'Not provided',
+            inspectionRef: asset.certificateEvidence.inspection_ref || 'Not provided',
+            inspectionDate: asset.certificateEvidence.inspection_date,
+            inspectionStatus: asset.certificateEvidence.inspection_status || 'passed',
+            physicalCustody: Boolean(asset.certificateEvidence.physical_custody),
+            custodyFacility: asset.certificateEvidence.custody_facility || (asset.badge === 'Vault Secured' ? 'SmartAssets Custody Facility' : 'Not Vaulted'),
+          } : null,
+          blockchainAnchoring: hasTx ? {
+            network: 'Ethereum Sepolia Testnet (Test Credential)',
+            chainId: 11155111,
+            contractAddress: asset.contractAddress || null,
+            tokenId: asset.tokenId || null,
+            txHash: asset.txHash,
+            blockNumber: null,
+            etherscanUrl: `https://sepolia.etherscan.io/tx/${asset.txHash}`,
+            isTestnet: true,
+          } : null,
+          verification: {
+            isValid: !isRevoked && Boolean(asset.certificateSignature),
+            status: isRevoked ? 'revoked' : (asset.certificateSignature ? 'valid' : 'draft'),
+            signatureVerified: Boolean(asset.certificateSignature),
+            digestMatches: Boolean(asset.metadataDigest),
+            reason: isRevoked ? asset.certificateRevocationReason : null,
+          },
+        };
+      }
 
-        let proofLabel = 'OFF-CHAIN REGISTRY';
-        let proofClass = 'status-offchain';
-        let proofValue = 'No on-chain transaction recorded for this asset';
+      function renderCertificateDossier(dossier) {
+        const { product, certificate, evidence, blockchainAnchoring, verification, lifecycleStatus } = dossier;
 
-        if (isOnChain) {
-          proofLabel = 'SEPOLIA VERIFIED';
-          proofClass = 'status-anchored';
-          proofValue = asset.txHash;
-        } else if (regStatus === 'pending') {
-          proofLabel = 'PENDING SEPOLIA MINT';
-          proofClass = 'status-pending';
-          proofValue = 'On-chain registration is queued or pending block confirmation';
-        } else if (regStatus === 'failed') {
-          proofLabel = 'MINTING FAILED (OFF-CHAIN PRESERVED)';
-          proofClass = 'status-failed';
-          proofValue = asset.registrationError || 'On-chain mint transaction reverted; asset preserved in durable off-chain ledger';
+        const isRevoked = lifecycleStatus === 'revoked' || verification?.status === 'revoked';
+        const isDraft = lifecycleStatus === 'draft';
+        const isAwaitingInspection = lifecycleStatus === 'awaiting_inspection';
+        const isAnchored = lifecycleStatus === 'anchored';
+        const isIssued = lifecycleStatus === 'issued';
+
+        let headerKicker = 'SMARTASSETS VERIFIED CANONICAL';
+        let headerTitle = 'Certificate of Authenticity';
+        let sealIcon = '✓';
+        let ribbonClass = '';
+        let sealClass = '';
+
+        if (isRevoked) {
+          headerKicker = 'STATUS: FORMALLY REVOKED';
+          headerTitle = 'Certificate of Authenticity (Revoked)';
+          sealIcon = '✕';
+          ribbonClass = 'revoked';
+          sealClass = 'revoked';
+        } else if (isDraft) {
+          headerKicker = 'STATUS: DRAFT LISTING';
+          headerTitle = 'Product Dossier (Uncertified)';
+          sealIcon = '✎';
+          ribbonClass = 'draft';
+          sealClass = 'draft';
+        } else if (isAwaitingInspection) {
+          headerKicker = 'STATUS: AWAITING INSPECTION';
+          headerTitle = 'Appraisal in Progress';
+          sealIcon = '⏳';
+          ribbonClass = 'draft';
+          sealClass = 'draft';
         }
 
-        const isVaulted = Boolean(asset.badge === 'Vault Secured' || asset.status === 'in_vault');
-        const vaultText = isVaulted ? 'Physically Vaulted & Inspected' : 'Digital Authenticity Record';
-
-        const imgUrl = asset.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80';
-
-        let historyHtml = '';
-        if (Array.isArray(history) && history.length > 0) {
-          historyHtml = `
-            <div class="history-card">
-              <div class="history-title">
-                <span>📜</span> Provenance & Chain of Custody
-              </div>
-              <div class="timeline">
-                ${history.map(h => `
-                  <div class="timeline-item">
-                    <div class="timeline-year">${escapeHtml(String(h.year || ''))}</div>
-                    <div class="timeline-body">
-                      <div class="timeline-event">${escapeHtml(h.event || '')}</div>
-                      <div class="timeline-party">${escapeHtml(h.party || '')}</div>
-                    </div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          `;
-        }
-
-        const canonicalUrl = window.location.href;
+        const isVaulted = Boolean(evidence?.physicalCustody);
+        const vaultText = isVaulted ? 'Physically Vaulted & Inspected' : 'Digital Claim (Item Not In Custody)';
+        const imgUrl = product.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80';
 
         appEl.innerHTML = `
           <div class="cert-card">
-            <div class="cert-ribbon"></div>
+            <div class="cert-ribbon ${ribbonClass}"></div>
             <div class="cert-content">
+              
+              <!-- Header -->
               <div class="cert-header">
                 <div>
-                  <div class="cert-kicker">SMARTASSETS VERIFIED CANONICAL</div>
-                  <div class="cert-title">Certificate of Authenticity</div>
+                  <div class="cert-kicker">${escapeHtml(headerKicker)}</div>
+                  <div class="cert-title">${escapeHtml(headerTitle)}</div>
                 </div>
-                <div class="seal-badge" title="Authenticity Sealed">✓</div>
+                <div class="seal-badge ${sealClass}">${sealIcon}</div>
               </div>
 
+              <!-- Revoked Banner -->
+              ${isRevoked ? `
+                <div class="banner-warning">
+                  <div class="banner-warning-title">⚠️ CERTIFICATE REVOKED BY ISSUING AUTHORITY</div>
+                  <div class="banner-warning-desc">
+                    <strong>Revocation Reason:</strong> ${escapeHtml(certificate?.revocation?.reason || 'Administrative revocation')}<br>
+                    <strong>Revocation Date:</strong> ${escapeHtml(certificate?.revocation?.revokedAt ? new Date(certificate.revocation.revokedAt).toLocaleString() : 'Recorded')}<br>
+                    This certificate is null and void and must not be accepted as valid proof of authenticity.
+                  </div>
+                </div>
+              ` : ''}
+
+              <!-- Draft / Uncertified Banner -->
+              ${isDraft ? `
+                <div class="banner-warning banner-draft">
+                  <div class="banner-warning-title">ℹ️ DRAFT RECORD — NO CERTIFICATE ISSUED</div>
+                  <div class="banner-warning-desc">
+                    This item has been listed by a marketplace seller, but has not yet undergone formal inspection or been issued a signed digital certificate. No authenticity claim is made.
+                  </div>
+                </div>
+              ` : ''}
+
+              <!-- Awaiting Inspection Banner -->
+              ${isAwaitingInspection ? `
+                <div class="banner-warning banner-draft">
+                  <div class="banner-warning-title">⏳ PHYSICAL INSPECTION PENDING</div>
+                  <div class="banner-warning-desc">
+                    This item is currently undergoing appraisal by an authorized gemologist or horologist. Digital certificate issuance is pending verified inspection results.
+                  </div>
+                </div>
+              ` : ''}
+
+              <!-- Product Hero Card -->
               <div class="asset-hero">
-                <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(asset.name || 'Asset')}" class="asset-img" onerror="this.src='https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80'">
+                <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(product.name || 'Product')}" class="asset-img" onerror="this.src='https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80'">
                 <div class="asset-info">
-                  <div class="asset-name">${escapeHtml(asset.name || 'Identified Luxury Item')}</div>
-                  <div class="asset-status-pill">
-                    <span>🛡️</span>
+                  <div class="asset-name">${escapeHtml(product.name || 'Identified Luxury Item')}</div>
+                  <div class="asset-status-pill ${isVaulted ? '' : 'unvaulted'}">
+                    <span>${isVaulted ? '🛡️' : '⚠️'}</span>
                     <span>${escapeHtml(vaultText)}</span>
                   </div>
                 </div>
               </div>
 
+              <!-- Product Specifications Grid -->
               <div class="spec-grid">
                 <div class="spec-box">
-                  <div class="spec-label">CERTIFICATE ID</div>
-                  <div class="spec-value">${escapeHtml(certId)}</div>
-                </div>
-                <div class="spec-box">
-                  <div class="spec-label">DATABASE ASSET ID</div>
-                  <div class="spec-value" style="font-family:monospace; font-size:11px;">${escapeHtml(asset.id || 'N/A')}</div>
-                </div>
-                <div class="spec-box">
-                  <div class="spec-label">REGISTRATION STATUS</div>
-                  <div class="spec-value" style="font-weight:800; color:${isOnChain ? '#10B981' : '#6C47FF'};">${escapeHtml(regStatus)}</div>
-                </div>
-                <div class="spec-box">
-                  <div class="spec-label">TOKEN ID</div>
-                  <div class="spec-value">${escapeHtml(tokenId)}</div>
-                </div>
-                <div class="spec-box">
-                  <div class="spec-label">BLOCKCHAIN</div>
-                  <div class="spec-value">${escapeHtml(blockchain)}</div>
+                  <div class="spec-label">STABLE PRODUCT ID</div>
+                  <div class="spec-value" style="font-family:monospace; font-size:11px;">${escapeHtml(product.id || 'N/A')}</div>
                 </div>
                 <div class="spec-box">
                   <div class="spec-label">CATEGORY</div>
-                  <div class="spec-value">${escapeHtml(category)}</div>
+                  <div class="spec-value">${escapeHtml((product.category || 'Not provided').toUpperCase())}</div>
                 </div>
                 <div class="spec-box">
                   <div class="spec-label">CONDITION</div>
-                  <div class="spec-value">${escapeHtml(condition)}</div>
+                  <div class="spec-value">${escapeHtml(product.condition || 'Not provided')}</div>
                 </div>
                 <div class="spec-box">
-                  <div class="spec-label">YEAR</div>
-                  <div class="spec-value">${escapeHtml(year)}</div>
+                  <div class="spec-label">MANUFACTURE YEAR</div>
+                  <div class="spec-value">${escapeHtml(product.year ? String(product.year) : 'Not provided')}</div>
                 </div>
               </div>
 
-              <!-- Cryptographic Metadata Digest Section -->
-              <div class="proof-box" style="background:#F0FDF4; border-color:#BBF7D0; margin-bottom:16px;">
-                <div class="proof-header">
-                  <div class="proof-label" style="color:#166534;">CANONICAL METADATA DIGEST (SHA-256)</div>
-                  <div class="proof-status" style="background:#DCFCE7; color:#15803D;">CRYPTOGRAPHIC SEAL</div>
+              <!-- 1. Issuing Organization & Authority Section -->
+              <div class="section-card">
+                <div class="section-header">
+                  <div class="section-title">
+                    <span>🏛️</span> Certificate Issuer
+                  </div>
+                  <div class="status-badge ${certificate ? 'badge-verified' : 'badge-offchain'}">
+                    ${certificate ? 'OFFICIAL ISSUER' : 'UNISSUED'}
+                  </div>
                 </div>
-                <div class="proof-hash" style="color:#14532D; border-color:#86EFAC;">${escapeHtml(metadataDigest || 'Uncomputed')}</div>
-                <div style="font-size:11px; color:#15803D; margin-top:6px;">
-                  Deterministic cryptographic digest computed from canonical product attributes. Guarantees metadata immutability without publishing user PII.
+                <div class="field-row">
+                  <span class="label">Issuing Authority:</span>
+                  <span class="val">${escapeHtml(certificate?.issuer?.name || 'SmartAssets Verification Authority')}</span>
+                </div>
+                <div class="field-row">
+                  <span class="label">Certificate ID:</span>
+                  <span class="val">${escapeHtml(certificate?.certificateId || 'Unassigned')}</span>
+                </div>
+                <div class="field-row">
+                  <span class="label">Version &amp; Standard:</span>
+                  <span class="val">SmartAssets Cert v${escapeHtml(certificate?.version || '1.0.0')} (RS256 PKI)</span>
+                </div>
+                <div class="field-row">
+                  <span class="label">Issuance Timestamp:</span>
+                  <span class="val">${certificate?.issuedAt ? new Date(certificate.issuedAt).toUTCString() : 'Pending Issuance'}</span>
                 </div>
               </div>
 
-              <!-- On-Chain Blockchain Proof Section -->
-              <div class="proof-box">
-                <div class="proof-header">
-                  <div class="proof-label">ETHEREUM SEPOLIA REGISTRATION</div>
-                  <div class="proof-status ${proofClass}">${escapeHtml(proofLabel)}</div>
+              <!-- 2. Inspection & Physical Evidence Section -->
+              <div class="section-card">
+                <div class="section-header">
+                  <div class="section-title">
+                    <span>🔬</span> Inspection Evidence &amp; Custody
+                  </div>
+                  <div class="status-badge ${isVaulted ? 'badge-verified' : 'badge-offchain'}">
+                    ${isVaulted ? 'VAULT SECURED' : 'CUSTODY PENDING'}
+                  </div>
                 </div>
-                <div class="proof-hash">${escapeHtml(proofValue)}</div>
-                ${isOnChain ? `
-                  <a href="https://sepolia.etherscan.io/tx/${encodeURIComponent(asset.txHash)}" target="_blank" rel="noopener noreferrer" class="etherscan-link">
+                <div class="field-row">
+                  <span class="label">Authorized Appraiser:</span>
+                  <span class="val">${escapeHtml(evidence?.appraiserName || 'Not provided')}</span>
+                </div>
+                <div class="field-row">
+                  <span class="label">Inspection Reference:</span>
+                  <span class="val">${escapeHtml(evidence?.inspectionRef || 'Not recorded')}</span>
+                </div>
+                <div class="field-row">
+                  <span class="label">Physical Custody:</span>
+                  <span class="val">${isVaulted ? 'Deposited in SmartAssets Custody Vault' : 'Physical possession remains with lister'}</span>
+                </div>
+                <div class="field-row">
+                  <span class="label">Facility Location:</span>
+                  <span class="val">${escapeHtml(evidence?.custodyFacility || 'Not Vaulted')}</span>
+                </div>
+                <div class="disclaimer-text">
+                  ⚠️ <strong>Physical Custody Guarantee:</strong> Authenticity appraisal reflects physical evaluation performed on the recorded inspection date. A digital certificate or token proves registry provenance, but physical condition post-inspection requires insured vault custody.
+                </div>
+              </div>
+
+              <!-- 3. Cryptographic Signature & PKI Seal Section -->
+              <div class="section-card" style="background:#F0FDF4; border-color:#BBF7D0;">
+                <div class="section-header" style="border-bottom-color:#DCFCE7;">
+                  <div class="section-title" style="color:#166534;">
+                    <span>🔐</span> Cryptographic Signature &amp; PKI Seal
+                  </div>
+                  <div class="status-badge ${verification?.isValid ? 'badge-verified' : (isRevoked ? 'badge-revoked' : 'badge-offchain')}">
+                    ${verification?.isValid ? 'SIGNATURE VALID (RS256)' : (isRevoked ? 'REVOKED' : 'UNSIGNED')}
+                  </div>
+                </div>
+                
+                <div class="field-row">
+                  <span class="label" style="color:#166534;">Signer Key ID:</span>
+                  <span class="val" style="font-family:monospace; color:#14532D;">${escapeHtml(certificate?.keyId || 'Not signed')}</span>
+                </div>
+
+                <div style="font-size:10px; font-weight:800; color:#166534; text-transform:uppercase; margin-top:8px; margin-bottom:4px;">
+                  Canonical Metadata Digest (SHA-256)
+                </div>
+                <div class="mono-value" style="background:#FFFFFF; color:#14532D; border-color:#86EFAC;">
+                  ${escapeHtml(certificate?.metadataDigest || 'Uncomputed')}
+                </div>
+
+                ${certificate?.signature ? `
+                  <div style="font-size:10px; font-weight:800; color:#166534; text-transform:uppercase; margin-top:8px; margin-bottom:4px;">
+                    Digital Signature (RSASSA-PKCS1-v1_5 / SHA-256)
+                  </div>
+                  <div class="mono-value" style="background:#FFFFFF; color:#14532D; border-color:#86EFAC; font-size:10px;">
+                    ${escapeHtml(certificate.signature)}
+                  </div>
+                ` : ''}
+
+                <div class="disclaimer-text" style="color:#15803D; border-top-color:#DCFCE7;">
+                  ✓ Signed with RSA-2048 private key held in server HSM/keystore. Verifiable independently by third parties using the public key published at <code>/api/certificates/keys</code>.
+                </div>
+              </div>
+
+              <!-- 4. Blockchain Ledger Anchoring Section -->
+              <div class="section-card">
+                <div class="section-header">
+                  <div class="section-title">
+                    <span>⛓️</span> Blockchain Ledger Anchoring
+                  </div>
+                  <div class="status-badge ${blockchainAnchoring ? 'badge-anchored' : 'badge-offchain'}">
+                    ${blockchainAnchoring ? 'SEPOLIA ANCHORED (TEST CREDENTIAL)' : 'OFF-CHAIN REGISTRY'}
+                  </div>
+                </div>
+
+                <div class="field-row">
+                  <span class="label">Network:</span>
+                  <span class="val">${escapeHtml(blockchainAnchoring?.network || 'Off-Chain Custodial Registry')}</span>
+                </div>
+
+                <div class="field-row">
+                  <span class="label">Smart Contract:</span>
+                  <span class="val" style="font-family:monospace; font-size:11px;">
+                    ${escapeHtml(blockchainAnchoring?.contractAddress || 'None (Off-Chain)')}
+                  </span>
+                </div>
+
+                <div class="field-row">
+                  <span class="label">Token ID:</span>
+                  <span class="val">${blockchainAnchoring?.tokenId ? '#' + escapeHtml(blockchainAnchoring.tokenId) : 'Not Minted'}</span>
+                </div>
+
+                ${blockchainAnchoring?.txHash ? `
+                  <div style="font-size:10px; font-weight:800; color:#64748B; text-transform:uppercase; margin-top:8px; margin-bottom:4px;">
+                    Transaction Hash (Ethereum Sepolia)
+                  </div>
+                  <div class="mono-value">
+                    ${escapeHtml(blockchainAnchoring.txHash)}
+                  </div>
+                  <a href="${escapeHtml(blockchainAnchoring.etherscanUrl)}" target="_blank" rel="noopener noreferrer" class="etherscan-link">
                     <span>↗ View verified mint transaction on Sepolia Etherscan</span>
                   </a>
                 ` : `
-                  <div style="font-size:11px; color:#64748B;">
-                    Record sealed in SmartAssets Custodial Ledger. Etherscan view unavailable (off-chain).
+                  <div style="font-size:11px; color:#64748B; margin-top:6px;">
+                    Sealed in SmartAssets Custodial Ledger. Not anchored on Ethereum Sepolia.
                   </div>
                 `}
-                <div style="font-size:11px; color:#94A3B8; margin-top:8px; border-top:1px solid rgba(226, 232, 240, 0.8); padding-top:6px;">
-                  ℹ️ <strong>Physical Inspection Disclaimer:</strong> Blockchain registration anchors this digital certificate to Ethereum Sepolia. Physical item authenticity is inspected and vaulted by SmartAssets Custody &amp; Verification; the existence of an NFT does not by itself guarantee physical item presence without custodial inspection.
+
+                <div class="disclaimer-text">
+                  ℹ️ <strong>Blockchain Record Scope:</strong> Blockchain anchoring permanently stamps the certificate digest and product ID to Ethereum Sepolia Testnet. The blockchain confirms cryptographic data preservation; it does not replace physical inspection.
                 </div>
               </div>
 
-              ${historyHtml}
             </div>
           </div>
 
+          <!-- Actions Bar -->
           <div class="actions-bar">
             <button class="btn btn-secondary" onclick="window.print()">
               <span>🖨️</span> Print / Save PDF
             </button>
             <button class="btn btn-primary" onclick="copyVerificationLink()">
-              <span id="copy-btn-icon">🔗</span> <span id="copy-btn-text">Share Link</span>
+              <span id="copy-btn-icon">🔗</span> <span id="copy-btn-text">Share Verification Link</span>
             </button>
           </div>
         `;
@@ -739,11 +926,11 @@
           if (textEl) textEl.textContent = 'Link Copied!';
           if (iconEl) iconEl.textContent = '✓';
           setTimeout(() => {
-            if (textEl) textEl.textContent = 'Share Link';
+            if (textEl) textEl.textContent = 'Share Verification Link';
             if (iconEl) iconEl.textContent = '🔗';
           }, 2500);
         }).catch(() => {
-          alert('Verification URL: ' + url);
+          alert('Verification Link: ' + url);
         });
       };
 

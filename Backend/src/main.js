@@ -22,6 +22,7 @@ const modelRoutes = require('./routes/modelRoutes');
 const verificationRoutes = require('./routes/verificationRoutes');
 const bankAccountRoutes = require('./routes/bankAccountRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
+const certificateRoutes = require('./routes/certificateRoutes');
 const {
   requireAuth,
   requireVerified,
@@ -180,6 +181,9 @@ app.use('/api/admin', adminRoutes);
 app.use('/admin', adminRoutes);
 app.use('/api/models', modelRoutes);
 app.use('/api/uploads', uploadRoutes);
+app.use('/api/certificates', certificateRoutes);
+app.use('/certificates', certificateRoutes);
+app.get('/verify/keys', (req, res) => res.redirect('/api/certificates/keys'));
 
 // ── Verification & Bank Account Routes (both /api/... and root /... paths) ──
 app.use('/api/verification', verificationRoutes);

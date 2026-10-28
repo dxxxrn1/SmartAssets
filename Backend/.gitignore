@@ -10,3 +10,7 @@ node_modules/
 uploads/
 scratch/
 *.log
+
+# Server-side cryptographic keystores and private keys
+src/config/keys/
+*.keystore.json

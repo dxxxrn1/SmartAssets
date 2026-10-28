@@ -391,6 +391,18 @@ async function getAssetById(req, res) {
         sellerId: asset.seller_id || asset.user_id || null,
         currentOwnerId: asset.current_owner_id || asset.user_id || null,
         owner: sellerName,
+        // Digital Certificate & Cryptographic PKI fields
+        certificateLifecycleStatus: asset.certificate_lifecycle_status || (hasGenuineTx ? 'anchored' : (asset.certificate_signature ? 'issued' : 'draft')),
+        certificateId: asset.certificate_id || null,
+        certificateVersion: asset.certificate_version || '1.0.0',
+        certificateSignature: asset.certificate_signature || null,
+        certificateKeyId: asset.certificate_key_id || null,
+        certificateIssuer: asset.certificate_issuer || null,
+        certificateIssuedAt: asset.certificate_issued_at || null,
+        certificateEvidence: asset.certificate_evidence || null,
+        certificateRevoked: Boolean(asset.certificate_revoked),
+        certificateRevokedAt: asset.certificate_revoked_at || null,
+        certificateRevocationReason: asset.certificate_revocation_reason || null,
         // AI Fraud & Authenticity Verification
         aiScanScore: asset.ai_scan_score ?? null,
         aiScanStatus: asset.ai_scan_status || (asset.badge === 'Verified' || asset.badge === 'Verified On-Chain' ? 'passed' : null),
