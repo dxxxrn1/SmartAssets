@@ -18,6 +18,18 @@ async function main() {
   const balance = await hre.ethers.provider.getBalance(deployer.address);
   console.log("   Account balance:", hre.ethers.formatEther(balance), "ETH");
 
+  const minRequired = hre.ethers.parseEther("0.015");
+  if (balance < minRequired) {
+    console.error(`\n❌ Insufficient Sepolia test ETH for deployment:`);
+    console.error(`   Current Balance: ${hre.ethers.formatEther(balance)} ETH`);
+    console.error(`   Estimated Gas Required: ~0.015 to 0.05 ETH`);
+    console.error(`\n   To get free Sepolia test ETH for deployer ${deployer.address}:`);
+    console.error(`   1. Google Cloud Web3 Faucet: https://cloud.google.com/application/web3/faucet/ethereum/sepolia`);
+    console.error(`   2. Sepolia PoW Faucet (Instant): https://sepolia-faucet.pk910.de/`);
+    console.error(`   3. Alchemy Faucet: https://www.alchemy.com/faucets/ethereum-sepolia\n`);
+    process.exit(1);
+  }
+
   const SmartAssetCertificate = await hre.ethers.getContractFactory("SmartAssetCertificate");
   const contract = await SmartAssetCertificate.deploy(deployer.address);
 
