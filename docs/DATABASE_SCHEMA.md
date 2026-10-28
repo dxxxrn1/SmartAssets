@@ -9,7 +9,7 @@
 
 ## 1. Relational Schema Architecture
 
-The database serves as the high-throughput, ACID-compliant relational foundation of SmartAssets, syncing user identity, assets, fractional ownership, KYC compliance, and dual-ledger escrow.
+The database serves as the high-throughput, ACID-compliant relational foundation of SmartAssets, syncing user identity, assets, fractional ownership, KYC compliance, dual-ledger escrow, and dated portfolio snapshots.
 
 ```mermaid
 erDiagram
@@ -21,11 +21,13 @@ erDiagram
     auth_users ||--o{ bank_accounts : "payout accounts"
     auth_users ||--o{ escrow_orders : "orders (buyer or seller)"
     auth_users ||--o{ investment_positions : "fractional co-ownership"
+    auth_users ||--o{ portfolio_snapshots : "dated net worth time-series"
 
     assets ||--o{ asset_history : "provenance timeline"
     assets ||--o| listing_models : "Tripo 3D models"
     assets ||--o{ escrow_orders : "escrow contracts"
     assets ||--o{ investment_positions : "fractional shares"
+    assets ||--o{ user_holdings : "referenced via asset_id"
 ```
 
 ---
@@ -52,6 +54,8 @@ Stores high-value luxury collectibles listed for sale, auction, or fractional co
 CREATE TABLE public.assets (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id          UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  seller_id        UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  current_owner_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   name             TEXT NOT NULL,
   category         TEXT NOT NULL,
   price            TEXT NOT NULL,
@@ -66,7 +70,7 @@ CREATE TABLE public.assets (
   shares           INTEGER DEFAULT 100,
   share_price      NUMERIC DEFAULT 100,
   shares_sold      INTEGER DEFAULT 0,
-  status           TEXT DEFAULT 'active',
+  status           TEXT DEFAULT 'active', -- 'active' | 'in_escrow' | 'sold'
   token_id         TEXT,
   tx_hash          TEXT,
   contract_address TEXT,
@@ -92,11 +96,12 @@ CREATE TABLE public.asset_history (
 ```
 
 ### 2.4 `public.user_holdings`
-Represents assets held in a collector's personal vault, isolated per user.
+Represents assets held in a collector's personal vault, isolated per user with foreign key linking to origin asset:
 ```sql
 CREATE TABLE public.user_holdings (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  asset_id    UUID REFERENCES public.assets(id) ON DELETE SET NULL,
   name        TEXT NOT NULL,
   category    TEXT NOT NULL,
   price       TEXT NOT NULL,
@@ -110,8 +115,27 @@ CREATE TABLE public.user_holdings (
 );
 ```
 
-### 2.5 `public.verification_documents` & `public.bank_accounts`
-Supports institutional compliance, Anti-Money Laundering (AML), and bank payouts.
+### 2.5 `public.portfolio_snapshots`
+Records daily authoritative valuation records for authentic time-series performance graphs without on-the-fly recalculation:
+```sql
+CREATE TABLE public.portfolio_snapshots (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  portfolio_value NUMERIC NOT NULL DEFAULT 0,
+  cash_balance    NUMERIC NOT NULL DEFAULT 0,
+  total_value     NUMERIC NOT NULL DEFAULT 0,
+  holdings_count  INTEGER NOT NULL DEFAULT 0,
+  snapshot_date   DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_user_portfolio_snapshot_date UNIQUE (user_id, snapshot_date)
+);
+
+CREATE INDEX idx_portfolio_snapshots_user_date
+  ON public.portfolio_snapshots(user_id, snapshot_date ASC);
+```
+
+### 2.6 `public.verification_documents` & `public.bank_accounts`
+Supports institutional compliance, Anti-Money Laundering (AML), and bank payouts:
 ```sql
 CREATE TABLE public.verification_documents (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -139,7 +163,7 @@ CREATE TABLE public.bank_accounts (
 );
 ```
 
-### 2.6 `public.escrow_orders` & `public.investment_positions`
+### 2.7 `public.escrow_orders` & `public.investment_positions`
 Tracks dual-ledger escrow lifecycle and fractional shareholder registers:
 ```sql
 CREATE TABLE public.escrow_orders (
@@ -150,7 +174,7 @@ CREATE TABLE public.escrow_orders (
   asset_id           UUID REFERENCES public.assets(id),
   amount             NUMERIC NOT NULL,
   currency           TEXT DEFAULT 'ETH',
-  status             TEXT NOT NULL DEFAULT 'payment_secured',
+  status             TEXT NOT NULL DEFAULT 'payment_secured', -- 'pending_payment' | 'payment_secured' | 'in_transit' | 'in_inspection' | 'delivered' | 'accepted' | 'released' | 'disputed'
   tracking_carrier   TEXT,
   tracking_number    TEXT,
   dispute_reason     TEXT,
@@ -180,6 +204,7 @@ CREATE TABLE public.investment_positions (
 | `profiles` | SELECT | `authenticated` | `auth.uid() = id` (Users only view own profile) |
 | `profiles` | UPDATE | `authenticated` | `auth.uid() = id` (Users only edit own profile) |
 | `user_holdings` | ALL | `authenticated` | `auth.uid() = user_id` (Strict personal custody isolation) |
+| `portfolio_snapshots` | ALL | `authenticated` | `auth.uid() = user_id` (Historical net worth isolation) |
 | `assets` | SELECT | `anon`, `authenticated` | `true` (Active marketplace listings are public) |
 | `assets` | INSERT | `authenticated` | `auth.uid() = user_id` (Verified users create listings) |
 | `verification_documents`| SELECT | `authenticated` | `auth.uid() = user_id OR auth.jwt() ->> 'role' = 'admin'` |

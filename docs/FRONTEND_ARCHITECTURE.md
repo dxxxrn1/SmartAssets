@@ -19,6 +19,8 @@ Public/App/
 ├── src/
 │   ├── components/            # Reusable UI primitives & compound widgets
 │   │   ├── ui.js              # Buttons, Badges, Cards, Input fields, Stat blocks
+│   │   ├── CrossPlatformDialog.js # Glassmorphic cross-platform dialog replacing Alert.alert
+│   │   ├── InactivityWatcher.js # Passive PanResponder capturing gestures for financial session security
 │   │   └── liveRoomPreview/   # Camera preview, gesture manipulators, A4 calibration
 │   ├── constants/             # Global tokens and route keys
 │   │   ├── navigation.js      # SCREENS and TABS route name constants
@@ -208,3 +210,14 @@ const {
 
 - **AsyncStorage Persistence:** User sessions and tokens are automatically cached locally and validated against the backend on boot.
 - **Deep Link Password Recovery:** `extractResetToken` parses URL hash/query parameters (`#access_token=...&type=recovery`) to seamlessly navigate to `ResetPasswordScreen`.
+
+---
+
+## 7. Financial Session Security (`InactivityWatcher.js` & `CrossPlatformDialog.js`)
+
+To guard high-value portfolios against unauthorized physical access:
+1. **Passive Gesture Capture:** `InactivityWatcher` wraps the app tree in a non-blocking `PanResponder` (`onStartShouldSetPanResponderCapture` returns `false`), registering touches/swipes/scrolls without preventing child button or input clicks.
+2. **5-Minute Timeout & 30-Second Countdown:** After 4 minutes and 30 seconds of inactivity, a warning toast appears with an interactive countdown (`30s... 29s...`).
+3. **Instant Activity Reset:** Tapping "Keep Active" or touching anywhere on the screen immediately resets the counter.
+4. **Session Termination & Clean Dialog:** At 0 seconds, `AuthContext` wipes tokens, disconnects Web3 sessions, and presents `CrossPlatformDialog` before redirecting to `LoginScreen`.
+

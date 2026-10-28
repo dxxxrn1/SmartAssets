@@ -1,12 +1,12 @@
 # SmartAssets — Master System Diagrams & Visual Architecture Guide
 
-> **Scope:** This document is the visual blueprint for SmartAssets, containing production-accurate Mermaid diagrams for every subsystem: overall multi-tier architecture, escrow state machine, AI Vision Gatekeeper pipeline, mobile navigation topology, Web3 SIWE authentication, fractional co-ownership investment lifecycle, 3D glTF optimization, and the Supabase PostgreSQL entity relationship diagram (ERD).
+> **Scope:** This document is the visual blueprint for SmartAssets, containing production-accurate Mermaid diagrams for every subsystem: overall multi-tier architecture, escrow state machine, AI Vision Gatekeeper pipeline, mobile navigation topology, Web3 SIWE authentication, fractional co-ownership investment lifecycle, 3D glTF optimization, financial session inactivity lifecycle, portfolio snapshot time-series engine, and the Supabase PostgreSQL entity relationship diagram (ERD).
 
 ---
 
 ## 1. End-to-End System Architecture
 
-The following diagram illustrates the interaction between the **Client Tier** (React Native Expo App), the **Backend API & Gateway Tier** (Express.js, Security, Rate Limiter, WebSockets), the **Intelligence & Services Tier** (Gemini AI Vision, Compliance/KYC, Market Oracle, Escrow Manager), the **Storage & Database Tier** (Supabase PostgreSQL with RLS, Cloudinary, Local/Signed KYC Storage), and the **Decentralized Settlement Tier** (Ethereum Sepolia, Hardhat, ERC-721 Certificates, Escrow Smart Contract).
+The following diagram illustrates the interaction between the **Client Tier** (React Native Expo App), the **Backend API & Gateway Tier** (Express.js, Security, Rate Limiter, Inactivity Heartbeat, WebSockets), the **Intelligence & Services Tier** (Gemini AI Vision, Compliance/KYC, Market Oracle, Escrow Manager, Portfolio Snapshot Service), the **Storage & Database Tier** (Supabase PostgreSQL with RLS, Cloudinary, Local/Signed KYC Storage), and the **Decentralized Settlement Tier** (Ethereum Sepolia, Hardhat, ERC-721 Certificates, Escrow Smart Contract).
 
 ```mermaid
 flowchart TB
@@ -14,8 +14,11 @@ flowchart TB
     subgraph CLIENT_TIER ["Client Tier (Mobile, Web & Sensor Systems)"]
         direction TB
         RN["React Native Expo SDK 54 App<br/>(iOS / Android / Web)"]
+        WATCHER["InactivityWatcher & CrossPlatformDialog<br/>(Passive PanResponder Gesture Capture)"]
         CAM["Live Room Preview & AR<br/>(Expo Camera & Device Motion)"]
         WALLET["Web3 Wallets<br/>(MetaMask / Injected EIP-1193)"]
+        RN --- WATCHER
+        RN --- CAM
     end
 
     %% Security & API Gateway
@@ -34,11 +37,12 @@ flowchart TB
         COMPLIANCE["Compliance & KYC Engine<br/>(ID, Tax, Bank Acc, Proof of Residence)"]
         ORACLE["Live Market Oracle<br/>(ZAR Valuation Bands, Historical Volatility)"]
         ESCROW_SRV["Escrow Service & State Manager<br/>(Durable Lifecycle & Dispute Engine)"]
+        PORTFOLIO_SRV["Portfolio Snapshot Service<br/>(Dated Valuation History & Time-Series)"]
         INVESTMENT_SRV["Investment Position Service<br/>(Fractional Ownership, Co-ownership Units)"]
         MODEL_SRV["3D Pipeline & glTF Transform<br/>(Tripo AI + Meshoptimizer Decimation)"]
         WEB3_SRV["Web3 Integration Service<br/>(Ethers.js v6, Nonce, SIWE EIP-4361)"]
         STRIPE_SRV["Stripe Checkout Service<br/>(Card & Bank Transfers)"]
-        PRESENCE_SRV["WebSocket Presence & Notification Hub"]
+        PRESENCE_SRV["WebSocket Presence & Inactivity Heartbeat"]
     end
 
     %% Data & Storage Tier
@@ -59,10 +63,9 @@ flowchart TB
 
     %% Flow Connections
     RN <-->|REST API JSON & File Uploads| HELMET
-    RN <-->|Real-time Socket & Chat| PRESENCE_SRV
+    RN <-->|Heartbeat & Presence Sockets| PRESENCE_SRV
     RN <-->|Web3 Signing| WALLET
     WALLET <-->|EIP-4361 Signatures| WEB3_SRV
-    CAM -.->|Artwork Calibration| RN
 
     HELMET --> RATELIMIT --> SQL_GUARD --> AUTH_MW
 
@@ -70,6 +73,7 @@ flowchart TB
     AUTH_MW --> COMPLIANCE
     AUTH_MW --> ORACLE
     AUTH_MW --> ESCROW_SRV
+    AUTH_MW --> PORTFOLIO_SRV
     AUTH_MW --> INVESTMENT_SRV
     AUTH_MW --> MODEL_SRV
     AUTH_MW --> STRIPE_SRV
@@ -81,6 +85,7 @@ flowchart TB
     COMPLIANCE <--> SUPA_DB
     ESCROW_SRV <--> SUPA_DB
     ESCROW_SRV <--> SMART_ESCROW
+    PORTFOLIO_SRV <--> SUPA_DB
     INVESTMENT_SRV <--> SUPA_DB
     ORACLE <--> SUPA_DB
     AUTH_MW <--> SUPA_AUTH
@@ -92,39 +97,48 @@ flowchart TB
 
 ---
 
-## 2. Escrow Sequential Lifecycle & Dispute State Machine
+## 2. Escrow Sequential Lifecycle & Dual-Ledger State Machine
 
-SmartAssets uses a dual-ledger escrow model: an on-chain smart contract (`SmartAssetEscrow.sol`) paired with an immutable backend audit log and Supabase record (`escrow_orders`). The order progresses through 9 strictly sequential states with dispute resolution paths:
+SmartAssets enforces an airtight sequential progression. An order initializes as `pending_payment` during transaction settlement, advances to `payment_secured` upon verified funds capture, flows through physical authentication, and transitions asset ownership directly to the buyer's vault holdings upon final release:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> None : Order Initialization
+    [*] --> None : Order Created
 
-    None --> PaymentLocked : Buyer Locks Funds (Card/Wire/Sepolia ETH)
-    note right of PaymentLocked
-      Funds held in escrow contract/custody.
-      Seller is notified to dispatch collectible.
+    None --> PendingPayment : Buyer Initiates Checkout
+    note right of PendingPayment
+      Awaiting independent payment/fiat verification
+      before funds are locked in custody.
     end note
 
-    PaymentLocked --> InTransit : Seller Dispatches Asset (Tracking Hash / Courier)
+    PendingPayment --> PaymentLocked : Settlement Verified (ETH Locked in Smart Contract)
+    note right of PaymentLocked
+      Funds secured in Escrow Contract.
+      Asset status flagged as in_escrow.
+      Seller is instructed to dispatch collectible.
+    end note
+
+    PaymentLocked --> InTransit : Seller Dispatches Asset (Armored Courier + Tracking Hash)
     note right of InTransit
-      Armored courier or tracked delivery in progress.
+      Insured transport in progress.
       Tracking hash logged on-chain.
     end note
 
-    InTransit --> InInspection : Courier Delivers to Custody Center
+    InTransit --> InInspection : Delivered to Physical Custody Center
     note right of InInspection
-      Senior appraisers inspect physical condition,
-      hallmarks, movement serials, and certificates.
+      Senior Horologists & Gemologists inspect
+      hallmarks, movement serials, and condition.
     end note
 
-    InInspection --> Delivered : Authentication Passed, Dispatched to Buyer
-    Delivered --> Accepted : Buyer Receives & Confirms Condition
+    InInspection --> Delivered : Authentication Passed, Courier Delivers to Buyer
+    Delivered --> Accepted : Buyer Receives Asset & Confirms Condition
 
     Accepted --> ReleasedToSeller : Escrow Unlocks & Payout Dispatched
     note right of ReleasedToSeller
-      Settlement complete. Platform fee deducted.
-      Funds transferred to Seller account/wallet.
+      1. Settlement complete; platform fee deducted.
+      2. Funds transferred to seller.
+      3. Ownership transferred: Asset inserted into buyer user_holdings.
+      4. ERC-721 Certificate updated with final custody milestone.
     end note
 
     ReleasedToSeller --> [*]
@@ -133,7 +147,7 @@ stateDiagram-v2
     PaymentLocked --> Disputed : Buyer/Seller Files Dispute
     InTransit --> Disputed : Shipment Lost / Delayed
     InInspection --> Disputed : Failed Authentication / Fake Detected
-    Delivered --> Disputed : Condition Discrepancy / Transit Damage
+    Delivered --> Disputed : Condition Discrepancy / Damage in Transit
 
     state Disputed {
         [*] --> EvidenceReview
@@ -148,7 +162,66 @@ stateDiagram-v2
 
 ---
 
-## 3. AI Vision Multi-Tier Gatekeeper Pipeline
+## 3. Financial Inactivity Watcher & Session Security Lifecycle
+
+High-value financial assets require defense against unattended session hijacking. The `InactivityWatcher` wraps the application in a transparent `PanResponder` that intercepts all gestures without touch-blocking, resetting a 5-minute inactivity counter and presenting a 30-second warning countdown before automated logout:
+
+```mermaid
+stateDiagram-v2
+    [*] --> ActiveSession : User Authenticates & Interacts
+    
+    ActiveSession --> ActiveSession : User Touches/Scrolls/Types (Resets timer, throttled 500ms)
+    ActiveSession --> InactivityWarning : 4 Minutes 30 Seconds Elapsed with No Gesture
+    
+    state InactivityWarning {
+        [*] --> CountdownBanner : Display 30-Second Warning Toast
+        CountdownBanner --> CountdownBanner : 1s Interval Decrement (29s... 28s...)
+    }
+
+    InactivityWarning --> ActiveSession : User Taps "Keep Active" / Touches Screen (Instant Dismiss)
+    InactivityWarning --> Terminated : Timer Reaches 0 Seconds
+
+    state Terminated {
+        [*] --> ClearStorage : Wipe Auth Tokens & State
+        ClearStorage --> ModalAlert : CrossPlatformDialog "Session Expired"
+        ModalAlert --> RedirectLogin : User Directed to LoginScreen
+    }
+
+    Terminated --> [*]
+```
+
+---
+
+## 4. Portfolio Snapshot & Time-Series Valuation Engine
+
+To provide reliable portfolio analytics without recalculating historical values on the fly, the `portfolioSnapshotService` persists daily snapshot records in `public.portfolio_snapshots`:
+
+```mermaid
+flowchart TD
+    EVENT[Trigger: Vault Deposit, Holding Purchase, Escrow Release, or Daily Cron] --> CALC[Calculate User Portfolio Snapshot]
+    
+    subgraph CALCULATION ["Valuation Matrix"]
+        CALC --> SUM_HOLDINGS[Sum User Whole & Fractional Holdings Value]
+        CALC --> CASH_BAL[Fetch Available Cash Balance]
+        CALC --> ESCROW_BAL[Fetch Pending Escrow Inflow/Outflow]
+        SUM_HOLDINGS & CASH_BAL & ESCROW_BAL --> TOTAL[Combined Net Worth]
+    end
+
+    TOTAL --> UPSERT[Upsert public.portfolio_snapshots<br/>UNIQUE constraint: (user_id, snapshot_date)]
+    UPSERT --> SYNC_CACHE[Sync In-Memory Runtime Cache snapshotsMap]
+
+    subgraph CLIENT_QUERY ["Client Analytics Request (/api/user/analytics)"]
+        REQ[ProfileAnalyticsScreen Requests Period: 24h, 7d, 30d, 1y] --> QUERY_DB[Query Ordered Snapshots ASC]
+        QUERY_DB --> DERIVE[Derive Metrics: MTD Change, ROI Yield %, Performance Trendline]
+        DERIVE --> RENDER[Render Smooth Interactive Chart in Mobile App]
+    end
+
+    SYNC_CACHE -.-> QUERY_DB
+```
+
+---
+
+## 5. AI Vision Multi-Tier Gatekeeper Pipeline
 
 The AI Vision Gatekeeper (`aiVisionGatekeeper.js`) screens collectible listings before they can be submitted or verified on the marketplace. It evaluates image clarity, checks for synthetic AI generation, detects category mismatches, and fetches live appraisal valuation bands.
 
@@ -185,7 +258,7 @@ flowchart TD
 
 ---
 
-## 4. Mobile Navigation Topology & Screen Hierarchy
+## 6. Mobile Navigation Topology & Screen Hierarchy
 
 The mobile application (`Public/App`) is built on **React Navigation v7**, using a unified root stack with nested bottom tabs and contextual modal detail screens:
 
@@ -220,7 +293,7 @@ flowchart TD
             CHECKOUT_SCR["CheckoutScreen<br/>(Card, Web3 Sepolia ETH, Wire)"]
             ESCROW_SCR["EscrowTrackerScreen<br/>(Live Order Progress & Tracking)"]
             PROFILE_SCR["ProfileScreen<br/>(Account Settings, Security, Avatar)"]
-            ANALYTICS_SCR["ProfileAnalyticsScreen<br/>(Portfolio PnL, Yield & Allocation)"]
+            ANALYTICS_SCR["ProfileAnalyticsScreen<br/>(Portfolio PnL, Snapshots & Allocation)"]
             VERIFY_SCR["VerificationScreen<br/>(Appraiser Status Tracker)"]
             VERIFY_ACC["VerifyAccountScreen<br/>(KYC 3-Doc Upload: ID, Tax, Residence)"]
             BANK_SCR["BankDetailsScreen<br/>(Bank Account Verification)"]
@@ -253,7 +326,7 @@ flowchart TD
 
 ---
 
-## 5. Web3 Signature Authentication & Session Flow (SIWE / EIP-4361)
+## 7. Web3 Signature Authentication & Session Flow (SIWE / EIP-4361)
 
 Sign-In With Ethereum allows users to securely log into SmartAssets with MetaMask or any EVM wallet without requiring a password:
 
@@ -296,9 +369,9 @@ sequenceDiagram
 
 ---
 
-## 6. Fractional Co-Ownership & Investment Order Execution
+## 8. Fractional Co-Ownership & Investment Order Execution
 
-When a user purchases shares in a high-value collectible (e.g. 5% share of a £120,000 Patek Philippe), the transaction updates the dynamic marketplace asset and creates an isolated investment position in the user's vault:
+When a user purchases shares in a high-value collectible, the transaction updates the marketplace asset and creates an isolated investment position in the user's vault:
 
 ```mermaid
 sequenceDiagram
@@ -326,7 +399,7 @@ sequenceDiagram
         
         API->>DB: UPDATE public.assets SET shares_sold = shares_sold + 5
         
-        API->>DB: Insert into public.user_holdings (user_id, asset_type: 'fractional', shares: 5)
+        API->>DB: Insert into public.user_holdings (user_id, asset_id, asset_type: 'fractional', shares: 5)
         
         API-->>App: 200 OK: { success: true, orderId, holdingId, sharesRemaining }
         App->>Buyer: Display Confirmed Ownership Badge & Vault Share Certificate
@@ -335,7 +408,7 @@ sequenceDiagram
 
 ---
 
-## 7. 3D Mesh Generation & Decimation Pipeline
+## 9. 3D Mesh Generation & Decimation Pipeline
 
 SmartAssets generates interactive 3D assets from single images using Tripo AI and automatically optimizes the polygonal meshes for mobile 60 FPS rendering using `@gltf-transform/core` and `meshoptimizer`:
 
@@ -360,7 +433,7 @@ flowchart LR
 
 ---
 
-## 8. Supabase PostgreSQL Entity Relationship Diagram (ERD)
+## 10. Supabase PostgreSQL Entity Relationship Diagram (ERD)
 
 The durable source of truth is structured into normalized tables with foreign keys and Row-Level Security:
 
@@ -374,11 +447,13 @@ erDiagram
     auth_users ||--o{ bank_accounts : "links"
     auth_users ||--o{ escrow_orders : "participates (buyer/seller)"
     auth_users ||--o{ investment_positions : "co-owns"
+    auth_users ||--o{ portfolio_snapshots : "tracks net worth over time"
 
     assets ||--o{ asset_history : "records provenance"
     assets ||--o| listing_models : "has 3D model"
     assets ||--o{ escrow_orders : "transacts in"
     assets ||--o{ investment_positions : "fractionalized into"
+    assets ||--o{ user_holdings : "referenced by asset_id"
 
     profiles {
         uuid id PK
@@ -393,6 +468,8 @@ erDiagram
     assets {
         uuid id PK
         uuid user_id FK
+        uuid seller_id FK
+        uuid current_owner_id FK
         text name
         text category
         text price
@@ -415,21 +492,10 @@ erDiagram
         timestamptz created_at
     }
 
-    asset_history {
-        uuid id PK
-        uuid asset_id FK
-        text year
-        text event
-        text party
-        text hash
-        text tx_hash
-        bool verified
-        timestamptz created_at
-    }
-
     user_holdings {
         uuid id PK
         uuid user_id FK
+        uuid asset_id FK
         text name
         text category
         text price
@@ -442,41 +508,14 @@ erDiagram
         timestamptz created_at
     }
 
-    vault_transactions {
-        text id PK
-        uuid user_id FK
-        text type
-        numeric amount
-        text amount_formatted
-        text method
-        text reference
-        text notes
-        text status
-        timestamptz created_at
-    }
-
-    verification_documents {
+    portfolio_snapshots {
         uuid id PK
         uuid user_id FK
-        text doc_type
-        text file_path
-        text original_name
-        text mime_type
-        bigint file_size
-        text status
-        text rejection_reason
-        timestamptz created_at
-    }
-
-    bank_accounts {
-        uuid id PK
-        uuid user_id FK
-        text account_holder_name
-        text bank_name
-        text account_number_masked
-        text branch_code
-        text account_type
-        text status
+        numeric portfolio_value
+        numeric cash_balance
+        numeric total_value
+        int holdings_count
+        date snapshot_date
         timestamptz created_at
     }
 

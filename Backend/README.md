@@ -111,15 +111,17 @@ npm start
 ```bash
 npm test
 ```
-The test script runs 11 integration test suites covering:
-- Escrow comprehensive & integration flows
-- KYC avatar & profile verification
-- Vault holdings & balance isolation
-- Admin security & image handling
-- 3D model optimization
-- SQL injection & rate limiting security
-- Web3 wallet signature authentication
-- Buyout allocation & fractional investment rules
+The test script runs 14 integration test suites covering:
+- Escrow comprehensive, buying & selling flows (`escrowComprehensive.test.js`, `escrowBuyingAndSellingFlow.test.js`)
+- Portfolio summary & snapshot time-series (`portfolioSummaryAndSnapshots.test.js`, `analyticsAudit.test.js`)
+- KYC compliance, document upload & profile verification (`profileIntegration.test.js`, `avatarIntegration.test.js`)
+- Vault holdings & custody balance isolation (`vaultIntegration.test.js`)
+- Admin security & image handling (`adminAndImageIntegration.test.js`)
+- 3D model optimization (`modelIntegration.test.js`)
+- SQL injection & rate limiting security (`security.test.js`)
+- Web3 wallet signature authentication (`walletAuth.test.js`)
+- Buyout allocation & fractional investment rules (`buyoutAllocationAndInvestmentRules.test.js`)
+
 
 ---
 

@@ -141,6 +141,26 @@ npm start
 
 ---
 
+## 🔒 Financial Security & Session Safeguards
+
+- **`InactivityWatcher.js`:** Passive gesture capture with a 5-minute inactivity limit and a 30-second warning countdown toast to prevent session hijacking.
+- **`CrossPlatformDialog.js`:** Theme-reactive glassmorphism dialog for alerts and destructive action confirmations across iOS, Android, and Web.
+
+---
+
+## 🧪 Frontend Test Suites
+
+```bash
+# Run Jest / Node test suites
+node test/analyticsScreenAudit.test.js
+node test/inactivityDetection.test.js
+node test/greeting.test.js
+node test/portfolioSummaryCard.test.js
+node test/profileScreenAudit.test.js
+```
+
+---
+
 ## 📚 Related Documentation
 - [Frontend Mobile Architecture Guide](../../docs/FRONTEND_ARCHITECTURE.md)
 - [Master System Diagrams](../../docs/SYSTEM_DIAGRAMS.md)

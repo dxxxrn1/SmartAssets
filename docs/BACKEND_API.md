@@ -45,7 +45,7 @@ flowchart LR
     ROUTER --> ESCROW["/api/escrow (Dual-Ledger Escrow Orders)"]
     ROUTER --> PAYMENTS["/api/payments (Stripe & Crypto Intent)"]
     ROUTER --> MODELS["/api/models (Tripo 3D & glTF Optimization)"]
-    ROUTER --> USER["/api/user (Profile, Holdings & Vault)"]
+    ROUTER --> USER["/api/user (Profile, Analytics, Vault & Heartbeat)"]
     ROUTER --> ADMIN["/api/admin (Console & Arbitrations)"]
 ```
 
@@ -225,17 +225,64 @@ Coordinates the 9-stage escrow trust engine between buyer, seller, appraiser, an
 
 | Method & Route | Authorization | Description |
 | :--- | :--- | :--- |
-| `POST /api/escrow/orders` | Buyer | Creates order and locks funds (`PaymentLocked`). |
-| `POST /api/escrow/:id/dispatch` | Seller | Submits carrier & tracking number (`InTransit`). |
-| `POST /api/escrow/:id/inspect` | Appraiser | Confirms physical inspection and authenticity (`InInspection`). |
-| `POST /api/escrow/:id/accept` | Buyer | Acknowledges receipt and signs off condition (`Accepted`). |
-| `POST /api/escrow/:id/release` | Buyer/Admin | Releases funds to seller (`ReleasedToSeller`). |
-| `POST /api/escrow/:id/dispute` | Buyer/Seller | Submits dispute claims and evidence (`Disputed`). |
+| `POST /api/escrow/orders` | Buyer | Creates order with initial status `pending_payment` or locks funds (`payment_secured`). |
+| `POST /api/escrow/:id/dispatch` | Seller | Submits carrier & tracking number (`in_transit`). |
+| `POST /api/escrow/:id/inspect` | Appraiser | Confirms physical inspection and authenticity (`in_inspection`). |
+| `POST /api/escrow/:id/accept` | Buyer | Acknowledges receipt and signs off condition (`accepted`). |
+| `POST /api/escrow/:id/release` | Buyer/Admin | Releases funds to seller (`released`), transfers asset ownership to buyer `user_holdings`. |
+| `POST /api/escrow/:id/dispute` | Buyer/Seller | Submits dispute claims and evidence (`disputed`). |
 | `POST /api/escrow/:id/resolve` | Admin | Resolves dispute with refund or release. |
 
 ---
 
-### 3.6 3D Model Optimization (`/api/models`)
+### 3.6 User Portfolio, Analytics & Inactivity Heartbeat (`/api/user`)
+
+#### `GET /api/user/vault`
+Returns strictly the user's isolated vault holdings and calculated valuation summary:
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "holdings": [...],
+    "summary": {
+      "portfolioValueNum": 248000,
+      "portfolioValueFormatted": "R248,000",
+      "availableBalanceNum": 15000,
+      "escrowBalanceNum": 45000,
+      "combinedTotalNum": 308000,
+      "combinedTotalFormatted": "R308,000",
+      "totalCount": 4,
+      "verifiedPct": 100,
+      "monthlyChangePct": "+3.4%"
+    }
+  }
+  ```
+
+#### `GET /api/user/analytics`
+Fetches dated time-series portfolio valuation records and category allocation data powered by `portfolioSnapshotService.js`:
+- **Query Params:** `period` (`24h`, `7d`, `30d`, `1y`)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "snapshots": [
+      { "date": "2026-10-01", "portfolioValue": 240000, "totalValue": 255000 },
+      { "date": "2026-10-28", "portfolioValue": 248000, "totalValue": 308000 }
+    ],
+    "categoryBreakdown": [
+      { "category": "Luxury Watch", "value": 180000, "percentage": 72.5 },
+      { "category": "Fine Art", "value": 68000, "percentage": 27.5 }
+    ]
+  }
+  ```
+
+#### `GET /api/user/heartbeat` & `POST /api/user/heartbeat`
+Captures active user session presence, updating last active timestamp for financial inactivity monitoring:
+- **Response (200 OK):** `{ "success": true, "online": true, "serverTime": "2026-10-28T09:44:00.000Z" }`
+
+---
+
+### 3.7 3D Model Optimization (`/api/models`)
 
 Interacts with Tripo AI and the backend mesh decimation engine:
 - `POST /api/models/generate`: Submits single photo to Tripo image-to-3D pipeline.
