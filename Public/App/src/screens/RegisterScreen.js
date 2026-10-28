@@ -1,6 +1,3 @@
-// ─── RegisterScreen ──────────────────────────────────────────────────────────
-// Full registration form — Full Name, Email, Password, Confirm Password
-// Matches the SmartAssets Luminous Lavender & Violet-Cyan Glassmorphism Theme
 
 import React, { useState } from "react";
 import {

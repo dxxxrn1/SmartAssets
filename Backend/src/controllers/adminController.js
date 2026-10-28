@@ -743,13 +743,14 @@ async function handleEscrowAction(req, res) {
     }
 
     let updatedOrder;
+    const actor = { userId: req.admin?.id || req.user?.id, role: 'admin' };
     if (action === 'step') {
       if (!step) return sendError(res, 400, 'step (2 or 3) is required for step action.');
-      updatedOrder = await escrowService.progressEscrowStep(orderId, step, note);
+      updatedOrder = await escrowService.progressEscrowStep(orderId, step, { note }, actor);
     } else if (action === 'release') {
-      updatedOrder = await escrowService.releaseEscrow(orderId);
+      updatedOrder = await escrowService.releaseEscrow(orderId, actor);
     } else if (action === 'refund') {
-      updatedOrder = await escrowService.refundEscrow(orderId, reason);
+      updatedOrder = await escrowService.refundEscrow(orderId, reason, actor);
     } else {
       return sendError(res, 400, `Unknown action: "${action}". Must be step, release, or refund.`);
     }

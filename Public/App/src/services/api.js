@@ -568,6 +568,33 @@ export async function scanAndKnowApi(payload, token) {
   );
 }
 
+/**
+ * Request a delist & investor redemption quote for an asset.
+ * @param {string} assetId
+ * @param {string} token
+ */
+export async function getDelistQuoteApi(assetId, token) {
+  return apiRequest(`/assets/${assetId}/delist-quote`, { method: "GET" }, token);
+}
+
+/**
+ * Execute seller delist and investor redemption.
+ * @param {string} assetId
+ * @param {object} payload - { payoutSource: { paymentIntentId, method, ... } }
+ * @param {string} token
+ */
+export async function delistAssetApi(assetId, payload = {}, token) {
+  invalidateMarketAssetsCache();
+  return apiRequest(
+    `/assets/${assetId}/delist`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
 // ── Multi-Rail Payment Gateway API ──────────────────────────────────────────
 
 /**

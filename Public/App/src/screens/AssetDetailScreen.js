@@ -16,12 +16,18 @@ import {
   Dimensions,
   Modal,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { SCREENS } from "../constants/navigation";
-import { getAssetDetails, resolveImageUrl } from "../services/api";
+import {
+  getAssetDetails,
+  resolveImageUrl,
+  getDelistQuoteApi,
+  delistAssetApi,
+} from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
 const { width } = Dimensions.get("window");
@@ -217,6 +223,11 @@ export default function AssetDetailScreen({ navigation, route }) {
   const [heroW, setHeroW] = useState(width - 40);
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [healthModalVisible, setHealthModalVisible] = useState(false);
+  const [delistModalVisible, setDelistModalVisible] = useState(false);
+  const [delistQuote, setDelistQuote] = useState(null);
+  const [loadingQuote, setLoadingQuote] = useState(false);
+  const [isDelisting, setIsDelisting] = useState(false);
+  const [delistSuccess, setDelistSuccess] = useState(false);
   const imageScrollRef = useRef(null);
 
   useEffect(() => {
@@ -244,8 +255,71 @@ export default function AssetDetailScreen({ navigation, route }) {
     user?.id && (String(user.id) === String(asset.seller_id) || (String(user.id) === String(asset.user_id) && !asset.current_owner_id))
   );
   const isSold = asset.status === 'sold';
+  const isDelisted = asset.status === 'delisted';
   const isInEscrow = asset.status === 'in_escrow';
-  const isInvestmentEnabled = Boolean(asset.allow_investment || asset.allowInvestment) && !isSold && !isInEscrow;
+  const isInvestmentEnabled = Boolean(asset.allow_investment || asset.allowInvestment) && !isSold && !isInEscrow && !isDelisted;
+
+  const handleOpenDelistModal = async () => {
+    setDelistModalVisible(true);
+    setLoadingQuote(true);
+    setDelistSuccess(false);
+    try {
+      const res = await getDelistQuoteApi(asset.id, user?.token);
+      if (res?.quote) {
+        setDelistQuote(res.quote);
+      } else {
+        setDelistQuote(null);
+      }
+    } catch (err) {
+      Alert.alert(
+        "Delist Unavailable",
+        err.message || "Failed to load delisting quote. Please try again."
+      );
+      setDelistModalVisible(false);
+    } finally {
+      setLoadingQuote(false);
+    }
+  };
+
+  const handleConfirmDelist = async () => {
+    setIsDelisting(true);
+    try {
+      const payload = {
+        payoutSource: {
+          method: "test_sandbox",
+          mode: "test",
+          testSandboxToken: "TEST_VERIFIED_CUSTODY",
+        },
+      };
+
+      const res = await delistAssetApi(asset.id, payload, user?.token);
+      if (res?.success) {
+        setDelistSuccess(true);
+        setAsset((prev) => ({
+          ...prev,
+          status: "delisted",
+          allow_investment: false,
+        }));
+        Alert.alert(
+          "Listing Delisted",
+          res.message || "Your listing has been delisted and active positions retired."
+        );
+        setTimeout(() => {
+          setDelistModalVisible(false);
+          setDelistSuccess(false);
+        }, 1500);
+      } else {
+        throw new Error(res?.error || "Delisting failed.");
+      }
+    } catch (err) {
+      Alert.alert(
+        "Delisting Failed",
+        err.message || "Unable to delist listing at this time."
+      );
+    } finally {
+      setIsDelisting(false);
+    }
+  };
 
   const handleOpenLiveRoomPreview = () => {
     const rawImage =
@@ -1227,13 +1301,29 @@ export default function AssetDetailScreen({ navigation, route }) {
             </TouchableOpacity>
           )}
 
+          {isSeller && !isSold && !isInEscrow && !isDelisted && (
+            <TouchableOpacity
+              style={styles.bottomDelistBtn}
+              onPress={handleOpenDelistModal}
+              activeOpacity={0.85}
+            >
+              <Feather
+                name="slash"
+                size={14}
+                color="#DC2626"
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.bottomDelistBtnText}>Delist</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={[
               styles.bottomOfferBtn,
               !isInvestmentEnabled && { flex: 1 },
-              (isSold || (isInEscrow && !isOwner && !isSeller) || (isOwner && !isSold && !isInEscrow)) && { opacity: 0.65 },
+              (isSold || isDelisted || (isInEscrow && !isOwner && !isSeller) || (isOwner && !isSold && !isInEscrow)) && { opacity: 0.65 },
             ]}
-            disabled={isSold || (isInEscrow && !isOwner && !isSeller) || (isOwner && !isSold && !isInEscrow)}
+            disabled={isSold || isDelisted || (isInEscrow && !isOwner && !isSeller) || (isOwner && !isSold && !isInEscrow)}
             onPress={() => {
               if (isInEscrow && (isOwner || isSeller)) {
                 navigation.navigate(SCREENS.ESCROW_TRACKER, {
@@ -1252,13 +1342,15 @@ export default function AssetDetailScreen({ navigation, route }) {
               <Text style={styles.bottomOfferText}>
                 {isSold
                   ? "Sold Out"
+                  : isDelisted
+                  ? "Delisted"
                   : isInEscrow
                   ? (isOwner || isSeller ? "Track Active Escrow" : "In Escrow")
                   : isOwner
                   ? "Your Listing"
                   : "Buy Entire Item"}
               </Text>
-              {!isSold && !(isInEscrow && !isOwner && !isSeller) && !isOwner && (
+              {!isSold && !isDelisted && !(isInEscrow && !isOwner && !isSeller) && !isOwner && (
                 <Feather
                   name="arrow-right"
                   size={15}
@@ -1557,6 +1649,186 @@ export default function AssetDetailScreen({ navigation, route }) {
                   Close Health Report
                 </Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Seller Delist Confirmation & Investor Redemption Modal ── */}
+      <Modal
+        visible={delistModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => !isDelisting && setDelistModalVisible(false)}
+      >
+        <View style={styles.delistModalOverlay}>
+          <View style={styles.delistModalCard}>
+            {/* Header */}
+            <View style={styles.delistModalHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                <View style={styles.delistModalIconBadge}>
+                  <Feather name="slash" size={18} color="#DC2626" />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.delistModalTitle}>
+                    Delist Asset & Redeem
+                  </Text>
+                  <Text style={styles.delistModalSubtitle} numberOfLines={1}>
+                    {asset.name}
+                  </Text>
+                </View>
+              </View>
+              {!isDelisting && (
+                <TouchableOpacity
+                  style={styles.delistModalCloseBtn}
+                  onPress={() => setDelistModalVisible(false)}
+                >
+                  <Feather name="x" size={18} color="#64748B" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {loadingQuote ? (
+              <View style={styles.delistLoadingWrap}>
+                <ActivityIndicator size="large" color="#6C47FF" />
+                <Text style={styles.delistLoadingText}>
+                  Fetching authoritative appraisal & active investor positions...
+                </Text>
+              </View>
+            ) : delistQuote ? (
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={styles.delistModalScroll}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Valuation Benchmark */}
+                <View style={styles.delistValuationCard}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Text style={styles.delistSectionTag}>REDEMPTION VALUATION</Text>
+                    <View style={styles.delistSourceBadge}>
+                      <Text style={styles.delistSourceText} numberOfLines={1}>
+                        {delistQuote.valuationSource === 'market_oracle_live_appraisal'
+                          ? 'Market Oracle Comp'
+                          : 'Approved Listing Valuation'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.delistValuationHeading}>
+                    {formatZAR(delistQuote.redemptionValuation)}
+                  </Text>
+                  <View style={styles.delistValuationRow}>
+                    <Text style={styles.delistSubText}>Initial Listing Price:</Text>
+                    <Text style={styles.delistSubVal}>{formatZAR(delistQuote.initialValuation)}</Text>
+                  </View>
+                  {delistQuote.appreciation > 0 && (
+                    <View style={styles.delistValuationRow}>
+                      <Text style={[styles.delistSubText, { color: "#16A34A" }]}>Asset Value Appreciation:</Text>
+                      <Text style={[styles.delistSubVal, { color: "#16A34A", fontWeight: "800" }]}>
+                        +{formatZAR(delistQuote.appreciation)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Investor Positions & Payout Breakdown */}
+                <View style={styles.delistSummaryCard}>
+                  <Text style={styles.delistSectionTag}>INVESTOR REDEMPTION SUMMARY</Text>
+
+                  <View style={styles.delistSummaryRow}>
+                    <Text style={styles.delistRowLabel}>Active Investors</Text>
+                    <Text style={styles.delistRowValue}>
+                      {delistQuote.activeInvestorCount} ({delistQuote.totalInvestorShares} / {delistQuote.totalShares} shares)
+                    </Text>
+                  </View>
+
+                  <View style={styles.delistSummaryRow}>
+                    <Text style={styles.delistRowLabel}>Principal Invested to Return</Text>
+                    <Text style={styles.delistRowValue}>
+                      {formatZAR(delistQuote.totalPrincipalZar)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.delistSummaryRow}>
+                    <Text style={styles.delistRowLabel}>Proportional Appreciation</Text>
+                    <Text style={[styles.delistRowValue, delistQuote.totalAppreciationZar > 0 && { color: "#16A34A" }]}>
+                      {delistQuote.totalAppreciationZar > 0
+                        ? `+${formatZAR(delistQuote.totalAppreciationZar)}`
+                        : "R0"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.delistSummaryRow}>
+                    <Text style={styles.delistRowLabel}>Platform Delist Fee</Text>
+                    <Text style={[styles.delistRowValue, { color: "#10B981" }]}>
+                      R0 (0% Fee)
+                    </Text>
+                  </View>
+
+                  <View style={styles.delistDivider} />
+
+                  <View style={styles.delistTotalRow}>
+                    <Text style={styles.delistTotalLabel}>Total Seller Payout Required</Text>
+                    <Text style={styles.delistTotalVal}>
+                      {formatZAR(delistQuote.totalRequiredPayoutZar)}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Important Legal & Ownership Notice */}
+                <View style={styles.delistNoticeBox}>
+                  <Feather name="shield" size={16} color="#7C3AED" style={{ marginTop: 2 }} />
+                  <Text style={styles.delistNoticeText}>
+                    {delistQuote.activeInvestorCount > 0
+                      ? "Investors will receive 100% of their principal capital plus their proportional share of value appreciation. Delisting immediately retires all investor positions and restores 100% unencumbered private title to you."
+                      : "No active investor positions exist. Delisting will immediately withdraw this item from the public marketplace at R0 cost."}
+                  </Text>
+                </View>
+
+                {/* Payout Rail Notice */}
+                {delistQuote.totalRequiredPayoutZar > 0 && (
+                  <View style={[styles.delistNoticeBox, { backgroundColor: "rgba(0, 194, 255, 0.08)", borderColor: "rgba(0, 194, 255, 0.25)" }]}>
+                    <Feather name="check-circle" size={16} color="#00C2FF" style={{ marginTop: 2 }} />
+                    <Text style={[styles.delistNoticeText, { color: "#0369A1" }]}>
+                      Funding Verified: Payout proceeds will be drawn via SmartAssets Custody Escrow rail and settled into investors' balances atomically.
+                    </Text>
+                  </View>
+                )}
+              </ScrollView>
+            ) : null}
+
+            {/* Modal Actions */}
+            <View style={styles.delistModalFooter}>
+              <TouchableOpacity
+                style={[
+                  styles.delistConfirmBtn,
+                  isDelisting && { opacity: 0.7 },
+                ]}
+                disabled={isDelisting || loadingQuote}
+                onPress={handleConfirmDelist}
+                activeOpacity={0.85}
+              >
+                {isDelisting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Feather name="slash" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.delistConfirmBtnText}>
+                      {delistQuote && delistQuote.totalRequiredPayoutZar > 0
+                        ? `Authorize & Pay ${formatZAR(delistQuote.totalRequiredPayoutZar)}`
+                        : "Confirm Delist"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {!isDelisting && (
+                <TouchableOpacity
+                  style={styles.delistCancelBtn}
+                  onPress={() => setDelistModalVisible(false)}
+                >
+                  <Text style={styles.delistCancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -2943,5 +3215,228 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
     color: "#15803D",
+  },
+  bottomDelistBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: "#FEE2E2",
+    borderWidth: 1.5,
+    borderColor: "#FCA5A5",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  bottomDelistBtnText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#DC2626",
+  },
+
+  // Delist Modal Styles
+  delistModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    justifyContent: "flex-end",
+  },
+  delistModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: "88%",
+    paddingBottom: Platform.OS === "ios" ? 34 : 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  delistModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  delistModalIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FEE2E2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  delistModalTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  delistModalSubtitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748B",
+    marginTop: 2,
+  },
+  delistModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  delistLoadingWrap: {
+    padding: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  delistLoadingText: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+  },
+  delistModalScroll: {
+    padding: 20,
+    gap: 16,
+  },
+  delistValuationCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 8,
+  },
+  delistSectionTag: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#64748B",
+    letterSpacing: 1,
+  },
+  delistSourceBadge: {
+    backgroundColor: "rgba(108, 71, 255, 0.1)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  delistSourceText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#6C47FF",
+  },
+  delistValuationHeading: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#0F172A",
+    letterSpacing: -0.5,
+  },
+  delistValuationRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  delistSubText: {
+    fontSize: 12,
+    color: "#64748B",
+  },
+  delistSubVal: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  delistSummaryCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 10,
+  },
+  delistSummaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  delistRowLabel: {
+    fontSize: 13,
+    color: "#64748B",
+  },
+  delistRowValue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  delistDivider: {
+    height: 1,
+    backgroundColor: "#E2E8F0",
+    marginVertical: 4,
+  },
+  delistTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  delistTotalLabel: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  delistTotalVal: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#DC2626",
+  },
+  delistNoticeBox: {
+    flexDirection: "row",
+    backgroundColor: "rgba(108, 71, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(108, 71, 255, 0.2)",
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+    alignItems: "flex-start",
+  },
+  delistNoticeText: {
+    fontSize: 11,
+    color: "#475569",
+    lineHeight: 16,
+    flex: 1,
+  },
+  delistModalFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    gap: 10,
+  },
+  delistConfirmBtn: {
+    backgroundColor: "#DC2626",
+    borderRadius: 16,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  delistConfirmBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  delistCancelBtn: {
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  delistCancelBtnText: {
+    color: "#64748B",
+    fontSize: 13,
+    fontWeight: "700",
   },
 });

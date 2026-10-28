@@ -18,60 +18,17 @@ const { isUserAdmin } = require('../middlewares/authMiddleware');
  * Initializes an escrow order and locks the deposit.
  */
 async function createEscrow(req, res) {
-  try {
-    const userId = req.user.id;
-    const complianceService = require('../services/complianceService');
-    const comp = complianceService.getUserCompliance(userId, req.user?.email);
-    if (comp && comp.isSuspended) {
-      return sendError(res, 403, 'Account Suspended by Compliance. Escrow creation blocked.');
-    }
-    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
-    if (!bundle || bundle.verification_status !== 'verified') {
-      return res.status(403).json({
-        success: false,
-        code: 'KYC_REQUIRED',
-        error: 'KYC Verification Required: You must complete KYC verification before creating an escrow order.',
-      });
-    }
-
-    const {
-      assetId,
-      assetName,
-      assetCategory,
-      assetImage,
-      amountZar,
-      amountGbp,
-      amountEth,
-      paymentMethod,
-      paymentDetails,
-      sellerAddress,
-      sellerId,
-    } = req.body;
-
-    const order = await escrowService.createEscrowOrder({
-      buyerId: userId,
-      sellerId,
-      assetId,
-      assetName,
-      assetCategory,
-      assetImage,
-      amountZar,
-      amountGbp,
-      amountEth,
-      paymentMethod,
-      buyerAddress: paymentDetails?.walletAddress || req.user.walletAddress,
-      sellerAddress,
+  const userId = req.user?.id;
+  const complianceService = require('../services/complianceService');
+  const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+  if (!bundle || bundle.verification_status !== 'verified') {
+    return res.status(403).json({
+      success: false,
+      code: 'KYC_REQUIRED',
+      error: 'KYC Verification Required: You must upload and get all 3 verification documents approved before creating an escrow order.',
     });
-
-    return res.status(201).json({
-      success: true,
-      message: 'Escrow order created and payment locked!',
-      order,
-    });
-  } catch (err) {
-    console.error('createEscrow error:', err);
-    return sendError(res, 500, err.message || 'Failed to initialize escrow.');
   }
+  return sendError(res, 410, 'Direct escrow creation is disabled. Orders must be created through the payment verification flow.', 'VERIFIED_PAYMENT_REQUIRED');
 }
 
 /**

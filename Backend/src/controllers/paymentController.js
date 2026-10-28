@@ -79,6 +79,10 @@ async function createIntent(req, res) {
       });
     }
 
+    if (process.env.NODE_ENV !== 'test') {
+      return sendError(res, 503, 'Card checkout is disabled until a custodial escrow and refund provider is connected. No payment was taken.', 'ESCROW_CUSTODY_UNAVAILABLE');
+    }
+
     const { amount, currency, assetId, assetName } = req.body;
 
     if (!amount || Number(amount) <= 0) {
@@ -366,6 +370,10 @@ async function processPayment(req, res) {
       initialEscrowStatus = 'payment_secured';
 
     } else if (paymentMethod === 'card') {
+      if (process.env.NODE_ENV !== 'test') {
+        await unlockAssetIfLocked();
+        return sendError(res, 503, 'Card checkout is disabled until a custodial escrow and refund provider is connected.', 'ESCROW_CUSTODY_UNAVAILABLE');
+      }
       // ── Stripe Card Rail ──
       // Security rule: NEVER accept raw card numbers on the backend
       if (paymentDetails?.cardNumber) {
@@ -387,6 +395,10 @@ async function processPayment(req, res) {
           'A confirmed Stripe PaymentIntent ID is required for card payment.',
           'PAYMENT_INTENT_REQUIRED'
         );
+      }
+      if (process.env.NODE_ENV === 'test' && !paymentIntentId.startsWith('pi_sandbox_')) {
+        await unlockAssetIfLocked();
+        return sendError(res, 400, 'Test mode accepts only local sandbox PaymentIntents.', 'TEST_INTENT_REQUIRED');
       }
 
       // Verify that the PaymentIntent has succeeded and matches amount & user
@@ -544,62 +556,63 @@ async function processPayment(req, res) {
           });
         }
       } else if (!isFractional && asset?.id) {
-        // 5B. Whole-Item Outright Purchase Path
-        if (asset.allow_investment) {
-          // Fractionalized asset: processOutrightBuyoutAllocations executes pro-rata payouts,
-          // atomically retires investor positions, updates asset ownership, inserts buyer holding,
-          // cleans up seller holding, records provenance, and sends notifications.
-          console.log(`🏦 [Payment] Outright purchase of fractionalized asset ${asset.id}. Distributing pro-rata buyout proceeds...`);
-          await investmentPositionService.processOutrightBuyoutAllocations({
-            asset,
-            buyerId: userId,
-            buyerName: req.user.fullName || req.user.email,
-            orderId,
-            grossSaleZar: actualPriceZar,
-            txHash: verifiedTxHash || null,
-            paymentRailName,
-          });
-        } else {
-          // Standard whole listing:
-          // In accordance with SmartAssets verified escrow rules:
-          // - Funds are secured in escrow (or pending bank settlement verification).
-          // - Asset is locked in 'in_escrow' status.
-          // - Seller balance is NOT credited at checkout (proceeds remain in escrow until release).
-          // - Asset ownership (current_owner_id) is NOT transferred at checkout.
-          // - Buyer does NOT receive holding until release.
-          // - Seller retains holding until release.
+        // 5B. Whole-Item Outright Purchase Path (Aligned with Escrow Lifecycle)
+        // In accordance with SmartAssets verified escrow rules:
+        // - Funds are secured in escrow (or pending bank settlement verification).
+        // - Asset remains locked in 'in_escrow' status.
+        // - Neither seller nor fractional investors receive payouts at checkout.
+        // - Investor positions remain intact until the buyer accepts the item and admin authorizes release.
+        // - Buyout pro-rata allocations and position retirements execute in escrowService.releaseEscrow upon settlement.
 
-          const wholeMilestone = `Escrow Initiated: Buyer initiated purchase via ${paymentRailName}. Status: ${isSettled ? 'Funds Secured in Escrow' : 'Awaiting Settlement'}. Order ${orderId}.`;
-          await supabase.from('asset_history').insert({
-            asset_id: asset.id,
-            year: String(new Date().getFullYear()),
+        const wholeMilestone = asset.allow_investment
+          ? `Buyout Escrow Initiated: Outright purchase via ${paymentRailName}. Status: ${isSettled ? 'Funds Secured in Escrow' : 'Awaiting Settlement'}. Order ${orderId}. Pro-rata investor payouts pending authorized release.`
+          : `Escrow Initiated: Buyer initiated purchase via ${paymentRailName}. Status: ${isSettled ? 'Funds Secured in Escrow' : 'Awaiting Settlement'}. Order ${orderId}.`;
+
+        await supabase.from('asset_history').insert({
+          asset_id: asset.id,
+          year: String(new Date().getFullYear()),
+          event: wholeMilestone,
+          party: `Escrow Custody (${paymentRailName})`,
+          hash: transactionId,
+          tx_hash: verifiedTxHash || transactionId,
+          verified: isSettled,
+        });
+
+        if (asset.token_id && isSettled) {
+          web3Service.recordMilestoneOnChain(asset.token_id, {
+            year: new Date().getFullYear(),
             event: wholeMilestone,
-            party: `Escrow Custody (${paymentRailName})`,
+            party: `Escrow (${orderId})`,
             hash: transactionId,
-            tx_hash: verifiedTxHash || transactionId,
-            verified: isSettled,
           });
+        }
 
-          if (asset.token_id && isSettled) {
-            web3Service.recordMilestoneOnChain(asset.token_id, {
-              year: new Date().getFullYear(),
-              event: wholeMilestone,
-              party: `Escrow (${orderId})`,
-              hash: transactionId,
+        // Notify buyer of escrow order creation
+        await notificationService.sendNotification({
+          userId,
+          type: 'escrow_created',
+          title: isSettled ? 'Payment Secured in Escrow' : 'Order Placed — Pending Settlement',
+          message: isSettled
+            ? `Your payment for "${assetName}" is secured in SmartAssets Escrow. Seller will ship the item. Inspect and accept upon arrival to release funds and claim ownership.`
+            : `Your order for "${assetName}" has been recorded. Once your bank settlement is verified by SmartAssets, funds will be locked in escrow and the seller will ship your item.`,
+          orderId,
+          assetId: asset.id,
+        });
+
+        // If listing is fractionalized, notify active investors that buyout is secured in escrow
+        if (asset.allow_investment) {
+          const activePositions = await investmentPositionService.getActivePositionsForAsset(asset.id);
+          const investorIds = [...new Set(activePositions.map((p) => p.investor_id))];
+          for (const invId of investorIds) {
+            await notificationService.sendNotification({
+              userId: invId,
+              type: 'buyout_in_escrow',
+              title: 'Buyout Secured in Escrow',
+              message: `An outright buyout for "${assetName}" was initiated and funds are secured in escrow (Order ${orderId}). Your pro-rata payout will be distributed upon delivery acceptance and release.`,
+              orderId,
+              assetId: asset.id,
             });
           }
-
-          // Notify buyer of escrow order creation
-          await notificationService.sendNotification({
-            userId,
-            type: 'escrow_created',
-            title: isSettled ? 'Payment Secured in Escrow' : 'Order Placed — Pending Settlement',
-            message: isSettled
-              ? `Your payment for "${assetName}" is secured in SmartAssets Escrow. Seller will ship the item. Inspect and accept upon arrival to release funds and claim ownership.`
-              : `Your order for "${assetName}" has been recorded. Once your bank settlement is verified by SmartAssets, funds will be locked in escrow and the seller will ship your item.`,
-            orderId,
-            assetId: asset.id,
-          });
         }
       }
 

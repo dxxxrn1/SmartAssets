@@ -12,6 +12,8 @@ const {
   verifyAssetUpload,
   getMarketOracle,
   scanAndKnow,
+  getDelistQuote,
+  delistAsset,
 } = require('../controllers/assetController');
 
 // Public routes
@@ -26,5 +28,9 @@ router.post('/scan-and-know', optionalAuth, scanAndKnow);
 // Protected routes (requires registered user login; listing an asset requires verified account)
 router.post('/verify-upload', requireAuth, verifyAssetUpload);
 router.post('/', requireAuth, requireVerified, createAsset);
+
+// Seller-only delisting routes (server enforces assets.seller_id / user_id ownership)
+router.get('/:id/delist-quote', requireAuth, getDelistQuote);
+router.post('/:id/delist', requireAuth, delistAsset);
 
 module.exports = router;

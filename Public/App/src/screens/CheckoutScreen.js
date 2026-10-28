@@ -431,6 +431,8 @@ export default function CheckoutScreen({ navigation, route }) {
             <Text style={styles.successTitle}>
               {isFractional
                 ? 'Investment Confirmed!'
+                : ['sandbox', 'test'].includes(String(receiptData?.stripeMode || '').toLowerCase())
+                ? 'Test Payment Simulated'
                 : receiptData?.escrowStatus === 'pending_payment'
                 ? 'Order Placed — Pending Settlement'
                 : 'Escrow Payment Secured!'}
@@ -438,6 +440,8 @@ export default function CheckoutScreen({ navigation, route }) {
             <Text style={styles.successSub}>
               {isFractional
                 ? `${sharesCount} shares (${((sharesCount / totalShares) * 100).toFixed(1)}% ownership) in ${asset.name} registered to your Vault.`
+                : ['sandbox', 'test'].includes(String(receiptData?.stripeMode || '').toLowerCase())
+                ? 'Test-only Stripe simulation. No real funds were collected or secured in escrow.'
                 : receiptData?.escrowStatus === 'pending_payment'
                 ? `Your order for "${asset.name}" has been recorded. Once your bank settlement is verified by SmartAssets treasury, funds will be locked in escrow and the seller will ship your item.`
                 : `Payment for "${asset.name}" is secured in SmartAssets Escrow. The seller has been notified to ship. Ownership transfers after you inspect and accept the merchandise.`}
@@ -973,7 +977,7 @@ export default function CheckoutScreen({ navigation, route }) {
                 </View>
                 <View style={styles.stripeBadge}>
                   <Feather name="zap" size={11} color="#6C47FF" style={{ marginRight: 4 }} />
-                  <Text style={styles.stripeBadgeText}>Stripe Secured</Text>
+                  <Text style={styles.stripeBadgeText}>Custody unavailable</Text>
                 </View>
               </View>
 

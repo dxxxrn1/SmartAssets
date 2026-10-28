@@ -210,7 +210,7 @@ contract SmartAssetEscrow is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Confirms physical delivery of the collectible to buyer or custody vault.
+     * @notice Buyer alone confirms physical receipt of the collectible.
      */
     function confirmDelivery(uint256 orderId) external {
         EscrowOrder storage order = orders[orderId];
@@ -218,10 +218,7 @@ contract SmartAssetEscrow is Ownable, ReentrancyGuard {
             order.status == EscrowStatus.InTransit || order.status == EscrowStatus.InInspection,
             "Order not in valid state for delivery confirmation"
         );
-        require(
-            msg.sender == order.buyer || msg.sender == order.seller || msg.sender == owner(),
-            "Unauthorized to confirm delivery"
-        );
+        require(msg.sender == order.buyer, "Only buyer can confirm delivery");
 
         order.status = EscrowStatus.Delivered;
         order.deliveredAt = block.timestamp;
@@ -235,13 +232,10 @@ contract SmartAssetEscrow is Ownable, ReentrancyGuard {
     function acceptAsset(uint256 orderId) external {
         EscrowOrder storage order = orders[orderId];
         require(
-            order.status == EscrowStatus.Delivered || order.status == EscrowStatus.InInspection,
+            order.status == EscrowStatus.Delivered,
             "Order must be delivered before acceptance"
         );
-        require(
-            msg.sender == order.buyer || msg.sender == owner(),
-            "Only buyer or platform authority can accept asset"
-        );
+        require(msg.sender == order.buyer, "Only buyer can accept asset");
 
         order.status = EscrowStatus.Accepted;
         order.acceptedAt = block.timestamp;
@@ -260,8 +254,8 @@ contract SmartAssetEscrow is Ownable, ReentrancyGuard {
             "Order cannot be released in current state: buyer acceptance required"
         );
         require(
-            msg.sender == order.buyer || msg.sender == owner(),
-            "Only buyer or platform authority can release funds"
+            msg.sender == owner(),
+            "Only platform administrator can release funds"
         );
 
         uint256 amountToTransfer = order.amount;
@@ -300,7 +294,7 @@ contract SmartAssetEscrow is Ownable, ReentrancyGuard {
 
     /**
      * @notice Refunds locked payment back to the actual buyer.
-     * Authorized by seller (voluntary refund) or platform owner (dispute resolution / failed inspection).
+     * Only the platform owner/administrator may authorize this transfer.
      */
     function refundToBuyer(uint256 orderId) external nonReentrant {
         EscrowOrder storage order = orders[orderId];
@@ -310,10 +304,7 @@ contract SmartAssetEscrow is Ownable, ReentrancyGuard {
             order.status != EscrowStatus.RefundedToBuyer,
             "Order cannot be refunded in current state"
         );
-        require(
-            msg.sender == order.seller || msg.sender == owner(),
-            "Only seller or platform authority can authorize refund"
-        );
+        require(msg.sender == owner(), "Only platform administrator can authorize refund");
 
         uint256 amountToRefund = order.amount;
         order.status = EscrowStatus.RefundedToBuyer;

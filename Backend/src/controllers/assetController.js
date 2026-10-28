@@ -12,6 +12,7 @@ const aiVisionGatekeeper = require('../services/aiVisionGatekeeper');
 const marketOracleService = require('../services/marketOracleService');
 const { uploadImageToCloud, saveBase64Image, normalizeImageUrl } = require('../utils/imageHandler');
 const { sanitizePostgrestFilter } = require('../middlewares/securityMiddleware');
+const investmentPositionService = require('../services/investmentPositionService');
 
 // In-memory server cache to protect Supabase database egress from repetitive queries
 let assetsCache = null;
@@ -1107,6 +1108,138 @@ async function getAssetHealthReport(req, res) {
   }
 }
 
+/**
+ * GET /api/assets/:id/delist-quote
+ * Returns transparent valuation and investor redemption breakdown for seller.
+ * Strictly checks that authenticated user is the original seller.
+ */
+async function getDelistQuote(req, res) {
+  try {
+    const assetId = req.params.id;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return sendError(res, 401, 'Authentication required.');
+    }
+
+    const { data: asset, error: assetErr } = await supabase
+      .from('assets')
+      .select('*')
+      .eq('id', assetId)
+      .maybeSingle();
+
+    if (assetErr || !asset) {
+      return sendError(res, 404, 'Asset not found.');
+    }
+
+    const authoritativeSellerId = asset.seller_id || asset.user_id;
+    if (!authoritativeSellerId || String(authoritativeSellerId) !== String(userId)) {
+      return sendError(
+        res,
+        403,
+        'Unauthorized: Only the original listing owner may request a delisting quote. Investors and third parties are forbidden.',
+        'FORBIDDEN_NOT_SELLER'
+      );
+    }
+
+    if (asset.status !== 'active') {
+      return sendError(
+        res,
+        400,
+        `Cannot delist asset: status is "${asset.status}". Only active listings can be delisted.`,
+        'ASSET_NOT_ACTIVE'
+      );
+    }
+
+    const quote = await investmentPositionService.getRedemptionQuoteForAsset({
+      assetId,
+      sellerId: userId,
+      asset,
+    });
+
+    return res.json({
+      success: true,
+      quote,
+    });
+  } catch (err) {
+    console.error('getDelistQuote error:', err);
+    return sendError(res, 500, err.message || 'Failed to generate delisting quote.');
+  }
+}
+
+/**
+ * POST /api/assets/:id/delist
+ * Atomically delists asset, redeems active investor positions, records audit trail.
+ * Strictly verifies seller authorization and verified payout custody.
+ */
+async function delistAsset(req, res) {
+  try {
+    const assetId = req.params.id;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return sendError(res, 401, 'Authentication required.');
+    }
+
+    // 1. Fetch asset from durable database to authoritatively verify seller
+    const { data: asset, error: assetErr } = await supabase
+      .from('assets')
+      .select('*')
+      .eq('id', assetId)
+      .maybeSingle();
+
+    if (assetErr || !asset) {
+      return sendError(res, 404, 'Asset not found.');
+    }
+
+    // 2. Strict server authorization check (Requirement 2):
+    // Only the original listing owner (assets.seller_id or assets.user_id) may delist.
+    // Investors, current holders, and unrelated users MUST be rejected.
+    // Never trust client-supplied seller IDs.
+    const authoritativeSellerId = asset.seller_id || asset.user_id;
+    if (!authoritativeSellerId || String(authoritativeSellerId) !== String(userId)) {
+      return sendError(
+        res,
+        403,
+        'Unauthorized: Only the original listing owner may delist this asset. Investors, current holders, and unrelated users are rejected.',
+        'FORBIDDEN_NOT_SELLER'
+      );
+    }
+
+    if (asset.status !== 'active') {
+      return sendError(
+        res,
+        400,
+        `Cannot delist asset: current status is "${asset.status}". Only active listings can be delisted.`,
+        'ASSET_NOT_ACTIVE'
+      );
+    }
+
+    const { payoutSource } = req.body || {};
+
+    const result = await investmentPositionService.delistAssetWithRedemption({
+      assetId,
+      sellerId: userId,
+      payoutSource,
+      requester: req.user,
+      asset,
+    });
+
+    // Invalidate in-memory asset cache
+    invalidateAssetsCache();
+
+    return res.json({
+      success: true,
+      message: `Asset "${asset.name}" successfully delisted. ${result.redeemedCount} investor position(s) redeemed.`,
+      result,
+    });
+  } catch (err) {
+    console.error('❌ [AssetController] delistAsset error:', err.message);
+    const statusCode = err.message.includes('Unauthorized') ? 403 : err.message.includes('payout') ? 402 : 400;
+    return sendError(res, statusCode, err.message || 'Failed to delist asset.');
+  }
+}
+
 module.exports = {
   getAssets,
   getAssetById,
@@ -1115,5 +1248,7 @@ module.exports = {
   verifyAssetUpload,
   getMarketOracle,
   scanAndKnow,
+  getDelistQuote,
+  delistAsset,
   invalidateAssetsCache,
 };

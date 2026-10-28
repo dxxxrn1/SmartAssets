@@ -1,4 +1,5 @@
 // ─── Comprehensive Escrow & Payment Flow Test Suite ───────────────────────────
+process.env.NODE_ENV = 'test'; // Enables explicitly test-only simulated non-custodial rails.
 // Validates:
 // 1. Web3 Payment Verification: wrong chain, wrong sender, wrong destination, wrong value, pending/failed receipts.
 // 2. Stripe Settlement Verification: amount/currency/customer mismatch, failed/pending intents.
@@ -109,7 +110,7 @@ async function runComprehensiveEscrowTests() {
     async () => {
       await escrowService.releaseEscrow(orderId, { userId: testBuyerId, role: 'user' });
     },
-    /PREMATURE RELEASE REJECTED|buyer acceptance required/i,
+    /Only an authenticated administrator/i,
     'Attempted release while payment_secured MUST be rejected'
   );
   console.log('   ✅ Premature release rejected while order is in payment_secured state');
@@ -147,7 +148,7 @@ async function runComprehensiveEscrowTests() {
     async () => {
       await escrowService.releaseEscrow(orderId, { userId: testBuyerId, role: 'user' });
     },
-    /PREMATURE RELEASE REJECTED/i,
+    /Only an authenticated administrator/i,
     'Attempted release while in_transit MUST be rejected'
   );
   console.log('   ✅ Premature release rejected while order is in_transit');
@@ -178,6 +179,12 @@ async function runComprehensiveEscrowTests() {
   console.log('   ✅ Admin confirms physical inspection (order status: in_inspection)');
 
   // 3f. Physical Delivery Confirmation (Step 4)
+  await assert.rejects(
+    async () => escrowService.progressEscrowStep(
+      orderId, 4, {}, { userId: testSellerId, role: 'user' }
+    ),
+    /Only the buyer can confirm receipt/i
+  );
   const deliveredOrder = await escrowService.progressEscrowStep(
     orderId,
     4,
@@ -198,7 +205,7 @@ async function runComprehensiveEscrowTests() {
         { userId: testSellerId, role: 'user' }
       );
     },
-    /Unauthorized: Only the buyer or platform authority/i
+    /Unauthorized: Only the buyer/i
   );
 
   const acceptedOrder = await escrowService.progressEscrowStep(
@@ -217,13 +224,13 @@ async function runComprehensiveEscrowTests() {
     async () => {
       await escrowService.releaseEscrow(orderId, { userId: testSellerId, role: 'user' });
     },
-    /Unauthorized: Only the buyer or platform administrator/i
+    /Only an authenticated administrator/i
   );
 
-  // Buyer triggers release
+  // Admin reviews buyer acceptance and triggers release.
   const releasedOrder = await escrowService.releaseEscrow(orderId, {
-    userId: testBuyerId,
-    role: 'user',
+    userId: 'admin-release-test',
+    role: 'admin',
   });
   assert.strictEqual(releasedOrder.status, 'released');
   assert.strictEqual(releasedOrder.currentStep, 5);
@@ -260,11 +267,15 @@ async function runComprehensiveEscrowTests() {
     async () => {
       await escrowService.releaseEscrow(disputeOrderId, { userId: testBuyerId, role: 'user' });
     },
-    /PREMATURE RELEASE REJECTED/i
+    /Only an authenticated administrator/i
   );
   console.log('   ✅ Release strictly blocked while order is in disputed status');
 
   // Refund authorized by administrator resolving dispute
+  await assert.rejects(
+    async () => escrowService.refundEscrow(disputeOrderId, 'Buyer requested refund', { userId: testBuyerId, role: 'user' }),
+    /Only an authenticated administrator/i
+  );
   const refundedOrder = await escrowService.refundEscrow(
     disputeOrderId,
     'Arbitrator ruled in favor of buyer: Return approved.',

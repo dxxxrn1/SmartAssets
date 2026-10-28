@@ -1,4 +1,5 @@
 const assert = require('assert');
+process.env.NODE_ENV = 'test'; // Enables explicitly test-only simulated non-custodial rails.
 const escrowService = require('../src/services/escrowService');
 const web3Service = require('../src/services/web3Service');
 
@@ -47,7 +48,7 @@ async function runEscrowIntegrationTests() {
     testOrderId,
     2,
     { carrier: "Brink's Armored Courier", trackingNumber: 'BRK-892104' },
-    { role: 'admin' }
+    { role: 'admin', userId: 'admin-test' }
   );
   assert.strictEqual(step2Order.currentStep, 2);
   assert.strictEqual(step2Order.status, 'in_transit');
@@ -59,7 +60,7 @@ async function runEscrowIntegrationTests() {
     testOrderId,
     3,
     { note: 'Horologist verified Calibre 324 movement and sapphire crystal.' },
-    { role: 'admin' }
+    { role: 'admin', userId: 'admin-test' }
   );
   assert.strictEqual(step3Order.currentStep, 3);
   assert.strictEqual(step3Order.status, 'in_inspection');
@@ -71,17 +72,17 @@ async function runEscrowIntegrationTests() {
     testOrderId,
     4,
     { note: 'Delivered to buyer custody vault.' },
-    { role: 'admin' }
+    { role: 'user', userId: 'buyer-user-123' }
   );
 
   await escrowService.progressEscrowStep(
     testOrderId,
     5,
     { note: 'Buyer verified serial number and accepted physical collectible.' },
-    { role: 'admin' }
+    { role: 'user', userId: 'buyer-user-123' }
   );
 
-  const releasedOrder = await escrowService.releaseEscrow(testOrderId, { role: 'admin' });
+  const releasedOrder = await escrowService.releaseEscrow(testOrderId, { userId: 'admin-test', role: 'admin' });
   assert.strictEqual(releasedOrder.status, 'released');
   assert.strictEqual(releasedOrder.currentStep, 5);
   assert.ok(releasedOrder.releaseTxHash, 'Release reference must exist');
@@ -104,7 +105,7 @@ async function runEscrowIntegrationTests() {
   const refundedOrder = await escrowService.refundEscrow(
     refundOrderId,
     'Dial serial does not match reference archive.',
-    { role: 'admin' }
+    { userId: 'admin-test', role: 'admin' }
   );
   assert.strictEqual(refundedOrder.status, 'refunded');
   assert.ok(refundedOrder.refundTxHash, 'Refund reference should exist');

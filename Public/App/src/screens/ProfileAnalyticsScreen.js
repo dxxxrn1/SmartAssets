@@ -557,6 +557,13 @@ export default function ProfileAnalyticsScreen({ navigation }) {
         </View>
       );
     }
+    if (listing.status === "delisted") {
+      return (
+        <View style={[styles.listingStatusPill, { backgroundColor: "rgba(239, 68, 68, 0.15)" }]}>
+          <Text style={[styles.listingStatusText, { color: "#EF4444" }]}>Delisted</Text>
+        </View>
+      );
+    }
     if (isMinted && isVer) {
       return (
         <View style={[styles.listingStatusPill, { backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
@@ -1246,7 +1253,12 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                     const sharesPct = Math.round((sharesSold / totalShares) * 100);
 
                     return (
-                      <View key={listing.id || idx} style={styles.listingCard}>
+                      <TouchableOpacity
+                        key={listing.id || idx}
+                        style={styles.listingCard}
+                        onPress={() => navigation.navigate(SCREENS.ASSET_DETAIL, { asset: listing })}
+                        activeOpacity={0.8}
+                      >
                         <View style={{ flexDirection: "row", alignItems: "center" }}>
                           {listing.image ? (
                             <Image
@@ -1293,7 +1305,7 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                             </View>
                           </View>
                         )}
-                      </View>
+                      </TouchableOpacity>
                     );
                   })
                 )}

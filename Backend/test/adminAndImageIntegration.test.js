@@ -49,6 +49,8 @@ async function runTests() {
     assetName: 'Defensive Image Asset',
     assetImage: mockBase64,
     amountZar: 12000,
+    paymentMethod: 'wallet',
+    customTxHash: '0x' + '1'.repeat(64),
   });
   console.log('   Escrow assetImage stored:', escrowOrder.assetImage);
   assert(!escrowOrder.assetImage.startsWith('data:image/'), 'Escrow order should NOT store raw base64');

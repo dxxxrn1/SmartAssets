@@ -109,7 +109,7 @@ async function hydrateEscrowsFromSupabase() {
           amountGbp: Number(row.amount_gbp || row.amount_zar) || 0,
           amountEth: Number(row.amount_eth) || 0,
           paymentMethod: row.payment_method || 'wallet',
-          paymentRail: row.payment_method === 'wallet' ? 'Ethereum Sepolia Web3' : 'Stripe Custody',
+          paymentRail: row.payment_rail || (row.payment_method === 'wallet' ? 'Ethereum Sepolia Web3' : row.payment_method === 'bank' ? 'Bank Wire (Awaiting Settlement Verification)' : 'Stripe (test only)'),
           status: row.status || 'payment_secured',
           currentStep: Math.max(1, completedSteps || 1),
           totalSteps: 5,
@@ -161,6 +161,9 @@ async function createEscrowOrder({
   const ethVal = amountEth || (zarVal / 48000).toFixed(4);
   const now = new Date().toISOString();
   const initialStatus = (status === 'pending_payment' || !isSettled) ? 'pending_payment' : 'payment_secured';
+  if (paymentMethod !== 'wallet' && initialStatus === 'payment_secured' && process.env.NODE_ENV !== 'test') {
+    throw new Error('Card/bank payment cannot be marked secured without a configured escrow custody provider.');
+  }
 
   let depositTxHash = customTxHash || null;
   let contractAddress = null;
@@ -205,7 +208,7 @@ async function createEscrowOrder({
     amountGbp: zarVal,
     amountEth: ethVal,
     paymentMethod: paymentMethod || 'wallet',
-    paymentRail: paymentRail || (paymentMethod === 'wallet' ? 'Ethereum Sepolia Web3' : 'Stripe Card'),
+    paymentRail: paymentRail || (paymentMethod === 'wallet' ? 'Ethereum Sepolia Web3' : paymentMethod === 'bank' ? 'Bank Wire (Awaiting Settlement Verification)' : 'Stripe (test only)'),
     status: initialStatus,
     currentStep: initialStatus === 'payment_secured' ? 1 : 0,
     totalSteps: 5,
@@ -234,6 +237,7 @@ async function createEscrowOrder({
     amount_eth: Number(ethVal),
     status: escrowOrder.status,
     payment_method: escrowOrder.paymentMethod,
+    payment_rail: escrowOrder.paymentRail,
     tx_hash: depositTxHash,
     timeline: escrowOrder.timeline,
     created_at: now,
@@ -260,6 +264,13 @@ async function createEscrowOrder({
     console.error('❌ [EscrowService] Supabase write failed:', dbError.message);
     throw new Error(`Database persistence failure: ${dbError.message}`);
   }
+
+  await supabase.from('escrow_audit_events').insert({
+    order_id: finalOrderId,
+    actor_id: isUuid(buyerId) ? buyerId : null,
+    event_type: initialStatus === 'payment_secured' ? 'funding_verified' : 'created',
+    tx_hash: depositTxHash,
+  });
 
   // 2. Cache in memory
   ordersMap.set(finalOrderId, escrowOrder);
@@ -327,7 +338,7 @@ async function getEscrowOrder(orderId, req = null, requestingUserId = null, isAd
         amountGbp: Number(data.amount_gbp || data.amount_zar) || 0,
         amountEth: Number(data.amount_eth) || 0,
         paymentMethod: data.payment_method,
-        paymentRail: data.payment_method === 'wallet' ? 'Ethereum Sepolia Web3' : 'Stripe Custody',
+        paymentRail: data.payment_rail || (data.payment_method === 'wallet' ? 'Ethereum Sepolia Web3' : data.payment_method === 'bank' ? 'Bank Wire (Awaiting Settlement Verification)' : 'Stripe (test only)'),
         status: data.status,
         currentStep: Math.max(1, completedSteps || 1),
         totalSteps: 5,
@@ -502,7 +513,7 @@ async function progressEscrowStep(orderId, targetStep, details = {}, requester =
       throw new Error(`Invalid transition: Cannot mark in transit from current state "${order.status}".`);
     }
 
-    if (requesterId && !isAdmin && order.sellerId && String(order.sellerId) !== String(requesterId)) {
+    if (!isAdmin && (!requesterId || !order.sellerId || String(order.sellerId) !== String(requesterId))) {
       throw new Error('Unauthorized: Only the seller or platform administrator can record shipment.');
     }
 
@@ -586,6 +597,10 @@ async function progressEscrowStep(orderId, targetStep, details = {}, requester =
       throw new Error(`Invalid transition: Cannot confirm delivery from state "${order.status}".`);
     }
 
+    if (!requesterId || !order.buyerId || String(order.buyerId) !== String(requesterId)) {
+      throw new Error('Unauthorized: Only the buyer can confirm receipt of the merchandise.');
+    }
+
     order.currentStep = 4;
     order.status = 'delivered';
 
@@ -610,16 +625,17 @@ async function progressEscrowStep(orderId, targetStep, details = {}, requester =
 
   // ── Step 5: Buyer Acceptance ──
   else if (step === 5) {
-    if (!['delivered', 'in_inspection'].includes(order.status)) {
-      throw new Error(`Invalid transition: Asset must be delivered before acceptance (current: "${order.status}").`);
+    if (order.status !== 'delivered') {
+      throw new Error(`Invalid transition: Buyer must confirm delivery before acceptance (current: "${order.status}").`);
     }
 
-    if (requesterId && !isAdmin && order.buyerId && String(order.buyerId) !== String(requesterId)) {
-      throw new Error('Unauthorized: Only the buyer or platform authority can accept the asset.');
+    if (!requesterId || !order.buyerId || String(order.buyerId) !== String(requesterId)) {
+      throw new Error('Unauthorized: Only the buyer can confirm receipt and accept the asset.');
     }
 
     order.currentStep = 4;
     order.status = 'accepted';
+    order.buyerAcceptedAt = now;
 
     if (order.timeline[3]) {
       order.timeline[3].completed = true;
@@ -636,7 +652,7 @@ async function progressEscrowStep(orderId, targetStep, details = {}, requester =
         userId: order.sellerId,
         type: 'buyer_accepted',
         title: 'Buyer Accepted Collectible',
-        message: `Buyer confirmed receipt of "${order.assetName}". Escrow release initiated.`,
+        message: `Buyer confirmed receipt of "${order.assetName}". The order is awaiting administrator review before funds are released.`,
         orderId,
       });
     }
@@ -652,12 +668,18 @@ async function progressEscrowStep(orderId, targetStep, details = {}, requester =
     .update({
       status: order.status,
       timeline: order.timeline,
+      buyer_accepted_at: step === 5 ? now : undefined,
       updated_at: now,
     })
     .eq('order_id', orderId);
 
   if (updateError) {
     throw new Error(`Failed to update escrow order in database: ${updateError.message}`);
+  }
+
+  if ([2, 4, 5].includes(step)) {
+    const eventType = step === 2 ? 'shipped' : step === 4 ? 'delivered' : 'buyer_accepted';
+    await supabase.from('escrow_audit_events').insert({ order_id: orderId, actor_id: requesterId || null, event_type: eventType });
   }
 
   ordersMap.set(orderId, order);
@@ -674,27 +696,35 @@ async function releaseEscrow(orderId, requester = {}) {
     throw new Error('Escrow order not found.');
   }
 
-  if (order.status === 'released') {
-    return order;
-  }
+  const requesterId = typeof requester === 'string' ? requester : (requester.userId || requester.id);
+  const isAdmin = typeof requester === 'object' && requester?.role === 'admin';
+  if (!isAdmin || !requesterId) throw new Error('Unauthorized: Only an authenticated administrator can release escrow funds.');
+  if (order.status === 'released') return order;
   if (order.status === 'refunded') {
     throw new Error('Cannot release funds for an order that has already been refunded.');
   }
 
-  // Crucial check: require buyer acceptance or admin resolution
-  const requesterId = typeof requester === 'string' ? requester : (requester.userId || requester.id);
-  const isAdmin = typeof requester === 'object' && requester?.role === 'admin';
-
-  if (!isAdmin) {
-    if (!order.buyerId || String(order.buyerId) !== String(requesterId)) {
-      throw new Error('Unauthorized: Only the buyer or platform administrator can release escrow funds.');
-    }
-    if (order.status !== 'accepted' && order.status !== 'delivered') {
-      throw new Error(
-        `PREMATURE RELEASE REJECTED: Order status is "${order.status}". Funds can only be released after delivery and buyer acceptance.`
-      );
-    }
+  if (order.status !== 'accepted') {
+    throw new Error(`PREMATURE RELEASE REJECTED: Order status is "${order.status}". Buyer acceptance is required.`);
   }
+
+  // This application has no connected fiat escrow custody or payout provider. Do not
+  // mint payout references or credit an internal balance for card/bank purchases.
+  if (order.paymentMethod !== 'wallet' && process.env.NODE_ENV !== 'test') {
+    throw new Error('Fiat escrow payout is unavailable: no custodial payout provider is configured. No funds were moved.');
+  }
+
+  // Claim the terminal action before an external transfer. The conditional update
+  // serializes competing admin requests; only one can proceed to the chain.
+  const { data: claimed, error: claimError } = await supabase
+    .from('escrow_orders')
+    .update({ status: 'release_processing', updated_at: new Date().toISOString() })
+    .eq('order_id', orderId)
+    .eq('status', 'accepted')
+    .select('order_id')
+    .maybeSingle();
+  if (claimError || !claimed) throw new Error('Escrow action already in progress or order state changed. Refresh and review.');
+  await supabase.from('escrow_audit_events').insert({ order_id: orderId, actor_id: requesterId, event_type: 'release_started' });
 
   // Execute on-chain release if on Web3 rail
   let releaseTxHash = null;
@@ -706,28 +736,11 @@ async function releaseEscrow(orderId, requester = {}) {
       releaseTxHash = releaseResult.txHash;
       etherscanUrl = releaseResult.etherscanUrl;
     } catch (err) {
+      await supabase.from('escrow_orders').update({ status: 'accepted' }).eq('order_id', orderId).eq('status', 'release_processing');
       throw new Error(`On-chain release failed: ${err.message}`);
     }
   } else {
-    // Fiat release reference
-    releaseTxHash = 'PAYOUT-ESCROW-' + Math.floor(100000 + Math.random() * 900000);
-  }
-
-  // 1. Authoritative payout to seller's available balance upon release (2.5% platform fee deducted)
-  if (order.sellerId) {
-    const netProceeds = Math.round(Number(order.amountZar || 0) * 0.975);
-    try {
-      const vaultTxService = require('./vaultTransactionService');
-      await vaultTxService.depositFunds({
-        userId: order.sellerId,
-        amount: netProceeds,
-        method: 'Escrow Payout',
-        reference: `RELEASE-${orderId}`,
-        notes: `Net proceeds (R${netProceeds.toLocaleString('en-ZA')}) for sale of "${order.assetName}".`,
-      });
-    } catch (depositErr) {
-      console.warn(`⚠️ [EscrowService] Seller balance deposit notice: ${depositErr.message}`);
-    }
+    releaseTxHash = `TEST-ONLY-SIMULATED-PAYOUT-${orderId}`;
   }
 
   // 2. Transfer asset ownership and user_holdings exactly once
@@ -868,14 +881,26 @@ async function releaseEscrow(orderId, requester = {}) {
     .from('escrow_orders')
     .update({
       status: 'released',
+      release_tx_hash: releaseTxHash,
+      admin_action_by: isUuid(requesterId) ? requesterId : null,
+      admin_action_at: now,
       timeline: order.timeline,
       updated_at: now,
     })
-    .eq('order_id', orderId);
+    .eq('order_id', orderId)
+    .eq('status', 'release_processing');
 
   if (dbError) {
     throw new Error(`Database persistence failure during release: ${dbError.message}`);
   }
+  try {
+    await supabase.from('escrow_audit_events').insert({
+      order_id: orderId,
+      actor_id: isUuid(requesterId) ? requesterId : null,
+      event_type: 'released',
+      tx_hash: releaseTxHash,
+    });
+  } catch (_) {}
 
   ordersMap.set(orderId, order);
 
@@ -885,7 +910,7 @@ async function releaseEscrow(orderId, requester = {}) {
       userId: order.sellerId,
       type: 'funds_released',
       title: 'Escrow Payout Settled',
-      message: `R${order.amountZar.toLocaleString()} has been released to your seller account for "${order.assetName}".`,
+      message: `${order.amountEth} ETH was released on-chain to your wallet for "${order.assetName}".`,
       orderId,
     });
   }
@@ -921,24 +946,29 @@ async function refundEscrow(orderId, reason, requester = {}) {
     throw new Error('Escrow order not found.');
   }
 
-  if (order.status === 'refunded') {
-    return order;
-  }
+  const requesterId = typeof requester === 'string' ? requester : (requester?.userId || requester?.id);
+  const isAdmin = typeof requester === 'object' && requester?.role === 'admin';
+  if (!isAdmin || !requesterId) throw new Error('Unauthorized: Only an authenticated administrator can authorize a buyer refund.');
+  if (order.status === 'refunded') return order;
   if (order.status === 'released') {
     throw new Error('Cannot refund an order whose funds have already been released to the seller.');
   }
 
-  const requesterId = typeof requester === 'string' ? requester : (requester?.userId || requester?.id);
-  const isAdmin = typeof requester === 'object' && requester?.role === 'admin';
-  const isSeller = order.sellerId && String(order.sellerId) === String(requesterId);
-  const isBuyer = order.buyerId && String(order.buyerId) === String(requesterId);
-
-  // Only seller or admin can refund, OR buyer if order is in payment_secured/pending_payment and pre-dispatch cancellation
-  if (!isAdmin && !isSeller) {
-    if (!isBuyer || (order.status !== 'payment_secured' && order.status !== 'pending_payment')) {
-      throw new Error('Unauthorized: Only the seller or platform administrator can authorize an escrow refund.');
-    }
+  if (!['payment_secured', 'in_transit', 'in_inspection', 'delivered', 'accepted', 'disputed'].includes(order.status)) {
+    throw new Error(`Cannot refund order in state "${order.status}".`);
   }
+  if (order.paymentMethod !== 'wallet' && process.env.NODE_ENV !== 'test') {
+    throw new Error('Fiat escrow refund is unavailable: no custodial refund provider is configured. No funds were moved.');
+  }
+  const { data: claimed, error: claimError } = await supabase
+    .from('escrow_orders')
+    .update({ status: 'refund_processing', updated_at: new Date().toISOString() })
+    .eq('order_id', orderId)
+    .eq('status', order.status)
+    .select('order_id')
+    .maybeSingle();
+  if (claimError || !claimed) throw new Error('Escrow action already in progress or order state changed. Refresh and review.');
+  await supabase.from('escrow_audit_events').insert({ order_id: orderId, actor_id: requesterId, event_type: 'refund_started', reason: reason || null });
 
   let refundTxHash = null;
   let etherscanUrl = null;
@@ -949,26 +979,11 @@ async function refundEscrow(orderId, reason, requester = {}) {
       refundTxHash = refundResult.txHash;
       etherscanUrl = refundResult.etherscanUrl;
     } catch (err) {
+      await supabase.from('escrow_orders').update({ status: order.status }).eq('order_id', orderId).eq('status', 'refund_processing');
       throw new Error(`On-chain refund failed: ${err.message}`);
     }
   } else {
-    refundTxHash = 'REFUND-ESCROW-' + Math.floor(100000 + Math.random() * 900000);
-  }
-
-  // Return funds to buyer's available vault balance
-  if (order.buyerId && order.amountZar > 0) {
-    try {
-      const vaultTxService = require('./vaultTransactionService');
-      await vaultTxService.depositFunds({
-        userId: order.buyerId,
-        amount: order.amountZar,
-        method: 'Escrow Refund',
-        reference: `REFUND-${orderId}`,
-        notes: `100% refund for "${order.assetName}". Reason: ${reason || 'Order canceled or failed inspection.'}`,
-      });
-    } catch (refundDepErr) {
-      console.warn(`⚠️ [EscrowService] Buyer refund deposit notice: ${refundDepErr.message}`);
-    }
+    refundTxHash = `TEST-ONLY-SIMULATED-REFUND-${orderId}`;
   }
 
   // Restore asset to active status and restore seller as current owner (buyer does not gain ownership)
@@ -1015,14 +1030,28 @@ async function refundEscrow(orderId, reason, requester = {}) {
     .from('escrow_orders')
     .update({
       status: 'refunded',
+      refund_tx_hash: refundTxHash,
+      refund_reason: order.refundReason,
+      admin_action_by: isUuid(requesterId) ? requesterId : null,
+      admin_action_at: now,
       timeline: order.timeline,
       updated_at: now,
     })
-    .eq('order_id', orderId);
+    .eq('order_id', orderId)
+    .eq('status', 'refund_processing');
 
   if (dbError) {
     throw new Error(`Database persistence failure during refund: ${dbError.message}`);
   }
+  try {
+    await supabase.from('escrow_audit_events').insert({
+      order_id: orderId,
+      actor_id: isUuid(requesterId) ? requesterId : null,
+      event_type: 'refunded',
+      reason: order.refundReason,
+      tx_hash: refundTxHash,
+    });
+  } catch (_) {}
 
   ordersMap.set(orderId, order);
 
@@ -1056,8 +1085,8 @@ async function disputeEscrow(orderId, { reason, evidence, requester = {} }) {
     throw new Error('Escrow order not found.');
   }
 
-  if (order.status === 'released' || order.status === 'refunded') {
-    throw new Error(`Cannot dispute order in terminal state "${order.status}".`);
+  if (!['payment_secured', 'in_transit', 'in_inspection', 'delivered', 'accepted'].includes(order.status)) {
+    throw new Error(`Cannot dispute order in state "${order.status}".`);
   }
 
   const requesterId = requester.userId || requester.id;
@@ -1069,7 +1098,17 @@ async function disputeEscrow(orderId, { reason, evidence, requester = {} }) {
     throw new Error('Unauthorized: Only the buyer or seller can open a dispute.');
   }
 
+  const priorStatus = order.status;
   const now = new Date().toISOString();
+  const { data: claimed, error: claimError } = await supabase
+    .from('escrow_orders')
+    .update({ status: 'disputed', updated_at: now })
+    .eq('order_id', orderId)
+    .eq('status', priorStatus)
+    .select('order_id')
+    .maybeSingle();
+  if (claimError || !claimed) throw new Error('Escrow state changed during dispute submission. Refresh and review.');
+
   order.status = 'disputed';
   order.disputeReason = reason || 'Dispute opened by party.';
   order.disputeEvidence = evidence || null;
@@ -1084,16 +1123,14 @@ async function disputeEscrow(orderId, { reason, evidence, requester = {} }) {
 
   const { error: dbError } = await supabase
     .from('escrow_orders')
-    .update({
-      status: 'disputed',
-      timeline: order.timeline,
-      updated_at: now,
-    })
-    .eq('order_id', orderId);
+    .update({ timeline: order.timeline, updated_at: now })
+    .eq('order_id', orderId)
+    .eq('status', 'disputed');
 
   if (dbError) {
     throw new Error(`Database error recording dispute: ${dbError.message}`);
   }
+  await supabase.from('escrow_audit_events').insert({ order_id: orderId, actor_id: requesterId || null, event_type: 'disputed', reason: order.disputeReason });
 
   ordersMap.set(orderId, order);
 

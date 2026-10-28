@@ -24,8 +24,6 @@ import { useAuth } from "../context/AuthContext";
 import {
   getEscrowOrderApi,
   getMyEscrowOrdersApi,
-  releaseEscrowApi,
-  refundEscrowApi,
   disputeEscrowApi,
   progressEscrowStepApi,
   resolveImageUrl,
@@ -34,15 +32,13 @@ import { SCREENS } from "../constants/navigation";
 
 export default function EscrowTrackerScreen({ navigation, route, isDark }) {
   const c = useColors(isDark);
-  const { user, token } = useAuth();
+  const { token } = useAuth();
   const orderId = route?.params?.orderId || "ORD-892104";
   const initialAsset = route?.params?.asset || {};
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [releasing, setReleasing] = useState(false);
   const [progressing, setProgressing] = useState(false);
-  const [refunding, setRefunding] = useState(false);
   const [disputing, setDisputing] = useState(false);
 
   useEffect(() => {
@@ -60,42 +56,6 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
         console.warn("Escrow fetch warning:", err.message);
       })
       .finally(() => setLoading(false));
-  };
-
-  // ── Release Funds ──
-  const handleReleaseFunds = () => {
-    Alert.alert(
-      "Confirm Receipt & Release Funds",
-      "Have you received the physical collectible and verified that its condition matches the appraisal certificate? This will release the escrow funds to the seller on Ethereum Sepolia.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Yes, Release Funds",
-          style: "default",
-          onPress: async () => {
-            setReleasing(true);
-            try {
-              const res = await releaseEscrowApi(order?.orderId || orderId, token);
-              if (res?.success && res.order) {
-                setOrder(res.order);
-                Alert.alert(
-                  "Funds Released",
-                  "Escrow payout completed and verified. The Certificate of Authenticity is now permanently finalized.",
-                );
-              } else {
-                throw new Error(res?.error || "Release was not confirmed by the server.");
-              }
-            } catch (err) {
-              Alert.alert("Release Failed", err.message || "Failed to release escrow funds.");
-              // Do NOT optimistically mark released on error — refresh from server
-              fetchOrder();
-            } finally {
-              setReleasing(false);
-            }
-          },
-        },
-      ],
-    );
   };
 
   // ── Advance Step (Courier Transit or Appraiser Inspection) ──
@@ -136,7 +96,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
   const handleDispute = () => {
     Alert.alert(
       "SmartAssets Buyer Protection",
-      "If you have not received the asset or if physical condition does not match the certificate, your funds remain 100% locked in escrow custody.",
+      "If you have not received the asset or its condition differs from the agreement, submit a dispute for administrator review.",
       [
         { text: "Back", style: "cancel" },
         {
@@ -173,48 +133,6 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                   },
                 },
               ]
-            );
-          },
-        },
-        {
-          text: "Authorize Full Refund",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Confirm Escrow Refund",
-              "This will execute a refund of 100% of the locked funds back to the buyer's rail.",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Yes, Execute Refund",
-                  style: "destructive",
-                  onPress: async () => {
-                    setRefunding(true);
-                    try {
-                      const res = await refundEscrowApi(
-                        order?.orderId || orderId,
-                        "Canceled or failed physical inspection.",
-                        token,
-                      );
-                      if (res?.success && res.order) {
-                        setOrder(res.order);
-                        Alert.alert(
-                          "Refund Completed",
-                          "100% of escrow funds refunded to the buyer.",
-                        );
-                      }
-                    } catch (err) {
-                      Alert.alert(
-                        "Refund Failed",
-                        err.message || "Escrow refund could not be completed.",
-                      );
-                      fetchOrder();
-                    } finally {
-                      setRefunding(false);
-                    }
-                  },
-                },
-              ],
             );
           },
         },
@@ -838,23 +756,14 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
           </View>
         ) : order?.status === 'accepted' ? (
           <View style={{ gap: 8 }}>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: c.green }]}
-              onPress={handleReleaseFunds}
-              disabled={releasing}
-            >
-              {releasing ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.actionBtnText}>
-                  Release Payout to Seller
-                </Text>
-              )}
-            </TouchableOpacity>
+            <View style={[styles.actionBtn, { backgroundColor: c.cardLight, borderColor: c.border, borderWidth: 1 }]}>
+              <Text style={[styles.actionBtnText, { color: c.muted, textAlign: 'center' }]}>
+                Buyer accepted — awaiting administrator review
+              </Text>
+            </View>
             <TouchableOpacity
               style={[styles.secondaryBtn, { borderColor: "#EF444440" }]}
               onPress={handleDispute}
-              disabled={releasing}
             >
               <Text style={{ color: "#EF4444", fontSize: 12, fontWeight: "600", textAlign: "center" }}>
                 Having an issue? Open Official Dispute
@@ -867,7 +776,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
               style={[
                 styles.actionBtn,
                 {
-                  backgroundColor: ['delivered', 'in_inspection'].includes(order?.status)
+                  backgroundColor: order?.status === 'delivered'
                     ? c.primary
                     : c.cardLight,
                   borderColor: c.border,
@@ -875,7 +784,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                 },
               ]}
               onPress={() => {
-                if (order?.status === 'delivered' || order?.status === 'in_inspection') {
+                if (order?.status === 'delivered') {
                   handleProgressStep(5, "Buyer confirmed receipt and accepted condition.");
                 } else if (order?.status === 'in_transit') {
                   handleProgressStep(4, "Collectible delivered to recipient.");
@@ -887,13 +796,13 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                 style={[
                   styles.actionBtnText,
                   {
-                    color: ['delivered', 'in_inspection', 'in_transit'].includes(order?.status)
+                    color: ['delivered', 'in_transit'].includes(order?.status)
                       ? '#FFFFFF'
                       : c.muted,
                   },
                 ]}
               >
-                {order?.status === 'delivered' || order?.status === 'in_inspection'
+                {order?.status === 'delivered'
                   ? 'Accept Collectible Condition'
                   : order?.status === 'in_transit'
                   ? 'Confirm Delivery Receipt'
@@ -904,7 +813,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
             <TouchableOpacity
               style={[styles.secondaryBtn, { borderColor: "#EF444440" }]}
               onPress={handleDispute}
-              disabled={refunding || releasing}
+              disabled={disputing}
             >
               <Text
                 style={{
@@ -914,7 +823,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                   textAlign: "center",
                 }}
               >
-                Having an issue? Open Dispute or Request Refund
+                Having an issue? Open a dispute for administrator review
               </Text>
             </TouchableOpacity>
           </View>

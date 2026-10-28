@@ -1,4 +1,5 @@
 // ─── Test Suite: Escrow Buying & Selling Transaction Flow ──────────────────────
+process.env.NODE_ENV = 'test'; // Enables explicitly test-only simulated non-custodial rails.
 // Verifies:
 // 1. Bank references without independent settlement create pending_payment and do not notify funds secured.
 // 2. Invalid or unconfirmed payments are rejected.
@@ -162,7 +163,7 @@ async function runTests() {
     cardOrderId,
     4,
     { notes: 'Package delivered to buyer address.' },
-    { role: 'courier' }
+    { role: 'buyer', id: testBuyerId }
   );
   assert.strictEqual(delivered.status, 'delivered');
   assert.strictEqual(delivered.currentStep, 4);
@@ -193,19 +194,19 @@ async function runTests() {
   });
 
   // Execute release
-  const releasedOrder = await escrowService.releaseEscrow(cardOrderId, testBuyerId);
+  const adminActor = { userId: 'test-escrow-admin', role: 'admin' };
+  const releasedOrder = await escrowService.releaseEscrow(cardOrderId, adminActor);
   assert.strictEqual(releasedOrder.status, 'released');
   assert.strictEqual(releasedOrder.timeline[4].completed, true);
 
-  // Verify seller received net proceeds (15000 - 2.5% = 14625)
+  // Test simulation must never credit an internal seller balance.
   const sellerBalanceAfter = await vaultTransactionService.getUserBalance(testSellerId);
-  const expectedProceeds = Math.round(assetPriceZar * 0.975);
   assert.strictEqual(
     sellerBalanceAfter,
-    initialSellerBalance + expectedProceeds,
-    `Seller should receive net proceeds R${expectedProceeds} added to previous balance`
+    initialSellerBalance,
+    'Test-only simulated payout must not credit seller balance'
   );
-  console.log(`   ✅ Seller credited R${expectedProceeds} in available vault cash upon verified release.`);
+  console.log('   ✅ Test-only simulated payout does not credit seller balance.');
 
   // Verify holding transferred from seller to buyer
   const { data: sellerHoldingsAfter } = await supabase
@@ -229,13 +230,13 @@ async function runTests() {
 
   // ── TEST 7: Idempotency & Duplicate Release Prevention ──
   console.log('\n🧪 [TEST 7] Testing duplicate releaseEscrow idempotency (no double-credit)...');
-  const duplicateRelease = await escrowService.releaseEscrow(cardOrderId, testBuyerId);
+  const duplicateRelease = await escrowService.releaseEscrow(cardOrderId, adminActor);
   assert.strictEqual(duplicateRelease.status, 'released');
   const sellerBalanceAfterDuplicate = await vaultTransactionService.getUserBalance(testSellerId);
   assert.strictEqual(
     sellerBalanceAfterDuplicate,
-    initialSellerBalance + expectedProceeds,
-    'Duplicate release must NOT double-credit seller'
+    initialSellerBalance,
+    'Release must not credit seller balance'
   );
   console.log('   ✅ Duplicate release is idempotent and prevented double-spending.');
 
@@ -261,16 +262,16 @@ async function runTests() {
   });
 
   const buyerInitialBalance = await vaultTransactionService.getUserBalance(testBuyerId);
-  const refundedOrder = await escrowService.refundEscrow(refundOrderId, 'Item failed appraisal inspection', { role: 'admin' });
+  const refundedOrder = await escrowService.refundEscrow(refundOrderId, 'Item failed appraisal inspection', { userId: 'test-escrow-admin', role: 'admin' });
   assert.strictEqual(refundedOrder.status, 'refunded');
 
   const buyerBalanceAfterRefund = await vaultTransactionService.getUserBalance(testBuyerId);
   assert.strictEqual(
     buyerBalanceAfterRefund,
-    buyerInitialBalance + refundAmount,
-    'Buyer must receive full refund in available balance'
+    buyerInitialBalance,
+    'Test-only simulated refund must not credit buyer balance'
   );
-  console.log(`   ✅ Buyer received full refund of R${refundAmount}.`);
+  console.log('   ✅ Test-only simulated refund does not credit buyer balance.');
 
   // ── TEST 9: getUserVault Displays Available Cash, Escrow Funds, and Portfolio Value Separately ──
   console.log('\n🧪 [TEST 9] Testing getUserVault authoritative separation of cash, escrow, and portfolio value...');

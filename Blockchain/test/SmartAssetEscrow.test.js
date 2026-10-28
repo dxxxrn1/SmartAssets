@@ -183,6 +183,17 @@ describe("SmartAssetEscrow Contract", function () {
       expect(order.status).to.equal(5); // Accepted
     });
 
+    it("should reject seller or owner attempts to confirm buyer receipt or acceptance", async function () {
+      await escrow.connect(seller).recordShipment(orderId, trackingHash);
+      await expect(escrow.connect(seller).confirmDelivery(orderId))
+        .to.be.revertedWith("Only buyer can confirm delivery");
+      await expect(escrow.connect(owner).confirmDelivery(orderId))
+        .to.be.revertedWith("Only buyer can confirm delivery");
+      await escrow.connect(buyer).confirmDelivery(orderId);
+      await expect(escrow.connect(owner).acceptAsset(orderId))
+        .to.be.revertedWith("Only buyer can accept asset");
+    });
+
     it("should release funds to seller ONLY after buyer acceptance", async function () {
       await escrow.connect(seller).recordShipment(orderId, trackingHash);
       await escrow.connect(owner).confirmInspection(orderId);
@@ -191,7 +202,10 @@ describe("SmartAssetEscrow Contract", function () {
 
       const sellerInitialBal = await ethers.provider.getBalance(seller.address);
 
-      const tx = await escrow.connect(buyer).releaseToSeller(orderId);
+      await expect(escrow.connect(buyer).releaseToSeller(orderId))
+        .to.be.revertedWith("Only platform administrator can release funds");
+
+      const tx = await escrow.connect(owner).releaseToSeller(orderId);
 
       await expect(tx)
         .to.emit(escrow, "FundsReleased")
@@ -211,7 +225,7 @@ describe("SmartAssetEscrow Contract", function () {
 
       await expect(
         escrow.connect(thirdParty).releaseToSeller(orderId)
-      ).to.be.revertedWith("Only buyer or platform authority can release funds");
+      ).to.be.revertedWith("Only platform administrator can release funds");
     });
   });
 
@@ -266,26 +280,19 @@ describe("SmartAssetEscrow Contract", function () {
       expect(order.status).to.equal(8); // RefundedToBuyer
     });
 
-    it("should allow seller to voluntarily refund buyer", async function () {
-      const buyerInitialBal = await ethers.provider.getBalance(buyer.address);
-
-      await escrow.connect(seller).refundToBuyer(orderId);
-
-      const buyerFinalBal = await ethers.provider.getBalance(buyer.address);
-      expect(buyerFinalBal - buyerInitialBal).to.equal(depositAmount);
-
-      const order = await escrow.getOrder(orderId);
-      expect(order.status).to.equal(8); // RefundedToBuyer
+    it("should reject seller-initiated refunds", async function () {
+      await expect(escrow.connect(seller).refundToBuyer(orderId))
+        .to.be.revertedWith("Only platform administrator can authorize refund");
     });
 
     it("should revert if unauthorized party attempts refund", async function () {
       await expect(
         escrow.connect(thirdParty).refundToBuyer(orderId)
-      ).to.be.revertedWith("Only seller or platform authority can authorize refund");
+      ).to.be.revertedWith("Only platform administrator can authorize refund");
     });
 
     it("should revert if refund is attempted on already released or refunded order", async function () {
-      await escrow.connect(seller).refundToBuyer(orderId);
+      await escrow.connect(owner).refundToBuyer(orderId);
 
       await expect(
         escrow.connect(owner).refundToBuyer(orderId)

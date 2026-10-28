@@ -40,6 +40,20 @@ async function createPaymentIntent({ amount, currency = 'zar', metadata = {} }) 
 
   const numAmount = Number(amount);
 
+  // Never contact Stripe from automated tests; keep simulated intents local and inert.
+  if (process.env.NODE_ENV === 'test') {
+    const sandboxId = 'pi_sandbox_' + crypto.randomBytes(12).toString('hex');
+    const sandboxSecret = sandboxId + '_secret_' + crypto.randomBytes(16).toString('hex');
+    return {
+      clientSecret: sandboxSecret,
+      paymentIntentId: sandboxId,
+      publishableKey: null,
+      amount: numAmount,
+      currency: currency.toUpperCase(),
+      mode: 'sandbox',
+    };
+  }
+
   if (stripe) {
     const intent = await stripe.paymentIntents.create({
       amount: Math.round(numAmount * 100), // In smallest currency unit (cents)
@@ -205,6 +219,15 @@ async function verifyPaymentIntent(paymentIntentId, expected = {}) {
 // ── Configuration Info ──────────────────────────────────────────────────────
 
 function getStripeConfig() {
+  if (process.env.NODE_ENV === 'test') {
+    return {
+      isConfigured: false,
+      mode: 'sandbox',
+      publishableKey: null,
+      keyHint: null,
+      escrowNotice: 'Test-only simulated payments; no real funds are processed or secured.',
+    };
+  }
   return {
     isConfigured: isLiveKey,
     mode: isLiveKey ? (STRIPE_SECRET_KEY.includes('_test_') ? 'test' : 'live') : 'sandbox',
