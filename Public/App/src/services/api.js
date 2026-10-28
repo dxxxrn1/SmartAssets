@@ -488,6 +488,14 @@ export async function getAssetDetails(assetId) {
 }
 
 /**
+ * Fetch authoritative AI Vision & Market Oracle Health Report for an asset.
+ * @param {string} assetId
+ */
+export async function getAssetHealthReportApi(assetId) {
+  return apiRequest(`/assets/${assetId}/health-report`, { method: "GET" });
+}
+
+/**
  * Create a new asset listing with picture and provenance history.
  * Automatically invalidates client marketplace cache so the new asset appears immediately.
  * @param {object} assetData - { name, category, askingPrice, year, condition, description, image, history }

@@ -1194,7 +1194,7 @@ export default function AssetDetailScreen({ navigation, route }) {
 
           <TouchableOpacity
             style={styles.healthReportBtn}
-            onPress={() => setHealthModalVisible(true)}
+            onPress={() => navigation.navigate(SCREENS.HEALTH_REPORT, { asset })}
             activeOpacity={0.8}
           >
             <Feather

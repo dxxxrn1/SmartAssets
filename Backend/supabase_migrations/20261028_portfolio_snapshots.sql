@@ -29,16 +29,26 @@ ALTER TABLE public.portfolio_snapshots ENABLE ROW LEVEL SECURITY;
 -- 5. RLS Policies
 DROP POLICY IF EXISTS "Users can view own portfolio snapshots" ON public.portfolio_snapshots;
 DROP POLICY IF EXISTS "Users can insert own portfolio snapshots" ON public.portfolio_snapshots;
+DROP POLICY IF EXISTS "Users can update own portfolio snapshots" ON public.portfolio_snapshots;
 DROP POLICY IF EXISTS "Service role full access on portfolio snapshots" ON public.portfolio_snapshots;
 
+-- User read access to own records
 CREATE POLICY "Users can view own portfolio snapshots"
   ON public.portfolio_snapshots FOR SELECT
   USING (auth.uid() = user_id);
 
+-- User insert access (required for new date snapshots)
 CREATE POLICY "Users can insert own portfolio snapshots"
   ON public.portfolio_snapshots FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+-- User update access (REQUIRED for upsert / ON CONFLICT DO UPDATE)
+CREATE POLICY "Users can update own portfolio snapshots"
+  ON public.portfolio_snapshots FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Service role / backend administrator full access
 CREATE POLICY "Service role full access on portfolio snapshots"
   ON public.portfolio_snapshots FOR ALL
   TO service_role
