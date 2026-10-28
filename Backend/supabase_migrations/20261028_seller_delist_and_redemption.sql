@@ -1,13 +1,9 @@
--- ============================================================================
 -- SMARTASSETS — Seller Delisting, Investor Redemption & Position Security RLS
 -- File: Backend/supabase_migrations/20261028_seller_delist_and_redemption.sql
 -- Run in Supabase Dashboard -> SQL Editor -> New Query -> Run
--- ============================================================================
-
 -- 1. EXTEND INVESTOR_POSITIONS STATUS CHECK & ASSETS COLUMNS
 -- Add 'retired_delisted' to the allowed status values
 ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-
 DO $$
 BEGIN
   IF EXISTS (
