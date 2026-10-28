@@ -3,7 +3,15 @@ const fs = require("fs");
 const path = require("path");
 
 async function main() {
-  const [deployer] = await hre.ethers.getSigners();
+  const signers = await hre.ethers.getSigners();
+  if (!signers || signers.length === 0) {
+    console.error("\n❌ Deployment halted: No valid Sepolia deployer private key configured.");
+    console.error("   Please set SEPOLIA_RELAYER_PRIVATE_KEY in your .env file.");
+    console.error("   The key must be a 64-character hexadecimal private key (32 bytes), e.g. from MetaMask account export.");
+    console.error("   Example: SEPOLIA_RELAYER_PRIVATE_KEY=\"0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n");
+    process.exit(1);
+  }
+  const deployer = signers[0];
   console.log("\n🚀 Deploying SmartAssetCertificate ERC-721 contract...");
   console.log("   Deployer address:", deployer.address);
 
