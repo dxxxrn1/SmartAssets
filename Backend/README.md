@@ -48,7 +48,7 @@ flowchart TD
 | Path Prefix | Router File | Primary Responsibility |
 | :--- | :--- | :--- |
 | `/api/auth` | `src/routes/authRoutes.js` | User registration, login, SIWE nonce generation, and wallet authentication. |
-| `/api/assets` & `/api/list-item` | `src/routes/assetRoutes.js` | Marketplace listings, category filters, whole & fractional catalog, AI Gatekeeper listing. |
+| `/api/assets` & `/api/list-item` | `src/routes/assetRoutes.js` | Marketplace listings, category filters, whole & fractional catalog, AI Gatekeeper listing, dynamic AI Health Report. |
 | `/api/verification` | `src/routes/verificationRoutes.js` | 3-document compliance uploads (`id`, `tax`, `proof_of_residence`), status inspection. |
 | `/api/bank-accounts` | `src/routes/bankAccountRoutes.js` | Bank account linking, masking (`****3746`), and withdrawal approvals. |
 | `/api/escrow` | `src/routes/escrowRoutes.js` | Dual-ledger escrow orders, carrier tracking, physical horological inspection, disputes. |

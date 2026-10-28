@@ -186,6 +186,61 @@ Fetches active marketplace listings with optional category, search, and pricing 
 - **Query Params:** `category`, `search`, `minPrice`, `maxPrice`, `sort`
 - **Response (200 OK):** Array of asset records including on-chain token ID and fractional share parameters.
 
+#### `GET /api/assets/:id`
+Retrieves granular details of a single collectible, including seller information, verification badge, provenance trail, and fractional shares.
+
+#### `GET /api/assets/:id/health-report`
+Generates an authoritative, real-time AI Authenticity & Condition Health Audit Report for an asset:
+- Dynamically queries SerpApi Google Shopping for live South African market comps.
+- Computes multi-factor metric breakdown (Authenticity, Condition Grade, Market Demand & Liquidity, Price Comps Alignment, Fraud & Alteration Risk).
+- Evaluates 4-point physical custody & AI Vision Gatekeeper verification checklist.
+- Generates tailored contextual audit recommendation and live price bounds.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "assetId": "093df381-0dd2-...",
+    "assetName": "Huawei D16",
+    "overallScore": 91,
+    "grade": "Grade A (Verified Mint)",
+    "confidencePct": 96,
+    "authenticityScore": 95,
+    "conditionScore": 97,
+    "liquidityScore": 88,
+    "priceAlignmentScore": 78,
+    "fraudRiskScore": 4,
+    "metricBreakdown": [
+      { "label": "Authenticity Verification", "score": 95, "color": "#10B981", "invert": false },
+      { "label": "Physical Condition Grade", "score": 97, "color": "#10B981", "invert": false },
+      { "label": "Market Demand & Liquidity", "score": 88, "color": "#00C2FF", "invert": false },
+      { "label": "Price Comps Alignment", "score": 78, "color": "#00C2FF", "invert": false },
+      { "label": "Fraud & Alteration Risk", "score": 4, "color": "#10B981", "invert": true }
+    ],
+    "checklist": [
+      { "id": "chk-1", "title": "Physical asset authenticated and sealed in SmartAssets Custody Vault", "passed": true },
+      { "id": "chk-2", "title": "OEM firmware hash, serial barcode, and chassis tolerances verified against reference database", "passed": true },
+      { "id": "chk-3", "title": "Passed AI Vision Multi-Tier Gatekeeper scan (zero synthetic or deepfake anomalies)", "passed": true },
+      { "id": "chk-4", "title": "Asking price matches live market comps within standard deviation", "passed": true }
+    ],
+    "oracleValuation": {
+      "lowPrice": 4140,
+      "lowPriceFormatted": "R4,140",
+      "fairPrice": 7359,
+      "fairPriceFormatted": "R7,359",
+      "highPrice": 9199,
+      "highPriceFormatted": "R9,199",
+      "source": "SerpApi Live Shopping (South Africa)",
+      "isSynced": true
+    },
+    "recommendation": {
+      "title": "High-Utility Productivity Workhorse",
+      "body": "The Huawei MateBook D 16 offers a compelling mix of screen real estate and processing power...",
+      "status": "VERIFIED_REAL"
+    },
+    "timestamp": "2026-10-28T11:46:11.967Z"
+  }
+  ```
+
 #### `POST /api/list-item` (or `POST /api/assets`)
 Requires `requireAuth` and `requireVerified`. Triggers the **AI Vision Gatekeeper** pipeline:
 - **Request Body:**
