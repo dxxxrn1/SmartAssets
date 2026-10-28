@@ -3,23 +3,39 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SmartAssets • Admin Authentication</title>
+  <title>SmartAssets • Administrator Sign In</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg-base: #070B14;
-      --bg-surface: #0F1626;
-      --bg-elevated: #162035;
-      --border: rgba(255, 255, 255, 0.09);
-      --text-primary: #F8FAFC;
-      --text-secondary: #94A3B8;
-      --text-muted: #64748B;
-      --accent: #7C5CFC;
-      --accent-cyan: #38BDF8;
-      --emerald: #10B981;
-      --danger: #EF4444;
+      --brand-blue-900: #0F1E4A;
+      --brand-blue-800: #172554;
+      --brand-blue-700: #1D4ED8;
+      --brand-blue-600: #2563EB;
+      --brand-blue-500: #3B82F6;
+      --brand-blue-100: #DBEAFE;
+      --brand-blue-50:  #EFF6FF;
+      --slate-950: #0B0F19;
+      --slate-900: #0F172A;
+      --slate-800: #1E293B;
+      --slate-700: #334155;
+      --slate-600: #475569;
+      --slate-500: #64748B;
+      --slate-400: #94A3B8;
+      --slate-300: #CBD5E1;
+      --slate-200: #E2E8F0;
+      --slate-100: #F1F5F9;
+      --slate-50:  #F8FAFC;
+      --white: #FFFFFF;
+      --emerald-600: #059669;
+      --emerald-500: #10B981;
+      --emerald-50: #ECFDF5;
+      --red-600: #DC2626;
+      --red-500: #EF4444;
+      --red-50: #FEF2F2;
+      --amber-600: #D97706;
+      --amber-50: #FFFBEB;
     }
 
     * {
@@ -28,79 +44,272 @@
       padding: 0;
     }
 
-    body {
-      min-height: 100vh;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: radial-gradient(circle at 18% 15%, rgba(124, 92, 252, 0.22), transparent 42%),
-                  radial-gradient(circle at 82% 85%, rgba(56, 189, 248, 0.16), transparent 42%),
-                  var(--bg-base);
-      color: var(--text-primary);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-    }
-
-    .login-card {
+    html, body {
       width: 100%;
-      max-width: 440px;
-      background: rgba(15, 22, 38, 0.92);
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      padding: 36px 32px;
-      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
-      backdrop-filter: blur(18px);
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--white);
+      color: var(--slate-900);
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
     }
 
-    .brand-header {
+    /* Full-Page Edge-to-Edge Split Container */
+    .admin-split-container {
+      width: 100%;
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      margin: 0;
+      padding: 0;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      position: relative;
+    }
+
+    /* ── LEFT PANEL: Full-Height Blue Gradient & Workflow Highlights ── */
+    .left-panel {
+      position: relative;
+      background:
+        radial-gradient(circle at 18% 18%, rgba(96, 165, 250, 0.35), transparent 45%),
+        radial-gradient(circle at 82% 82%, rgba(29, 78, 216, 0.45), transparent 50%),
+        linear-gradient(150deg, #1E40AF 0%, #1D4ED8 42%, #172554 100%);
+      color: var(--white);
+      padding: 48px 54px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Ambient decorative glow in background */
+    .left-panel::after {
+      content: "";
+      position: absolute;
+      top: -20%;
+      right: -15%;
+      width: 440px;
+      height: 440px;
+      border-radius: 50%;
+      background: rgba(59, 130, 246, 0.22);
+      filter: blur(65px);
+      pointer-events: none;
+    }
+
+    .left-panel-inner {
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 100%;
+      position: relative;
+      z-index: 2;
+    }
+
+    .brand-top {
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 12px;
       margin-bottom: 24px;
     }
 
-    .brand-mark {
-      width: 46px;
-      height: 46px;
-      border-radius: 13px;
-      background: linear-gradient(135deg, #7C5CFC, #38BDF8);
+    .brand-logo-badge {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.32);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 800;
-      font-size: 18px;
-      color: #fff;
-      box-shadow: 0 8px 24px rgba(124, 92, 252, 0.38);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
     }
 
-    .brand-title {
-      font-size: 19px;
-      font-weight: 800;
-      letter-spacing: -0.02em;
+    .brand-logo-badge svg {
+      width: 22px;
+      height: 22px;
+      color: var(--white);
     }
 
-    .brand-sub {
-      font-size: 12px;
-      color: var(--accent-cyan);
-      font-weight: 600;
+    .brand-name {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-top: 2px;
+      color: var(--white);
+    }
+
+    .left-hero {
+      margin: 32px 0 36px 0;
+    }
+
+    .hero-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      backdrop-filter: blur(12px);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--white);
+      margin-bottom: 18px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    }
+
+    .hero-heading {
+      font-size: 38px;
+      font-weight: 800;
+      line-height: 1.18;
+      letter-spacing: -0.03em;
+      color: var(--white);
+      margin-bottom: 16px;
+    }
+
+    .hero-sub {
+      font-size: 14.5px;
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.88);
+      max-width: 460px;
+    }
+
+    /* 3-Step Highlight Cards at bottom of left panel (inspired by reference image) */
+    .highlights-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .highlight-card {
+      border-radius: 16px;
+      padding: 18px 15px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 124px;
+      transition: transform 0.2s ease;
+    }
+
+    /* Active Highlight Card (solid white, matching reference step 1) */
+    .highlight-card.active {
+      background: var(--white);
+      color: var(--slate-900);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .highlight-card.active .highlight-number {
+      background: var(--brand-blue-700);
+      color: var(--white);
+    }
+
+    .highlight-card.active .highlight-title {
+      color: var(--slate-900);
+    }
+
+    .highlight-card.active .highlight-desc {
+      color: var(--slate-600);
+    }
+
+    /* Secondary Highlight Cards (frosted glass, matching reference steps 2 & 3) */
+    .highlight-card.glass {
+      background: rgba(255, 255, 255, 0.13);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      backdrop-filter: blur(14px);
+      color: var(--white);
+    }
+
+    .highlight-card.glass .highlight-number {
+      background: rgba(255, 255, 255, 0.22);
+      color: var(--white);
+    }
+
+    .highlight-card.glass .highlight-title {
+      color: var(--white);
+    }
+
+    .highlight-card.glass .highlight-desc {
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .highlight-number {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12.5px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .highlight-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin-bottom: 4px;
+    }
+
+    .highlight-desc {
+      font-size: 11px;
+      line-height: 1.38;
+    }
+
+    /* ── RIGHT PANEL: Clean Full-Height White Authentication Panel ── */
+    .right-panel {
+      background: var(--white);
+      padding: 48px 54px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .form-wrapper {
+      max-width: 440px;
+      width: 100%;
+      margin: auto 0;
+    }
+
+    .panel-header {
+      margin-bottom: 22px;
+    }
+
+    .eyebrow-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--brand-blue-600);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
     }
 
     h1 {
-      font-size: 22px;
-      font-weight: 700;
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--slate-900);
+      letter-spacing: -0.025em;
       margin-bottom: 6px;
     }
 
     .subtitle {
       font-size: 13.5px;
-      color: var(--text-secondary);
+      color: var(--slate-500);
       line-height: 1.5;
-      margin-bottom: 24px;
     }
 
+    /* Alerts */
     .alert-box {
       display: none;
       padding: 12px 14px;
@@ -109,22 +318,116 @@
       font-weight: 500;
       margin-bottom: 18px;
       line-height: 1.45;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .alert-box svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      margin-top: 1px;
     }
 
     .alert-box.error {
-      display: block;
-      background: rgba(239, 68, 68, 0.14);
-      border: 1px solid rgba(239, 68, 68, 0.4);
-      color: #FCA5A5;
+      display: flex;
+      background: var(--red-50);
+      border: 1px solid #FECACA;
+      color: #991B1B;
     }
 
     .alert-box.success {
-      display: block;
-      background: rgba(16, 185, 129, 0.14);
-      border: 1px solid rgba(16, 185, 129, 0.4);
-      color: #6EE7B7;
+      display: flex;
+      background: var(--emerald-50);
+      border: 1px solid #A7F3D0;
+      color: #065F46;
     }
 
+    .alert-box.warning {
+      display: flex;
+      background: var(--amber-50);
+      border: 1px solid #FDE68A;
+      color: #92400E;
+    }
+
+    /* Active Session Banner */
+    .active-session-card {
+      display: none;
+      background: var(--slate-50);
+      border: 1px solid var(--slate-200);
+      border-left: 4px solid var(--emerald-500);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+    }
+
+    .active-session-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--slate-900);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 4px;
+    }
+
+    .active-session-title span.pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald-500);
+      display: inline-block;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    }
+
+    .active-session-desc {
+      font-size: 12.5px;
+      color: var(--slate-600);
+      margin-bottom: 12px;
+    }
+
+    .active-session-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn-portal-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--brand-blue-700);
+      color: var(--white);
+      text-decoration: none;
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: 8px;
+      transition: background 0.15s;
+    }
+
+    .btn-portal-link:hover {
+      background: var(--brand-blue-800);
+    }
+
+    .btn-switch-account {
+      background: var(--white);
+      border: 1px solid var(--slate-300);
+      color: var(--slate-700);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 7px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-switch-account:hover {
+      background: var(--slate-100);
+      border-color: var(--slate-400);
+    }
+
+    /* Form Fields */
     .form-group {
       margin-bottom: 18px;
     }
@@ -134,169 +437,399 @@
       font-size: 11.5px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: var(--text-secondary);
+      letter-spacing: 0.06em;
+      color: var(--slate-700);
       margin-bottom: 7px;
+    }
+
+    .form-input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
     }
 
     .form-input {
       width: 100%;
-      padding: 13px 15px;
+      height: 48px;
+      padding: 0 16px;
       border-radius: 12px;
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      color: var(--text-primary);
-      font-size: 14px;
+      background: var(--slate-50);
+      border: 1.5px solid var(--slate-200);
+      color: var(--slate-900);
+      font-size: 14.5px;
       font-family: inherit;
       outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+    }
+
+    .form-input.has-toggle {
+      padding-right: 48px;
     }
 
     .form-input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.22);
+      border-color: var(--brand-blue-600);
+      background: var(--white);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
     }
 
+    .form-input::placeholder {
+      color: var(--slate-400);
+    }
+
+    /* Accessible Password Show/Hide Toggle */
+    .password-toggle-btn {
+      position: absolute;
+      right: 10px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: var(--slate-500);
+      border-radius: 8px;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .password-toggle-btn:hover {
+      color: var(--slate-800);
+      background: var(--slate-200);
+    }
+
+    .password-toggle-btn:focus-visible {
+      outline: 2px solid var(--brand-blue-600);
+      outline-offset: 2px;
+    }
+
+    .password-toggle-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Submit Button */
     .btn-submit {
       width: 100%;
-      padding: 14px 18px;
+      height: 50px;
+      margin-top: 6px;
       border: none;
       border-radius: 12px;
-      background: linear-gradient(135deg, #7C5CFC, #4F46E5);
-      color: #FFFFFF;
+      background: linear-gradient(135deg, var(--brand-blue-700) 0%, var(--brand-blue-600) 100%);
+      color: var(--white);
       font-size: 14.5px;
       font-weight: 700;
+      letter-spacing: 0.01em;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
       transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
-      box-shadow: 0 10px 26px rgba(124, 92, 252, 0.35);
-      margin-top: 6px;
+      box-shadow: 0 8px 22px rgba(29, 78, 216, 0.28);
     }
 
     .btn-submit:hover {
       transform: translateY(-1px);
-      box-shadow: 0 14px 30px rgba(124, 92, 252, 0.45);
+      box-shadow: 0 12px 28px rgba(29, 78, 216, 0.38);
+      background: linear-gradient(135deg, #1E40AF 0%, #1D4ED8 100%);
+    }
+
+    .btn-submit:active {
+      transform: translateY(0);
     }
 
     .btn-submit:disabled {
-      opacity: 0.65;
+      opacity: 0.7;
       cursor: not-allowed;
       transform: none;
+      box-shadow: none;
     }
 
-    .quick-fill-box {
-      margin-top: 22px;
-      padding: 13px 15px;
-      border-radius: 12px;
-      background: rgba(124, 92, 252, 0.08);
-      border: 1px dashed rgba(124, 92, 252, 0.32);
-      font-size: 12px;
-      color: var(--text-secondary);
-      line-height: 1.5;
+    .btn-submit:focus-visible {
+      outline: 3px solid var(--brand-blue-500);
+      outline-offset: 2px;
     }
 
-    .quick-fill-box strong {
-      color: var(--text-primary);
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: var(--white);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
     }
 
-    .btn-quick {
-      margin-top: 8px;
-      background: rgba(255, 255, 255, 0.07);
-      border: 1px solid var(--border);
-      color: var(--text-primary);
-      padding: 6px 11px;
-      border-radius: 8px;
-      font-size: 11.5px;
-      font-weight: 600;
-      cursor: pointer;
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
 
-    .btn-quick:hover {
-      background: rgba(124, 92, 252, 0.2);
-      border-color: var(--accent);
-    }
-
+    /* Security & Regulatory Footer */
     .security-footer {
-      margin-top: 20px;
+      margin-top: 22px;
       text-align: center;
       font-size: 11.5px;
-      color: var(--text-muted);
+      color: var(--slate-400);
+      line-height: 1.5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .security-footer svg {
+      width: 14px;
+      height: 14px;
+      color: var(--slate-400);
+      flex-shrink: 0;
+    }
+
+    /* ── RESPONSIVE ADAPTATIONS ── */
+    @media (max-width: 1024px) {
+      .admin-split-container {
+        grid-template-columns: 1fr;
+        min-height: 100vh;
+      }
+
+      .left-panel {
+        min-height: auto;
+        padding: 40px 32px;
+      }
+
+      .left-panel-inner {
+        max-width: 520px;
+      }
+
+      .hero-heading {
+        font-size: 30px;
+      }
+
+      .right-panel {
+        min-height: auto;
+        padding: 44px 32px;
+      }
+
+      .form-wrapper {
+        max-width: 480px;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .left-panel {
+        padding: 30px 20px;
+      }
+
+      .hero-heading {
+        font-size: 26px;
+      }
+
+      .highlights-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .highlight-card {
+        min-height: auto;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+      }
+
+      .highlight-number {
+        margin-bottom: 0;
+        flex-shrink: 0;
+      }
+
+      .right-panel {
+        padding: 32px 20px;
+      }
+
+      h1 {
+        font-size: 24px;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="login-card">
-    <div class="brand-header">
-      <div class="brand-mark">SA</div>
-      <div>
-        <div class="brand-title">SmartAssets</div>
-        <div class="brand-sub">Compliance &amp; Admin Portal</div>
+  <main class="admin-split-container">
+    <!-- ─────────────────────────────────────────────────────────────
+         LEFT PANEL: Full-Height Blue Gradient Showcase & Workflow Highlights
+         ───────────────────────────────────────────────────────────── -->
+    <section class="left-panel" aria-label="SmartAssets Administrator Overview">
+      <div class="left-panel-inner">
+        <div>
+          <!-- Brand Identification -->
+          <div class="brand-top">
+            <div class="brand-logo-badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <span class="brand-name">SMARTASSETS</span>
+          </div>
+
+          <!-- Editorial Hero -->
+          <div class="left-hero">
+            <div class="hero-pill">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+              <span>Secure Access Portal</span>
+            </div>
+            <h2 class="hero-heading">Secure Administrator Access.</h2>
+            <p class="hero-sub">
+              Oversee verified physical assets, custody escrow, compliance verification desks, and institutional provenance records.
+            </p>
+          </div>
+        </div>
+
+        <!-- 3-Step Highlights (inspired by reference image) -->
+        <div class="highlights-row" role="list" aria-label="Security verification stages">
+          <div class="highlight-card active" role="listitem">
+            <div class="highlight-number">1</div>
+            <div>
+              <div class="highlight-title">Verified Identity</div>
+              <div class="highlight-desc">Cryptographic credentials &amp; session tokens</div>
+            </div>
+          </div>
+
+          <div class="highlight-card glass" role="listitem">
+            <div class="highlight-number">2</div>
+            <div>
+              <div class="highlight-title">Role Clearance</div>
+              <div class="highlight-desc">Strict Supabase RBAC (<code>role = 'admin'</code>)</div>
+            </div>
+          </div>
+
+          <div class="highlight-card glass" role="listitem">
+            <div class="highlight-number">3</div>
+            <div>
+              <div class="highlight-title">Audit Ledger</div>
+              <div class="highlight-desc">Immutable logging for administrative actions</div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
 
-    <h1>Administrator Sign In</h1>
-    <p class="subtitle">
-      Sign in with your Supabase administrator account. Access is restricted strictly to accounts with <code>profiles.role = 'admin'</code>.
-    </p>
+    <!-- ─────────────────────────────────────────────────────────────
+         RIGHT PANEL: Full-Height Clean Administrator Authentication Form
+         ───────────────────────────────────────────────────────────── -->
+    <section class="right-panel" aria-label="Administrator Sign In Form">
+      <div class="form-wrapper">
+        <header class="panel-header">
+          <div class="eyebrow-label">AUTHORIZED PERSONNEL ONLY</div>
+          <h1>Administrator Sign In</h1>
+          <p class="subtitle">
+            Sign in with your administrator account to access the SmartAssets operations console.
+          </p>
+        </header>
 
-    <div id="login-alert" class="alert-box"></div>
+        <!-- Dynamic Alert Container -->
+        <div id="login-alert" class="alert-box" role="alert" aria-live="polite">
+          <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <div id="login-alert-text"></div>
+        </div>
 
-    <div id="active-session-banner" class="alert-box success" style="display: none; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); padding: 14px; border-radius: 12px; margin-bottom: 20px;">
-      <div style="font-weight: 700; color: #6EE7B7; margin-bottom: 4px;">Active Admin Session Detected</div>
-      <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;">
-        Currently authenticated as <strong id="active-admin-name" style="color: #F8FAFC;"></strong>.
+        <!-- Active Session Banner (Preserved) -->
+        <div id="active-session-banner" class="active-session-card" role="region" aria-label="Active administrator session notice">
+          <div class="active-session-title">
+            <span class="pulse-dot" aria-hidden="true"></span>
+            Active Admin Session Detected
+          </div>
+          <div class="active-session-desc">
+            Currently authenticated as <strong id="active-admin-name">Administrator</strong>.
+          </div>
+          <div class="active-session-actions">
+            <a href="index.html" class="btn-portal-link">
+              Go to Operations Portal
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </a>
+            <button type="button" class="btn-switch-account" id="btn-switch-account">
+              Sign In as Different Admin
+            </button>
+          </div>
+        </div>
+
+        <!-- Authentication Form -->
+        <form id="admin-login-form" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="admin-email">Admin Email Address</label>
+            <div class="form-input-wrap">
+              <input
+                id="admin-email"
+                type="email"
+                class="form-input"
+                placeholder="admin@smartassets.io"
+                required
+                autocomplete="email"
+                spellcheck="false"
+              />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="admin-password">Password</label>
+            <div class="form-input-wrap">
+              <input
+                id="admin-password"
+                type="password"
+                class="form-input has-toggle"
+                placeholder="Enter your administrator password"
+                required
+                autocomplete="current-password"
+              />
+              <button
+                type="button"
+                id="toggle-password-btn"
+                class="password-toggle-btn"
+                aria-label="Show password"
+                title="Show password"
+              >
+                <!-- Eye icon (default) -->
+                <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <!-- Eye-off icon (hidden by default) -->
+                <svg id="eye-off-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;" aria-hidden="true">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <button id="login-btn" type="submit" class="btn-submit">
+            <span class="spinner" id="login-spinner" aria-hidden="true"></span>
+            <span id="login-btn-label">Sign In to Admin Console</span>
+            <svg id="login-btn-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </button>
+        </form>
+
+        <!-- Security & Audit Footer -->
+        <div class="security-footer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <span>Protected by Supabase Auth + RBAC. All actions are logged.</span>
+        </div>
       </div>
-      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-        <a href="index.html" class="btn-quick" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; background: #10B981; color: #070B14; font-weight: 700; border: none; padding: 7px 14px; border-radius: 8px;">
-          Go to Operations Portal &rarr;
-        </a>
-        <button type="button" class="btn-quick" id="btn-switch-account" style="background: rgba(255, 255, 255, 0.08); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px;">
-          Sign In as Different Admin
-        </button>
-      </div>
-    </div>
-
-    <form id="admin-login-form">
-      <div class="form-group">
-        <label class="form-label" for="admin-email">Admin Email Address</label>
-        <input
-          id="admin-email"
-          type="email"
-          class="form-input"
-          placeholder="admin@smartassets.io"
-          required
-          autocomplete="email"
-        />
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="admin-password">Password</label>
-        <input
-          id="admin-password"
-          type="password"
-          class="form-input"
-          placeholder="Enter your password"
-          required
-          autocomplete="current-password"
-        />
-      </div>
-
-      <button id="login-btn" type="submit" class="btn-submit">
-        Sign In to Admin Console
-      </button>
-    </form>
-
-    <div class="quick-fill-box">
-      <div><strong>Compliance Officer Quick Sign-In:</strong></div>
-      <div>Use your Supabase <code>role = 'admin'</code> account or the local Compliance Officer credentials (<code>admin@smartassets.io</code>).</div>
-      <button type="button" class="btn-quick" id="fill-demo-admin">
-        Auto-fill Compliance Admin Credentials
-      </button>
-    </div>
-
-    <div class="security-footer">
-      🔒 Protected by Supabase Auth + Role-Based Access Control (RLS)
-    </div>
-  </div>
+    </section>
+  </main>
 
   <script>
     const API_BASE_URL = (function () {
@@ -312,18 +845,51 @@
     const SESSION_KEY = 'smartassets_admin_session';
 
     const alertBox = document.getElementById('login-alert');
+    const alertText = document.getElementById('login-alert-text');
+
     function showAlert(msg, type = 'error') {
-      alertBox.textContent = msg;
+      alertText.textContent = msg;
       alertBox.className = `alert-box ${type}`;
     }
 
+    function hideAlert() {
+      alertBox.className = 'alert-box';
+      alertText.textContent = '';
+    }
+
+    // Accessible Password Show / Hide Toggle
+    const passwordInput = document.getElementById('admin-password');
+    const togglePasswordBtn = document.getElementById('toggle-password-btn');
+    const eyeIcon = document.getElementById('eye-icon');
+    const eyeOffIcon = document.getElementById('eye-off-icon');
+
+    togglePasswordBtn.addEventListener('click', () => {
+      const isPassword = passwordInput.getAttribute('type') === 'password';
+      if (isPassword) {
+        passwordInput.setAttribute('type', 'text');
+        togglePasswordBtn.setAttribute('aria-label', 'Hide password');
+        togglePasswordBtn.setAttribute('title', 'Hide password');
+        eyeIcon.style.display = 'none';
+        eyeOffIcon.style.display = 'block';
+      } else {
+        passwordInput.setAttribute('type', 'password');
+        togglePasswordBtn.setAttribute('aria-label', 'Show password');
+        togglePasswordBtn.setAttribute('title', 'Show password');
+        eyeIcon.style.display = 'block';
+        eyeOffIcon.style.display = 'none';
+      }
+    });
+
+    // URL Query Parameters Handling
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.has('logout')) {
       localStorage.removeItem(SESSION_KEY);
       showAlert('Signed out of Administrator Console successfully.', 'success');
     } else if (urlParams.has('expired')) {
       localStorage.removeItem(SESSION_KEY);
-      showAlert('Administrator session has expired or is invalid. Please sign in.', 'error');
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (_) {}
     } else if (urlParams.has('invalid')) {
       localStorage.removeItem(SESSION_KEY);
       showAlert('Access denied: Account role is not admin.', 'error');
@@ -338,7 +904,7 @@
       showAlert('Session cleared. Sign in with your admin credentials.', 'success');
     });
 
-    // If already logged in with a valid admin session, verify and offer option to proceed or switch
+    // Check existing session on load
     (async function checkExistingSession() {
       if (urlParams.has('logout') || urlParams.has('expired') || urlParams.has('switch')) return;
       try {
@@ -367,21 +933,26 @@
       } catch (_) {}
     })();
 
-    document.getElementById('fill-demo-admin').addEventListener('click', () => {
-      document.getElementById('admin-email').value = 'admin@smartassets.io';
-      document.getElementById('admin-password').value = 'Admin@SmartAssets2026';
-      alertBox.className = 'alert-box';
-    });
-
+    // Handle Form Submit
     document.getElementById('admin-login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = document.getElementById('admin-email').value.trim();
       const password = document.getElementById('admin-password').value;
       const btn = document.getElementById('login-btn');
+      const btnLabel = document.getElementById('login-btn-label');
+      const btnArrow = document.getElementById('login-btn-arrow');
+      const spinner = document.getElementById('login-spinner');
 
-      alertBox.className = 'alert-box';
+      if (!email || !password) {
+        showAlert('Please provide both administrator email and password.', 'error');
+        return;
+      }
+
+      hideAlert();
       btn.disabled = true;
-      btn.textContent = 'Verifying Admin Role...';
+      spinner.style.display = 'inline-block';
+      btnArrow.style.display = 'none';
+      btnLabel.textContent = 'Verifying Admin Role...';
 
       try {
         const res = await fetch(`${API_BASE_URL}/api/admin/auth/login`, {
@@ -395,7 +966,9 @@
           localStorage.removeItem(SESSION_KEY);
           showAlert(data.error || 'Access denied. Admin privileges required.', 'error');
           btn.disabled = false;
-          btn.textContent = 'Sign In to Admin Console';
+          spinner.style.display = 'none';
+          btnArrow.style.display = 'inline-block';
+          btnLabel.textContent = 'Sign In to Admin Console';
           return;
         }
 
@@ -403,7 +976,9 @@
           localStorage.removeItem(SESSION_KEY);
           showAlert('Access denied. Your account role is "user", not "admin".', 'error');
           btn.disabled = false;
-          btn.textContent = 'Sign In to Admin Console';
+          spinner.style.display = 'none';
+          btnArrow.style.display = 'inline-block';
+          btnLabel.textContent = 'Sign In to Admin Console';
           return;
         }
 
@@ -423,7 +998,9 @@
       } catch (err) {
         showAlert('Network error connecting to SmartAssets backend (:5000). Ensure backend is running.', 'error');
         btn.disabled = false;
-        btn.textContent = 'Sign In to Admin Console';
+        spinner.style.display = 'none';
+        btnArrow.style.display = 'inline-block';
+        btnLabel.textContent = 'Sign In to Admin Console';
       }
     });
   </script>

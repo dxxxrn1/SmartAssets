@@ -2377,7 +2377,7 @@
                 class="btn btn-secondary btn-sm"
                 onclick="navigate('bank-accounts')"
               >
-                🏦 Review Bank Accounts &rarr;
+                Review Bank Accounts &rarr;
               </button>
               <button
                 class="btn btn-primary btn-sm"
@@ -2646,7 +2646,7 @@
               onchange="filterUsersTable()"
             >
               <option value="newest">Sort: Recently Registered</option>
-              <option value="online_only">Filter: 🟢 Online Collectors Only</option>
+              <option value="online_only">Filter: Online Collectors Only</option>
               <option value="recently_active">Sort: Most Recently Active</option>
               <option value="balance-desc">Balance: High to Low</option>
               <option value="assets-desc">Most Listed Assets</option>
@@ -4589,7 +4589,7 @@
               "', 'In Progress')\">Set In Progress</button>" +
               '<button class="btn btn-primary btn-sm" onclick="submitTicketResolution(\'' +
               escapeHtml(ticket.id) +
-              "', 'Resolved')\">✅ Mark Resolved</button>";
+              "', 'Resolved')\">Mark Resolved</button>";
           }
 
           const modal = document.getElementById("modal-ticket");
@@ -4704,11 +4704,11 @@
                 ? "approved"
                 : fallbackStatus;
           if (st === "approved")
-            return '<span class="pill pill-green" style="font-size:10.5px;">✅ Approved</span>';
+            return '<span class="pill pill-green" style="font-size:10.5px;">Approved</span>';
           if (st === "rejected")
-            return '<span class="pill pill-red" style="font-size:10.5px;">❌ Rejected</span>';
+            return '<span class="pill pill-red" style="font-size:10.5px;">Rejected</span>';
           if (st === "pending")
-            return '<span class="pill pill-amber" style="font-size:10.5px;">⏳ Pending</span>';
+            return '<span class="pill pill-amber" style="font-size:10.5px;">Pending</span>';
           return '<span class="pill pill-muted" style="font-size:10.5px;">Not Uploaded</span>';
         }
 
@@ -4747,12 +4747,12 @@
             let statusPillHtml = "";
             if (isVerified) {
               statusPillHtml =
-                '<span class="pill pill-green">✅ Verified</span>';
+                '<span class="pill pill-green">Verified</span>';
             } else if (isPending) {
               statusPillHtml =
-                '<span class="pill pill-amber">⏳ Pending Review</span>';
+                '<span class="pill pill-amber">Pending Review</span>';
             } else if (v.kycStatus === "rejected") {
-              statusPillHtml = '<span class="pill pill-red">❌ Rejected</span>';
+              statusPillHtml = '<span class="pill pill-red">Rejected</span>';
             } else {
               statusPillHtml =
                 '<span class="pill pill-muted">Unverified</span>';
@@ -4799,10 +4799,10 @@
               (isPending
                 ? '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveKycDossier(\'' +
                   escapeHtml(v.id) +
-                  "')\">✅ Approve All</button>" +
+                  "')\">Approve All</button>" +
                   '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectKycDossier(\'' +
                   escapeHtml(v.id) +
-                  "')\">❌ Reject</button>"
+                  "')\">Reject</button>"
                 : "") +
               "</div>" +
               "</td>" +
@@ -4903,13 +4903,13 @@
             if (hasFile) {
               if (isPdf) {
                 fileCardHtml = '<div onclick="openKycDocSigned(\'' + escapeHtml(docTarget) + '\')" style="cursor:pointer;background:#0b1120;border:1px solid var(--border);border-radius:8px;padding:26px 10px;text-align:center;margin-bottom:8px;transition:all 0.2s;" onmouseover="this.style.borderColor=\'#38BDF8\'" onmouseout="this.style.borderColor=\'var(--border)\'">' +
-                  '<div style="font-size:32px;margin-bottom:6px;">📄</div>' +
+                  '<div style="margin-bottom:6px;"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto;display:block;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div>' +
                   '<div style="font-size:12px;font-weight:700;color:#38BDF8;">View PDF Document ↗</div>' +
                   '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Click to open signed file</div>' +
                   '</div>';
               } else {
                 fileCardHtml = '<div onclick="openKycDocSigned(\'' + escapeHtml(docTarget) + '\')" style="cursor:pointer;background:#0b1120;border:1px solid var(--border);border-radius:8px;padding:26px 10px;text-align:center;margin-bottom:8px;transition:all 0.2s;" onmouseover="this.style.borderColor=\'#10B981\'" onmouseout="this.style.borderColor=\'var(--border)\'">' +
-                  '<div style="font-size:32px;margin-bottom:6px;">🖼️</div>' +
+                  '<div style="margin-bottom:6px;"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto;display:block;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>' +
                   '<div style="font-size:12px;font-weight:700;color:#10B981;">View Photo / Document ↗</div>' +
                   '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Click to open signed photo</div>' +
                   '</div>';
@@ -4945,12 +4945,12 @@
                   escapeHtml(docId) +
                   "', '" +
                   escapeHtml(item.id) +
-                  "')\">✅ Approve Doc</button>" +
+                  "')\">Approve Doc</button>" +
                   '<button class="btn btn-sm" style="flex:1;background:#EF4444;color:#fff;border-color:#EF4444;font-size:11px;padding:6px 8px;" onclick="rejectSingleKycDocument(\'' +
                   escapeHtml(docId) +
                   "', '" +
                   escapeHtml(item.id) +
-                  "')\">❌ Reject Doc</button>" +
+                  "')\">Reject Doc</button>" +
                   "</div>"
                 : "") +
               "</div>";
@@ -4973,13 +4973,13 @@
               escapeHtml(item.userEmail || "—") +
               "</div></div>" +
               "</div>" +
-              '<div class="data-label" style="margin-bottom:10px;color:var(--green);font-weight:700;">📄 Individual KYC Document Review (All 3 Must Be Approved for Account Verification)</div>' +
+              '<div class="data-label" style="margin-bottom:10px;color:var(--green);font-weight:700;">Individual KYC Document Review (All 3 Must Be Approved for Account Verification)</div>' +
               '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;margin-bottom:18px;">' +
               docsGridHtml +
               "</div>" +
               '<div style="background:var(--card-header);padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:16px;">' +
               '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
-              '<div class="data-label" style="color:var(--blue);font-weight:700;margin:0;">🏦 Separate Bank Account Verification (Required for Withdrawals)</div>' +
+              '<div class="data-label" style="color:var(--blue);font-weight:700;margin:0;">Separate Bank Account Verification (Required for Withdrawals)</div>' +
               (bankId
                 ? '<div style="display:flex;gap:6px;align-items:center;">' +
                   renderStatusPill(bankStatus) +
@@ -4987,12 +4987,12 @@
                   escapeHtml(bankId) +
                   "', '" +
                   escapeHtml(item.id) +
-                  "')\">✅ Approve Bank</button>" +
+                  "')\">Approve Bank</button>" +
                   '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;font-size:11px;padding:4px 8px;" onclick="rejectBankAccount(\'' +
                   escapeHtml(bankId) +
                   "', '" +
                   escapeHtml(item.id) +
-                  "')\">❌ Reject Bank</button>" +
+                  "')\">Reject Bank</button>" +
                   "</div>"
                 : "") +
               "</div>" +
@@ -5049,10 +5049,10 @@
               '<button class="btn btn-secondary btn-sm" onclick="closeModal(\'modal-verification\')">Close Dossier</button>' +
               '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectKycDossier(\'' +
               escapeHtml(item.id) +
-              "')\">❌ Reject Full Dossier (with reason)</button>" +
+              "')\">Reject Full Dossier (with reason)</button>" +
               '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveKycDossier(\'' +
               escapeHtml(item.id) +
-              "')\">✅ Approve All 3 Docs &amp; Verify Account</button>";
+              "')\">Approve All 3 Docs &amp; Verify Account</button>";
           }
 
           const modal = document.getElementById("modal-verification");
@@ -5075,7 +5075,7 @@
               if (!data.success)
                 throw new Error(data.error || "Failed to approve document");
               showToast(
-                "✅ " + (data.message || "Document approved!"),
+                (data.message || "Document approved!"),
                 "success",
               );
               apiFetch("/api/admin/verifications")
@@ -5121,7 +5121,7 @@
               if (!data.success)
                 throw new Error(data.error || "Failed to reject document");
               showToast(
-                "❌ " + (data.message || "Document rejected."),
+                (data.message || "Document rejected."),
                 "error",
               );
               apiFetch("/api/admin/verifications")
@@ -5165,7 +5165,7 @@
               if (!data.success)
                 throw new Error(data.error || "Failed to approve KYC");
               showToast(
-                "✅ KYC Dossier approved! User is now verified.",
+                "KYC Dossier approved! User is now verified.",
                 "success",
               );
               window.closeModal("modal-verification");
@@ -5204,7 +5204,7 @@
               if (!data.success)
                 throw new Error(data.error || "Failed to reject KYC");
               showToast(
-                "❌ KYC Dossier rejected. Rejection notice logged.",
+                "KYC Dossier rejected. Rejection notice logged.",
                 "error",
               );
               window.closeModal("modal-verification");
@@ -5333,10 +5333,10 @@
               (isPending
                 ? '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveBankAccount(\'' +
                   escapeHtml(b.id) +
-                  "')\">✅ Approve</button>" +
+                  "')\">Approve</button>" +
                   '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectBankAccount(\'' +
                   escapeHtml(b.id) +
-                  "')\">❌ Reject</button>"
+                  "')\">Reject</button>"
                 : "") +
               "</div>" +
               "</td>" +
@@ -5402,10 +5402,10 @@
               '<button class="btn btn-secondary btn-sm" onclick="closeModal(\'modal-bank-account\')">Close</button>' +
               '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="rejectBankAccount(\'' +
               escapeHtml(b.id) +
-              "')\">❌ Reject Bank Account (with reason)</button>" +
+              "')\">Reject Bank Account (with reason)</button>" +
               '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="approveBankAccount(\'' +
               escapeHtml(b.id) +
-              "')\">✅ Approve Bank Account for Withdrawals</button>";
+              "')\">Approve Bank Account for Withdrawals</button>";
           }
 
           const modal = document.getElementById("modal-bank-account");
@@ -5430,7 +5430,7 @@
               if (!data.success)
                 throw new Error(data.error || "Failed to approve bank account");
               showToast(
-                "✅ " + (data.message || "Bank account approved!"),
+                (data.message || "Bank account approved!"),
                 "success",
               );
               window.closeModal("modal-bank-account");
@@ -5476,7 +5476,7 @@
               if (!data.success)
                 throw new Error(data.error || "Failed to reject bank account");
               showToast(
-                "❌ " + (data.message || "Bank account rejected."),
+                (data.message || "Bank account rejected."),
                 "error",
               );
               window.closeModal("modal-bank-account");
@@ -5636,7 +5636,7 @@
             }
 
             const statusPill = isSuspended
-              ? '<span class="pill pill-red">🚫 Suspended</span>'
+              ? '<span class="pill pill-red">Suspended</span>'
               : '<span class="pill pill-green">Active</span>';
 
             const avatarHtml =
@@ -5692,10 +5692,10 @@
               (isSuspended
                 ? '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="toggleUserSuspension(\'' +
                   escapeHtml(u.id) +
-                  "', false)\">✅ Reactivate</button>"
+                  "', false)\">Reactivate</button>"
                 : '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="toggleUserSuspension(\'' +
                   escapeHtml(u.id) +
-                  "', true)\">🚫 Suspend</button>") +
+                  "', true)\">Suspend</button>") +
               "</div>" +
               "</td>" +
               "</tr>";
@@ -5732,8 +5732,8 @@
                 throw new Error(data.error || "Failed to update user status");
               showToast(
                 shouldSuspend
-                  ? "🚫 User suspended by Compliance Desk"
-                  : "✅ User account reactivated",
+                  ? "User suspended by Compliance Desk"
+                  : "User account reactivated",
                 shouldSuspend ? "error" : "success",
               );
               window.loadUsers(true);
@@ -5791,7 +5791,7 @@
               "</div></div>" +
               '<div class="data-field"><div class="data-label">Account Security Status</div><div class="data-val">' +
               (isSuspended
-                ? '<span class="pill pill-red">🚫 Suspended by Compliance</span>'
+                ? '<span class="pill pill-red">Suspended by Compliance</span>'
                 : '<span class="pill pill-green">Active</span>') +
               "</div></div>" +
               '<div class="data-field"><div class="data-label">FICA / KYC Status</div><div class="data-val">' +
@@ -5834,10 +5834,10 @@
               (isSuspended
                 ? '<button class="btn btn-sm" style="background:#10B981;color:#fff;border-color:#10B981;" onclick="toggleUserSuspension(\'' +
                   escapeHtml(user.id) +
-                  "', false);closeModal('modal-user');\">✅ Reactivate Account</button>"
+                  "', false);closeModal('modal-user');\">Reactivate Account</button>"
                 : '<button class="btn btn-sm" style="background:#EF4444;color:#fff;border-color:#EF4444;" onclick="toggleUserSuspension(\'' +
                   escapeHtml(user.id) +
-                  "', true);closeModal('modal-user');\">🚫 Suspend Account</button>");
+                  "', true);closeModal('modal-user');\">Suspend Account</button>");
           }
 
           const modal = document.getElementById("modal-user");
