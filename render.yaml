@@ -39,12 +39,12 @@ services:
       # 256-bit HMAC-SHA256 secret (min 32 chars) for administrator JWT signing
       - key: ADMIN_JWT_SECRET
         sync: false
-      # Canonical public URL (e.g. https://api.smartassets.io or https://smartassets-backend.onrender.com)
+      # Canonical public URL (e.g. https://smartassets.onrender.com)
       - key: PUBLIC_WEB_BASE_URL
-        sync: false
+        value: https://smartassets.onrender.com
       # Comma-delimited list of allowed production web origins
       - key: CORS_ALLOWED_ORIGINS
-        sync: false
+        value: https://smartassets.onrender.com
 
       # ─── Persistent Certificate PKI Authority (RSA-2048) ───────────────────
       # Persistent RSA private key PEM (replaces temporary disk keys across restarts)

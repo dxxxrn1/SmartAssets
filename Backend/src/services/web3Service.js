@@ -252,7 +252,7 @@ async function mintAssetNFT(params) {
   }
 
   // 3. Stable HTTPS metadata URL pointing to canonical metadata endpoint
-  const publicBaseUrl = (process.env.PUBLIC_WEB_BASE_URL || process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL || 'https://verify.smartassets.io').replace(/\/+$/, '');
+  const publicBaseUrl = (process.env.PUBLIC_WEB_BASE_URL || process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL || 'https://smartassets.onrender.com').replace(/\/+$/, '');
   const tokenURI = `${publicBaseUrl}/api/assets/${encodeURIComponent(assetId)}/metadata`;
 
   const contract = getContractInstance();
@@ -765,7 +765,7 @@ async function testSimulateMint({
   }
   const recipient = ethers.getAddress(recipientAddress);
   const mockTx = '0x' + crypto.randomBytes(32).toString('hex');
-  const publicBaseUrl = (process.env.PUBLIC_WEB_BASE_URL || process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL || 'https://verify.smartassets.io').replace(/\/+$/, '');
+  const publicBaseUrl = (process.env.PUBLIC_WEB_BASE_URL || process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL || 'https://smartassets.onrender.com').replace(/\/+$/, '');
   const tokenURI = `${publicBaseUrl}/api/assets/${encodeURIComponent(assetId)}/metadata`;
 
   return {

@@ -51,13 +51,16 @@ function resolveVerificationUrl(assetId, customBaseUrl) {
 
   let envBase = "";
   if (typeof process !== "undefined" && process.env) {
-    envBase =
+    const raw =
       process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL ||
       process.env.PUBLIC_WEB_BASE_URL ||
       "";
+    if (raw && !raw.includes("localhost") && !raw.includes("127.0.0.1")) {
+      envBase = raw;
+    }
   }
 
-  const rawBase = customBaseUrl !== undefined ? customBaseUrl : envBase;
+  const rawBase = customBaseUrl !== undefined ? customBaseUrl : (envBase || "https://smartassets.onrender.com");
 
   const trimmed = typeof rawBase === "string" ? rawBase.trim().replace(/\/+$/, "") : "";
 

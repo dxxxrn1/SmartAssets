@@ -33,10 +33,16 @@ function getMetroLanBaseUrl() {
 /// ── Base URL — auto-detects live Metro LAN IP on physical mobile devices ──────
 export const getBaseUrl = () => {
   if (Platform.OS === "web") {
+    if (process.env.EXPO_PUBLIC_API_BASE_URL) {
+      return process.env.EXPO_PUBLIC_API_BASE_URL;
+    }
     const host =
       typeof window !== "undefined" && window.location?.hostname
         ? window.location.hostname
         : "localhost";
+    if (host !== "localhost" && host !== "127.0.0.1") {
+      return `${window.location.origin}/api`;
+    }
     return `http://${host}:5000/api`;
   }
   const metroBase = getMetroLanBaseUrl();
@@ -44,21 +50,24 @@ export const getBaseUrl = () => {
   if (process.env.EXPO_PUBLIC_API_BASE_URL)
     return process.env.EXPO_PUBLIC_API_BASE_URL;
   if (Platform.OS === "android") return "http://10.0.2.2:5000/api";
-  return "http://localhost:5000/api";
+  return "https://smartassets.onrender.com/api";
 };
 
 export let API_BASE_URL = getBaseUrl();
 
 function getFallbackBaseUrls() {
   if (!__DEV__)
-    return [process.env.EXPO_PUBLIC_API_BASE_URL || API_BASE_URL].filter(
-      Boolean,
-    );
+    return [
+      process.env.EXPO_PUBLIC_API_BASE_URL,
+      "https://smartassets.onrender.com/api",
+      API_BASE_URL,
+    ].filter(Boolean);
 
   const candidates = [
     API_BASE_URL, // 🚀 Try the one that last worked FIRST
     getMetroLanBaseUrl(), // Then live Metro bundler IP
     process.env.EXPO_PUBLIC_API_BASE_URL, // Then .env config
+    "https://smartassets.onrender.com/api", // Then live Render deployment
     Platform.OS === "android"
       ? "http://10.0.2.2:5000/api"
       : "http://localhost:5000/api",

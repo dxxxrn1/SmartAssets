@@ -1375,7 +1375,7 @@ async function getAssetMetadata(req, res) {
       return sendError(res, 404, 'Asset not found in registry.');
     }
 
-    const baseUrl = (process.env.PUBLIC_APP_URL || process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL || 'http://localhost:5000').replace(/\/+$/, '');
+    const baseUrl = (process.env.PUBLIC_APP_URL || process.env.PUBLIC_WEB_BASE_URL || process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL || 'https://smartassets.onrender.com').replace(/\/+$/, '');
     const verificationUrl = `${baseUrl}/verify/${encodeURIComponent(asset.id)}`;
     const isValidTx = isValidTxHash(asset.tx_hash);
 

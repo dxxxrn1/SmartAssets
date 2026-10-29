@@ -133,6 +133,20 @@ const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
   .map((o) => o.trim())
   .filter(Boolean);
 
+const publicOrigin = (() => {
+  try {
+    return process.env.PUBLIC_WEB_BASE_URL ? new URL(process.env.PUBLIC_WEB_BASE_URL).origin : '';
+  } catch (_) {
+    return '';
+  }
+})();
+if (publicOrigin && !configuredOrigins.includes(publicOrigin)) {
+  configuredOrigins.push(publicOrigin);
+}
+if (!configuredOrigins.includes('https://smartassets.onrender.com')) {
+  configuredOrigins.push('https://smartassets.onrender.com');
+}
+
 const explicitDevOrigins = [
   'http://localhost:5000',
   'http://127.0.0.1:5000',

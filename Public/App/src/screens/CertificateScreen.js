@@ -133,16 +133,47 @@ export default function CertificateScreen({ navigation, route }) {
     }
   }, [targetAssetId]);
 
-  // Derive verification base URL: explicit env variable first, then fallback to active API host
+  // Derive verification base URL: explicit env variable first, then fallback to live Render web URL
   const activeVerificationBase = (() => {
+    // 1. Explicit environment variable if configured
     if (typeof process !== "undefined" && process.env && process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL) {
-      return process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL;
+      const explicit = process.env.EXPO_PUBLIC_VERIFICATION_BASE_URL.trim();
+      // If developer configured a non-localhost domain, honor it
+      if (explicit && !explicit.includes("localhost") && !explicit.includes("127.0.0.1")) {
+        return explicit;
+      }
     }
+    // 2. If running in a web browser on a live remote host (e.g., Render)
+    if (typeof window !== "undefined" && window.location?.origin) {
+      const origin = window.location.origin;
+      if (
+        !origin.includes("localhost") &&
+        !origin.includes("127.0.0.1") &&
+        !origin.includes("192.168.") &&
+        !origin.includes("10.")
+      ) {
+        return origin;
+      }
+    }
+    // 3. Fallback to active API host if it's a remote URL
     try {
       const apiBase = typeof getBaseUrl === "function" ? getBaseUrl() : "";
-      if (apiBase) return apiBase.replace(/\/api\/?$/, "");
+      if (apiBase) {
+        const stripped = apiBase.replace(/\/api\/?$/, "");
+        if (
+          stripped &&
+          !stripped.includes("localhost") &&
+          !stripped.includes("127.0.0.1") &&
+          !stripped.includes("10.0.2.2") &&
+          !stripped.includes("192.168.") &&
+          !stripped.includes("10.")
+        ) {
+          return stripped;
+        }
+      }
     } catch (_) {}
-    return "";
+    // 4. Default to authoritative live Render deployment verification URL
+    return "https://smartassets.onrender.com";
   })();
 
   // Build sanitized, authoritative certificate data
@@ -259,6 +290,16 @@ export default function CertificateScreen({ navigation, route }) {
     }
 
     try {
+      if (Platform.OS === "web") {
+        if (typeof window !== "undefined" && window.open) {
+          window.open(verificationUrl, "_blank");
+        }
+        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(verificationUrl);
+        }
+        return;
+      }
+
       const shareResult = await Share.share(
         {
           message: `Verify authenticity of ${certData.name} on the SmartAssets Authoritative Registry:\n${verificationUrl}`,
@@ -274,7 +315,11 @@ export default function CertificateScreen({ navigation, route }) {
         // Shared successfully
       }
     } catch (err) {
-      Alert.alert("Share Failed", err.message || "Could not share certificate link.");
+      try {
+        await Linking.openURL(verificationUrl);
+      } catch (_) {
+        Alert.alert("Share Failed", err.message || "Could not share certificate link.");
+      }
     }
   };
 
@@ -557,16 +602,26 @@ export default function CertificateScreen({ navigation, route }) {
                           : "Set EXPO_PUBLIC_VERIFICATION_BASE_URL to generate the public verification QR and web dossier link."}
                       </Text>
                       {isUrlConfigured && verificationUrl ? (
-                        <TouchableOpacity
-                          style={styles.urlCopyChip}
-                          onPress={handleShare}
-                          activeOpacity={0.8}
-                        >
-                          <Feather name="copy" size={11} color="#6C47FF" style={{ marginRight: 4 }} />
-                          <Text style={styles.urlCopyText} numberOfLines={1}>
-                            {verificationUrl}
-                          </Text>
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+                          <TouchableOpacity
+                            style={[styles.urlCopyChip, { flex: 1, marginTop: 0 }]}
+                            onPress={handleShare}
+                            activeOpacity={0.8}
+                          >
+                            <Feather name="copy" size={11} color="#6C47FF" style={{ marginRight: 4 }} />
+                            <Text style={styles.urlCopyText} numberOfLines={1}>
+                              {verificationUrl}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.urlOpenChip}
+                            onPress={() => Linking.openURL(verificationUrl).catch(() => {})}
+                            activeOpacity={0.8}
+                            accessibilityLabel="Open public verification record in browser"
+                          >
+                            <Feather name="external-link" size={12} color="#6C47FF" />
+                          </TouchableOpacity>
+                        </View>
                       ) : null}
                     </View>
                   </View>
@@ -1037,6 +1092,16 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 8,
     marginTop: 4,
+  },
+  urlOpenChip: {
+    backgroundColor: "#F5F3FF",
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+    borderRadius: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 7,
+    alignItems: "center",
+    justifyContent: "center",
   },
   urlCopyText: {
     fontSize: 10,

@@ -126,7 +126,7 @@ Configure these in the Render Dashboard (**Environment** tab):
 | `SUPABASE_URL` | **Yes** | Supabase Project URL | `https://your-project.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Yes** | Secret service-role key (bypasses RLS) | `eyJhbGciOi...` |
 | `ADMIN_JWT_SECRET` | **Yes** | 256-bit HMAC secret for admin session tokens | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `PUBLIC_WEB_BASE_URL` | **Yes** | Canonical base URL for certificates & QR codes | `https://api.smartassets.io` or `https://smartassets-backend.onrender.com` |
+| `PUBLIC_WEB_BASE_URL` | **Yes** | Canonical base URL for certificates & QR codes | `https://smartassets.onrender.com` |
 | `CORS_ALLOWED_ORIGINS` | **Yes** | Comma-delimited list of exact allowed origins | `https://app.smartassets.io,https://admin.smartassets.io` |
 | `TRUST_PROXY` | **Yes** | Reverse proxy hop count | `1` |
 | `ENFORCE_HSTS` | **Yes** | Strict Transport Security header | `true` |
