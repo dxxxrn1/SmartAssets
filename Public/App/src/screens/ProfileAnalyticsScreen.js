@@ -23,6 +23,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { ALIM, ROYAL } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
+import { SCREENS } from "../constants/navigation";
 import {
   getUserVault,
   getMarketAssets,
@@ -1168,6 +1169,29 @@ export default function ProfileAnalyticsScreen({ navigation }) {
                   </Text>
                   <Text style={styles.metricCardSub}>Active in settlement</Text>
                 </View>
+              </View>
+
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>Escrow orders</Text>
+                  <Text style={styles.sectionSubtitle}>{escrowOrders.length} total</Text>
+                </View>
+                {escrowOrders.length === 0 ? (
+                  <Text style={styles.emptyBoxText}>Your buyer and seller escrow orders will appear here.</Text>
+                ) : escrowOrders.slice(0, 8).map((escrow, idx) => {
+                  const escrowId = escrow.orderId || escrow.order_id || escrow.id;
+                  const title = escrow.assetName || escrow.asset_name || "Escrow order";
+                  const amount = escrow.amountZar || escrow.amount_zar || 0;
+                  return (
+                    <TouchableOpacity key={escrowId || idx} style={styles.listingCard} activeOpacity={0.8} onPress={() => navigation.navigate(SCREENS.ESCROW_TRACKER, { orderId: escrowId })}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.listingName} numberOfLines={1}>{title}</Text>
+                        <Text style={styles.listingPrice}>{escrowId} · {String(escrow.status || "payment_secured").replaceAll("_", " ")}</Text>
+                      </View>
+                      <Text style={styles.listingPrice}>{formatZAR(amount)}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               {/* 6-Month Sales Volume Chart */}

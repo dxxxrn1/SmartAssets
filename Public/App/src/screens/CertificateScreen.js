@@ -22,6 +22,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
+import QRCodeSvg from "react-native-qrcode-svg";
 import { resolveImageUrl, getAssetDetails, getCertificateDossierApi, getBaseUrl } from "../services/api";
 import {
   buildCertificateData,
@@ -157,7 +159,9 @@ export default function CertificateScreen({ navigation, route }) {
           if (active) setQrDataUri(uri);
         })
         .catch((err) => {
-          console.warn("[CertificateScreen] QR generation error:", err.message);
+          if (typeof console !== "undefined" && typeof console.warn === "function") {
+            console.warn("[CertificateScreen] QR generation error:", err.message);
+          }
           if (active) setQrDataUri(null);
         });
     } else {
@@ -189,29 +193,47 @@ export default function CertificateScreen({ navigation, route }) {
         } catch (_) {}
       }
 
-      const { uri } = await generateCertificatePdfAsync(
+      const { uri, base64 } = await generateCertificatePdfAsync(
         certData,
         activeQrUri,
         verificationUrl,
-        Print
+        Print,
+        Platform.OS === "android"
       );
+
+      if (Platform.OS === "web") {
+        Alert.alert(
+          "Certificate Ready",
+          "The print dialog is open. Choose Save as PDF to download the certificate."
+        );
+        return;
+      }
+
+      let shareUri = uri;
+      if (Platform.OS === "android") {
+        if (!base64 || !FileSystem.cacheDirectory) {
+          throw new Error("Could not prepare a shareable PDF file on this device.");
+        }
+        const safeCertId = String(certData.certId || "product")
+          .replace(/[^a-zA-Z0-9-]/g, "-")
+          .slice(0, 48);
+        shareUri = `${FileSystem.cacheDirectory}SmartAssets-Certificate-${safeCertId}-${Date.now()}.pdf`;
+        await FileSystem.writeAsStringAsync(shareUri, base64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      }
 
       const canShare = await Sharing.isAvailableAsync().catch(() => false);
       if (canShare) {
-        await Sharing.shareAsync(uri, {
+        await Sharing.shareAsync(shareUri, {
           UTI: ".pdf",
           mimeType: "application/pdf",
           dialogTitle: `SmartAssets Certificate — ${certData.certId}`,
         });
-      } else if (Platform.OS === "web") {
-        Alert.alert(
-          "Certificate Ready",
-          `Digital certificate for ${certData.name} has been prepared.`
-        );
       } else {
         Alert.alert(
           "Certificate Generated",
-          `Digital certificate PDF saved at: ${uri}`
+          `Digital certificate PDF saved at: ${shareUri}`
         );
       }
     } catch (err) {
@@ -510,14 +532,9 @@ export default function CertificateScreen({ navigation, route }) {
                   </View>
 
                   <View style={styles.qrBodyRow}>
-                    {isUrlConfigured && qrDataUri ? (
+                    {isUrlConfigured && verificationUrl ? (
                       <View style={styles.qrImageFrame}>
-                        <Image
-                          source={{ uri: qrDataUri }}
-                          style={styles.qrImage}
-                          resizeMode="contain"
-                          accessibilityLabel="Scannable verification QR code"
-                        />
+                        <QRCodeSvg value={verificationUrl} size={88} />
                       </View>
                     ) : (
                       <View style={styles.qrImagePlaceholder}>

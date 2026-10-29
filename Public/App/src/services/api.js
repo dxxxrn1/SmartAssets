@@ -788,6 +788,13 @@ export async function progressEscrowStepApi(orderId, step, details = {}, token) 
   );
 }
 
+export async function postSellerEscrowUpdateApi(orderId, details, token) {
+  return apiRequest('/escrow/update', {
+    method: 'POST',
+    body: JSON.stringify({ orderId, ...details }),
+  }, token);
+}
+
 /**
  * Retrieve all escrow orders for the logged-in user.
  */

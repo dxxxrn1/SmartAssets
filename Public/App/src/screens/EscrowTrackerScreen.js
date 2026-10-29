@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
@@ -26,13 +27,14 @@ import {
   getMyEscrowOrdersApi,
   disputeEscrowApi,
   progressEscrowStepApi,
+  postSellerEscrowUpdateApi,
   resolveImageUrl,
 } from "../services/api";
 import { SCREENS } from "../constants/navigation";
 
 export default function EscrowTrackerScreen({ navigation, route, isDark }) {
   const c = useColors(isDark);
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const orderId = route?.params?.orderId || "ORD-892104";
   const initialAsset = route?.params?.asset || {};
 
@@ -40,9 +42,15 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
   const [loading, setLoading] = useState(true);
   const [progressing, setProgressing] = useState(false);
   const [disputing, setDisputing] = useState(false);
+  const [sellerUpdate, setSellerUpdate] = useState("");
+  const [carrier, setCarrier] = useState("");
+  const [trackingNumber, setTrackingNumber] = useState("");
+  const [savingUpdate, setSavingUpdate] = useState(false);
 
   useEffect(() => {
     fetchOrder();
+    const timer = setInterval(fetchOrder, 15000);
+    return () => clearInterval(timer);
   }, [orderId, token]);
 
   const fetchOrder = () => {
@@ -56,6 +64,25 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
         console.warn("Escrow fetch warning:", err.message);
       })
       .finally(() => setLoading(false));
+  };
+
+  const handleSellerUpdate = async () => {
+    setSavingUpdate(true);
+    try {
+      const res = await postSellerEscrowUpdateApi(order?.orderId || orderId, {
+        update: sellerUpdate,
+        carrier,
+        trackingNumber,
+      }, token);
+      if (!res?.success || !res.order) throw new Error(res?.error || "Update was not saved.");
+      setOrder(res.order);
+      setSellerUpdate("");
+      Alert.alert("Update Shared", "The buyer can now see this product and shipping update.");
+    } catch (err) {
+      Alert.alert("Update Failed", err.message || "Could not save the update.");
+    } finally {
+      setSavingUpdate(false);
+    }
   };
 
   // ── Advance Step (Courier Transit or Appraiser Inspection) ──
@@ -95,8 +122,8 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
   // ── Dispute & Refund ──
   const handleDispute = () => {
     Alert.alert(
-      "SmartAssets Buyer Protection",
-      "If you have not received the asset or its condition differs from the agreement, submit a dispute for administrator review.",
+      "SmartAssets Escrow Protection",
+      "If the asset has not arrived or its condition differs from the agreement, submit a dispute for administrator review.",
       [
         { text: "Back", style: "cancel" },
         {
@@ -116,7 +143,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                     try {
                       const res = await disputeEscrowApi(
                         order?.orderId || orderId,
-                        "Buyer raised dispute: Item discrepancy / delivery issue.",
+                        `${isSeller ? "Seller" : "Buyer"} raised a dispute: Item discrepancy / delivery issue.`,
                         "Initial buyer dispute claim",
                         token
                       );
@@ -140,9 +167,27 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
     );
   };
 
-  const currentStep = order?.currentStep || 1;
-  const isReleased = order?.status === "released" || currentStep === 4;
+  const currentStep = order?.currentStep || ({ payment_secured: 1, in_transit: 2, in_inspection: 3, delivered: 4, accepted: 4, released: 5 }[order?.status] || 1);
+  const isReleased = order?.status === "released";
   const isRefunded = order?.status === "refunded";
+  const isSeller = Boolean(user?.id && order?.sellerId && String(user.id) === String(order.sellerId));
+  const isBuyer = Boolean(user?.id && order?.buyerId && String(user.id) === String(order.buyerId));
+  const statusInfo = ({
+    pending_payment: ["Payment settlement pending", "The order is waiting for payment settlement verification."],
+    payment_secured: ["Payment secured — awaiting shipment", "Funds are held in escrow while the seller prepares the shipment."],
+    in_transit: ["Shipment in transit", "The seller recorded shipment. The buyer confirms delivery after it arrives."],
+    in_inspection: ["Item under inspection", "The item is being checked before the buyer confirms delivery."],
+    delivered: ["Buyer confirmed delivery", "Delivery is confirmed. The buyer still needs to accept the item condition."],
+    accepted: ["Buyer accepted — awaiting administrator release", "The administrator can review the order and release the escrow funds to the seller."],
+    release_processing: ["Administrator release processing", "The accepted order is being settled to the seller."],
+    disputed: ["Escrow dispute active", "Funds remain frozen while the administrator reviews the dispute."],
+    released: ["Escrow completed and settled", "The administrator released the funds to the seller."],
+    refunded: ["Escrow refunded", "The funds were returned to the buyer."],
+  })[order?.status] || ["Loading escrow status", "Order status will appear here when loaded."];
+  if (order?.paymentMethod === "bank" && order?.status === "payment_secured") {
+    statusInfo[0] = "Bank settlement verified — awaiting shipment";
+    statusInfo[1] = "The administrator verified the bank settlement. The seller can now record carrier and tracking details.";
+  }
 
   const assetName =
     order?.assetName || initialAsset.name || "Luxury Collectible";
@@ -160,11 +205,19 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
   const STEPS = [
     {
       step: 1,
-      title: "Payment Secured in Smart Contract",
-      detail: `${amountEth} Sepolia ETH locked in Escrow Contract. Protected from withdrawal.`,
+      title: order?.status === "pending_payment"
+        ? "Payment Settlement Pending"
+        : order?.paymentMethod === "bank"
+          ? "Bank Settlement Verified"
+          : "Payment Secured in Smart Contract",
+      detail: order?.status === "pending_payment"
+        ? "Bank payment was submitted and is awaiting administrator settlement verification. Funds are not yet marked as secured."
+        : order?.paymentMethod === "bank"
+          ? "Administrator verified the bank settlement for this order. Shipment can now be recorded."
+          : `${amountEth} Sepolia ETH locked in Escrow Contract. Protected from withdrawal.`,
       icon: "lock",
       txHash: order?.depositTxHash,
-      done: true,
+      done: order?.status !== "pending_payment",
     },
     {
       step: 2,
@@ -219,6 +272,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
           </Text>
           <Text style={[styles.navSub, { color: c.primary }]}>{orderId}</Text>
         </View>
+
         <TouchableOpacity
           style={[
             styles.backBtn,
@@ -239,12 +293,16 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
           style={[
             styles.escrowBanner,
             {
-              backgroundColor: isRefunded
+              backgroundColor: order?.status === "disputed"
+                ? c.amberBg
+                : isRefunded
                 ? "#FEF2F2"
                 : isReleased
                   ? c.greenBg
                   : c.primaryBg,
-              borderColor: isRefunded
+              borderColor: order?.status === "disputed"
+                ? c.amber
+                : isRefunded
                 ? "#EF4444"
                 : isReleased
                   ? c.green
@@ -253,15 +311,17 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
           ]}
         >
           <Ionicons
-            name={
+              name={
               isRefunded
                 ? "refresh-circle"
                 : isReleased
                   ? "checkmark-circle"
-                  : "shield-checkmark"
+                    : order?.status === "disputed"
+                      ? "alert-circle"
+                      : "shield-checkmark"
             }
             size={24}
-            color={isRefunded ? "#EF4444" : isReleased ? c.green : c.primary}
+            color={isRefunded ? "#EF4444" : isReleased ? c.green : order?.status === "disputed" ? c.amber : c.primary}
           />
           <View style={{ flex: 1 }}>
             <Text
@@ -272,25 +332,47 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                     ? "#DC2626"
                     : isReleased
                       ? c.green
-                      : c.primary,
+                      : order?.status === "disputed" ? c.amber : c.primary,
                 },
               ]}
             >
-              {isRefunded
-                ? "Escrow Canceled & Fully Refunded"
-                : isReleased
-                  ? "Escrow Completed & Settled"
-                  : "Funds Safely Locked in Escrow"}
+              {statusInfo[0]}
             </Text>
             <Text style={[styles.escrowBannerSub, { color: c.muted }]}>
-              {isRefunded
-                ? "100% of payment has been returned to buyer on Ethereum Sepolia."
-                : isReleased
-                  ? "Ownership transfer and seller payout finalized on Ethereum Sepolia."
-                  : "Neither buyer nor seller can access funds until physical inspection passes."}
+              {statusInfo[1]}
             </Text>
           </View>
         </View>
+
+        {isSeller && ["pending_payment", "payment_secured", "in_transit"].includes(order?.status) && (
+          <View style={[styles.simCard, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Text style={{ fontSize: 14, fontWeight: "700", color: c.warm, marginBottom: 8 }}>{order?.status === "pending_payment" ? "Share a product preparation update" : "Confirm shipment or share an update"}</Text>
+            <TextInput value={sellerUpdate} onChangeText={setSellerUpdate} placeholder="Product condition, packing, dispatch progress…" placeholderTextColor={c.muted} multiline style={[styles.updateInput, { color: c.warm, borderColor: c.border }]} />
+            {order?.status === "pending_payment" ? (
+              <Text style={{ color: c.amber, fontSize: 11, lineHeight: 16, marginBottom: 8 }}>The buyer’s bank payment is awaiting admin verification. Shipment recording unlocks after the funds are verified.</Text>
+            ) : (
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <TextInput value={carrier} onChangeText={setCarrier} placeholder="Carrier" placeholderTextColor={c.muted} style={[styles.updateInput, styles.halfInput, { color: c.warm, borderColor: c.border }]} />
+                <TextInput value={trackingNumber} onChangeText={setTrackingNumber} placeholder="Tracking number" placeholderTextColor={c.muted} style={[styles.updateInput, styles.halfInput, { color: c.warm, borderColor: c.border }]} />
+              </View>
+            )}
+            <TouchableOpacity style={[styles.simBtn, { backgroundColor: c.primary }]} onPress={handleSellerUpdate} disabled={savingUpdate}>
+              {savingUpdate ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700" }}>{order?.status === "pending_payment" ? "Share preparation update" : "Record shipment / share update"}</Text>}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {(order?.timeline || []).filter((event) => event.type === "seller_update").length > 0 && (
+          <View style={[styles.simCard, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Text style={{ fontSize: 14, fontWeight: "700", color: c.warm, marginBottom: 8 }}>Product & shipment updates</Text>
+            {(order.timeline || []).filter((event) => event.type === "seller_update").slice().reverse().map((event, index) => (
+              <View key={`${event.timestamp || "update"}-${index}`} style={{ paddingVertical: 8, borderTopWidth: index ? 1 : 0, borderTopColor: c.border }}>
+                <Text style={{ color: c.warm, fontSize: 13 }}>{event.description}</Text>
+                <Text style={{ color: c.muted, fontSize: 11, marginTop: 3 }}>{event.timestamp ? new Date(event.timestamp).toLocaleString() : ""}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* ── Asset Summary Card ── */}
         <View
@@ -319,196 +401,6 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
             </Text>
           </View>
         </View>
-
-        {/* ── Step Progression Simulator (Interactive Testing Controls) ── */}
-        {!isReleased && !isRefunded && (
-          <View
-            style={[
-              styles.simCard,
-              { backgroundColor: c.card, borderColor: c.border },
-            ]}
-          >
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 8,
-              }}
-            >
-              <Ionicons name="flash-outline" size={16} color={c.primary} />
-              <Text style={{ fontSize: 12, fontWeight: "700", color: c.warm }}>
-                Escrow Custody Controls
-              </Text>
-            </View>
-
-            {currentStep === 1 && (
-              <TouchableOpacity
-                style={[
-                  styles.simBtn,
-                  { backgroundColor: c.cardLight, borderColor: c.primary },
-                ]}
-                onPress={() =>
-                  handleProgressStep(
-                    2,
-                    "Armored courier BRK-8921 dispatched to Custody Center.",
-                    { carrier: "Brink's Armored Courier", trackingNumber: "BRK-892104" }
-                  )
-                }
-                disabled={progressing}
-              >
-                {progressing ? (
-                  <ActivityIndicator size="small" color={c.primary} />
-                ) : (
-                  <>
-                    <Feather
-                      name="truck"
-                      size={14}
-                      color={c.primary}
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "700",
-                        color: c.primary,
-                      }}
-                    >
-                      Seller Records Shipment (Carrier & Tracking)
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-
-            {currentStep === 2 && (
-              <TouchableOpacity
-                style={[
-                  styles.simBtn,
-                  { backgroundColor: c.cardLight, borderColor: c.primary },
-                ]}
-                onPress={() =>
-                  handleProgressStep(
-                    3,
-                    "Certified Horologist verified serial number & authenticity.",
-                  )
-                }
-                disabled={progressing}
-              >
-                {progressing ? (
-                  <ActivityIndicator size="small" color={c.primary} />
-                ) : (
-                  <>
-                    <Feather
-                      name="check-circle"
-                      size={14}
-                      color={c.primary}
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "700",
-                        color: c.primary,
-                      }}
-                    >
-                      Appraiser Confirms Inspection (Step 3)
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-
-            {currentStep === 3 && (
-              <TouchableOpacity
-                style={[
-                  styles.simBtn,
-                  { backgroundColor: c.cardLight, borderColor: c.primary },
-                ]}
-                onPress={() =>
-                  handleProgressStep(
-                    4,
-                    "Physical collectible delivered to recipient vault.",
-                  )
-                }
-                disabled={progressing}
-              >
-                {progressing ? (
-                  <ActivityIndicator size="small" color={c.primary} />
-                ) : (
-                  <>
-                    <Feather
-                      name="package"
-                      size={14}
-                      color={c.primary}
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "700",
-                        color: c.primary,
-                      }}
-                    >
-                      Confirm Physical Delivery (Step 4)
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-
-            {currentStep === 4 && order?.status !== 'accepted' && (
-              <TouchableOpacity
-                style={[
-                  styles.simBtn,
-                  { backgroundColor: c.cardLight, borderColor: c.green },
-                ]}
-                onPress={() =>
-                  handleProgressStep(
-                    5,
-                    "Buyer verified and accepted collectible condition.",
-                  )
-                }
-                disabled={progressing}
-              >
-                {progressing ? (
-                  <ActivityIndicator size="small" color={c.green} />
-                ) : (
-                  <>
-                    <Feather
-                      name="award"
-                      size={14}
-                      color={c.green}
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "700",
-                        color: c.green,
-                      }}
-                    >
-                      Buyer Accepts Condition & Quality (Step 5)
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-
-            {order?.status === 'accepted' && (
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
-              >
-                <Feather name="check-circle" size={14} color={c.green} />
-                <Text
-                  style={{ fontSize: 12, color: c.green, fontWeight: "600" }}
-                >
-                  Buyer accepted condition! Ready for seller payout release.
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
 
         {/* ── 4-Stage Stepper ── */}
         <View
@@ -638,7 +530,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
                     {item.detail}
                   </Text>
 
-                  {item.txHash ? (
+                  {item.txHash?.startsWith("0x") ? (
                     <TouchableOpacity
                       style={{
                         flexDirection: "row",
@@ -772,7 +664,7 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
           </View>
         ) : !isReleased ? (
           <View style={{ gap: 8 }}>
-            <TouchableOpacity
+            {isBuyer ? <TouchableOpacity
               style={[
                 styles.actionBtn,
                 {
@@ -786,29 +678,31 @@ export default function EscrowTrackerScreen({ navigation, route, isDark }) {
               onPress={() => {
                 if (order?.status === 'delivered') {
                   handleProgressStep(5, "Buyer confirmed receipt and accepted condition.");
-                } else if (order?.status === 'in_transit') {
+                } else if (['in_transit', 'in_inspection'].includes(order?.status)) {
                   handleProgressStep(4, "Collectible delivered to recipient.");
                 }
               }}
-              disabled={['payment_secured'].includes(order?.status) || progressing}
+              disabled={!['delivered', 'in_transit', 'in_inspection'].includes(order?.status) || progressing}
             >
               <Text
                 style={[
                   styles.actionBtnText,
                   {
-                    color: ['delivered', 'in_transit'].includes(order?.status)
+                    color: ['delivered', 'in_transit', 'in_inspection'].includes(order?.status)
                       ? '#FFFFFF'
                       : c.muted,
                   },
                 ]}
               >
-                {order?.status === 'delivered'
+                {order?.status === 'pending_payment'
+                  ? 'Awaiting bank settlement verification'
+                  : order?.status === 'delivered'
                   ? 'Accept Collectible Condition'
-                  : order?.status === 'in_transit'
+                  : ['in_transit', 'in_inspection'].includes(order?.status)
                   ? 'Confirm Delivery Receipt'
                   : 'Funds Secured — Awaiting Shipment'}
               </Text>
-            </TouchableOpacity>
+            </TouchableOpacity> : <View style={[styles.actionBtn, { backgroundColor: c.cardLight }]}><Text style={[styles.actionBtnText, { color: c.muted }]}>{isSeller && order?.status === "pending_payment" ? "Awaiting admin settlement verification before shipment" : isSeller && order?.status === "payment_secured" ? "Payment secured — seller shipment is next" : isSeller && order?.status === "delivered" ? "Delivery confirmed — awaiting buyer acceptance" : isSeller && order?.status === "in_inspection" ? "Item under inspection — awaiting buyer delivery confirmation" : isSeller && order?.status === "in_transit" ? "Shipment in transit — awaiting buyer delivery confirmation" : order?.status === "pending_payment" ? "Awaiting bank settlement verification" : "Awaiting buyer delivery confirmation"}</Text></View>}
 
             <TouchableOpacity
               style={[styles.secondaryBtn, { borderColor: "#EF444440" }]}
@@ -890,6 +784,16 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
   },
+  updateInput: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+    fontSize: 13,
+  },
+  halfInput: { flex: 1, minWidth: 0 },
   simBtn: {
     flexDirection: "row",
     alignItems: "center",

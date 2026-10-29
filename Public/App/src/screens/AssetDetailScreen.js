@@ -213,7 +213,7 @@ const getCategoryAuditConfig = (category = "", name = "", asset = {}) => {
 };
 
 export default function AssetDetailScreen({ navigation, route }) {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const initialAsset = route?.params?.asset ?? {};
   const [asset, setAsset] = useState(initialAsset);
   const [activeTab, setActiveTab] = useState("overview");
@@ -260,11 +260,15 @@ export default function AssetDetailScreen({ navigation, route }) {
   const isInvestmentEnabled = Boolean(asset.allow_investment || asset.allowInvestment) && !isSold && !isInEscrow && !isDelisted;
 
   const handleOpenDelistModal = async () => {
+    if (!token) {
+      Alert.alert("Sign In Required", "Your session has ended. Sign in again before delisting this product.");
+      return;
+    }
     setDelistModalVisible(true);
     setLoadingQuote(true);
     setDelistSuccess(false);
     try {
-      const res = await getDelistQuoteApi(asset.id, user?.token);
+      const res = await getDelistQuoteApi(asset.id, token);
       if (res?.quote) {
         setDelistQuote(res.quote);
       } else {
@@ -282,6 +286,11 @@ export default function AssetDetailScreen({ navigation, route }) {
   };
 
   const handleConfirmDelist = async () => {
+    if (!token) {
+      setDelistModalVisible(false);
+      Alert.alert("Sign In Required", "Your session has ended. Sign in again before delisting this product.");
+      return;
+    }
     setIsDelisting(true);
     try {
       const payload = {
@@ -292,7 +301,7 @@ export default function AssetDetailScreen({ navigation, route }) {
         },
       };
 
-      const res = await delistAssetApi(asset.id, payload, user?.token);
+      const res = await delistAssetApi(asset.id, payload, token);
       if (res?.success) {
         setDelistSuccess(true);
         setAsset((prev) => ({

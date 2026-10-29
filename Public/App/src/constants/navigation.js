@@ -30,6 +30,7 @@ export const SCREENS = {
   VERIFY_ACCOUNT: 'VerifyAccount',
   BANK_DETAILS: 'BankDetails',
   ESCROW_TRACKER: 'EscrowTracker',
+  ESCROW_ORDERS: 'EscrowOrders',
   PROFILE: 'Profile',
   PROFILE_ANALYTICS: 'ProfileAnalytics',
   ANALYTICS: 'ProfileAnalytics',

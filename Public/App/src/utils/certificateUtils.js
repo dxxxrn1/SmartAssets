@@ -121,14 +121,14 @@ function buildCertificateData(asset = {}) {
   const contractAddress = safeAsset.contractAddress || safeAsset.contract_address || null;
 
   // Digital Certificate & PKI fields
-  const certId =
-    safeAsset.certificateId ||
-    safeAsset.certificate_id ||
-    safeAsset.cert ||
-    (assetId ? `SA-${String(assetId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toUpperCase()}` : "Not provided");
-
   const certVersion = safeAsset.certificateVersion || safeAsset.certificate_version || "1.0.0";
   const signature = safeAsset.certificateSignature || safeAsset.certificate_signature || null;
+  const certId = signature
+    ? safeAsset.certificateId ||
+      safeAsset.certificate_id ||
+      safeAsset.cert ||
+      (assetId ? `SA-CERT-${String(assetId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toUpperCase()}-V1` : "Not provided")
+    : "Not issued";
   const keyId = safeAsset.certificateKeyId || safeAsset.certificate_key_id || null;
   const rawIssuer = safeAsset.certificateIssuer || safeAsset.certificate_issuer || {};
   const issuer = {
@@ -298,11 +298,16 @@ async function generateQrDataUriAsync(payload) {
   if (!payload || typeof payload !== "string") {
     throw new Error("Payload is required for QR generation.");
   }
-  return QRCode.toDataURL(payload, {
+  if (typeof QRCode.toString !== "function") {
+    throw new Error("QR encoder is unavailable in this app runtime.");
+  }
+  const svg = await QRCode.toString(payload, {
+    type: "svg",
     width: 280,
     margin: 1,
     errorCorrectionLevel: "M",
   });
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 /**
@@ -694,9 +699,10 @@ function generateCertificateHtml(certData, qrDataUri, verificationUrl) {
  * @param {string} qrDataUri
  * @param {string} [verificationUrl]
  * @param {object} printModule - Injected Expo Print module
- * @returns {Promise<{ uri: string }>}
+ * @param {boolean} [includeBase64] - Include PDF bytes for Android cache handoff
+ * @returns {Promise<{ uri: string, base64?: string }>}
  */
-async function generateCertificatePdfAsync(certData, qrDataUri, verificationUrl, printModule) {
+async function generateCertificatePdfAsync(certData, qrDataUri, verificationUrl, printModule, includeBase64 = false) {
   if (!printModule || typeof printModule.printToFileAsync !== "function") {
     throw new Error("Print module with printToFileAsync is required.");
   }
@@ -704,7 +710,9 @@ async function generateCertificatePdfAsync(certData, qrDataUri, verificationUrl,
   const html = generateCertificateHtml(certData, qrDataUri, verificationUrl);
   return printModule.printToFileAsync({
     html,
-    base64: false,
+    // Android's print cache URI is not always readable by Expo Sharing.
+    // Returning base64 lets the caller persist it through Expo FileSystem first.
+    base64: Boolean(includeBase64),
   });
 }
 

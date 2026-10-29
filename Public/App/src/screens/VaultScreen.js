@@ -952,6 +952,16 @@ export default function VaultScreen({ navigation }) {
                 <Text style={styles.analyticsActionBtnText}>Analytics</Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.escrowOrdersActionBtn}
+              onPress={() => navigation.navigate(SCREENS.ESCROW_ORDERS)}
+              activeOpacity={0.85}
+            >
+              <Feather name="package" size={15} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.escrowOrdersActionText}>Track escrow orders</Text>
+              <Feather name="chevron-right" size={15} color="#FFFFFF" style={{ marginLeft: "auto" }} />
+            </TouchableOpacity>
           </LinearGradient>
         </View>
 
@@ -1822,6 +1832,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
   },
+  escrowOrdersActionBtn: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.28)",
+  },
+  escrowOrdersActionText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
   depositActionBtn: {
     flex: 1,
     flexDirection: "row",

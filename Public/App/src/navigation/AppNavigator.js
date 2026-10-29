@@ -33,6 +33,7 @@ import VerificationScreen from '../screens/VerificationScreen';
 import VerifyAccountScreen from '../screens/VerifyAccountScreen';
 import BankDetailsScreen from '../screens/BankDetailsScreen';
 import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
+import EscrowOrdersScreen from '../screens/EscrowOrdersScreen';
 import ProfileScreen     from '../screens/ProfileScreen';
 import ProfileAnalyticsScreen from '../screens/ProfileAnalyticsScreen';
 import ARScreen          from '../screens/ARScreen';
@@ -449,6 +450,10 @@ export default function Navigation() {
 
             <Stack.Screen name={SCREENS.ESCROW_TRACKER}>
               {(props) => <EscrowTrackerScreen {...props} isDark={isDark} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.ESCROW_ORDERS}>
+              {(props) => <EscrowOrdersScreen {...props} isDark={isDark} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.PROFILE}>
