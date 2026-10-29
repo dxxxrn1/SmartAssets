@@ -20,49 +20,124 @@ const KEYSTORE_FILE = path.join(KEYSTORE_DIR, 'certificate_authority_keystore.js
 let keystoreCache = null;
 
 /**
+ * Resets keystore cache (test-isolation hook).
+ */
+function _resetKeystoreCache() {
+  keystoreCache = null;
+}
+
+/**
  * Initializes or loads the server-side RSA keypair.
  * Precedence:
  * 1. Environment variables: CERTIFICATE_SIGNING_PRIVATE_KEY & CERTIFICATE_SIGNING_KEY_ID
- * 2. Persistent disk keystore: Backend/src/config/keys/certificate_authority_keystore.json
- * 3. Autonomous secure generation on first boot (persisted to disk)
+ * 2. Persistent disk keystore: Backend/src/config/keys/certificate_authority_keystore.json (non-prod only)
+ * 3. Autonomous secure generation on first boot (non-prod only; NEVER in production)
  */
 function initKeystore() {
   if (keystoreCache) return keystoreCache;
 
-  // 1. Check environment variables
-  const envPrivKey = process.env.CERTIFICATE_SIGNING_PRIVATE_KEY;
-  const envPubKey = process.env.CERTIFICATE_SIGNING_PUBLIC_KEY;
+  const isProduction = process.env.NODE_ENV === 'production';
+  const rawPrivKey = process.env.CERTIFICATE_SIGNING_PRIVATE_KEY;
+  const rawPubKey = process.env.CERTIFICATE_SIGNING_PUBLIC_KEY;
+  const envPrivKey = rawPrivKey ? String(rawPrivKey).replace(/\\n/g, '\n').trim() : '';
+  const envPubKey = rawPubKey ? String(rawPubKey).replace(/\\n/g, '\n').trim() : '';
   const envKeyId = (process.env.CERTIFICATE_SIGNING_KEY_ID || DEFAULT_KEY_ID).trim();
 
-  if (envPrivKey && envPrivKey.includes('PRIVATE KEY')) {
-    let resolvedPubKey = envPubKey;
-    if (!resolvedPubKey) {
-      try {
-        const pubKeyObj = crypto.createPublicKey(envPrivKey);
-        resolvedPubKey = pubKeyObj.export({ type: 'spki', format: 'pem' });
-      } catch (_) {}
+  // Helper to ingest historical public keys
+  function ingestHistoricalKeys(keysObj) {
+    const historicalRaw = process.env.CERTIFICATE_HISTORICAL_PUBLIC_KEYS_JSON;
+    if (!historicalRaw) return;
+    try {
+      const parsed = typeof historicalRaw === 'string' ? JSON.parse(historicalRaw) : historicalRaw;
+      if (Array.isArray(parsed)) {
+        parsed.forEach((h) => {
+          if (h && h.keyId && h.publicKeyPem) {
+            const hKeyId = String(h.keyId).trim();
+            const hPubPem = String(h.publicKeyPem).replace(/\\n/g, '\n').trim();
+            try {
+              crypto.createPublicKey(hPubPem);
+              keysObj[hKeyId] = {
+                keyId: hKeyId,
+                publicKeyPem: hPubPem,
+                createdAt: h.createdAt || '2025-01-01T00:00:00.000Z',
+                status: h.status || 'retired',
+              };
+            } catch (err) {
+              console.warn(`⚠️ [Crypto] Invalid historical public key '${hKeyId}': ${err.message}`);
+            }
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('⚠️ [Crypto] Could not parse CERTIFICATE_HISTORICAL_PUBLIC_KEYS_JSON:', e.message);
     }
+  }
+
+  // 1. Check environment variables
+  if (envPrivKey && envPrivKey.includes('PRIVATE KEY')) {
+    let privKeyObj;
+    try {
+      privKeyObj = crypto.createPrivateKey(envPrivKey);
+    } catch (err) {
+      throw new Error(`CERTIFICATE_SIGNING_CONFIG_ERROR: Malformed CERTIFICATE_SIGNING_PRIVATE_KEY: ${err.message}`);
+    }
+
+    let resolvedPubKey = '';
+    try {
+      const pubKeyObj = crypto.createPublicKey(privKeyObj);
+      resolvedPubKey = pubKeyObj.export({ type: 'spki', format: 'pem' }).trim();
+    } catch (err) {
+      throw new Error(`CERTIFICATE_SIGNING_CONFIG_ERROR: Failed to derive public key from private key: ${err.message}`);
+    }
+
+    if (envPubKey) {
+      try {
+        const clientPubObj = crypto.createPublicKey(envPubKey);
+        const clientPubPem = clientPubObj.export({ type: 'spki', format: 'pem' }).trim();
+        if (clientPubPem !== resolvedPubKey) {
+          throw new Error('CERTIFICATE_SIGNING_CONFIG_ERROR: CERTIFICATE_SIGNING_PUBLIC_KEY does not match CERTIFICATE_SIGNING_PRIVATE_KEY.');
+        }
+      } catch (err) {
+        if (err.message.startsWith('CERTIFICATE_SIGNING_CONFIG_ERROR')) throw err;
+        throw new Error(`CERTIFICATE_SIGNING_CONFIG_ERROR: Malformed CERTIFICATE_SIGNING_PUBLIC_KEY: ${err.message}`);
+      }
+    }
+
+    const keys = {
+      [envKeyId]: {
+        keyId: envKeyId,
+        privateKeyPem: envPrivKey,
+        publicKeyPem: resolvedPubKey,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        status: 'active',
+      },
+    };
+
+    ingestHistoricalKeys(keys);
+
     keystoreCache = {
       activeKeyId: envKeyId,
-      keys: {
-        [envKeyId]: {
-          keyId: envKeyId,
-          privateKeyPem: envPrivKey.trim(),
-          publicKeyPem: resolvedPubKey ? resolvedPubKey.trim() : '',
-          createdAt: '2026-01-01T00:00:00.000Z',
-          status: 'active',
-        },
-      },
+      keys,
     };
     return keystoreCache;
   }
 
-  // 2. Check disk keystore
+  // In production, we FAIL CLOSED immediately if the environment key is missing or invalid.
+  // Never auto-generate new keys or rely on ephemeral Render container disks in production.
+  if (isProduction) {
+    throw new Error(
+      'CERTIFICATE_SIGNING_CONFIG_ERROR: CERTIFICATE_SIGNING_PRIVATE_KEY is missing or invalid in production environment. ' +
+      'A persistent RSA-2048 private key must be configured in environment variables to prevent certificate invalidation on redeploys.'
+    );
+  }
+
+  // 2. Check disk keystore (non-production only)
   if (fs.existsSync(KEYSTORE_FILE)) {
     try {
       const raw = fs.readFileSync(KEYSTORE_FILE, 'utf8');
       const parsed = JSON.parse(raw);
       if (parsed && parsed.activeKeyId && parsed.keys && parsed.keys[parsed.activeKeyId]) {
+        ingestHistoricalKeys(parsed.keys);
         keystoreCache = parsed;
         return keystoreCache;
       }
@@ -71,7 +146,7 @@ function initKeystore() {
     }
   }
 
-  // 3. Generate initial persistent 2048-bit RSA keypair
+  // 3. Generate initial persistent 2048-bit RSA keypair (non-production only)
   if (!fs.existsSync(KEYSTORE_DIR)) {
     fs.mkdirSync(KEYSTORE_DIR, { recursive: true });
   }
@@ -82,17 +157,20 @@ function initKeystore() {
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
   });
 
+  const newKeys = {
+    [DEFAULT_KEY_ID]: {
+      keyId: DEFAULT_KEY_ID,
+      privateKeyPem: privateKey,
+      publicKeyPem: publicKey,
+      createdAt: new Date().toISOString(),
+      status: 'active',
+    },
+  };
+  ingestHistoricalKeys(newKeys);
+
   const newKeystore = {
     activeKeyId: DEFAULT_KEY_ID,
-    keys: {
-      [DEFAULT_KEY_ID]: {
-        keyId: DEFAULT_KEY_ID,
-        privateKeyPem: privateKey,
-        publicKeyPem: publicKey,
-        createdAt: new Date().toISOString(),
-        status: 'active',
-      },
-    },
+    keys: newKeys,
   };
 
   try {
@@ -325,4 +403,5 @@ module.exports = {
   signCanonicalCertificate,
   verifyCertificateSignature,
   getPublicVerificationKeys,
+  _resetKeystoreCache,
 };

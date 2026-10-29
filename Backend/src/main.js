@@ -8,9 +8,15 @@ try {
 } catch (_) {
   console.warn('⚠️ [Helmet] helmet package not found. Using custom securityHeaders middleware.');
 }
+const fs = require('fs');
 const path = require('path');
+const supabase = require('./connection/supabaseClient');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
+const { validateProductionConfig } = require('./config/productionValidation');
+// Validate production environment and critical secrets at server boot
+validateProductionConfig();
 
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -78,7 +84,6 @@ if (typeof helmet === 'function') {
           scriptSrc: [
             "'self'",
             "'unsafe-inline'", // Required for inline scripts in admin console and public verification page
-            "'unsafe-eval'",
             'https://cdn.jsdelivr.net',
           ],
           styleSrc: [
@@ -229,22 +234,54 @@ app.use((req, res, next) => {
 app.use('/uploads/assets', express.static(path.resolve(__dirname, '../uploads/assets')));
 app.use('/uploads/avatars', express.static(path.resolve(__dirname, '../uploads/avatars')));
 
-// Gated KYC storage: requires valid JWT and restricts access strictly to owner or admin
+// Gated KYC storage: requires valid JWT and restricts access strictly to owner or admin.
+// Streams directly from private Supabase Storage ('verification-docs') without depending on local disk.
 app.use('/uploads/kyc', (req, res, next) => {
   if (req.query?.token && !req.headers.authorization) {
     req.headers.authorization = 'Bearer ' + req.query.token;
   }
   next();
-}, requireAuth, (req, res, next) => {
+}, requireAuth, async (req, res) => {
   const file = req.path.replace(/^\//, '');
   const userId = req.user.id;
   const isOwner = file.startsWith(userId) || file.startsWith(String(userId).replace(/-/g, '_'));
-  const isAdmin = req.user.role === 'admin' || (req.user.user_metadata?.role === 'admin');
+
+  let isAdmin = req.user.role === 'admin' || (req.user.user_metadata?.role === 'admin');
+  if (!isAdmin && req.user?.id) {
+    try {
+      const { data: p } = await supabase.from('profiles').select('role').eq('id', req.user.id).single();
+      isAdmin = p?.role === 'admin';
+    } catch (_) {}
+  }
+
   if (!isOwner && !isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: You are not authorized to view this compliance document.' });
   }
-  next();
-}, express.static(path.resolve(__dirname, '../uploads/kyc')));
+
+  // 1. Attempt to stream from private Supabase Storage bucket 'verification-docs'
+  try {
+    const { data, error } = await supabase.storage.from('verification-docs').download(file);
+    if (!error && data) {
+      const arrayBuffer = await data.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const mime = data.type || (file.endsWith('.pdf') ? 'application/pdf' : file.endsWith('.png') ? 'image/png' : 'image/jpeg');
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+      return res.send(buffer);
+    }
+  } catch (storageErr) {
+    console.warn(`⚠️ [KYC Storage] Supabase download error for ${file}:`, storageErr.message);
+  }
+
+  // 2. Fallback to local disk (offline development/testing only)
+  const localFile = path.resolve(__dirname, '../uploads/kyc', file);
+  if (fs.existsSync(localFile)) {
+    return res.sendFile(localFile);
+  }
+
+  return res.status(404).json({ success: false, error: 'Compliance document not found.' });
+});
 
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads/assets')));
 app.use('/admin', express.static(path.resolve(__dirname, '../public/admin')));

@@ -3077,7 +3077,7 @@
           if (typeof window === "undefined") return "";
           const { protocol, hostname, port } = window.location;
           if (protocol === "file:") return "http://localhost:5000";
-          if (port && port !== "5000") {
+          if (port && (port === "5500" || port === "3000" || port === "8081" || port === "19006")) {
             const targetHost = hostname === "127.0.0.1" ? "localhost" : hostname;
             return "http://" + targetHost + ":5000";
           }

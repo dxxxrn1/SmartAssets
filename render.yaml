@@ -1,0 +1,106 @@
+# ─── Render Blueprint Specification ─────────────────────────────────────────────
+# SmartAssets Production Backend Service Definition
+# Deploy via Render Dashboard -> Blueprints -> Connect Repository
+#
+# IMPORTANT SECURITY NOTICE:
+# Confidential secrets are marked with `sync: false`. They must NEVER be committed
+# to this file and must be populated in the Render Dashboard Environment settings.
+
+services:
+  - type: web
+    name: smartassets-backend
+    runtime: node
+    plan: starter
+    region: frankfurt
+    rootDir: Backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    envVars:
+      # Platform runtime settings
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: TRUST_PROXY
+        value: "1"
+      - key: ENFORCE_HSTS
+        value: "true"
+
+      # ─── Core Required Secrets (Set in Render Dashboard) ───────────────────
+      # Supabase production project endpoint (e.g. https://your-project.supabase.co)
+      - key: SUPABASE_URL
+        sync: false
+      # Supabase secret service-role key (bypasses RLS for backend operations)
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # 256-bit HMAC-SHA256 secret (min 32 chars) for administrator JWT signing
+      - key: ADMIN_JWT_SECRET
+        sync: false
+      # Canonical public URL (e.g. https://api.smartassets.io or https://smartassets-backend.onrender.com)
+      - key: PUBLIC_WEB_BASE_URL
+        sync: false
+      # Comma-delimited list of allowed production web origins
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # ─── Persistent Certificate PKI Authority (RSA-2048) ───────────────────
+      # Persistent RSA private key PEM (replaces temporary disk keys across restarts)
+      - key: CERTIFICATE_SIGNING_PRIVATE_KEY
+        sync: false
+      # RSA public key PEM corresponding to CERTIFICATE_SIGNING_PRIVATE_KEY
+      - key: CERTIFICATE_SIGNING_PUBLIC_KEY
+        sync: false
+      - key: CERTIFICATE_SIGNING_KEY_ID
+        value: sa-cert-key-2026-v1
+      # Optional historical public keys for verifying older certificates
+      - key: CERTIFICATE_HISTORICAL_PUBLIC_KEYS_JSON
+        sync: false
+
+      # ─── Rate Limiting Windows & Request Thresholds ────────────────────────
+      - key: RATE_LIMIT_ADMIN_LOGIN_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_ADMIN_LOGIN_MAX
+        value: "10"
+      - key: RATE_LIMIT_ADMIN_ACTIONS_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_ADMIN_ACTIONS_MAX
+        value: "120"
+      - key: RATE_LIMIT_AUTH_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_AUTH_MAX
+        value: "30"
+      - key: RATE_LIMIT_VERIFY_WINDOW_MS
+        value: "60000"
+      - key: RATE_LIMIT_VERIFY_MAX
+        value: "120"
+      - key: RATE_LIMIT_UPLOADS_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_UPLOADS_MAX
+        value: "50"
+      - key: RATE_LIMIT_FINANCIAL_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_FINANCIAL_MAX
+        value: "40"
+
+      # ─── Optional Feature Integrations (Set in Render Dashboard if active) ─
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: SEPOLIA_RPC_URL
+        sync: false
+      - key: SEPOLIA_RELAYER_PRIVATE_KEY
+        sync: false
+      - key: TRIPO_API_KEY
+        sync: false
+      - key: SERPAPI_KEY
+        sync: false

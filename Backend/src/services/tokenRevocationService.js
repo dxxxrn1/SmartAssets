@@ -142,10 +142,15 @@ async function revokeToken(token, options = {}) {
 
   // Persist to durable database table
   try {
+    const isValidUuid =
+      typeof options.userId === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(options.userId.trim());
+    const dbUserId = isValidUuid ? options.userId.trim() : null;
+
     const { error } = await supabase.from('revoked_tokens').upsert(
       {
         token_hash: tokenHash,
-        user_id: options.userId || null,
+        user_id: dbUserId,
         token_type: options.tokenType || 'admin',
         reason: options.reason || 'logout',
         expires_at: expiresAt.toISOString(),
