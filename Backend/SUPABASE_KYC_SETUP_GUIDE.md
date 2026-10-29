@@ -86,17 +86,22 @@ WHERE id = '00000000-0000-0000-0000-000000000000';
 
 ## Step 4: Configure Backend Environment Variables
 
-Ensure your `Backend/.env` file includes your Supabase project credentials:
+Ensure your `Backend/.env` file includes your Supabase project credentials and a strong `ADMIN_JWT_SECRET`:
 
 ```env
 PORT=5000
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Strong HMAC-SHA256 secret (minimum 32 characters / 256 bits) for signing administrator session tokens.
+# Generate via: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# NEVER use default values or reuse the Supabase service-role key.
+ADMIN_JWT_SECRET=your-random-32-plus-char-secret
 ```
 
-> **Note on Local Development & Hybrid Persistence:**
-> In addition to Supabase Postgres & Storage, the backend maintains synchronized local fallback stores in `Backend/src/data/verificationDocuments.json` and `Backend/src/data/bankAccounts.json` so you can test the entire end-to-end KYC and Bank Approval workflow immediately in local development.
+> **Security Note on Administrator Authentication:**
+> SmartAssets enforces strict server-side RBAC. Built-in default passwords, hardcoded credentials, and email allowlists are strictly disabled. Administrators authenticate exclusively via Supabase Auth and must have `profiles.role = 'admin'` in the database. If `ADMIN_JWT_SECRET` is missing or fewer than 32 characters, administrator authentication will fail closed with HTTP 503.
 
 ---
 

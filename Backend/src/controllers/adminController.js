@@ -28,9 +28,10 @@ const { invalidateAssetsCache } = require('./assetController');
 const { normalizeImageUrl, UPLOADS_DIR } = require('../utils/imageHandler');
 const {
   createAdminToken,
+  verifyAdminToken,
+  getValidatedAdminSecret,
   isUserAdmin,
   revokeToken,
-  CONFIGURED_ADMIN_EMAILS,
 } = require('../middlewares/authMiddleware');
 
 function isTestRecord(idOrEmail, name = '') {
@@ -59,8 +60,8 @@ function cleanAssetDescription(rawDesc) {
  * Helper to record an admin action in both local `auditLogs.json` and Supabase `admin_audit_logs`.
  */
 async function recordAdminAuditLog({ req, action, targetTable, targetId, targetUserId, targetEmail, reason, metadata }) {
-  const adminEmail = req?.admin?.email || req?.user?.email || 'admin@smartassets.io';
-  const adminId = req?.admin?.id || req?.user?.id || 'admin-compliance-officer';
+  const adminEmail = req?.admin?.email || req?.user?.email || 'authenticated-admin';
+  const adminId = req?.admin?.id || req?.user?.id || 'admin';
   const timestamp = new Date().toISOString();
 
   auditLogService.logEvent({
@@ -93,11 +94,30 @@ async function recordAdminAuditLog({ req, action, targetTable, targetId, targetU
 
 /**
  * POST /api/admin/auth/login
- * Authenticates an admin using email + password via Supabase Auth and verifies `profiles.role = 'admin'`.
- * If the user's role is `'user'` (and not an admin), signs out immediately and returns 403 "Access denied".
+ * Authenticates an administrator strictly using Supabase Auth (email + password)
+ * and verifies that their authoritative server-side role in `public.profiles` is `'admin'`.
+ *
+ * Strict Security Invariants:
+ * 1. Fails closed with 503 if ADMIN_JWT_SECRET is unconfigured or weak.
+ * 2. Authenticates solely via Supabase Auth — zero hardcoded credentials or bypasses.
+ * 3. Authoritatively verifies `profiles.role === 'admin'` — never trusts user metadata or email strings.
+ * 4. Signs admin session tokens with HMAC-SHA256 using the validated server-side secret.
  */
 async function adminLogin(req, res) {
   try {
+    // 0. Preflight check: Server-side admin JWT signing secret MUST be valid and strong
+    try {
+      getValidatedAdminSecret();
+    } catch (cfgErr) {
+      console.error('🚨 [adminLogin] Server configuration error:', cfgErr.message);
+      return res.status(503).json({
+        success: false,
+        code: 'ADMIN_AUTH_CONFIG_ERROR',
+        error:
+          'Administrator authentication is temporarily unavailable due to server configuration. Please contact the system administrator.',
+      });
+    }
+
     const email = String(req.body.email || '').trim().toLowerCase();
     const password = String(req.body.password || '');
 
@@ -105,7 +125,7 @@ async function adminLogin(req, res) {
       return sendError(res, 400, 'Please enter both your admin email address and password.');
     }
 
-    // 1. Attempt Supabase Auth signInWithPassword first
+    // 1. Authenticate via Supabase Auth
     let authenticatedUser = null;
     let supabaseSessionToken = null;
     let supabaseAuthError = null;
@@ -125,132 +145,93 @@ async function adminLogin(req, res) {
       supabaseAuthError = err;
     }
 
-    // 2. If Supabase authenticated a user, strictly verify `profiles.role === 'admin'`
-    if (authenticatedUser) {
-      const adminAllowed = await isUserAdmin(authenticatedUser);
-      if (!adminAllowed) {
-        // Sign out immediately and reject non-admin users with "Access denied"
-        try {
-          if (supabaseSessionToken) {
-            revokeToken(supabaseSessionToken);
-          }
-        } catch (_) {}
-
-        auditLogService.logEvent({
-          eventType: 'ADMIN_LOGIN_DENIED',
-          category: 'Security',
-          actorEmail: email,
-          actorId: authenticatedUser.id,
-          ip: req.ip || '127.0.0.1',
-          device: 'SmartAssets Admin Console',
-          description: 'Access denied: non-admin user attempted to sign into Admin Portal.',
-          status: 'Access Denied',
-        });
-
-        return res.status(403).json({
-          success: false,
-          code: 'ACCESS_DENIED',
-          error: 'Access denied. Your account does not have administrator privileges (profiles.role = "admin" required).',
-        });
-      }
-
-      const fullName =
-        authenticatedUser.user_metadata?.full_name ||
-        authenticatedUser.user_metadata?.name ||
-        'SmartAssets Administrator';
-
-      const adminToken = createAdminToken({
-        id: authenticatedUser.id,
-        email: authenticatedUser.email,
-        fullName,
+    // 2. Reject immediately if authentication failed
+    if (!authenticatedUser) {
+      auditLogService.logEvent({
+        eventType: 'ADMIN_LOGIN_FAILED',
+        category: 'Security',
+        actorEmail: email,
+        ip: req.ip || '127.0.0.1',
+        device: 'SmartAssets Admin Console',
+        description: `Failed admin login attempt for ${email}: ${supabaseAuthError?.message || 'Invalid credentials'}.`,
+        status: 'Failed',
       });
 
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_ADMIN_CREDENTIALS',
+        error: supabaseAuthError?.message || 'Invalid admin email or password.',
+      });
+    }
+
+    // 3. Confirm administrator role authoritatively from public.profiles
+    const { data: profile, error: profileErr } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, role')
+      .eq('id', authenticatedUser.id)
+      .maybeSingle();
+
+    if (profileErr || !profile || profile.role !== 'admin') {
+      // Immediately invalidate any issued Supabase session token
+      if (supabaseSessionToken) {
+        try {
+          revokeToken(supabaseSessionToken);
+        } catch (_) {}
+      }
+
       auditLogService.logEvent({
-        eventType: 'ADMIN_LOGIN',
+        eventType: 'ADMIN_LOGIN_DENIED',
         category: 'Security',
-        actorEmail: authenticatedUser.email,
+        actorEmail: email,
         actorId: authenticatedUser.id,
         ip: req.ip || '127.0.0.1',
         device: 'SmartAssets Admin Console',
-        description: 'Administrator authenticated via Supabase Auth (`profiles.role = admin`).',
-        status: 'Success',
+        description: `Access denied: non-admin user ${email} (role: ${profile?.role || 'none'}) attempted to log into Admin Portal.`,
+        status: 'Access Denied',
       });
 
-      return res.status(200).json({
-        success: true,
-        token: adminToken,
-        supabaseToken: supabaseSessionToken,
-        admin: {
-          id: authenticatedUser.id,
-          email: authenticatedUser.email,
-          fullName,
-          role: 'admin',
-        },
-      });
-    }
-
-    // 3. Fallback for pre-configured local compliance officer account or verified admin profiles
-    const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'Admin@SmartAssets2026';
-    let isRoleAdminInDb = false;
-    let existingAdminProfile = null;
-    try {
-      const { data: prof } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, role')
-        .ilike('email', email)
-        .maybeSingle();
-      if (prof) {
-        existingAdminProfile = prof;
-        if (prof.role === 'admin') isRoleAdminInDb = true;
-      }
-    } catch (_) {}
-
-    const isAuthorizedAdmin = CONFIGURED_ADMIN_EMAILS.has(email) || isRoleAdminInDb;
-    if (isAuthorizedAdmin && (password === defaultAdminPassword || password === 'SmartAssets2026!')) {
-      const adminProfile = {
-        id: existingAdminProfile?.id || 'admin-compliance-officer',
-        email,
-        fullName: existingAdminProfile?.full_name || 'Chief Compliance Officer',
-        role: 'admin',
-      };
-      const adminToken = createAdminToken(adminProfile);
-
-      auditLogService.logEvent({
-        eventType: 'ADMIN_LOGIN',
-        category: 'Security',
-        actorEmail: email,
-        actorId: adminProfile.id,
-        ip: req.ip || '127.0.0.1',
-        device: 'SmartAssets Admin Console',
-        description: 'Administrator authenticated via Compliance Desk credentials.',
-        status: 'Success',
-      });
-
-      return res.status(200).json({
-        success: true,
-        token: adminToken,
-        admin: adminProfile,
-      });
-    }
-
-    // Check if the email belongs to a known non-admin user in profiles to return explicit "Access denied"
-    if (existingAdminProfile && existingAdminProfile.role && existingAdminProfile.role !== 'admin' && !CONFIGURED_ADMIN_EMAILS.has(email)) {
       return res.status(403).json({
         success: false,
         code: 'ACCESS_DENIED',
-        error: 'Access denied. Your account does not have administrator privileges.',
+        error:
+          'Access denied. Your account does not have administrator privileges (profiles.role = "admin" required).',
       });
     }
 
-    const errorMessage =
-      supabaseAuthError?.message && String(supabaseAuthError.message).toLowerCase().includes('fetch failed')
-        ? 'Could not reach authentication server. Please check network connection or try the default admin password.'
-        : (supabaseAuthError?.message || 'Invalid admin email or password.');
+    // 4. Issue cryptographically signed admin session token
+    const fullName =
+      profile.full_name ||
+      authenticatedUser.user_metadata?.full_name ||
+      authenticatedUser.user_metadata?.name ||
+      'SmartAssets Administrator';
 
-    return res.status(401).json({
-      success: false,
-      code: 'INVALID_ADMIN_CREDENTIALS',
-      error: errorMessage,
+    const adminToken = createAdminToken({
+      id: profile.id,
+      email: profile.email || authenticatedUser.email,
+      fullName,
+    });
+
+    auditLogService.logEvent({
+      eventType: 'ADMIN_LOGIN',
+      category: 'Security',
+      actorEmail: authenticatedUser.email,
+      actorId: authenticatedUser.id,
+      ip: req.ip || '127.0.0.1',
+      device: 'SmartAssets Admin Console',
+      description: 'Administrator authenticated successfully via Supabase Auth (`profiles.role = admin`).',
+      status: 'Success',
+    });
+
+    return res.status(200).json({
+      success: true,
+      token: adminToken,
+      supabaseToken: supabaseSessionToken,
+      admin: {
+        id: profile.id,
+        email: profile.email || authenticatedUser.email,
+        fullName,
+        role: 'admin',
+      },
     });
   } catch (err) {
     console.error('adminLogin error:', err);
@@ -417,7 +398,7 @@ async function buildMergedRealUsers(req) {
       first_name: firstName,
       last_name: lastName,
       email: u.email || comp.userEmail || '—',
-      role: u.role || (CONFIGURED_ADMIN_EMAILS.has(String(u.email || '').toLowerCase()) ? 'admin' : 'user'),
+      role: u.role || 'user',
       walletAddress: u.walletAddress || null,
       balance: vaultBalance,
       vault_balance: vaultBalance,
@@ -1199,7 +1180,7 @@ async function getAdminVerifications(req, res) {
 async function approveAdminDocument(req, res) {
   try {
     const { id } = req.params;
-    const reviewerId = req.admin?.email || req.user?.email || 'admin-compliance-officer';
+    const reviewerId = req.admin?.email || req.user?.email || req.admin?.id || 'admin';
 
     const approvedDoc = await complianceService.approveDocument(id, reviewerId);
     if (!approvedDoc) {
@@ -1257,7 +1238,7 @@ async function rejectAdminDocument(req, res) {
       return sendError(res, 400, 'A rejection reason is required when rejecting a verification document.');
     }
 
-    const reviewerId = req.admin?.email || req.user?.email || 'admin-compliance-officer';
+    const reviewerId = req.admin?.email || req.user?.email || req.admin?.id || 'admin';
     const rejectedDoc = await complianceService.rejectDocument(id, String(reason).trim(), reviewerId);
     if (!rejectedDoc) {
       return sendError(res, 404, 'Verification document not found.');
@@ -1315,7 +1296,7 @@ async function getAdminBankAccounts(_req, res) {
 async function approveAdminBankAccount(req, res) {
   try {
     const { id } = req.params;
-    const reviewerId = req.admin?.email || req.user?.email || 'admin-compliance-officer';
+    const reviewerId = req.admin?.email || req.user?.email || req.admin?.id || 'admin';
 
     const approvedBank = await complianceService.approveBankAccount(id, reviewerId);
     if (!approvedBank) {
@@ -1363,7 +1344,7 @@ async function rejectAdminBankAccount(req, res) {
       return sendError(res, 400, 'A rejection reason is required when rejecting a bank account.');
     }
 
-    const reviewerId = req.admin?.email || req.user?.email || 'admin-compliance-officer';
+    const reviewerId = req.admin?.email || req.user?.email || req.admin?.id || 'admin';
     const rejectedBank = await complianceService.rejectBankAccount(id, String(reason).trim(), reviewerId);
     if (!rejectedBank) {
       return sendError(res, 404, 'Bank account record not found.');

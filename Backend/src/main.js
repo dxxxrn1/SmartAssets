@@ -27,11 +27,15 @@ const {
   requireAuth,
   requireVerified,
   requireApprovedBank,
+  validateAdminAuthConfig,
 } = require('./middlewares/authMiddleware');
 const { createAsset } = require('./controllers/assetController');
 const { deposit, withdraw } = require('./controllers/userController');
 const { securityHeaders, sqlInjectionProtection } = require('./middlewares/securityMiddleware');
 const rateLimit = require('express-rate-limit');
+
+// Validate administrator authentication configuration at server startup
+validateAdminAuthConfig();
 
 const app = express();
 const PORT = process.env.PORT || 5000;

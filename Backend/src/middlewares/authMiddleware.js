@@ -165,89 +165,224 @@ async function optionalAuth(req, _res, next) {
   next();
 }
 
-// ─── Admin Session Token Helpers ─────────────────────────────────────────────
-const ADMIN_SECRET = process.env.ADMIN_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'smartassets-admin-hmac-secret-2026';
+// ─── Admin Session Token Helpers (Hardened PKI & Secret Management) ──────────
+const MIN_ADMIN_JWT_SECRET_LENGTH = 32;
+const ADMIN_JWT_ISSUER = 'smartassets-admin-authority';
+const ADMIN_JWT_AUDIENCE = 'smartassets-admin-portal';
 
-// Configured fallback admin emails (used alongside profiles.role === 'admin')
-const CONFIGURED_ADMIN_EMAILS = new Set(
-  [
-    'admin@smartassets.io',
-    'admin@smartassets.co.za',
-    'compliance@smartassets.io',
-    'darrenforster3@gmail.com',
-    'pngforster@gmail.com',
-    ...(process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()) : []),
-  ].filter(Boolean)
-);
+const PROHIBITED_ADMIN_SECRETS = new Set([
+  'smartassets-admin-hmac-secret-2026',
+  'secret',
+  'admin-secret',
+  'password',
+  '12345678901234567890123456789012',
+  'smartassets-wallet-verified-token-secret-32chars',
+]);
 
+/**
+ * Validates and retrieves the server-side ADMIN_JWT_SECRET.
+ * Strict fail-closed rules:
+ * - Must be present in process.env.ADMIN_JWT_SECRET.
+ * - Must be at least 32 characters in length (256-bit security).
+ * - Must not match known default or prohibited values.
+ * - Must not reuse the Supabase service role key.
+ * - Never falls back to a development default or client-accessible secret.
+ * @returns {string}
+ */
+function getValidatedAdminSecret() {
+  if (!process.env.ADMIN_JWT_SECRET && process.env.NODE_ENV !== 'test') {
+    try {
+      const path = require('path');
+      require('dotenv').config({ path: path.resolve(__dirname, '../../../.env'), override: true });
+      require('dotenv').config({ path: path.resolve(__dirname, '../../.env'), override: true });
+    } catch (_) {}
+  }
+  const secret = process.env.ADMIN_JWT_SECRET;
+  if (!secret || typeof secret !== 'string') {
+    const err = new Error(
+      'ADMIN_AUTH_CONFIG_ERROR: ADMIN_JWT_SECRET is not configured in server environment.'
+    );
+    err.code = 'ADMIN_AUTH_CONFIG_ERROR';
+    throw err;
+  }
+  const clean = secret.trim();
+  if (clean.length < MIN_ADMIN_JWT_SECRET_LENGTH) {
+    const err = new Error(
+      `ADMIN_AUTH_CONFIG_ERROR: ADMIN_JWT_SECRET is too weak (${clean.length} chars). Minimum required is ${MIN_ADMIN_JWT_SECRET_LENGTH} characters.`
+    );
+    err.code = 'ADMIN_AUTH_CONFIG_ERROR';
+    throw err;
+  }
+  if (PROHIBITED_ADMIN_SECRETS.has(clean.toLowerCase())) {
+    const err = new Error(
+      'ADMIN_AUTH_CONFIG_ERROR: ADMIN_JWT_SECRET matches a prohibited or default value.'
+    );
+    err.code = 'ADMIN_AUTH_CONFIG_ERROR';
+    throw err;
+  }
+  if (
+    process.env.SUPABASE_SERVICE_ROLE_KEY &&
+    clean === process.env.SUPABASE_SERVICE_ROLE_KEY.trim()
+  ) {
+    const err = new Error(
+      'ADMIN_AUTH_CONFIG_ERROR: ADMIN_JWT_SECRET must not reuse the Supabase service role key.'
+    );
+    err.code = 'ADMIN_AUTH_CONFIG_ERROR';
+    throw err;
+  }
+  return clean;
+}
+
+/**
+ * Validates admin auth configuration at server startup.
+ * Logs a clear warning or throws if in production.
+ */
+function validateAdminAuthConfig() {
+  try {
+    getValidatedAdminSecret();
+    console.log('🔒 [Security] Administrator authentication configuration validated (ADMIN_JWT_SECRET length >= 32 chars).');
+    return { valid: true };
+  } catch (err) {
+    const msg = `[Security Error] ${err.message}`;
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`🚨 ${msg}`);
+      throw err;
+    } else {
+      console.warn(`⚠️ ${msg} Administrator authentication is disabled (fail-closed) until configured.`);
+      return { valid: false, error: err.message };
+    }
+  }
+}
+
+// Deprecated empty allowlist for backwards-compatibility imports.
+// Authoritative role assignment is exclusively governed by public.profiles.role = 'admin'.
+const CONFIGURED_ADMIN_EMAILS = Object.freeze(new Set());
+
+/**
+ * Generates an HMAC-SHA256 admin session token.
+ * Payload strictly encodes immutable identity, role, issuer, audience, and 12-hour expiry.
+ * @param {object} adminPayload - { id, email, fullName }
+ * @returns {string} Signed JWT
+ */
 function createAdminToken(adminPayload) {
+  if (!adminPayload || typeof adminPayload !== 'object') {
+    throw new Error('createAdminToken: admin payload object is required.');
+  }
+  if (!adminPayload.id || !adminPayload.email) {
+    throw new Error('createAdminToken: admin id and email are required.');
+  }
+
+  const secret = getValidatedAdminSecret();
+
   const crypto = require('crypto');
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const nowSec = Math.floor(Date.now() / 1000);
   const body = Buffer.from(
     JSON.stringify({
-      sub: adminPayload.id || 'admin-user',
-      email: adminPayload.email,
-      fullName: adminPayload.fullName || 'Compliance Officer',
+      sub: String(adminPayload.id),
+      email: String(adminPayload.email).toLowerCase(),
+      fullName: adminPayload.fullName || 'Administrator',
       role: 'admin',
+      iss: ADMIN_JWT_ISSUER,
+      aud: ADMIN_JWT_AUDIENCE,
       iat: nowSec,
       exp: nowSec + 12 * 60 * 60, // 12 hours
     })
   ).toString('base64url');
+
   const signature = crypto
-    .createHmac('sha256', ADMIN_SECRET)
+    .createHmac('sha256', secret)
     .update(`${header}.${body}`)
     .digest('base64url');
+
   return `${header}.${body}.${signature}`;
 }
 
+/**
+ * Cryptographically verifies an admin session token.
+ * Strictly verifies signature with constant-time equality, algorithm, issuer, audience, role, and expiry.
+ * Fails closed on any error, missing configuration, tampering, or revocation.
+ * @param {string} token
+ * @returns {object|null} Decoded payload if valid; null otherwise
+ */
 function verifyAdminToken(token) {
   try {
     if (!token || typeof token !== 'string') return null;
     if (isTokenRevoked(token)) return null;
+
     const parts = token.split('.');
     if (parts.length !== 3) return null;
+
+    const secret = getValidatedAdminSecret();
+
     const crypto = require('crypto');
     const expectedSig = crypto
-      .createHmac('sha256', ADMIN_SECRET)
+      .createHmac('sha256', secret)
       .update(`${parts[0]}.${parts[1]}`)
       .digest('base64url');
-    if (parts[2] !== expectedSig) return null;
+
+    // Constant-time comparison to protect against timing attacks
+    const sigBuf = Buffer.from(parts[2]);
+    const expBuf = Buffer.from(expectedSig);
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return null;
+    }
+
+    // Verify header algorithm
+    const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    if (header.alg !== 'HS256' || header.typ !== 'JWT') {
+      return null;
+    }
+
+    // Verify payload claims
     const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-    if (payload.exp && Math.floor(Date.now() / 1000) >= payload.exp) return null;
-    if (payload.role !== 'admin') return null;
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    if (typeof payload.exp !== 'number' || nowSec >= payload.exp) {
+      return null; // Expired
+    }
+    if (typeof payload.iat === 'number' && payload.iat > nowSec + 60) {
+      return null; // Future-dated token
+    }
+    if (payload.iss !== ADMIN_JWT_ISSUER || payload.aud !== ADMIN_JWT_AUDIENCE) {
+      return null; // Issuer / audience mismatch
+    }
+    if (payload.role !== 'admin') {
+      return null; // Role tampering
+    }
+    if (!payload.sub || !payload.email) {
+      return null;
+    }
+
     return payload;
   } catch (_) {
     return null;
   }
 }
 
+/**
+ * Authoritatively verifies whether a Supabase user has `profiles.role === 'admin'`.
+ * Strictly queries the durable database profiles record.
+ * Never trusts client-supplied user_metadata, app_metadata, email allowlists, or unverified claims.
+ * @param {object} user - Supabase auth user object
+ * @returns {Promise<boolean>}
+ */
 async function isUserAdmin(user) {
-  if (!user) return false;
+  if (!user || !user.id) return false;
   try {
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('role')
+      .select('id, role')
       .eq('id', user.id)
       .maybeSingle();
 
-    if (!error && profile && profile.role) {
-      if (profile.role === 'admin') return true;
-      if (user.email && CONFIGURED_ADMIN_EMAILS.has(String(user.email).toLowerCase())) {
-        return true;
-      }
+    if (error || !profile) {
       return false;
     }
+    return profile.role === 'admin';
   } catch (_) {
-    // Fallback if profiles.role column has not been migrated yet
+    return false;
   }
-  if (user.user_metadata?.role === 'admin' || user.app_metadata?.role === 'admin') {
-    return true;
-  }
-  if (user.email && CONFIGURED_ADMIN_EMAILS.has(String(user.email).toLowerCase())) {
-    return true;
-  }
-  return false;
 }
 
 /**
@@ -477,6 +612,9 @@ module.exports = {
   requireAdmin,
   createAdminToken,
   verifyAdminToken,
+  getValidatedAdminSecret,
+  validateAdminAuthConfig,
+  MIN_ADMIN_JWT_SECRET_LENGTH,
   isUserAdmin,
   CONFIGURED_ADMIN_EMAILS,
   revokeToken,
