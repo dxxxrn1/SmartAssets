@@ -282,8 +282,8 @@ async function runTestSuite() {
       assert.ok(verifyAdminToken(activeToken), 'Token must be valid before logout');
 
       // Simulate admin logout
-      revokeToken(activeToken);
-      assert.strictEqual(isTokenRevoked(activeToken), true, 'Token must be recorded as revoked');
+      await revokeToken(activeToken);
+      assert.strictEqual(await isTokenRevoked(activeToken), true, 'Token must be recorded as revoked');
 
       // verifyAdminToken must reject revoked token
       assert.strictEqual(verifyAdminToken(activeToken), null, 'Revoked token must fail verifyAdminToken');

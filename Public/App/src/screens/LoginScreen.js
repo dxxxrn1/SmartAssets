@@ -12,6 +12,7 @@ import {
   Modal,
   Linking,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -425,18 +426,13 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
           {/* HEADER */}
           <View style={styles.header}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 16 }}>
-              <LinearGradient
-                colors={['#976af0', '#00fbff']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.logoBox, { marginBottom: 0 }]}
-              >
-                <Ionicons
-                  name="diamond"
-                  size={24}
-                  color="#FFFFFF"
+              <View style={[styles.logoBox, { marginBottom: 0 }]}>
+                <Image
+                  source={require('../../assets/logo-mark.png')}
+                  style={{ width: 54, height: 54 }}
+                  resizeMode="contain"
                 />
-              </LinearGradient>
+              </View>
 
               <TouchableOpacity
                 onPress={toggleTheme}
@@ -475,7 +471,7 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
                 { color: c.muted },
               ]}
             >
-              Smart finance. Smarter future.
+              Own Today. Grow Tomorrow.
             </Text>
 
             {!isOnlineSync() && (

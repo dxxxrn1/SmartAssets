@@ -123,12 +123,11 @@ function buildCertificateData(asset = {}) {
   // Digital Certificate & PKI fields
   const certVersion = safeAsset.certificateVersion || safeAsset.certificate_version || "1.0.0";
   const signature = safeAsset.certificateSignature || safeAsset.certificate_signature || null;
-  const certId = signature
-    ? safeAsset.certificateId ||
-      safeAsset.certificate_id ||
-      safeAsset.cert ||
-      (assetId ? `SA-CERT-${String(assetId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toUpperCase()}-V1` : "Not provided")
-    : "Not issued";
+  const certId =
+    safeAsset.certificateId ||
+    safeAsset.certificate_id ||
+    safeAsset.cert ||
+    (assetId ? `SA-${String(assetId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toUpperCase()}` : "Not provided");
   const keyId = safeAsset.certificateKeyId || safeAsset.certificate_key_id || null;
   const rawIssuer = safeAsset.certificateIssuer || safeAsset.certificate_issuer || {};
   const issuer = {
@@ -298,16 +297,14 @@ async function generateQrDataUriAsync(payload) {
   if (!payload || typeof payload !== "string") {
     throw new Error("Payload is required for QR generation.");
   }
-  if (typeof QRCode.toString !== "function") {
+  if (typeof QRCode.toDataURL !== "function") {
     throw new Error("QR encoder is unavailable in this app runtime.");
   }
-  const svg = await QRCode.toString(payload, {
-    type: "svg",
+  return await QRCode.toDataURL(payload, {
     width: 280,
     margin: 1,
     errorCorrectionLevel: "M",
   });
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 /**

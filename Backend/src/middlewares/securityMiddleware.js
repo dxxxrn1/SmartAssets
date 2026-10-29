@@ -216,8 +216,11 @@ function securityHeaders(req, res, next) {
   // Modern Cross-Site Scripting (XSS) filter
   res.setHeader('X-XSS-Protection', '1; mode=block');
 
-  // Enforce HTTPS in production
-  if (process.env.NODE_ENV === 'production') {
+  // Enforce HTTPS HSTS only when production HTTPS is terminated
+  if (
+    process.env.NODE_ENV === 'production' &&
+    (process.env.ENFORCE_HSTS === 'true' || process.env.HTTPS === 'true')
+  ) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   }
 
@@ -226,6 +229,9 @@ function securityHeaders(req, res, next) {
 
   // Cross-Origin Resource Policy
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+
+  // Permissions Policy (Least privilege for fintech/compliance dashboard)
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
 
   next();
 }

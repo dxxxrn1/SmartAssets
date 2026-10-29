@@ -11,6 +11,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -219,14 +220,13 @@ export default function RegisterScreen({
             </TouchableOpacity>
 
             <View style={styles.brandRow}>
-              <LinearGradient
-                colors={["#976af0", "#00fbff"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.brandLogoBadge}
-              >
-                <Ionicons name="diamond" size={16} color="#FFFFFF" />
-              </LinearGradient>
+              <View style={styles.brandLogoBadge}>
+                <Image
+                  source={require("../../assets/logo-mark.png")}
+                  style={{ width: 30, height: 30 }}
+                  resizeMode="contain"
+                />
+              </View>
               <Text style={[styles.brandTitle, { color: c.warm }]}>SmartAssets</Text>
             </View>
 

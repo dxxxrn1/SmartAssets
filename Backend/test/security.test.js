@@ -103,11 +103,11 @@ async function runTests() {
 
   // ── TEST 4: Token Revocation & Inactivity Invalidation ────────────────────────
   console.log('\n🧪 [TEST 4] Testing Session Token Revocation & Invalidation Store...');
-  const sampleToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.sample';
-  assert.strictEqual(isTokenRevoked(sampleToken), false, 'Token should not be revoked initially');
+  const sampleToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.sample_' + Date.now();
+  assert.strictEqual(await isTokenRevoked(sampleToken), false, 'Token should not be revoked initially');
 
-  revokeToken(sampleToken);
-  assert.strictEqual(isTokenRevoked(sampleToken), true, 'Token must be recognized as revoked after revokeToken()');
+  await revokeToken(sampleToken);
+  assert.strictEqual(await isTokenRevoked(sampleToken), true, 'Token must be recognized as revoked after revokeToken()');
   console.log('   ✅ Token revocation successfully blocks invalidated sessions.');
 
   // ── TEST 5: JWT Expiration Detection ─────────────────────────────────────────

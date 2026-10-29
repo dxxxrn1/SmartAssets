@@ -48,8 +48,12 @@ export default function SplashScreen({ navigation }) {
       <SafeAreaView edges={['top']} style={styles.topSafeArea}>
         <View style={styles.topBrandRow}>
           <View style={styles.brandPill}>
-            <Ionicons name="diamond" size={14} color="#00C2FF" />
-            <Text style={styles.brandPillText}>SMARTASSETS</Text>
+            <Image
+              source={require('../../assets/logo-mark.png')}
+              style={styles.brandPillLogo}
+              resizeMode="contain"
+            />
+            <Text style={styles.brandPillText}>SMART ASSETS</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -57,12 +61,19 @@ export default function SplashScreen({ navigation }) {
       {/* ── Bottom Content & CTA Section ── */}
       <SafeAreaView edges={['bottom', 'left', 'right']} style={styles.bottomSafeArea}>
         <View style={styles.contentWrap}>
+          {/* Official Logo Emblem */}
+          <Image
+            source={require('../../assets/logo-mark.png')}
+            style={styles.logoHeroMark}
+            resizeMode="contain"
+          />
+
           {/* Headline */}
           <Text style={styles.headline}>SmartAssets</Text>
 
           {/* Subtitle */}
           <Text style={styles.subtitle}>
-            One-stop solution to verified luxury assets & fractional investments
+            Own Today. Grow Tomorrow.
           </Text>
 
           {/* ── Primary Action: SmartAssets Violet-Cyan Gradient Pill Button ── */}
@@ -133,20 +144,31 @@ const styles = StyleSheet.create({
   brandPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     backgroundColor: 'rgba(46, 16, 101, 0.75)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.16)',
   },
 
+  brandPillLogo: {
+    width: 17,
+    height: 17,
+  },
+
   brandPillText: {
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 1.4,
+  },
+
+  logoHeroMark: {
+    width: 68,
+    height: 68,
+    marginBottom: 16,
   },
 
   bottomSafeArea: {

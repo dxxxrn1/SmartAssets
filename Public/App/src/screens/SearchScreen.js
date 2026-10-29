@@ -368,14 +368,13 @@ export default function SearchScreen({ navigation, route }) {
           <View style={styles.appBar}>
             {/* Logo & Brand Name */}
             <View style={styles.brandGroup}>
-              <LinearGradient
-                colors={["#976af0", "#00fbff"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.logoBadge}
-              >
-                <Ionicons name="diamond" size={17} color="#FFFFFF" />
-              </LinearGradient>
+              <View style={styles.logoBadge}>
+                <Image
+                  source={require("../../assets/logo-mark.png")}
+                  style={{ width: 32, height: 32 }}
+                  resizeMode="contain"
+                />
+              </View>
               <Text style={styles.brandTitle}>SmartAssets</Text>
             </View>
 
@@ -688,15 +687,9 @@ const styles = StyleSheet.create({
   logoBadge: {
     width: 32,
     height: 32,
-    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 10,
-    shadowColor: "#6D28D9",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
   },
   brandTitle: {
     fontSize: 20,

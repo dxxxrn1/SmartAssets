@@ -49,23 +49,86 @@ app.use((req, res, next) => {
   next();
 });
 
-// Trust proxy header for Render / cloud deployments
-app.set('trust proxy', 1);
+// ── Proxy Trust Configuration (Configured narrowly for actual deployment host) ─
+const trustProxyVal = process.env.TRUST_PROXY;
+if (trustProxyVal === 'true' || trustProxyVal === '1') {
+  app.set('trust proxy', 1);
+} else if (trustProxyVal === 'false' || trustProxyVal === '0') {
+  app.set('trust proxy', false);
+} else if (trustProxyVal && !isNaN(parseInt(trustProxyVal, 10))) {
+  app.set('trust proxy', parseInt(trustProxyVal, 10));
+} else if (trustProxyVal) {
+  app.set('trust proxy', trustProxyVal.split(',').map((s) => s.trim()));
+} else {
+  // Safe default: 1 reverse proxy hop (Render, Railway, Heroku, Cloudflare)
+  app.set('trust proxy', 1);
+}
 
-// ── Security Hardening (Helmet + Security Headers) ───────────────────────────
+// ── Security Hardening (Global Helmet + Restricted CSP + Security Headers) ─────
 app.disable('x-powered-by');
+const isProduction = process.env.NODE_ENV === 'production';
+const enforceHsts = isProduction && (process.env.ENFORCE_HSTS === 'true' || process.env.HTTPS === 'true');
+
 if (typeof helmet === 'function') {
   app.use(
     helmet({
-      crossOriginResourcePolicy: false,
-      contentSecurityPolicy: false, // Ensure admin console scripts & images load unblocked
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: [
+            "'self'",
+            "'unsafe-inline'", // Required for inline scripts in admin console and public verification page
+            "'unsafe-eval'",
+            'https://cdn.jsdelivr.net',
+          ],
+          styleSrc: [
+            "'self'",
+            "'unsafe-inline'", // Required for styled admin console and verification cards
+            'https://fonts.googleapis.com',
+          ],
+          fontSrc: [
+            "'self'",
+            'https://fonts.gstatic.com',
+            'data:',
+          ],
+          imgSrc: [
+            "'self'",
+            'data:',
+            'blob:',
+            'https:', // Cloudinary, Unsplash, external verifiable product media
+          ],
+          connectSrc: [
+            "'self'",
+            'https:',
+            'wss:',
+            'ws:',
+          ],
+          frameAncestors: ["'none'"], // Strict clickjacking defense
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      hsts: enforceHsts
+        ? { maxAge: 31536000, includeSubDomains: true, preload: true }
+        : false,
+      frameguard: { action: 'deny' },
+      noSniff: true,
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     })
   );
 }
 app.use(securityHeaders);
 
-// ── CORS Configuration (Explicitly supporting Live Server :5500 & Expo) ────────
-const allowedOrigins = [
+// ── CORS Configuration (Strict Production Origins + Explicit Dev Origins) ─────
+const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const explicitDevOrigins = [
   'http://localhost:5000',
   'http://127.0.0.1:5000',
   'http://localhost:5500',
@@ -79,23 +142,35 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
+      // Allow requests with no origin (mobile app native fetch, curl, server-to-server)
       if (!origin) return callback(null, true);
-      if (
-        allowedOrigins.includes(origin) ||
-        origin.startsWith('http://localhost:') ||
-        origin.startsWith('http://127.0.0.1:') ||
-        origin.startsWith('http://10.') ||
-        origin.startsWith('http://192.168.')
-      ) {
+
+      // Configured production origins take priority
+      if (configuredOrigins.includes(origin)) {
         return callback(null, true);
       }
-      return callback(null, true);
+
+      // In non-production, allow explicit local dev origins and local network prefixes for Expo testing
+      if (!isProduction) {
+        if (
+          explicitDevOrigins.includes(origin) ||
+          origin.startsWith('http://localhost:') ||
+          origin.startsWith('http://127.0.0.1:') ||
+          origin.startsWith('http://10.') ||
+          origin.startsWith('http://192.168.')
+        ) {
+          return callback(null, true);
+        }
+      }
+
+      // Deny unconfigured origins cleanly without exposing Access-Control-Allow-Origin
+      return callback(null, false);
     },
     credentials: true,
   })
 );
 
-// ── Body Parser Limits (15MB for large media/doc uploads, 1MB for all standard routes) ──
+// ── Body Parser Limits (15MB for media/doc uploads, 1MB for standard routes) ──
 const uploadJson = express.json({ limit: '15mb' });
 const uploadUrlencoded = express.urlencoded({ limit: '15mb', extended: true });
 
@@ -117,18 +192,24 @@ const uploadUrlencoded = express.urlencoded({ limit: '15mb', extended: true });
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ limit: '1mb', extended: true }));
 
-// ── Rate Limiting for Authentication Endpoints ─────────────────────────────────
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 30 : 300,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    error: 'Too many authentication attempts. Please try again after 15 minutes.',
-  },
-});
+// ── Rate Limiter Imports ──────────────────────────────────────────────────────
+const {
+  authLimiter,
+  verifyLimiter,
+  uploadLimiter,
+  financialLimiter,
+} = require('./middlewares/rateLimiterMiddleware');
+
+// ── Rate Limiting for Sensitive Endpoints ─────────────────────────────────────
 app.use('/api/auth', authLimiter);
+app.use('/api/uploads', uploadLimiter);
+app.use('/api/certificates', verifyLimiter);
+app.use('/certificates', verifyLimiter);
+app.use('/verify/:id', verifyLimiter);
+app.use('/api/payments', financialLimiter);
+app.use('/payments', financialLimiter);
+app.use('/api/escrow', financialLimiter);
+app.use('/escrow', financialLimiter);
 
 // ── SQL Injection Protection (Skips image upload routes to avoid CPU regex lags) ──
 app.use((req, res, next) => {
@@ -198,10 +279,10 @@ app.use('/bank-accounts', bankAccountRoutes);
 // ── Direct Protected Action Routes (Server-Side KYC + Bank Account Enforcement) ─
 app.post('/api/list-item', requireAuth, requireVerified, createAsset);
 app.post('/list-item', requireAuth, requireVerified, createAsset);
-app.post('/api/deposit', requireAuth, requireVerified, requireApprovedBank, deposit);
-app.post('/deposit', requireAuth, requireVerified, requireApprovedBank, deposit);
-app.post('/api/withdraw', requireAuth, requireVerified, requireApprovedBank, withdraw);
-app.post('/withdraw', requireAuth, requireVerified, requireApprovedBank, withdraw);
+app.post('/api/deposit', financialLimiter, requireAuth, requireVerified, requireApprovedBank, deposit);
+app.post('/deposit', financialLimiter, requireAuth, requireVerified, requireApprovedBank, deposit);
+app.post('/api/withdraw', financialLimiter, requireAuth, requireVerified, requireApprovedBank, withdraw);
+app.post('/withdraw', financialLimiter, requireAuth, requireVerified, requireApprovedBank, withdraw);
 
 // ── Health check & Root Admin Redirect ───────────────────────────────────────
 app.get('/', (_req, res) => {

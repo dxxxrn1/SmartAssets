@@ -261,9 +261,18 @@ async function getAdminMe(req, res) {
 async function adminLogout(req, res) {
   try {
     const authHeader = req.headers.authorization;
+    let token = null;
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
-      if (token) revokeToken(token);
+      token = authHeader.split(' ')[1];
+    } else if (req.body?.token) {
+      token = req.body.token;
+    }
+    if (token) {
+      await revokeToken(token, {
+        userId: req.admin?.id || req.user?.id || null,
+        tokenType: 'admin',
+        reason: 'admin_logout',
+      });
     }
     return res.status(200).json({
       success: true,

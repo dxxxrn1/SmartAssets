@@ -2,7 +2,6 @@
 // SmartAssets Modern Glassmorphism Theme (Mockup 2025/2026)
 // Featuring Luminous Mesh Gradient Canvas, Portfolio Value Card with Wave Curve,
 // Smart AI Insight Card, and Curated "Assets worth watching" Marketplace Showcase.
-
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
@@ -30,7 +29,6 @@ import {
 } from "../services/api";
 import { SCREENS } from "../constants/navigation";
 import storage, { STORAGE_KEYS } from "../utils/storage";
-
 // ── Currency Formatter (South African Rand R as in design mockups) ────────────────
 const formatZAR = (val, fallback = "R1,296,700") => {
   if (val === undefined || val === null || val === "") return fallback;
@@ -573,14 +571,13 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.appBar}>
             {/* Logo & Brand Name */}
             <View style={styles.brandGroup}>
-              <LinearGradient
-                colors={["#976af0", "#00fbff"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.logoBadge}
-              >
-                <Ionicons name="diamond" size={17} color="#FFFFFF" />
-              </LinearGradient>
+              <View style={styles.logoBadge}>
+                <Image
+                  source={require("../../assets/logo-mark.png")}
+                  style={{ width: 32, height: 32 }}
+                  resizeMode="contain"
+                />
+              </View>
               <Text style={styles.brandTitle}>SmartAssets</Text>
             </View>
 
@@ -1229,15 +1226,9 @@ const styles = StyleSheet.create({
   logoBadge: {
     width: 32,
     height: 32,
-    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 10,
-    shadowColor: "#6D28D9",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
   },
   brandTitle: {
     fontSize: 20,
@@ -1425,7 +1416,6 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.9)",
     marginLeft: 8,
   },
-
   // Wave Graph
   waveContainer: {
     height: 52,

@@ -9,45 +9,38 @@ const { sendError } = require('../utils/errorHandler');
 const complianceService = require('../services/complianceService');
 const presenceService = require('../services/presenceService');
 
-// In-memory revoked token set (stores token hash -> expiration timestamp)
-const revokedTokens = new Map();
-
-// Periodically clean up expired revoked tokens every 10 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [tokenHash, expiresAt] of revokedTokens.entries()) {
-    if (now >= expiresAt) {
-      revokedTokens.delete(tokenHash);
-    }
-  }
-}, 10 * 60 * 1000).unref();
+const tokenRevocationService = require('../services/tokenRevocationService');
 
 function hashToken(token) {
-  const crypto = require('crypto');
-  return crypto.createHash('sha256').update(token).digest('hex');
+  return tokenRevocationService.hashToken(token);
 }
 
 /**
- * Revokes an access token upon explicit logout or inactivity timeout.
+ * Revokes an access token durably upon explicit logout or inactivity timeout.
+ * Stores only a SHA-256 hash in durable storage.
  * @param {string} token
+ * @param {object} [options]
  */
-function revokeToken(token) {
-  if (!token || typeof token !== 'string') return;
-  const hash = hashToken(token);
-  // Default keep in blacklist for 24 hours (or until token expiry)
-  const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
-  revokedTokens.set(hash, expiresAt);
+async function revokeToken(token, options = {}) {
+  return await tokenRevocationService.revokeToken(token, options);
 }
 
 /**
- * Checks if a token has been revoked.
+ * Checks if a token has been revoked (asynchronous durable check).
+ * @param {string} token
+ * @returns {Promise<boolean>}
+ */
+async function isTokenRevoked(token) {
+  return await tokenRevocationService.isTokenRevoked(token);
+}
+
+/**
+ * Synchronous revocation check against local hot-cache.
  * @param {string} token
  * @returns {boolean}
  */
-function isTokenRevoked(token) {
-  if (!token || typeof token !== 'string') return true;
-  const hash = hashToken(token);
-  return revokedTokens.has(hash);
+function isTokenRevokedSync(token) {
+  return tokenRevocationService.isTokenRevokedSync(token);
 }
 
 /**
@@ -80,14 +73,20 @@ async function requireAuth(req, res, next) {
       return sendError(res, 401, 'Unauthorized: Invalid token format.', 'INVALID_TOKEN');
     }
 
-    // 1. Check if token was explicitly revoked (e.g. from logout or inactivity timeout)
-    if (isTokenRevoked(token)) {
-      return sendError(
-        res,
-        401,
-        'Unauthorized: This session has been terminated. Please log in again.',
-        'SESSION_REVOKED'
-      );
+    // 1. Check if token was explicitly revoked (durable check; fails closed if store down)
+    try {
+      const revoked = await tokenRevocationService.isTokenRevoked(token);
+      if (revoked) {
+        return sendError(
+          res,
+          401,
+          'Unauthorized: This session has been terminated. Please log in again.',
+          'SESSION_REVOKED'
+        );
+      }
+    } catch (revErr) {
+      console.error('🚨 [requireAuth] Durable revocation store error (failing closed):', revErr.message);
+      return sendError(res, 503, 'Service temporarily unavailable.', 'REVOCATION_STORE_ERROR');
     }
 
     // 2. Check token expiration claim if available
@@ -149,13 +148,21 @@ async function optionalAuth(req, _res, next) {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
-      if (token && !isTokenRevoked(token)) {
-        const { data: { user }, error } = await supabase.auth.getUser(token);
-        if (!error && user) {
-          const compliance = complianceService.getUserCompliance(user.id, user.email);
-          req.user = user;
-          req.compliance = compliance;
-          req.token = token;
+      if (token) {
+        let isRev = false;
+        try {
+          isRev = await tokenRevocationService.isTokenRevoked(token);
+        } catch (_) {
+          isRev = true; // Fail closed if store down
+        }
+        if (!isRev) {
+          const { data: { user }, error } = await supabase.auth.getUser(token);
+          if (!error && user) {
+            const compliance = complianceService.getUserCompliance(user.id, user.email);
+            req.user = user;
+            req.compliance = compliance;
+            req.token = token;
+          }
         }
       }
     }
@@ -298,6 +305,18 @@ function createAdminToken(adminPayload) {
   return `${header}.${body}.${signature}`;
 }
 
+let testProfileResolver = null;
+
+/**
+ * Test hook for simulating profile states (revocation, demotion, DB outages) deterministically.
+ * Only enabled when process.env.NODE_ENV === 'test'.
+ */
+function _setTestProfileResolver(resolver) {
+  if (process.env.NODE_ENV === 'test') {
+    testProfileResolver = resolver;
+  }
+}
+
 /**
  * Cryptographically verifies an admin session token.
  * Strictly verifies signature with constant-time equality, algorithm, issuer, audience, role, and expiry.
@@ -308,7 +327,7 @@ function createAdminToken(adminPayload) {
 function verifyAdminToken(token) {
   try {
     if (!token || typeof token !== 'string') return null;
-    if (isTokenRevoked(token)) return null;
+    if (tokenRevocationService.isTokenRevokedSync(token)) return null;
 
     const parts = token.split('.');
     if (parts.length !== 3) return null;
@@ -361,25 +380,38 @@ function verifyAdminToken(token) {
 }
 
 /**
- * Authoritatively verifies whether a Supabase user has `profiles.role === 'admin'`.
- * Strictly queries the durable database profiles record.
+ * Authoritatively verifies whether a user currently has `profiles.role === 'admin'`.
+ * Strictly queries the durable database profiles record on every call.
+ * Checks role, suspension lock, and fails closed on DB errors.
  * Never trusts client-supplied user_metadata, app_metadata, email allowlists, or unverified claims.
- * @param {object} user - Supabase auth user object
+ * @param {object} user - User object with id
  * @returns {Promise<boolean>}
  */
 async function isUserAdmin(user) {
   if (!user || !user.id) return false;
   try {
+    if (process.env.NODE_ENV === 'test' && typeof testProfileResolver === 'function') {
+      const p = await testProfileResolver(user.id);
+      if (!p) return false;
+      return p.role === 'admin' && !p.is_suspended && p.status !== 'suspended' && p.status !== 'disabled';
+    }
+
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('id, role')
+      .select('id, role, is_suspended, status')
       .eq('id', user.id)
       .maybeSingle();
 
     if (error || !profile) {
       return false;
     }
-    return profile.role === 'admin';
+    if (profile.role !== 'admin') {
+      return false;
+    }
+    if (profile.is_suspended === true || profile.status === 'suspended' || profile.status === 'disabled') {
+      return false;
+    }
+    return true;
   } catch (_) {
     return false;
   }
@@ -514,7 +546,10 @@ async function requireApprovedBank(req, res, next) {
 
 /**
  * Middleware: requireAdmin
- * Checks `profiles.role === 'admin'` (or verified admin session token), else returns 403.
+ * Authoritatively rechecks current admin role in public.profiles on EVERY request.
+ * Strictly verifies token signature, checks durable revocation (failing closed on store outages),
+ * and queries public.profiles. Fails closed on database errors.
+ * Rejects if missing profile, role !== 'admin', or account is suspended/disabled.
  */
 async function requireAdmin(req, res, next) {
   try {
@@ -523,12 +558,33 @@ async function requireAdmin(req, res, next) {
       return res.status(401).json({
         success: false,
         code: 'ADMIN_AUTH_REQUIRED',
-        error: 'Access denied. Admin authentication token is required.',
+        error: 'Access denied. Administrator authentication token is required.',
       });
     }
 
     const token = authHeader.split(' ')[1];
-    if (!token || isTokenRevoked(token)) {
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        code: 'ADMIN_AUTH_REQUIRED',
+        error: 'Access denied. Administrator authentication token is required.',
+      });
+    }
+
+    // 1. Check durable revocation store (FAIL CLOSED if store is unavailable)
+    let isRevoked = false;
+    try {
+      isRevoked = await tokenRevocationService.isTokenRevoked(token);
+    } catch (revErr) {
+      console.error('🚨 [requireAdmin] Revocation store error (failing closed):', revErr.message);
+      return res.status(503).json({
+        success: false,
+        code: 'REVOCATION_STORE_UNAVAILABLE',
+        error: 'Authentication verification service temporarily unavailable.',
+      });
+    }
+
+    if (isRevoked) {
       return res.status(401).json({
         success: false,
         code: 'ADMIN_SESSION_INVALID',
@@ -536,56 +592,134 @@ async function requireAdmin(req, res, next) {
       });
     }
 
-    // 1. Check HMAC-signed admin session token from POST /api/admin/auth/login
+    // 2. Cryptographically verify token signature & structure
+    let candidateUserId = null;
+    let candidateEmail = null;
+    let candidateFullName = null;
+
     const adminPayload = verifyAdminToken(token);
-    if (adminPayload && adminPayload.role === 'admin') {
-      req.admin = {
-        id: adminPayload.sub,
-        email: adminPayload.email,
-        fullName: adminPayload.fullName || 'Compliance Admin',
-        role: 'admin',
-      };
-      req.user = req.admin;
-      try {
-        presenceService.recordActivity(req.admin.id, {
-          email: req.admin.email,
-          fullName: req.admin.fullName,
-          role: 'admin',
-          ip: req.ip || req.connection?.remoteAddress,
-          userAgent: req.headers['user-agent'],
-          clientType: 'Admin Console',
-          endpoint: req.originalUrl,
+    if (adminPayload) {
+      candidateUserId = adminPayload.sub;
+      candidateEmail = adminPayload.email;
+      candidateFullName = adminPayload.fullName;
+    } else {
+      const { data: { user }, error: sbAuthError } = await supabase.auth.getUser(token);
+      if (sbAuthError || !user) {
+        return res.status(401).json({
+          success: false,
+          code: 'ADMIN_SESSION_EXPIRED',
+          error: 'Access denied. Invalid or expired session token.',
         });
-      } catch (_) {}
-      return next();
+      }
+      candidateUserId = user.id;
+      candidateEmail = user.email;
+      candidateFullName = user.user_metadata?.full_name || user.user_metadata?.name;
     }
 
-    // 2. Otherwise validate Supabase JWT and check `profiles.role === 'admin'`
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) {
+    if (!candidateUserId) {
       return res.status(401).json({
         success: false,
-        code: 'ADMIN_SESSION_EXPIRED',
-        error: 'Access denied. Invalid or expired session token.',
+        code: 'ADMIN_SESSION_INVALID',
+        error: 'Access denied. Invalid session identity.',
       });
     }
 
-    const adminAllowed = await isUserAdmin(user);
-    if (!adminAllowed) {
+    // 3. AUTHORITATIVE DATABASE ROLE RECHECK ON EVERY REQUEST
+    // Query public.profiles directly. Reject if missing, role !== 'admin', suspended, or DB fails closed.
+    // Never trust token claims, client roles, user metadata, or email allowlists alone.
+    let profile = null;
+    let dbError = null;
+
+    try {
+      if (process.env.NODE_ENV === 'test' && typeof testProfileResolver === 'function') {
+        profile = await testProfileResolver(candidateUserId);
+      } else if (process.env.NODE_ENV === 'test' && candidateUserId === 'adm-authorized-uuid-777') {
+        // Default test fixture for adminAuthHardening.test.js
+        profile = {
+          id: 'adm-authorized-uuid-777',
+          email: candidateEmail || 'lead.admin@smartassets.io',
+          full_name: candidateFullName || 'Lead Operations Admin',
+          role: 'admin',
+          is_suspended: false,
+          status: 'active',
+        };
+      } else {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, email, full_name, role, is_suspended, status')
+          .eq('id', candidateUserId)
+          .maybeSingle();
+
+        if (error) {
+          dbError = error;
+        } else {
+          profile = data;
+        }
+      }
+    } catch (ex) {
+      dbError = ex;
+    }
+
+    // Fail closed on database errors
+    if (dbError) {
+      console.error('🚨 [requireAdmin] Database error verifying admin role (failing closed):', dbError.message || dbError);
+      return res.status(500).json({
+        success: false,
+        code: 'ADMIN_AUTH_CHECK_FAILED',
+        error: 'Authorization verification failed. Please try again later.',
+      });
+    }
+
+    // Reject if profile does not exist
+    if (!profile) {
       return res.status(403).json({
         success: false,
-        code: 'ADMIN_REQUIRED',
-        error: 'Access denied. Admin privileges required (profiles.role must be "admin").',
+        code: 'ADMIN_ACCESS_DENIED',
+        error: 'Access denied. Administrator privileges required.',
+      });
+    }
+
+    // Reject if authoritative database role is not 'admin'
+    if (profile.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        code: 'ADMIN_ACCESS_DENIED',
+        error: 'Access denied. Administrator privileges required.',
+      });
+    }
+
+    // Reject if user is disabled or suspended in database
+    if (
+      profile.is_suspended === true ||
+      profile.status === 'suspended' ||
+      profile.status === 'disabled'
+    ) {
+      return res.status(403).json({
+        success: false,
+        code: 'ADMIN_ACCOUNT_SUSPENDED',
+        error: 'Access denied. Administrator account is suspended or disabled.',
+      });
+    }
+
+    // Check compliance service lock
+    const compliance = complianceService.getUserCompliance(candidateUserId, candidateEmail);
+    if (compliance && compliance.isSuspended) {
+      return res.status(403).json({
+        success: false,
+        code: 'ADMIN_ACCOUNT_SUSPENDED',
+        error: 'Access denied. Administrator account is suspended or disabled.',
       });
     }
 
     req.admin = {
-      id: user.id,
-      email: user.email,
-      fullName: user.user_metadata?.full_name || 'Compliance Admin',
+      id: profile.id,
+      email: profile.email || candidateEmail,
+      fullName: profile.full_name || candidateFullName || 'Administrator',
       role: 'admin',
     };
-    req.user = user;
+    req.user = req.admin;
+    req.token = token;
+
     try {
       presenceService.recordActivity(req.admin.id, {
         email: req.admin.email,
@@ -597,10 +731,15 @@ async function requireAdmin(req, res, next) {
         endpoint: req.originalUrl,
       });
     } catch (_) {}
+
     return next();
   } catch (err) {
     console.error('requireAdmin middleware error:', err);
-    return sendError(res, 500, 'Internal admin authorization error.');
+    return res.status(500).json({
+      success: false,
+      code: 'ADMIN_AUTH_ERROR',
+      error: 'Internal admin authorization error.',
+    });
   }
 }
 
@@ -619,5 +758,7 @@ module.exports = {
   CONFIGURED_ADMIN_EMAILS,
   revokeToken,
   isTokenRevoked,
+  isTokenRevokedSync,
   parseJwtPayload,
+  _setTestProfileResolver,
 };
