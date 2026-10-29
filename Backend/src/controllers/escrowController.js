@@ -44,7 +44,7 @@ async function getEscrowOrder(req, res) {
     }
 
     const requestingUserId = req.user?.id;
-    const isAdmin = isUserAdmin(req.user);
+    const isAdmin = await isUserAdmin(req.user);
 
     const order = await escrowService.getEscrowOrder(orderId, req, requestingUserId, isAdmin);
     if (!order) {
@@ -105,7 +105,7 @@ async function progressEscrow(req, res) {
 
     const requester = {
       userId: req.user.id,
-      role: req.user.role,
+      role: req.user.role === 'admin' || await isUserAdmin(req.user) ? 'admin' : 'user',
     };
 
     const order = await escrowService.progressEscrowStep(
@@ -126,6 +126,18 @@ async function progressEscrow(req, res) {
   }
 }
 
+async function postSellerUpdate(req, res) {
+  try {
+    const { orderId, update, carrier, trackingNumber } = req.body;
+    if (!orderId) return sendError(res, 400, 'orderId is required.');
+    const order = await escrowService.addSellerEscrowUpdate(orderId, { update, carrier, trackingNumber }, { userId: req.user.id, role: req.user.role });
+    return res.json({ success: true, message: 'Order update saved and shared with the buyer.', order });
+  } catch (err) {
+    console.error('postSellerUpdate error:', err);
+    return sendError(res, 400, err.message || 'Failed to post seller update.');
+  }
+}
+
 /**
  * POST /api/escrow/release (protected — requireAuth, requireVerified)
  * Releases funds to the seller once buyer confirms delivery and inspection passes.
@@ -140,7 +152,7 @@ async function releaseEscrow(req, res) {
 
     const requester = {
       userId: req.user.id,
-      role: req.user.role,
+      role: req.user.role === 'admin' || await isUserAdmin(req.user) ? 'admin' : 'user',
     };
 
     const order = await escrowService.releaseEscrow(orderId, requester);
@@ -169,7 +181,7 @@ async function refundEscrow(req, res) {
 
     const requester = {
       userId: req.user.id,
-      role: req.user.role,
+      role: req.user.role === 'admin' || await isUserAdmin(req.user) ? 'admin' : 'user',
     };
 
     const order = await escrowService.refundEscrow(orderId, reason, requester);
@@ -197,7 +209,7 @@ async function disputeEscrow(req, res) {
 
     const requester = {
       userId: req.user.id,
-      role: req.user.role,
+      role: req.user.role === 'admin' || await isUserAdmin(req.user) ? 'admin' : 'user',
     };
 
     const order = await escrowService.disputeEscrow(orderId, {
@@ -223,6 +235,7 @@ module.exports = {
   getMyEscrows,
   getSellerEscrows,
   progressEscrow,
+  postSellerUpdate,
   releaseEscrow,
   refundEscrow,
   disputeEscrow,

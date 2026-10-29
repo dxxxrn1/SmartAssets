@@ -106,14 +106,10 @@ async function issueCertificate({ assetId, evidence = {}, issuer = DEFAULT_ISSUE
   }
 
   // 3. Evidence validation
-  const appraiserName = String(
-    evidence.appraiser_name || evidence.appraiser || asset.appraiser || 'SmartAssets Certified Appraiser'
-  ).trim();
-  const inspectionRef = String(
-    evidence.inspection_ref || evidence.ref || `INSP-${Date.now().toString(36).toUpperCase()}`
-  ).trim();
+  const appraiserName = String(evidence.appraiser_name || evidence.appraiser || '').trim();
+  const inspectionRef = String(evidence.inspection_ref || evidence.ref || '').trim();
   const inspectionDate = evidence.inspection_date || new Date().toISOString();
-  const inspectionStatus = String(evidence.inspection_status || 'passed').trim().toLowerCase();
+  const inspectionStatus = String(evidence.inspection_status || '').trim().toLowerCase();
   const physicalCustody = Boolean(
     evidence.physical_custody !== undefined
       ? evidence.physical_custody
@@ -123,6 +119,9 @@ async function issueCertificate({ assetId, evidence = {}, issuer = DEFAULT_ISSUE
     ? String(evidence.custody_facility || 'SmartAssets High-Security Vault Facility').trim()
     : 'Not Vaulted (Digital Claim Only)';
 
+  if (!appraiserName || !inspectionRef) {
+    throw new Error('Appraiser name and inspection reference are required to issue a certificate.');
+  }
   if (inspectionStatus !== 'passed') {
     throw new Error(`Cannot issue certificate: Inspection status is '${inspectionStatus}'. Must be 'passed'.`);
   }
@@ -139,7 +138,8 @@ async function issueCertificate({ assetId, evidence = {}, issuer = DEFAULT_ISSUE
   // 4. Generate stable certificate ID
   const cleanAssetId = String(asset.id).replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
   const certId = asset.certificate_id || `SA-CERT-${cleanAssetId}-V1`;
-  const issuedAt = asset.certificate_issued_at || new Date().toISOString();
+  // A refresh is a new signed snapshot, so its issue date must advance as well.
+  const issuedAt = new Date().toISOString();
 
   // 5. Build canonical payload & sign with server RSA private key
   const canonicalInput = {
@@ -194,7 +194,18 @@ async function issueCertificate({ assetId, evidence = {}, issuer = DEFAULT_ISSUE
     cert: certId,
   };
 
-  await supabase.from('assets').update(updatePayload).eq('id', asset.id);
+  const { data: updatedAsset, error: updateError } = await supabase
+    .from('assets')
+    .update(updatePayload)
+    .eq('id', asset.id)
+    .select('id, certificate_id, certificate_lifecycle_status, certificate_issued_at, metadata_digest')
+    .maybeSingle();
+  if (updateError) {
+    throw new Error(`Certificate was not saved: ${updateError.message}`);
+  }
+  if (!updatedAsset) {
+    throw new Error('Certificate was not saved because the asset record no longer exists.');
+  }
 
   const verificationUrl = `${urlCheck.baseUrl}/verify/${encodeURIComponent(asset.id)}`;
 
@@ -247,7 +258,14 @@ async function revokeCertificate({ assetId, reason, authorizedUser }) {
     certificate_revocation_reason: reason.trim(),
   };
 
-  await supabase.from('assets').update(updatePayload).eq('id', assetId);
+  const { data: updatedAsset, error: updateError } = await supabase
+    .from('assets')
+    .update(updatePayload)
+    .eq('id', assetId)
+    .select('id')
+    .maybeSingle();
+  if (updateError) throw new Error(`Certificate revocation was not saved: ${updateError.message}`);
+  if (!updatedAsset) throw new Error('Certificate revocation was not saved because the asset record no longer exists.');
 
   // Record audit history entry
   try {

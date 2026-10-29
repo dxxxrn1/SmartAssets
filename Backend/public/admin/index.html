@@ -4101,6 +4101,13 @@
           if (footerEl) {
             footerEl.innerHTML =
               '<button class="btn btn-secondary btn-sm" onclick="closeModal(\'modal-asset\')">Close</button>' +
+              (!asset.certificate_revoked
+                ? '<button class="btn btn-primary btn-sm" onclick="issueAssetCertificate(\'' +
+                  escapeHtml(asset.id) +
+                  '\')">' +
+                  (asset.certificate_signature ? 'Refresh Certificate' : 'Issue Certificate') +
+                  '</button>'
+                : '') +
               '<button class="btn btn-warning btn-sm" onclick="updateAssetStatus(\'' +
               escapeHtml(asset.id) +
               "', 'flagged', 'Flagged')\">Flag for Review</button>" +
@@ -4114,6 +4121,44 @@
 
           const modal = document.getElementById("modal-asset");
           if (modal) modal.classList.add("open");
+        };
+
+        window.issueAssetCertificate = function (assetId) {
+          const appraiserName = window.prompt("Enter the appraiser name:");
+          if (!appraiserName || !appraiserName.trim()) return;
+          const inspectionRef = window.prompt("Enter the inspection report/reference number:");
+          if (!inspectionRef || !inspectionRef.trim()) return;
+          if (!window.confirm("Confirm that the physical inspection is complete and passed. This will issue or refresh the signed product certificate.")) return;
+
+          apiFetch("/api/certificates/" + encodeURIComponent(assetId) + "/issue", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              evidence: {
+                appraiser_name: appraiserName.trim(),
+                inspection_ref: inspectionRef.trim(),
+                inspection_date: new Date().toISOString(),
+                inspection_status: "passed",
+              },
+            }),
+          })
+            .then(function (res) {
+              return res.json().then(function (data) {
+                if (!res.ok || !data.success) {
+                  throw new Error(data.error || data.message || "Certificate issuance failed.");
+                }
+                return data;
+              });
+            })
+            .then(function (data) {
+              showToast("Certificate saved: " + data.certificate.certificateId, "success");
+              window.closeModal("modal-asset");
+              window.loadAssets(true);
+            })
+            .catch(function (err) {
+              console.error("issueAssetCertificate error:", err);
+              showToast("Certificate was not updated: " + err.message, "error");
+            });
         };
 
         window.updateAssetStatus = function (assetId, newStatus, badge) {
@@ -4339,21 +4384,28 @@
             let actionsHtml =
               '<button class="btn btn-secondary btn-sm" onclick="closeModal(\'modal-escrow\')">Close</button>';
 
-            if (order.status === "payment_secured") {
+            if (order.status === "pending_payment" && (order.paymentMethod === "bank" || order.payment_method === "bank")) {
               actionsHtml +=
-                '<button class="btn btn-primary btn-sm" onclick="executeEscrowAction(\'' +
+                '<button class="btn btn-primary btn-sm" onclick="promptEscrowSettlementVerification(\'' +
                 escapeHtml(order.orderId) +
-                "', 'step', 2)\">Dispatch to Transit (Step 2)</button>";
+                "')\">Confirm Bank Settlement & Enable Shipment</button>";
             } else if (order.status === "in_transit") {
               actionsHtml +=
                 '<button class="btn btn-primary btn-sm" onclick="executeEscrowAction(\'' +
                 escapeHtml(order.orderId) +
                 "', 'step', 3)\">Receive into Inspection (Step 3)</button>";
-            } else if (order.status === "in_inspection") {
-              actionsHtml +=
-                '<button class="btn btn-primary btn-sm" onclick="executeEscrowAction(\'' +
-                escapeHtml(order.orderId) +
-                "', 'release')\">Finalize Custody Release (Step 4)</button>";
+            } else if (order.status === "accepted") {
+              if (order.paymentMethod === "bank" || order.payment_method === "bank") {
+                actionsHtml +=
+                  '<button class="btn btn-primary btn-sm" onclick="promptEscrowBankPayout(\'' +
+                  escapeHtml(order.orderId) +
+                  "')\">Record Bank Payout & Release</button>";
+              } else {
+                actionsHtml +=
+                  '<button class="btn btn-primary btn-sm" onclick="executeEscrowAction(\'' +
+                  escapeHtml(order.orderId) +
+                  "', 'release')\">Release Funds to Seller</button>";
+              }
             }
 
             if (order.status !== "released" && order.status !== "refunded") {
@@ -4419,6 +4471,22 @@
           );
           if (!reason) return;
           window.executeEscrowAction(orderId, "refund", null, reason);
+        };
+
+        window.promptEscrowSettlementVerification = function (orderId) {
+          const reference = prompt(
+            "Enter the bank settlement reference verified against the treasury statement. Do not confirm until funds are received."
+          );
+          if (!reference || !reference.trim()) return;
+          window.executeEscrowAction(orderId, "verify_payment", null, reference.trim());
+        };
+
+        window.promptEscrowBankPayout = function (orderId) {
+          const reference = prompt(
+            "Enter the completed bank transfer reference. Transfer the funds to the seller before recording the payout here."
+          );
+          if (!reference || !reference.trim()) return;
+          window.executeEscrowAction(orderId, "release", null, reference.trim());
         };
 
         // ── Support Desk ──

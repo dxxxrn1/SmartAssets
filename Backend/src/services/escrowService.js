@@ -93,7 +93,6 @@ async function hydrateEscrowsFromSupabase() {
         const oid = row.order_id || row.id;
         if (!oid) return;
         const timeline = Array.isArray(row.timeline) ? row.timeline : [];
-        const completedSteps = timeline.filter((t) => t.completed).length;
 
         ordersMap.set(oid, {
           orderId: oid,
@@ -111,13 +110,13 @@ async function hydrateEscrowsFromSupabase() {
           paymentMethod: row.payment_method || 'wallet',
           paymentRail: row.payment_rail || (row.payment_method === 'wallet' ? 'Ethereum Sepolia Web3' : row.payment_method === 'bank' ? 'Bank Wire (Awaiting Settlement Verification)' : 'Stripe (test only)'),
           status: row.status || 'payment_secured',
-          currentStep: Math.max(1, completedSteps || 1),
+          currentStep: ({ payment_secured: 1, pending_payment: 1, in_transit: 2, in_inspection: 3, delivered: 4, accepted: 4, release_processing: 4, released: 5, disputed: 1, refunded: 5 })[row.status] || 1,
           totalSteps: 5,
           depositTxHash: row.tx_hash || null,
           releaseTxHash: row.release_tx_hash || null,
           refundTxHash: row.refund_tx_hash || null,
           refundReason: row.refund_reason || null,
-          carrier: row.carrier || null,
+          carrier: row.tracking_carrier || row.carrier || null,
           trackingNumber: row.tracking_number || null,
           disputeReason: row.dispute_reason || null,
           timeline,
@@ -325,7 +324,6 @@ async function getEscrowOrder(orderId, req = null, requestingUserId = null, isAd
 
     if (!error && data) {
       const timeline = Array.isArray(data.timeline) ? data.timeline : [];
-      const completedSteps = timeline.filter((t) => t.completed).length;
       order = {
         orderId: data.order_id || data.id,
         buyerId: data.buyer_id || (timeline[0]?.buyerId) || ordersMap.get(data.order_id || orderId)?.buyerId || null,
@@ -340,14 +338,15 @@ async function getEscrowOrder(orderId, req = null, requestingUserId = null, isAd
         paymentMethod: data.payment_method,
         paymentRail: data.payment_rail || (data.payment_method === 'wallet' ? 'Ethereum Sepolia Web3' : data.payment_method === 'bank' ? 'Bank Wire (Awaiting Settlement Verification)' : 'Stripe (test only)'),
         status: data.status,
-        currentStep: Math.max(1, completedSteps || 1),
+        currentStep: ({ payment_secured: 1, pending_payment: 1, in_transit: 2, in_inspection: 3, delivered: 4, accepted: 4, release_processing: 4, released: 5, disputed: 1, refunded: 5 })[data.status] || 1,
         totalSteps: 5,
         depositTxHash: data.tx_hash,
         releaseTxHash: data.release_tx_hash,
         refundTxHash: data.refund_tx_hash,
         refundReason: data.refund_reason,
-        carrier: data.carrier,
+        carrier: data.tracking_carrier || data.carrier,
         trackingNumber: data.tracking_number,
+        productUpdates: timeline.filter((event) => event.type === 'seller_update'),
         disputeReason: data.dispute_reason,
         timeline,
         createdAt: data.created_at,
@@ -484,6 +483,54 @@ async function getAllEscrowOrders(req = null) {
   return result.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 }
 
+/** An administrator confirms an externally reconciled bank settlement before shipment is enabled. */
+async function verifyEscrowPayment(orderId, settlementReference, requester = {}) {
+  const order = await getEscrowOrder(orderId);
+  if (!order) throw new Error('Escrow order not found.');
+  const requesterId = typeof requester === 'string' ? requester : (requester.userId || requester.id);
+  const isAdmin = typeof requester === 'object' && requester.role === 'admin';
+  if (!isAdmin || !requesterId) throw new Error('Unauthorized: Only an authenticated administrator can verify settlement.');
+  if (order.status !== 'pending_payment') throw new Error(`Cannot verify payment while order is ${order.status}.`);
+  if (order.paymentMethod !== 'bank') throw new Error('Only bank settlement orders can be manually verified.');
+  const reference = String(settlementReference || '').trim();
+  if (!reference) throw new Error('A bank settlement reference is required.');
+
+  const now = new Date().toISOString();
+  const timeline = Array.isArray(order.timeline) ? order.timeline : [];
+  if (timeline[0]) {
+    timeline[0].title = 'Bank Settlement Verified';
+    timeline[0].description = `Bank settlement verified by platform administrator (reference: ${reference}). The seller may now record shipment.`;
+    timeline[0].timestamp = now;
+    timeline[0].completed = true;
+  }
+  const { data: saved, error } = await supabase.from('escrow_orders').update({
+    status: 'payment_secured',
+    timeline,
+    admin_action_by: isUuid(requesterId) ? requesterId : null,
+    admin_action_at: now,
+    updated_at: now,
+  }).eq('order_id', orderId).eq('status', 'pending_payment').select('order_id').maybeSingle();
+  if (error || !saved) throw new Error(error ? `Failed to verify bank settlement: ${error.message}` : 'Order status changed. Refresh before verifying settlement.');
+
+  order.status = 'payment_secured';
+  order.currentStep = 1;
+  order.timeline = timeline;
+  order.updatedAt = now;
+  ordersMap.set(orderId, order);
+  await supabase.from('escrow_audit_events').insert({ order_id: orderId, actor_id: isUuid(requesterId) ? requesterId : null, event_type: 'funding_verified', reason: `Bank settlement reference: ${reference}` });
+  for (const userId of [order.buyerId, order.sellerId].filter(Boolean)) {
+    await notificationService.sendNotification({
+      userId,
+      type: 'escrow_funded',
+      title: 'Bank Settlement Verified',
+      message: `Payment for "${order.assetName}" is verified and secured. Seller shipment updates are now enabled.`,
+      orderId,
+    });
+  }
+  auditLogService.logEvent({ eventType: 'ESCROW_BANK_SETTLEMENT_VERIFIED', actorId: requesterId, category: 'Escrow', description: `Bank settlement for ${orderId} verified (reference: ${reference}).` });
+  return order;
+}
+
 /**
  * Progress escrow order through sequential custody stages.
  * Enforces allowed transitions, roles, and records on-chain.
@@ -605,19 +652,21 @@ async function progressEscrowStep(orderId, targetStep, details = {}, requester =
     order.status = 'delivered';
 
     if (order.timeline[3]) {
-      order.timeline[3].description = 'Asset delivered. Awaiting buyer confirmation of satisfaction.';
+      order.timeline[3].completed = true;
+      order.timeline[3].timestamp = now;
+      order.timeline[3].description = 'Buyer confirmed delivery. Awaiting buyer acceptance of the item condition.';
     }
 
     try {
       await web3Service.confirmDeliveryOnChain({ orderId });
     } catch (_e) {}
 
-    if (order.buyerId) {
+    if (order.sellerId) {
       await notificationService.sendNotification({
-        userId: order.buyerId,
+        userId: order.sellerId,
         type: 'delivery_confirmed',
-        title: 'Collectible Delivered',
-        message: `Your collectible "${order.assetName}" has arrived. Please inspect and confirm receipt to complete the transaction.`,
+        title: 'Buyer Confirmed Delivery',
+        message: `The buyer confirmed delivery of "${order.assetName}". The buyer will confirm the item condition before the order is ready for administrator review.`,
         orderId,
       });
     }
@@ -668,6 +717,8 @@ async function progressEscrowStep(orderId, targetStep, details = {}, requester =
     .update({
       status: order.status,
       timeline: order.timeline,
+      tracking_carrier: step === 2 ? order.carrier : undefined,
+      tracking_number: step === 2 ? order.trackingNumber : undefined,
       buyer_accepted_at: step === 5 ? now : undefined,
       updated_at: now,
     })
@@ -683,6 +734,56 @@ async function progressEscrowStep(orderId, targetStep, details = {}, requester =
   }
 
   ordersMap.set(orderId, order);
+  return order;
+}
+
+/** Append a seller-visible product or shipment update for both order parties. */
+async function addSellerEscrowUpdate(orderId, details = {}, requester = {}) {
+  const order = await getEscrowOrder(orderId);
+  if (!order) throw new Error('Escrow order not found.');
+  const requesterId = requester.userId || requester.id;
+  if (!requesterId || !order.sellerId || String(order.sellerId) !== String(requesterId)) {
+    throw new Error('Unauthorized: Only the seller can post product or shipment updates.');
+  }
+  if (!['pending_payment', 'payment_secured', 'in_transit'].includes(order.status)) {
+    throw new Error(`Updates are unavailable while order is ${order.status}.`);
+  }
+  const update = String(details.update || '').trim();
+  const carrier = String(details.carrier || '').trim();
+  const trackingNumber = String(details.trackingNumber || '').trim();
+  if (!update && !(carrier && trackingNumber)) throw new Error('Add an update or provide both carrier and tracking number.');
+  if (order.status === 'pending_payment' && (carrier || trackingNumber)) {
+    throw new Error('Shipment cannot be recorded until an administrator verifies the bank settlement. You can still post a product preparation update.');
+  }
+  if (Boolean(carrier) !== Boolean(trackingNumber)) throw new Error('Provide both carrier and tracking number to record shipment.');
+  const now = new Date().toISOString();
+  if (carrier) order.carrier = carrier;
+  if (trackingNumber) order.trackingNumber = trackingNumber;
+  if (order.status === 'payment_secured' && carrier && trackingNumber) {
+    order.status = 'in_transit';
+    order.currentStep = 2;
+    const shippedEvent = order.timeline.find((event) => event.step === 2);
+    if (shippedEvent) {
+      shippedEvent.completed = true;
+      shippedEvent.timestamp = now;
+      shippedEvent.carrier = carrier;
+      shippedEvent.trackingNumber = trackingNumber;
+      shippedEvent.description = `Shipped via ${carrier} (Tracking: ${trackingNumber}).`;
+    }
+  }
+  if (update) order.timeline.push({ type: 'seller_update', title: 'Seller update', description: update, timestamp: now, actorId: requesterId, completed: true });
+  order.updatedAt = now;
+  const { data: saved, error } = await supabase.from('escrow_orders').update({
+    status: order.status,
+    tracking_carrier: order.carrier || null,
+    tracking_number: order.trackingNumber || null,
+    timeline: order.timeline,
+    updated_at: now,
+  }).eq('order_id', orderId).in('status', ['pending_payment', 'payment_secured', 'in_transit']).select('order_id').maybeSingle();
+  if (error || !saved) throw new Error(error ? `Failed to save escrow update: ${error.message}` : 'Order status changed. Refresh and try again.');
+  await supabase.from('escrow_audit_events').insert({ order_id: orderId, actor_id: requesterId, event_type: 'seller_update', reason: update || `Shipment: ${carrier} ${trackingNumber}` });
+  ordersMap.set(orderId, order);
+  if (order.buyerId) await notificationService.sendNotification({ userId: order.buyerId, type: 'escrow_update', title: 'Order Update from Seller', message: update || `Shipment recorded via ${carrier}, tracking ${trackingNumber}.`, orderId });
   return order;
 }
 
@@ -708,10 +809,13 @@ async function releaseEscrow(orderId, requester = {}) {
     throw new Error(`PREMATURE RELEASE REJECTED: Order status is "${order.status}". Buyer acceptance is required.`);
   }
 
-  // This application has no connected fiat escrow custody or payout provider. Do not
-  // mint payout references or credit an internal balance for card/bank purchases.
-  if (order.paymentMethod !== 'wallet' && process.env.NODE_ENV !== 'test') {
+  // Do not create a fictional fiat payout. Bank-funded orders can only be marked
+  // released after the admin records a transfer that was completed outside the app.
+  if (!['wallet', 'bank'].includes(order.paymentMethod) && process.env.NODE_ENV !== 'test') {
     throw new Error('Fiat escrow payout is unavailable: no custodial payout provider is configured. No funds were moved.');
+  }
+  if (order.paymentMethod === 'bank' && !String(requester.payoutReference || '').trim()) {
+    throw new Error('Record the completed bank payout reference before releasing this bank-funded order. No funds were marked as released.');
   }
 
   // Claim the terminal action before an external transfer. The conditional update
@@ -739,6 +843,8 @@ async function releaseEscrow(orderId, requester = {}) {
       await supabase.from('escrow_orders').update({ status: 'accepted' }).eq('order_id', orderId).eq('status', 'release_processing');
       throw new Error(`On-chain release failed: ${err.message}`);
     }
+  } else if (order.paymentMethod === 'bank') {
+    releaseTxHash = `BANK-PAYOUT-${String(requester.payoutReference).trim()}`;
   } else {
     releaseTxHash = `TEST-ONLY-SIMULATED-PAYOUT-${orderId}`;
   }
@@ -910,7 +1016,9 @@ async function releaseEscrow(orderId, requester = {}) {
       userId: order.sellerId,
       type: 'funds_released',
       title: 'Escrow Payout Settled',
-      message: `${order.amountEth} ETH was released on-chain to your wallet for "${order.assetName}".`,
+      message: order.paymentMethod === 'bank'
+        ? `The administrator recorded completed bank payout ${requester.payoutReference} for "${order.assetName}".`
+        : `${order.amountEth} ETH was released on-chain to your wallet for "${order.assetName}".`,
       orderId,
     });
   }
@@ -1162,7 +1270,9 @@ module.exports = {
   getUserEscrowOrders,
   getSellerEscrowOrders,
   getAllEscrowOrders,
+  verifyEscrowPayment,
   progressEscrowStep,
+  addSellerEscrowUpdate,
   releaseEscrow,
   refundEscrow,
   disputeEscrow,

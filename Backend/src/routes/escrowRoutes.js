@@ -10,6 +10,7 @@ const {
   getMyEscrows,
   getSellerEscrows,
   progressEscrow,
+  postSellerUpdate,
   releaseEscrow,
   refundEscrow,
   disputeEscrow,
@@ -27,6 +28,7 @@ router.get('/seller-orders', requireAuth, getSellerEscrows);
 
 // Escrow progression, dispute, release, and refund
 router.post('/progress', requireAuth, progressEscrow);
+router.post('/update', requireAuth, postSellerUpdate);
 router.post('/release', requireAuth, requireVerified, releaseEscrow);
 router.post('/refund', requireAuth, requireVerified, refundEscrow);
 router.post('/dispute', requireAuth, disputeEscrow);

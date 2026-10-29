@@ -720,12 +720,14 @@ async function handleEscrowAction(req, res) {
     const { action, step, note, reason } = req.body;
 
     if (!orderId || !action) {
-      return sendError(res, 400, 'orderId and action ("step" | "release" | "refund") are required.');
+      return sendError(res, 400, 'orderId and action ("verify_payment" | "step" | "release" | "refund") are required.');
     }
 
     let updatedOrder;
-    const actor = { userId: req.admin?.id || req.user?.id, role: 'admin' };
-    if (action === 'step') {
+    const actor = { userId: req.admin?.id || req.user?.id, role: 'admin', payoutReference: reason };
+    if (action === 'verify_payment') {
+      updatedOrder = await escrowService.verifyEscrowPayment(orderId, reason, actor);
+    } else if (action === 'step') {
       if (!step) return sendError(res, 400, 'step (2 or 3) is required for step action.');
       updatedOrder = await escrowService.progressEscrowStep(orderId, step, { note }, actor);
     } else if (action === 'release') {
@@ -733,7 +735,7 @@ async function handleEscrowAction(req, res) {
     } else if (action === 'refund') {
       updatedOrder = await escrowService.refundEscrow(orderId, reason, actor);
     } else {
-      return sendError(res, 400, `Unknown action: "${action}". Must be step, release, or refund.`);
+      return sendError(res, 400, `Unknown action: "${action}". Must be verify_payment, step, release, or refund.`);
     }
 
     return res.json({
