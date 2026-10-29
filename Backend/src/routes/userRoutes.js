@@ -41,7 +41,7 @@ router.post('/vault', addHolding);
 router.post('/seed-starter', seedStarterHoldings);
 
 // Vault Balance, Deposits & Withdrawals (server-side KYC + Bank Account enforcement)
-router.post('/deposit', requireVerified, deposit);
+router.post('/deposit', requireVerified, requireApprovedBank, deposit);
 router.post('/withdraw', requireVerified, requireApprovedBank, withdraw);
 router.get('/transactions', getTransactions);
 

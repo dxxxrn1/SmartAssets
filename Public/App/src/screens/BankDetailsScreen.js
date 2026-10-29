@@ -111,13 +111,6 @@ export default function BankDetailsScreen({ navigation }) {
   };
 
   const handleSubmit = async () => {
-    if (!isVerified) {
-      showAlert(
-        'Account Verification Required',
-        'You must complete and have your 3 FICA/KYC verification documents approved by compliance admin before you can link a payout bank account.'
-      );
-      return;
-    }
     if (!accountHolder.trim()) {
       showAlert('Missing Information', 'Please enter the account holder full name.');
       return;
@@ -481,45 +474,44 @@ export default function BankDetailsScreen({ navigation }) {
               })}
             </View>
 
-            {/* Unverified Account Warning Banner */}
+            {/* Compliance Info Banner */}
             {!isVerified && (
               <View
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: 10,
-                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                  borderColor: 'rgba(239, 68, 68, 0.3)',
+                  backgroundColor: isDark ? 'rgba(124, 92, 252, 0.12)' : 'rgba(124, 92, 252, 0.08)',
+                  borderColor: isDark ? 'rgba(124, 92, 252, 0.35)' : 'rgba(124, 92, 252, 0.25)',
                   borderWidth: 1,
                   borderRadius: 12,
                   padding: 12,
                   marginBottom: 16,
                 }}
               >
-                <Ionicons name="lock-closed" size={20} color="#EF4444" />
+                <Ionicons name="information-circle-outline" size={20} color="#7C5CFC" />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#EF4444' }}>
-                    KYC Verification Required
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#7C5CFC' }}>
+                    Compliance & Approval Note
                   </Text>
-                  <Text style={{ fontSize: 11.5, color: t.textSecondary, marginTop: 2 }}>
-                    Your account must have all 3 KYC documents approved before bank account submission is enabled.
+                  <Text style={{ fontSize: 11.5, color: t.textSecondary, marginTop: 2, lineHeight: 16 }}>
+                    You can submit your bank account details now for review. Once both your KYC documents and bank details are approved by an admin, full withdrawals and deposits are enabled.
                   </Text>
                 </View>
               </View>
             )}
 
             <TouchableOpacity
-              disabled={submitting || !isVerified}
+              disabled={submitting}
               onPress={handleSubmit}
               style={{
-                backgroundColor: !isVerified ? (isDark ? '#334155' : '#CBD5E1') : '#7C5CFC',
+                backgroundColor: '#7C5CFC',
                 paddingVertical: 14,
                 borderRadius: 14,
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexDirection: 'row',
                 gap: 8,
-                opacity: !isVerified ? 0.7 : 1,
               }}
             >
               {submitting ? (
@@ -527,14 +519,12 @@ export default function BankDetailsScreen({ navigation }) {
               ) : (
                 <>
                   <Ionicons
-                    name={!isVerified ? 'lock-closed-outline' : 'shield-checkmark-outline'}
+                    name="shield-checkmark-outline"
                     size={18}
                     color="#FFFFFF"
                   />
                   <Text style={{ color: '#FFFFFF', fontSize: 14.5, fontWeight: '800' }}>
-                    {!isVerified
-                      ? 'Locked • Complete KYC First'
-                      : status === 'not_submitted'
+                    {status === 'not_submitted'
                       ? 'Submit Bank Account for Approval'
                       : 'Update & Resubmit Bank Account'}
                   </Text>

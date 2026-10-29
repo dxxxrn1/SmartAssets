@@ -11,8 +11,8 @@ const {
 
 router.use(requireAuth);
 
-// POST /bank-accounts (requires verified KYC account before submitting bank details for approval)
-router.post('/', requireVerified, submitBankAccount);
+// POST /bank-accounts (submits bank details for admin approval)
+router.post('/', submitBankAccount);
 
 // GET /bank-accounts (get current user's bank account status)
 router.get('/', getBankAccount);

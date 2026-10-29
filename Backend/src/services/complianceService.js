@@ -502,7 +502,7 @@ async function submitBankAccount({
   accountNumber,
   branchCode,
   accountType,
-  allowPendingKyc = false,
+  allowPendingKyc = true,
 }) {
   if (!accountHolder || !bankName || !accountNumber || !branchCode) {
     const err = new Error(
@@ -512,8 +512,13 @@ async function submitBankAccount({
     throw err;
   }
 
+  // Ensure compliance hydration has run
+  if (!hydrated) {
+    await hydrateComplianceFromSupabase().catch(() => {});
+  }
+
   const compliance = getUserCompliance(userId, userEmail);
-  if (!allowPendingKyc && compliance?.kycStatus !== 'verified') {
+  if (allowPendingKyc === false && compliance?.kycStatus !== 'verified') {
     const err = new Error(
       'Account verification required: All 3 KYC documents must be approved by an administrator before submitting bank account details.'
     );
@@ -522,8 +527,22 @@ async function submitBankAccount({
   }
 
   let existing = Array.from(bankAccountsMap.values()).find(
-    (b) => b.user_id === userId || (userEmail && b.user_email?.toLowerCase() === userEmail?.toLowerCase())
+    (b) => b.user_id === userId || (userEmail && (b.user_email?.toLowerCase() === userEmail?.toLowerCase() || b.userEmail?.toLowerCase() === userEmail?.toLowerCase()))
   );
+
+  // If not found in memory, check Supabase directly
+  if (!existing && userId) {
+    try {
+      const { data: dbBank } = await supabase
+        .from('bank_accounts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (dbBank) existing = dbBank;
+    } catch (_) {}
+  }
 
   const bankId = existing ? existing.id : crypto.randomUUID();
   const now = new Date().toISOString();
@@ -532,8 +551,10 @@ async function submitBankAccount({
   let record = {
     id: bankId,
     user_id: userId,
-    user_email: userEmail || existing?.user_email || 'collector@smartassets.io',
-    full_name: fullName || accountHolder.trim(),
+    user_email: userEmail || existing?.user_email || existing?.userEmail || 'collector@smartassets.io',
+    userEmail: userEmail || existing?.user_email || existing?.userEmail || 'collector@smartassets.io',
+    full_name: fullName || existing?.full_name || accountHolder.trim(),
+    fullName: fullName || existing?.full_name || accountHolder.trim(),
     account_holder: accountHolder.trim(),
     bank_name: bankName.trim(),
     account_number: cleanAccNumber,
@@ -566,6 +587,7 @@ async function submitBankAccount({
         .single();
       if (!error && data) {
         record.id = String(data.id);
+        record.status = data.status || 'pending';
       }
     } else {
       const { data, error } = await supabase
@@ -585,13 +607,14 @@ async function submitBankAccount({
         .single();
       if (!error && data) {
         record.id = String(data.id);
+        record.status = data.status || 'pending';
       }
     }
   } catch (dbErr) {
     console.warn('⚠️ [ComplianceService] bank_accounts upsert warning:', dbErr.message);
   }
 
-  bankAccountsMap.set(record.id, record);
+  bankAccountsMap.set(String(record.id), record);
 
   const userStat = userStatusMap.get(userId) || {
     userId,
@@ -742,9 +765,28 @@ async function submitKyc({
  * Approve a bank account by ID
  */
 async function approveBankAccount(bankId, adminId = null, adminEmail = 'admin@smartassets.co.za') {
-  let bank = bankAccountsMap.get(bankId);
+  if (!hydrated) {
+    await hydrateComplianceFromSupabase().catch(() => {});
+  }
+  let bank = bankAccountsMap.get(String(bankId));
   if (!bank) {
-    bank = Array.from(bankAccountsMap.values()).find((b) => b.user_id === bankId);
+    bank = Array.from(bankAccountsMap.values()).find(
+      (b) => String(b.id) === String(bankId) || b.user_id === bankId
+    );
+  }
+  if (!bank) {
+    try {
+      const { data: dbBank } = await supabase
+        .from('bank_accounts')
+        .select('*')
+        .eq('id', bankId)
+        .limit(1)
+        .maybeSingle();
+      if (dbBank) {
+        bank = { ...dbBank, id: String(dbBank.id) };
+        bankAccountsMap.set(bank.id, bank);
+      }
+    } catch (_) {}
   }
   if (!bank) return null;
 
@@ -806,9 +848,28 @@ async function approveBankAccount(bankId, adminId = null, adminEmail = 'admin@sm
  * Reject a bank account by ID with mandatory reason
  */
 async function rejectBankAccount(bankId, reason, adminId = null, adminEmail = 'admin@smartassets.co.za') {
-  let bank = bankAccountsMap.get(bankId);
+  if (!hydrated) {
+    await hydrateComplianceFromSupabase().catch(() => {});
+  }
+  let bank = bankAccountsMap.get(String(bankId));
   if (!bank) {
-    bank = Array.from(bankAccountsMap.values()).find((b) => b.user_id === bankId);
+    bank = Array.from(bankAccountsMap.values()).find(
+      (b) => String(b.id) === String(bankId) || b.user_id === bankId
+    );
+  }
+  if (!bank) {
+    try {
+      const { data: dbBank } = await supabase
+        .from('bank_accounts')
+        .select('*')
+        .eq('id', bankId)
+        .limit(1)
+        .maybeSingle();
+      if (dbBank) {
+        bank = { ...dbBank, id: String(dbBank.id) };
+        bankAccountsMap.set(bank.id, bank);
+      }
+    } catch (_) {}
   }
   if (!bank) return null;
 
@@ -875,7 +936,7 @@ function getUserBankAccount(userId, userEmail = null) {
     hydrateComplianceFromSupabase().catch(() => {});
   }
   const list = Array.from(bankAccountsMap.values()).filter(
-    (b) => b.user_id === userId || (userEmail && b.user_email?.toLowerCase() === userEmail?.toLowerCase())
+    (b) => b.user_id === userId || (userEmail && (b.user_email?.toLowerCase() === userEmail?.toLowerCase() || b.userEmail?.toLowerCase() === userEmail?.toLowerCase()))
   );
   if (list.length === 0) return null;
   list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
@@ -887,19 +948,77 @@ function getUserBankAccount(userId, userEmail = null) {
 }
 
 /**
- * Get all bank accounts for admin review
+ * Get all bank accounts for admin review (with real-time Supabase sync & profile enrichment)
  */
-function getAllBankAccounts() {
+async function getAllBankAccounts() {
   if (!hydrated) {
-    hydrateComplianceFromSupabase().catch(() => {});
+    await hydrateComplianceFromSupabase().catch(() => {});
   }
+
+  // Real-time query to ensure all bank accounts from Supabase are present in bankAccountsMap
+  try {
+    const { data: dbBanks } = await supabase
+      .from('bank_accounts')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (Array.isArray(dbBanks)) {
+      for (const b of dbBanks) {
+        if (!b || !b.id) continue;
+        const existing = bankAccountsMap.get(String(b.id));
+        bankAccountsMap.set(String(b.id), {
+          id: String(b.id),
+          user_id: b.user_id,
+          user_email: existing?.user_email || existing?.userEmail || null,
+          userEmail: existing?.user_email || existing?.userEmail || null,
+          full_name: existing?.full_name || existing?.fullName || b.account_holder,
+          fullName: existing?.full_name || existing?.fullName || b.account_holder,
+          account_holder: b.account_holder,
+          bank_name: b.bank_name,
+          account_number: b.account_number,
+          account_number_masked: maskAccountNumber(b.account_number),
+          branch_code: b.branch_code,
+          account_type: b.account_type || 'Cheque / Current',
+          status: b.status || 'pending',
+          rejection_reason: b.rejection_reason || null,
+          reviewed_by: b.reviewed_by || null,
+          reviewed_at: b.reviewed_at || null,
+          created_at: b.created_at || new Date().toISOString(),
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [ComplianceService] getAllBankAccounts DB query warning:', err.message);
+  }
+
+  // Fetch profiles to enrich user_email and full_name
+  const profilesMap = new Map();
+  try {
+    const { data: profs } = await supabase.from('profiles').select('id, email, full_name');
+    if (Array.isArray(profs)) {
+      profs.forEach((p) => {
+        if (p && p.id) profilesMap.set(p.id, p);
+      });
+    }
+  } catch (_) {}
+
   const list = Array.from(bankAccountsMap.values())
-    .filter((b) => !isUnitTestUser(b.user_id, b.user_email))
-    .map((b) => ({
-      ...b,
-      account_number_masked: maskAccountNumber(b.account_number),
-      account_number_full: b.account_number,
-    }));
+    .filter((b) => !isUnitTestUser(b.user_id, b.user_email || b.userEmail))
+    .map((b) => {
+      const p = profilesMap.get(b.user_id) || {};
+      const resolvedEmail = b.user_email || b.userEmail || p.email || null;
+      const resolvedName = b.full_name || b.fullName || p.full_name || b.account_holder || 'Collector';
+      return {
+        ...b,
+        user_email: resolvedEmail,
+        userEmail: resolvedEmail,
+        full_name: resolvedName,
+        fullName: resolvedName,
+        account_number_masked: maskAccountNumber(b.account_number),
+        account_number_full: b.account_number,
+      };
+    });
+
   return list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 }
 
@@ -1046,7 +1165,7 @@ async function getVerificationStatusBundle(userId, userEmail = null, req = null)
       : null,
     permissions: {
       canListAsset: isVerified && !compliance.isSuspended,
-      canDeposit: isVerified && !compliance.isSuspended,
+      canDeposit: isVerified && hasApprovedBank && !compliance.isSuspended,
       canWithdraw: isVerified && hasApprovedBank && !compliance.isSuspended,
     },
   };
@@ -1227,15 +1346,16 @@ async function approveKyc(verificationId, reviewerNotes = null) {
       doc.reviewed_at = now;
       documentsMap.set(doc.id, doc);
 
-      supabase
-        .from('verification_documents')
-        .update({
-          status: 'approved',
-          rejection_reason: null,
-          reviewed_at: now,
-        })
-        .eq('id', doc.id)
-        .catch(() => {});
+      try {
+        await supabase
+          .from('verification_documents')
+          .update({
+            status: 'approved',
+            rejection_reason: null,
+            reviewed_at: now,
+          })
+          .eq('id', doc.id);
+      } catch (_) {}
     }
   }
 
@@ -1250,11 +1370,12 @@ async function approveKyc(verificationId, reviewerNotes = null) {
   };
   userStatusMap.set(targetUserId, updatedStat);
 
-  supabase
-    .from('profiles')
-    .update({ verification_status: 'verified' })
-    .eq('id', targetUserId)
-    .catch(() => {});
+  try {
+    await supabase
+      .from('profiles')
+      .update({ verification_status: 'verified' })
+      .eq('id', targetUserId);
+  } catch (_) {}
 
   return {
     id: verificationId,
@@ -1302,15 +1423,16 @@ async function rejectKyc(verificationId, rejectionReason) {
       doc.reviewed_at = now;
       documentsMap.set(doc.id, doc);
 
-      supabase
-        .from('verification_documents')
-        .update({
-          status: 'rejected',
-          rejection_reason: reason,
-          reviewed_at: now,
-        })
-        .eq('id', doc.id)
-        .catch(() => {});
+      try {
+        await supabase
+          .from('verification_documents')
+          .update({
+            status: 'rejected',
+            rejection_reason: reason,
+            reviewed_at: now,
+          })
+          .eq('id', doc.id);
+      } catch (_) {}
     }
   }
 
@@ -1324,11 +1446,12 @@ async function rejectKyc(verificationId, rejectionReason) {
   };
   userStatusMap.set(targetUserId, updatedStat);
 
-  supabase
-    .from('profiles')
-    .update({ verification_status: 'rejected' })
-    .eq('id', targetUserId)
-    .catch(() => {});
+  try {
+    await supabase
+      .from('profiles')
+      .update({ verification_status: 'rejected' })
+      .eq('id', targetUserId);
+  } catch (_) {}
 
   return {
     id: verificationId,

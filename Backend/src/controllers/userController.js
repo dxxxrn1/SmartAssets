@@ -642,6 +642,13 @@ async function deposit(req, res) {
         error: 'KYC Verification Required: You must upload and get all 3 verification documents (ID, Tax, Proof of Residence) approved before depositing funds.',
       });
     }
+    if (!bundle.hasApprovedBank && bundle.bank_account?.status !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        code: 'BANK_APPROVAL_REQUIRED',
+        error: 'Bank Verification Required: You must link and get your bank account approved by an administrator before depositing funds.',
+      });
+    }
     const { amount, method, reference, notes } = req.body;
 
     if (!amount || Number(amount) <= 0) {

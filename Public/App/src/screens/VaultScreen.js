@@ -543,7 +543,11 @@ export default function VaultScreen({ navigation }) {
   }, [token, personalItems, fractionalItems, processHoldingsIntoTabs]);
 
   const handleDeposit = async () => {
-    if (user && (user.kycStatus !== 'verified' || user.isSuspended)) {
+    const isVerified = user?.verification_status === "verified" || user?.kycStatus === "verified";
+    const hasApprovedBank = user?.bankStatus === "approved" || user?.bankAccount?.status === "approved";
+    if (user && (!isVerified || !hasApprovedBank || user.isSuspended)) {
+      setGatekeeperRequireBankOnly(!hasApprovedBank && isVerified);
+      setGatekeeperActionTitle("Deposit Funds");
       setKycGatekeeperVisible(true);
       return;
     }
@@ -878,8 +882,15 @@ export default function VaultScreen({ navigation }) {
                 style={styles.depositActionBtn}
                 onPress={() => {
                   const isVerified = user?.verification_status === "verified" || user?.kycStatus === "verified";
+                  const hasApprovedBank = user?.bankStatus === "approved" || user?.bankAccount?.status === "approved";
                   if (!isVerified || user?.isSuspended) {
                     setGatekeeperRequireBankOnly(false);
+                    setGatekeeperActionTitle("Deposit Funds");
+                    setKycGatekeeperVisible(true);
+                    return;
+                  }
+                  if (!hasApprovedBank) {
+                    setGatekeeperRequireBankOnly(true);
                     setGatekeeperActionTitle("Deposit Funds");
                     setKycGatekeeperVisible(true);
                     return;

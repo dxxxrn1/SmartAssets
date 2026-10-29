@@ -198,8 +198,8 @@ app.use('/bank-accounts', bankAccountRoutes);
 // ── Direct Protected Action Routes (Server-Side KYC + Bank Account Enforcement) ─
 app.post('/api/list-item', requireAuth, requireVerified, createAsset);
 app.post('/list-item', requireAuth, requireVerified, createAsset);
-app.post('/api/deposit', requireAuth, requireVerified, deposit);
-app.post('/deposit', requireAuth, requireVerified, deposit);
+app.post('/api/deposit', requireAuth, requireVerified, requireApprovedBank, deposit);
+app.post('/deposit', requireAuth, requireVerified, requireApprovedBank, deposit);
 app.post('/api/withdraw', requireAuth, requireVerified, requireApprovedBank, withdraw);
 app.post('/withdraw', requireAuth, requireVerified, requireApprovedBank, withdraw);
 
