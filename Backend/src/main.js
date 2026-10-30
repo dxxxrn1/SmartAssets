@@ -169,17 +169,18 @@ app.use(
         return callback(null, true);
       }
 
-      // In non-production, allow explicit local dev origins and local network prefixes for Expo testing
-      if (!isProduction) {
-        if (
-          explicitDevOrigins.includes(origin) ||
-          origin.startsWith('http://localhost:') ||
-          origin.startsWith('http://127.0.0.1:') ||
-          origin.startsWith('http://10.') ||
-          origin.startsWith('http://192.168.')
-        ) {
-          return callback(null, true);
-        }
+      // Allow local development and Expo web testing (e.g. browser testing against deployed Render backend)
+      if (
+        explicitDevOrigins.includes(origin) ||
+        origin.startsWith('http://localhost:') ||
+        origin.startsWith('http://127.0.0.1:') ||
+        origin.startsWith('http://10.') ||
+        origin.startsWith('http://192.168.') ||
+        /^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\./.test(origin) ||
+        origin.endsWith('.exp.direct') ||
+        origin.endsWith('.expo.dev')
+      ) {
+        return callback(null, true);
       }
 
       // Deny unconfigured origins cleanly without exposing Access-Control-Allow-Origin

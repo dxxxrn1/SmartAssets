@@ -30,44 +30,51 @@ function getMetroLanBaseUrl() {
   return null;
 }
 
-/// ── Base URL — auto-detects live Metro LAN IP on physical mobile devices ──────
+const DEPLOYED_RENDER_API = "https://smartassets.onrender.com/api";
+
+/// ── Base URL — defaults to live Render production backend ───────────────────
 export const getBaseUrl = () => {
-  if (Platform.OS === "web") {
-    if (process.env.EXPO_PUBLIC_API_BASE_URL) {
-      return process.env.EXPO_PUBLIC_API_BASE_URL;
-    }
-    const host =
-      typeof window !== "undefined" && window.location?.hostname
-        ? window.location.hostname
-        : "localhost";
-    if (host !== "localhost" && host !== "127.0.0.1") {
-      return `${window.location.origin}/api`;
-    }
-    return `http://${host}:5000/api`;
+  // 1. Explicit environment variable takes precedence
+  if (process.env.EXPO_PUBLIC_API_BASE_URL) {
+    return process.env.EXPO_PUBLIC_API_BASE_URL;
   }
+
+  // 2. In browser / web mode, default directly to the deployed Render backend
+  if (Platform.OS === "web") {
+    return DEPLOYED_RENDER_API;
+  }
+
+  // 3. On physical mobile devices in development, try Metro LAN if available
   const metroBase = getMetroLanBaseUrl();
   if (metroBase) return metroBase;
-  if (process.env.EXPO_PUBLIC_API_BASE_URL)
-    return process.env.EXPO_PUBLIC_API_BASE_URL;
+
+  // 4. Android emulator localhost alias
   if (Platform.OS === "android") return "http://10.0.2.2:5000/api";
-  return "https://smartassets.onrender.com/api";
+
+  // 5. Default production backend
+  return DEPLOYED_RENDER_API;
 };
 
 export let API_BASE_URL = getBaseUrl();
 
 function getFallbackBaseUrls() {
-  if (!__DEV__)
+  const prodUrl = DEPLOYED_RENDER_API;
+  const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+
+  if (Platform.OS === "web") {
     return [
-      process.env.EXPO_PUBLIC_API_BASE_URL,
-      "https://smartassets.onrender.com/api",
+      envUrl || prodUrl,
+      prodUrl,
       API_BASE_URL,
+      "http://localhost:5000/api",
     ].filter(Boolean);
+  }
 
   const candidates = [
-    API_BASE_URL, // 🚀 Try the one that last worked FIRST
-    getMetroLanBaseUrl(), // Then live Metro bundler IP
-    process.env.EXPO_PUBLIC_API_BASE_URL, // Then .env config
-    "https://smartassets.onrender.com/api", // Then live Render deployment
+    API_BASE_URL,
+    envUrl,
+    prodUrl,
+    getMetroLanBaseUrl(),
     Platform.OS === "android"
       ? "http://10.0.2.2:5000/api"
       : "http://localhost:5000/api",
@@ -82,7 +89,7 @@ export function setUnauthorizedHandler(callback) {
   onUnauthorizedCallback = callback;
 }
 
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 30000;
 
 // ── Generic request helper with automatic LAN host failover ──────────────────
 async function apiRequest(endpoint, options = {}, token = null) {
