@@ -32,14 +32,16 @@ belong to **turboSMTP** (`serversmtp.com`), an enterprise transactional email re
 
 Log in to the [Supabase Dashboard](https://supabase.com/dashboard), select your project (`SUPERBASE_PROJECT_ID`), and navigate to **Project Settings** → **Authentication**.
 
-### Step 2.1: Enable Email Confirmations
-1. Under **Authentication** → **Email Auth**:
+### Step 2.1: Enable Email Confirmations & Set 6-Digit OTP Length
+1. In the left sidebar, navigate to **Authentication** → **Providers** (or **Sign In / Providers**), and select **Email**:
    - Turn **ON** `Enable Email Signup`.
    - Turn **ON** `Confirm email`.
      *(Prevents accounts from being marked confirmed upon registration without verifying an emailed OTP code).*
    - Turn **OFF** `Secure email change` (or leave default if email modifications require re-confirmation).
+   - Set **OTP Length** (or **Email OTP length**) to **`6`** *(Fixes the issue where Supabase defaults to 8 digits)*.
    - Set **OTP Expiry** to `600` seconds (10 minutes).
    - Set **Max Frequency (Resend rate limit)** to `60` seconds.
+   - Click **Save**.
 
 ### Step 2.2: Configure Custom SMTP Relay (turboSMTP)
 1. In **Authentication** → **SMTP Settings**:

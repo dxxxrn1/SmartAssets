@@ -44,7 +44,8 @@ export default function VerifyRecoveryCodeScreen({
 
   const email = route?.params?.email || '';
 
-  const [digits, setDigits] = useState(Array(CODE_LENGTH).fill(''));
+  const [codeLength, setCodeLength] = useState(6);
+  const [digits, setDigits] = useState(Array(6).fill(''));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -54,6 +55,12 @@ export default function VerifyRecoveryCodeScreen({
   const [resending, setResending] = useState(false);
 
   const inputRefs = useRef([]);
+
+  const switchCodeLength = (newLen) => {
+    setCodeLength(newLen);
+    setDigits(Array(newLen).fill(''));
+    setError('');
+  };
 
   // Expiry countdown timer
   useEffect(() => {
@@ -83,24 +90,27 @@ export default function VerifyRecoveryCodeScreen({
   const handleDigitChange = (val, index) => {
     setError('');
 
-    // Handle paste of full code
+    // Handle paste of full code (supports 6 or 8 digits)
     if (val && val.length > 1) {
-      const cleanVal = val.replace(/\D/g, '').slice(0, CODE_LENGTH);
-      if (cleanVal.length > 0) {
-        const nextDigits = [...digits];
-        for (let i = 0; i < cleanVal.length; i++) {
-          nextDigits[i] = cleanVal[i];
-        }
-        setDigits(nextDigits);
-
-        const nextFocusIndex = Math.min(cleanVal.length, CODE_LENGTH - 1);
-        inputRefs.current[nextFocusIndex]?.focus();
-
-        if (cleanVal.length === CODE_LENGTH) {
-          triggerVerification(cleanVal);
-        }
-        return;
+      const cleanVal = val.replace(/\D/g, '');
+      const targetLen = cleanVal.length >= 8 ? 8 : (cleanVal.length === 6 ? 6 : codeLength);
+      if (targetLen !== codeLength) {
+        setCodeLength(targetLen);
       }
+      const sliced = cleanVal.slice(0, targetLen);
+      const nextDigits = Array(targetLen).fill('');
+      for (let i = 0; i < sliced.length; i++) {
+        nextDigits[i] = sliced[i];
+      }
+      setDigits(nextDigits);
+
+      const nextFocusIndex = Math.min(sliced.length, targetLen - 1);
+      setTimeout(() => inputRefs.current[nextFocusIndex]?.focus(), 50);
+
+      if (sliced.length === targetLen) {
+        triggerVerification(sliced, targetLen);
+      }
+      return;
     }
 
     const cleanChar = val.replace(/\D/g, '');
@@ -108,13 +118,13 @@ export default function VerifyRecoveryCodeScreen({
     nextDigits[index] = cleanChar;
     setDigits(nextDigits);
 
-    if (cleanChar && index < CODE_LENGTH - 1) {
+    if (cleanChar && index < codeLength - 1) {
       inputRefs.current[index + 1]?.focus();
     }
 
     const fullCode = nextDigits.join('');
-    if (fullCode.length === CODE_LENGTH) {
-      triggerVerification(fullCode);
+    if (fullCode.length === codeLength) {
+      triggerVerification(fullCode, codeLength);
     }
   };
 
@@ -125,10 +135,10 @@ export default function VerifyRecoveryCodeScreen({
   };
 
   // ── Submit recovery OTP code ───────────────────────────────────────────────
-  const triggerVerification = async (codeToVerify) => {
+  const triggerVerification = async (codeToVerify, expectedLength = codeLength) => {
     const code = codeToVerify || digits.join('');
-    if (code.length !== CODE_LENGTH) {
-      setError('Please enter the complete 6-digit recovery code.');
+    if (code.length !== expectedLength) {
+      setError(`Please enter the complete ${expectedLength}-digit recovery code.`);
       return;
     }
 
@@ -271,14 +281,15 @@ export default function VerifyRecoveryCodeScreen({
               </Text>
             </View>
 
-            {/* 6-Box OTP Inputs */}
+            {/* OTP Inputs */}
             <View style={styles.otpContainer}>
               {digits.map((digit, idx) => (
                 <TextInput
-                  key={idx}
+                  key={`${codeLength}-${idx}`}
                   ref={(el) => (inputRefs.current[idx] = el)}
                   style={[
                     styles.otpBox,
+                    codeLength === 8 && { height: 48, fontSize: 18, borderRadius: 10 },
                     {
                       backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
                       borderColor: digit ? c.primary : c.border,
@@ -289,13 +300,26 @@ export default function VerifyRecoveryCodeScreen({
                   onChangeText={(val) => handleDigitChange(val, idx)}
                   onKeyPress={(e) => handleKeyPress(e, idx)}
                   keyboardType="number-pad"
-                  maxLength={idx === 0 ? 6 : 1}
+                  maxLength={idx === 0 ? 8 : 1}
                   selectTextOnFocus
                   accessible
-                  accessibilityLabel={`Recovery digit ${idx + 1} of ${CODE_LENGTH}`}
+                  accessibilityLabel={`Recovery digit ${idx + 1} of ${codeLength}`}
                   editable={!loading && expiryLeft > 0}
                 />
               ))}
+            </View>
+
+            {/* Quick Toggle for 6 vs 8 digits */}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 16 }}>
+              <TouchableOpacity
+                onPress={() => switchCodeLength(codeLength === 6 ? 8 : 6)}
+                activeOpacity={0.7}
+                style={{ paddingVertical: 5, paddingHorizontal: 12, borderRadius: 8, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}
+              >
+                <Text style={{ fontSize: 12, color: c.primary, fontWeight: '600' }}>
+                  {codeLength === 6 ? 'Received an 8-digit code? Switch to 8 boxes' : 'Switch back to 6 boxes'}
+                </Text>
+              </TouchableOpacity>
             </View>
 
             {/* ERROR BANNER */}
