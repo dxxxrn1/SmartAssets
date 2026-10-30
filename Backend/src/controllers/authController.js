@@ -9,6 +9,7 @@ const avatarService = require('../services/avatarService');
 const complianceService = require('../services/complianceService');
 const auditLogService = require('../services/auditLogService');
 const presenceService = require('../services/presenceService');
+const tokenRevocationService = require('../services/tokenRevocationService');
 const { revokeToken } = require('../middlewares/authMiddleware');
 const {
   createNonceChallenge,
@@ -61,12 +62,15 @@ function isAllowedRedirect(url) {
 }
 
 // ── Single-Use Cryptographic Recovery Authorization ──────────────────────────
-const RECOVERY_TOKEN_SECRET =
-  process.env.ADMIN_JWT_SECRET ||
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  'smartassets-recovery-salt-2026';
+function getRecoverySecret() {
+  const secret = process.env.ADMIN_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret || secret.trim().length < 16) {
+    throw new Error('RECOVERY_SECRET_MISSING: Secure cryptographic signing secret is not configured.');
+  }
+  return secret.trim();
+}
 
-// In-memory tracker for single-use recovery authorization JTIs (rejects replay/reuse)
+// In-memory tracker for single-use recovery authorization JTIs (fast path)
 const usedRecoveryJtis = new Map();
 
 setInterval(() => {
@@ -79,6 +83,7 @@ setInterval(() => {
 }, 5 * 60 * 1000).unref();
 
 function createRecoveryAuthorizationToken(userId, email) {
+  const secret = getRecoverySecret();
   const jti = crypto.randomUUID();
   const expiresAt = Date.now() + 15 * 60 * 1000; // 15-minute expiration
   const payload = {
@@ -90,7 +95,7 @@ function createRecoveryAuthorizationToken(userId, email) {
   };
   const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = crypto
-    .createHmac('sha256', RECOVERY_TOKEN_SECRET)
+    .createHmac('sha256', secret)
     .update(payloadBase64)
     .digest('base64url');
   return `${payloadBase64}.${signature}`;
@@ -98,15 +103,23 @@ function createRecoveryAuthorizationToken(userId, email) {
 
 function verifyAndConsumeRecoveryAuthorizationToken(token) {
   if (!token || typeof token !== 'string') {
-    return { valid: false, error: 'Recovery authorization token is required.' };
+    return { valid: false, error: 'Recovery authorization token is required.', code: 'TOKEN_REQUIRED' };
   }
   const parts = token.split('.');
   if (parts.length !== 2) {
-    return { valid: false, error: 'Invalid recovery authorization format.' };
+    return { valid: false, error: 'Invalid recovery authorization format.', code: 'INVALID_TOKEN_FORMAT' };
   }
+
+  let secret;
+  try {
+    secret = getRecoverySecret();
+  } catch (err) {
+    return { valid: false, error: 'Server configuration error verifying recovery authorization.', code: 'SECRET_UNAVAILABLE' };
+  }
+
   const [payloadBase64, providedSig] = parts;
   const expectedSig = crypto
-    .createHmac('sha256', RECOVERY_TOKEN_SECRET)
+    .createHmac('sha256', secret)
     .update(payloadBase64)
     .digest('base64url');
 
@@ -122,11 +135,18 @@ function verifyAndConsumeRecoveryAuthorizationToken(token) {
     if (Date.now() > payload.expiresAt) {
       return { valid: false, error: 'Recovery authorization has expired. Please verify your recovery code again.', code: 'RECOVERY_TOKEN_EXPIRED' };
     }
-    if (usedRecoveryJtis.has(payload.jti)) {
+    if (usedRecoveryJtis.has(payload.jti) || tokenRevocationService.isTokenRevokedSync(`recovery_jti:${payload.jti}`)) {
       return { valid: false, error: 'This recovery authorization has already been used. Please request a new recovery code.', code: 'RECOVERY_TOKEN_REUSED' };
     }
-    // Single-use: record JTI immediately upon consumption
+
+    // Single-use: record JTI immediately in memory and durable store
     usedRecoveryJtis.set(payload.jti, payload.expiresAt);
+    try {
+      tokenRevocationService.revokeToken(`recovery_jti:${payload.jti}`, {
+        expiresAt: new Date(payload.expiresAt),
+        reason: 'consumed_recovery_token',
+      }).catch?.(() => {});
+    } catch (_) {}
 
     return {
       valid: true,
@@ -1137,39 +1157,68 @@ async function sessionTimeout(req, res) {
 // ── POST /api/auth/forgot-password ───────────────────────────────────────────
 async function forgotPassword(req, res) {
   try {
-    const { email, redirectTo } = req.body || {};
+    const { email } = req.body || {};
 
     if (!email) {
       return sendError(res, 400, 'Please provide your email address.');
     }
 
     const cleanEmail = email.trim().toLowerCase();
-
-    if (redirectTo && !isAllowedRedirect(redirectTo)) {
-      return sendError(res, 400, 'Invalid redirect URL.');
-    }
-
-    const finalRedirect = redirectTo
-      ? redirectTo
-      : (process.env.PASSWORD_RESET_REDIRECT_URL || 'smartassets://reset-password');
-
     const authClient = supabase.supabaseAnon || supabase;
 
     try {
-      const { error } = await authClient.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: finalRedirect,
-      });
+      // In-app code-only recovery: do NOT pass redirectTo so Supabase delivers an OTP code
+      const { error } = await authClient.auth.resetPasswordForEmail(cleanEmail);
+
       if (error) {
-        console.warn('Notice: Supabase resetPasswordForEmail warning:', error.message);
+        const errMsg = (error.message || '').toLowerCase();
+        const errStatus = error.status || 0;
+
+        // Rate limiting
+        if (errStatus === 429 || errMsg.includes('rate limit')) {
+          return sendError(
+            res,
+            429,
+            'Too many password recovery requests. Please wait before requesting another code.',
+            'RATE_LIMIT_EXCEEDED'
+          );
+        }
+
+        // True provider/SMTP delivery failure (do not report that code was sent)
+        const isProviderFailure =
+          errStatus >= 500 ||
+          errMsg.includes('error sending') ||
+          errMsg.includes('smtp') ||
+          errMsg.includes('connection refused') ||
+          errMsg.includes('failed to send');
+
+        if (isProviderFailure) {
+          console.error('Password recovery delivery failure:', error.message);
+          return sendError(
+            res,
+            503,
+            'Unable to send recovery code at this time. Please try again shortly.',
+            'EMAIL_SERVICE_ERROR'
+          );
+        }
+
+        // Non-existent account: safely return generic success message to prevent enumeration
+        console.warn('Notice: Supabase resetPasswordForEmail notice:', error.message);
       }
     } catch (callErr) {
-      console.warn('Notice: resetPasswordForEmail call error:', callErr.message);
+      console.error('Notice: resetPasswordForEmail exception:', callErr.message);
+      return sendError(
+        res,
+        503,
+        'Unable to send recovery code at this time. Please try again shortly.',
+        'EMAIL_SERVICE_ERROR'
+      );
     }
 
     // Preserve account enumeration protection: always return the same generic message
     return res.status(200).json({
       success: true,
-      message: 'If an account exists for that email, a password recovery code has been sent.',
+      message: 'If an account exists for that email, a 6-digit recovery code has been sent.',
     });
   } catch (err) {
     console.error('FORGOT PASSWORD ERROR:', err);
@@ -1367,6 +1416,7 @@ module.exports = {
   verifySession,
   getAllowedResetRedirects,
   isAllowedRedirect,
+  getRecoverySecret,
   createRecoveryAuthorizationToken,
   verifyAndConsumeRecoveryAuthorizationToken,
 };

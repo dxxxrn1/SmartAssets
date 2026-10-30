@@ -85,29 +85,101 @@ In **Authentication** → **Email Templates**, update the templates to supply th
 </div>
 ```
 
-### 3.2: Reset Password / Recovery Template
-- **Template**: **Reset password**
-- **Subject**: `Your SmartAssets password reset code: {{ .Token }}`
-- **Body Content** (HTML):
+### 3.2: Reset Password / Recovery Template (In-App Code Only — No Links)
+- **Template Location in Supabase**: **Authentication** → **Email Templates** → **Reset password**
+- **Subject**: `Your SmartAssets recovery code: {{ .Token }}`
+- **Logo Asset Used**: `https://smartassets.onrender.com/logo-mark.png` (Public HTTPS, zero shadows, responsive)
+- **HTML Message Body Content**:
 ```html
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px 24px; background: #0F172A; color: #FFFFFF; border-radius: 16px;">
-  <div style="text-align: center; margin-bottom: 24px;">
-    <h1 style="color: #00C2FF; font-size: 26px; font-weight: 800; margin: 0; letter-spacing: 0.5px;">SMARTASSETS</h1>
-    <p style="color: #94A3B8; font-size: 14px; margin-top: 6px;">Account Recovery</p>
-  </div>
-  <div style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 24px; text-align: center;">
-    <h2 style="font-size: 20px; font-weight: 700; margin-top: 0; color: #FFFFFF;">Password Reset Code</h2>
-    <p style="color: #CBD5E1; font-size: 14px; line-height: 1.6;">
-      We received a request to reset your SmartAssets account password. Enter this temporary code in the app to continue:
-    </p>
-    <div style="margin: 28px 0; padding: 18px 24px; background: #0A0F1D; border: 1px solid #00C2FF; border-radius: 10px; display: inline-block;">
-      <span style="font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #00C2FF;">{{ .Token }}</span>
-    </div>
-    <p style="color: #64748B; font-size: 12px; margin-bottom: 0;">
-      This single-use code expires in 10 minutes. If you did not request a password reset, no action is needed.
-    </p>
-  </div>
-</div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>SmartAssets Password Recovery</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0B1120; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #0B1120; width: 100%; margin: 0; padding: 32px 16px;">
+    <tr>
+      <td align="center">
+        <!-- Main Card Container -->
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 520px; background-color: #111C33; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; overflow: hidden; margin: 0 auto;">
+          <!-- Header / Logo -->
+          <tr>
+            <td align="center" style="padding: 36px 24px 16px 24px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding: 0; margin: 0;">
+                    <img src="https://smartassets.onrender.com/logo-mark.png" alt="SmartAssets" width="64" height="64" style="display: block; width: 64px; height: 64px; border: 0; outline: none; margin: 0 auto; -ms-interpolation-mode: bicubic;" />
+                  </td>
+                </tr>
+              </table>
+              <h1 style="color: #FFFFFF; font-size: 22px; font-weight: 700; margin: 18px 0 0 0; letter-spacing: -0.3px;">SmartAssets</h1>
+              <p style="color: #64748B; font-size: 13px; font-weight: 500; margin: 4px 0 0 0;">Password Recovery</p>
+            </td>
+          </tr>
+
+          <!-- Content Body -->
+          <tr>
+            <td style="padding: 8px 32px 28px 32px; text-align: center;">
+              <p style="color: #E2E8F0; font-size: 15px; line-height: 22px; margin: 0 0 20px 0;">
+                We received a request to reset your SmartAssets account password. Enter this temporary 6-digit recovery code in the app to continue:
+              </p>
+
+              <!-- OTP Code Display Box -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto 24px auto;">
+                <tr>
+                  <td align="center" style="background-color: #0A0F1D; border: 1.5px solid #00C2FF; border-radius: 12px; padding: 16px 28px;">
+                    <span style="font-family: 'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #00C2FF; display: block; line-height: 1;">{{ .Token }}</span>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="color: #94A3B8; font-size: 13px; line-height: 19px; margin: 0 0 16px 0;">
+                This single-use code expires in <strong>10 minutes</strong>. Enter it on the recovery screen in the SmartAssets app.
+              </p>
+
+              <div style="height: 1px; background-color: rgba(255, 255, 255, 0.08); margin: 24px 0;"></div>
+
+              <p style="color: #64748B; font-size: 12px; line-height: 18px; margin: 0;">
+                If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged and your account is secure.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #0E172A; padding: 18px 24px; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.06);">
+              <p style="color: #475569; font-size: 11px; margin: 0; line-height: 16px;">
+                &copy; SmartAssets • Secure Physical & Digital Asset Investment
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+```
+
+- **Plain Text Fallback**:
+```text
+SmartAssets Password Recovery
+
+We received a request to reset your SmartAssets account password.
+
+Your 6-digit recovery code is:
+{{ .Token }}
+
+Enter this code in the SmartAssets app on your device to set a new password.
+
+This single-use code expires in 10 minutes.
+
+If you did not request this password reset, you can safely ignore this email. Your account remains secure and no changes were made.
+
+© SmartAssets • Secure Physical & Digital Asset Investment
 ```
 
 ---

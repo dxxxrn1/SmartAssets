@@ -16,6 +16,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -38,6 +39,7 @@ export default function ForgotPasswordScreen({
   const { isConnected, isOffline, checkConnection } = useNetwork();
 
   const initialEmail = route?.params?.email || '';
+  const notice = route?.params?.notice || '';
   const [email, setEmail] = useState(initialEmail);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -68,14 +70,9 @@ export default function ForgotPasswordScreen({
     setLoading(true);
 
     try {
-      const redirectTo =
-        Platform.OS === 'web'
-          ? (typeof window !== 'undefined' ? window.location.origin : 'https://smartassets.onrender.com')
-          : 'smartassets://reset-password';
-
+      // In-app code recovery: no redirectTo passed so Supabase generates OTP code only
       const res = await forgotPasswordApi({
         email: cleanEmail,
-        redirectTo,
       });
 
       if (res?.success) {
@@ -122,15 +119,27 @@ export default function ForgotPasswordScreen({
               <Feather name="arrow-left" size={18} color={c.warm} />
             </TouchableOpacity>
 
-            {/* Icon Badge */}
-            <View style={[styles.iconBadge, { backgroundColor: isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF', borderColor: c.primary }]}>
-              <Feather name="key" size={28} color={c.primary} />
+            {/* SmartAssets Logo */}
+            <View style={styles.logoContainer}>
+              <Image
+                source={require('../../assets/logo-mark.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+                accessibilityLabel="SmartAssets Logo"
+              />
             </View>
 
             <Text style={[styles.title, { color: c.warm }]}>Reset Password</Text>
             <Text style={[styles.subtitle, { color: c.muted }]}>
               Enter your registered email address and we'll send you a temporary 6-digit recovery code.
             </Text>
+
+            {notice ? (
+              <View style={[styles.noticeBox, { backgroundColor: 'rgba(0, 194, 255, 0.1)', borderColor: '#00C2FF' }]}>
+                <Feather name="info" size={16} color="#00C2FF" style={{ marginRight: 8 }} />
+                <Text style={[styles.noticeText, { color: c.warm }]}>{notice}</Text>
+              </View>
+            ) : null}
 
             {/* Email Input */}
             <View style={styles.inputGroup}>
@@ -253,15 +262,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  iconBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    borderWidth: 1,
+  logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
     marginBottom: 16,
+  },
+  logoImage: {
+    width: 64,
+    height: 64,
+  },
+  noticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
   title: {
     fontSize: 24,

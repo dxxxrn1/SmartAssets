@@ -301,6 +301,9 @@ app.use('/uploads', express.static(path.resolve(__dirname, '../uploads/assets'))
 app.use('/admin', express.static(path.resolve(__dirname, '../public/admin')));
 app.use('/verify', express.static(path.resolve(__dirname, '../public/verify')));
 app.use(express.static(path.resolve(__dirname, '../public')));
+app.get('/reset-password', (_req, res) => {
+  res.sendFile(path.resolve(__dirname, '../public/reset-password/index.html'));
+});
 app.get('/verify/:id', (req, res) => {
   res.sendFile(path.resolve(__dirname, '../public/verify/index.html'));
 });

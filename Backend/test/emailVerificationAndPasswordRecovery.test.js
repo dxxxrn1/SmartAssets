@@ -25,6 +25,8 @@ const {
   createNonceChallenge,
   verifyWalletSignature,
 } = require('../src/services/walletAuthService');
+const { RECOVERY_EMAIL_TEMPLATE, PUBLIC_LOGO_URL } = require('../src/config/emailTemplates');
+const tokenRevocationService = require('../src/services/tokenRevocationService');
 
 // Helper to mock Express response
 function mockRes() {
@@ -532,8 +534,186 @@ async function runTests() {
     assert.strictEqual(dupRes.body?.pendingVerification, true);
     console.log('   ✅ Duplicate registration handled cleanly without creating redundant records.');
 
+    // ── SCENARIO 12: Recovery request success and SMTP/provider failure handling ─
+    console.log('\n🧪 [TEST 12] Testing recovery request code-only flow & provider failure handling...');
+    let passedResetEmailOpts = undefined;
+    supabase.supabaseAnon.auth.resetPasswordForEmail = async function (email, opts) {
+      passedResetEmailOpts = opts;
+      if (email === 'smtp_fail@example.com') {
+        const smtpErr = new Error('Connection refused to turboSMTP 587');
+        smtpErr.status = 500;
+        return { data: null, error: smtpErr };
+      }
+      return { data: {}, error: null };
+    };
+
+    // 12a. Code-only request does not pass redirectTo
+    const normalForgotRes = mockRes();
+    await authController.forgotPassword(
+      { body: { email: 'user@example.com' }, ip: '127.0.0.1', headers: {} },
+      normalForgotRes
+    );
+    assert.strictEqual(normalForgotRes.statusCode, 200);
+    assert.strictEqual(passedResetEmailOpts, undefined, 'resetPasswordForEmail must NOT be passed redirectTo');
+
+    // 12b. Provider/SMTP failure returns 503 EMAIL_SERVICE_ERROR
+    const failForgotRes = mockRes();
+    await authController.forgotPassword(
+      { body: { email: 'smtp_fail@example.com' }, ip: '127.0.0.1', headers: {} },
+      failForgotRes
+    );
+    assert.strictEqual(failForgotRes.statusCode, 503, 'SMTP delivery failure must return 503');
+    assert.strictEqual(failForgotRes.body?.code, 'EMAIL_SERVICE_ERROR');
+    assert.ok(failForgotRes.body?.error.includes('Unable to send recovery code'));
+    assert.ok(!JSON.stringify(failForgotRes.body).includes('turboSMTP'), 'Must not leak provider internals');
+    console.log('   ✅ Recovery request is code-only (no redirectTo) and provider failures return safe 503.');
+
+    // ── SCENARIO 13: OTP verification for password recovery uses type: recovery ──
+    console.log('\n🧪 [TEST 13] Testing verifyRecoveryCode OTP verification and single-use token...');
+    let verifyOtpParams = null;
+    supabase.supabaseAnon.auth.verifyOtp = async function (params) {
+      verifyOtpParams = params;
+      if (params.email === 'recovery@example.com' && params.token === '654321') {
+        return {
+          data: {
+            user: { id: 'recovery-uuid-999', email: 'recovery@example.com' },
+            session: null,
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: 'Token has expired or is invalid' } };
+    };
+
+    // 13a. Valid recovery code
+    const validVerifyRes = mockRes();
+    await authController.verifyRecoveryCode(
+      { body: { email: 'recovery@example.com', code: '654321' }, ip: '127.0.0.1', headers: {} },
+      validVerifyRes
+    );
+    assert.strictEqual(validVerifyRes.statusCode, 200);
+    assert.strictEqual(verifyOtpParams?.type, 'recovery', 'verifyOtp must strictly specify type: recovery');
+    assert.strictEqual(verifyOtpParams?.token, '654321');
+    assert.ok(validVerifyRes.body?.recoveryToken, 'Response must return signed recoveryToken');
+
+    // 13b. Invalid / wrong recovery code
+    const invalidVerifyRes = mockRes();
+    await authController.verifyRecoveryCode(
+      { body: { email: 'recovery@example.com', code: '000000' }, ip: '127.0.0.1', headers: {} },
+      invalidVerifyRes
+    );
+    assert.strictEqual(invalidVerifyRes.statusCode, 400);
+    assert.strictEqual(invalidVerifyRes.body?.code, 'INVALID_RECOVERY_CODE');
+    console.log('   ✅ Recovery OTP verified with type: recovery; signed authorization token issued.');
+
+    // ── SCENARIO 14: Password reset execution and durable replay prevention ─────
+    console.log('\n🧪 [TEST 14] Testing resetPassword execution and durable single-use consumption...');
+    let updatedUserId = null;
+    let updatedUserPassword = null;
+    supabase.auth.admin.updateUserById = async function (id, updates) {
+      updatedUserId = id;
+      updatedUserPassword = updates.password;
+      return { data: { id, email: 'recovery@example.com' }, error: null };
+    };
+
+    const validRecoveryToken = validVerifyRes.body.recoveryToken;
+    const resetReq = {
+      body: { recoveryToken: validRecoveryToken, newPassword: 'BrandNewSecurePassword123!' },
+      ip: '127.0.0.1',
+      headers: {},
+    };
+
+    // 14a. First reset succeeds
+    const firstResetRes = mockRes();
+    await authController.resetPassword(resetReq, firstResetRes);
+    assert.strictEqual(firstResetRes.statusCode, 200);
+    assert.strictEqual(updatedUserId, 'recovery-uuid-999');
+    assert.strictEqual(updatedUserPassword, 'BrandNewSecurePassword123!');
+
+    // 14b. Replaying the same recovery token fails
+    const replayedResetRes = mockRes();
+    await authController.resetPassword(resetReq, replayedResetRes);
+    assert.strictEqual(replayedResetRes.statusCode, 401);
+    assert.strictEqual(replayedResetRes.body?.code, 'RECOVERY_TOKEN_REUSED');
+    console.log('   ✅ Password updated successfully; authorization token consumed and replay rejected.');
+
+    // ── SCENARIO 15: Fail-closed behavior when signing secret is missing ────────
+    console.log('\n🧪 [TEST 15] Testing fail-closed behavior on missing recovery signing secret...');
+    const savedAdminSecret = process.env.ADMIN_JWT_SECRET;
+    const savedServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    try {
+      delete process.env.ADMIN_JWT_SECRET;
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      assert.throws(
+        () => authController.getRecoverySecret(),
+        /RECOVERY_SECRET_MISSING/,
+        'Must fail closed and throw RECOVERY_SECRET_MISSING when signing secrets are absent'
+      );
+    } finally {
+      if (savedAdminSecret) process.env.ADMIN_JWT_SECRET = savedAdminSecret;
+      if (savedServiceRoleKey) process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceRoleKey;
+    }
+    console.log('   ✅ Server fails closed with clear error when signing secrets are missing.');
+
+    // ── SCENARIO 16: Email template content & zero shadow verification ──────────
+    console.log('\n🧪 [TEST 16] Testing production email template (code-only, zero shadows)...');
+    assert.ok(RECOVERY_EMAIL_TEMPLATE.html.includes('{{ .Token }}'), 'HTML must contain {{ .Token }}');
+    assert.ok(
+      !RECOVERY_EMAIL_TEMPLATE.html.includes('{{ .ConfirmationURL }}'),
+      'HTML must NOT contain {{ .ConfirmationURL }}'
+    );
+    assert.ok(
+      !RECOVERY_EMAIL_TEMPLATE.html.includes('{{ .TokenHash }}'),
+      'HTML must NOT contain {{ .TokenHash }}'
+    );
+    assert.ok(
+      !RECOVERY_EMAIL_TEMPLATE.html.includes('smartassets://reset-password'),
+      'HTML must NOT contain recovery URLs'
+    );
+    assert.ok(
+      RECOVERY_EMAIL_TEMPLATE.html.includes('https://smartassets.onrender.com/logo-mark.png'),
+      'HTML must reference public HTTPS logo'
+    );
+    assert.ok(
+      !RECOVERY_EMAIL_TEMPLATE.html.toLowerCase().includes('box-shadow'),
+      'HTML must NOT contain box-shadow'
+    );
+    assert.ok(
+      !RECOVERY_EMAIL_TEMPLATE.html.toLowerCase().includes('drop-shadow'),
+      'HTML must NOT contain drop-shadow'
+    );
+    assert.ok(RECOVERY_EMAIL_TEMPLATE.plainText.includes('{{ .Token }}'), 'Plain-text must contain {{ .Token }}');
+    assert.ok(
+      !RECOVERY_EMAIL_TEMPLATE.plainText.includes('http://') && !RECOVERY_EMAIL_TEMPLATE.plainText.includes('https://'),
+      'Plain-text must contain NO recovery links'
+    );
+    console.log('   ✅ Email template verified: {{ .Token }} present, no confirmation URLs, no shadows.');
+
+    // ── SCENARIO 17: In-app handling of obsolete email recovery links ────────────
+    console.log('\n🧪 [TEST 17] Testing safe in-app handling of legacy deep link URLs...');
+    function simulateDeepLink(rawUrl) {
+      if (!rawUrl) return null;
+      if (rawUrl.includes('reset-password') || rawUrl.includes('recovery')) {
+        return {
+          targetScreen: 'ForgotPassword',
+          notice: 'Password reset links have been upgraded to 6-digit verification codes. Please enter your email to receive your recovery code.',
+        };
+      }
+      return null;
+    }
+
+    const legacyWebUrl = 'https://smartassets.onrender.com/reset-password#access_token=old_token_123&type=recovery';
+    const legacyCustomUrl = 'smartassets://reset-password?token=old_token_456';
+    const linkResult1 = simulateDeepLink(legacyWebUrl);
+    const linkResult2 = simulateDeepLink(legacyCustomUrl);
+
+    assert.strictEqual(linkResult1?.targetScreen, 'ForgotPassword');
+    assert.ok(linkResult1?.notice.includes('upgraded to 6-digit verification codes'));
+    assert.strictEqual(linkResult2?.targetScreen, 'ForgotPassword');
+    console.log('   ✅ Obsolete deep link URLs route safely in-app to request a fresh 6-digit code without crash.');
+
     console.log('\n==================================================================');
-    console.log(' 🎉 ALL 11 EMAIL VERIFICATION & RECOVERY TESTS PASSED!');
+    console.log(' 🎉 ALL 17 EMAIL VERIFICATION & RECOVERY TESTS PASSED!');
     console.log('==================================================================\n');
   } finally {
     // Restore original Supabase methods

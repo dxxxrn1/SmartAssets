@@ -16,6 +16,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -234,9 +235,14 @@ export default function VerifyRecoveryCodeScreen({
               <Feather name="arrow-left" size={18} color={c.warm} />
             </TouchableOpacity>
 
-            {/* Icon Badge */}
-            <View style={[styles.iconBadge, { backgroundColor: isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF', borderColor: c.primary }]}>
-              <Feather name="shield" size={28} color={c.primary} />
+            {/* SmartAssets Logo */}
+            <View style={styles.logoContainer}>
+              <Image
+                source={require('../../assets/logo-mark.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+                accessibilityLabel="SmartAssets Logo"
+              />
             </View>
 
             <Text style={[styles.title, { color: c.warm }]}>Enter Recovery Code</Text>
@@ -399,15 +405,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  iconBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    borderWidth: 1,
+  logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
     marginBottom: 16,
+  },
+  logoImage: {
+    width: 64,
+    height: 64,
   },
   title: {
     fontSize: 24,

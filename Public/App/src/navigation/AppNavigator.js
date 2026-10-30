@@ -52,8 +52,8 @@ const Tab   = createBottomTabNavigator();
 // Reference used so a deep link can navigate before/after the navigator mounts
 const navigationRef = createNavigationContainerRef();
 
-function extractResetToken(url) {
-  if (!url || typeof url !== 'string') return null;
+function parseDeepLink(url) {
+  if (!url || typeof url !== 'string') return {};
 
   try {
     const params = {};
@@ -86,25 +86,9 @@ function extractResetToken(url) {
       parseSegment(hashPart);
     }
 
-    // Ignore error responses
-    if (params.error || params.error_code || params.error_description) {
-      return null;
-    }
-
-    // Support Supabase recovery link format, explicit token, or PKCE code
-    if (params.type === 'recovery' || url.includes('recovery') || url.includes('reset-password')) {
-      if (params.access_token) return params.access_token;
-      if (params.token) return params.token;
-      if (params.code) return params.code;
-    }
-
-    if (params.access_token) return params.access_token;
-    if (params.token) return params.token;
-    if (params.code) return params.code;
-
-    return null;
+    return params;
   } catch (_) {
-    return null;
+    return {};
   }
 }
 
@@ -347,16 +331,31 @@ export default function Navigation() {
 
   useEffect(() => {
     async function handleUrl(rawUrl) {
-      const token = extractResetToken(rawUrl);
-      if (token) {
-        let attempts = 0;
-        while (!navigationRef.isReady() && attempts < 20) {
-          await new Promise((r) => setTimeout(r, 100));
-          attempts++;
-        }
-        if (navigationRef.isReady()) {
-          navigationRef.navigate(SCREENS.RESET_PASSWORD, { token, accessToken: token });
-        }
+      if (!rawUrl || typeof rawUrl !== 'string') return;
+
+      const params = parseDeepLink(rawUrl);
+      const isRecovery =
+        params.type === 'recovery' ||
+        rawUrl.includes('recovery') ||
+        rawUrl.includes('reset-password');
+
+      let attempts = 0;
+      while (!navigationRef.isReady() && attempts < 20) {
+        await new Promise((r) => setTimeout(r, 100));
+        attempts++;
+      }
+      if (!navigationRef.isReady()) return;
+
+      if (isRecovery) {
+        // Obsolete recovery links: guide user safely in-app to request a fresh 6-digit code
+        navigationRef.navigate(SCREENS.FORGOT_PASSWORD, {
+          notice: 'Password reset links have been upgraded to 6-digit verification codes. Please enter your email to receive your recovery code.',
+        });
+        return;
+      }
+
+      if (params.type === 'signup' && params.email) {
+        navigationRef.navigate(SCREENS.VERIFY_EMAIL, { email: params.email });
       }
     }
 

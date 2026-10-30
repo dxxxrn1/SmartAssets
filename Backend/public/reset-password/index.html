@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartAssets — Password Recovery</title>
+  <link rel="icon" type="image/png" href="/logo-mark.png">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #0B1120;
+      color: #F8FAFC;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      background: #111C35;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      padding: 40px 32px;
+      max-width: 480px;
+      width: 100%;
+      text-align: center;
+    }
+    .logo {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 20px auto;
+      display: block;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: #FFFFFF;
+      margin-bottom: 12px;
+      letter-spacing: -0.3px;
+    }
+    p {
+      color: #94A3B8;
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    .code-notice {
+      background: rgba(0, 194, 255, 0.08);
+      border: 1px solid rgba(0, 194, 255, 0.3);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+      color: #00C2FF;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 24px;
+      background: #0066FF;
+      color: #FFFFFF;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 15px;
+      border-radius: 12px;
+      transition: background 0.2s ease;
+    }
+    .btn:hover {
+      background: #0052CC;
+    }
+    .footer-note {
+      margin-top: 20px;
+      font-size: 12px;
+      color: #64748B;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="/logo-mark.png" alt="SmartAssets" class="logo">
+    <h1>Password Recovery</h1>
+    <p>Password recovery for SmartAssets is completed entirely inside the mobile app using your 6-digit email recovery code.</p>
+    <div class="code-notice">
+      Please check your email for the 6-digit code and enter it directly in the SmartAssets app.
+    </div>
+    <a href="smartassets://reset-password" class="btn">Open SmartAssets App</a>
+    <div class="footer-note">
+      If you did not request this recovery code, you can safely disregard this message.
+    </div>
+  </div>
+</body>
+</html>

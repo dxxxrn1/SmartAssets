@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -36,6 +37,13 @@ export default function ResetPasswordScreen({ navigation, route, isDark: propIsD
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      setNewPassword('');
+      setConfirmPassword('');
+    };
+  }, []);
 
   const handleResetPassword = async () => {
     setError('');
@@ -67,6 +75,8 @@ export default function ResetPasswordScreen({ navigation, route, isDark: propIsD
 
     try {
       await resetPasswordApi({ recoveryToken, accessToken, newPassword });
+      setNewPassword('');
+      setConfirmPassword('');
       setSuccess(true);
     } catch (err) {
       setError(err?.message || 'Could not reset your password. Please try again.');
@@ -103,8 +113,13 @@ export default function ResetPasswordScreen({ navigation, route, isDark: propIsD
           <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
             {!success ? (
               <>
-                <View style={[styles.iconBox, { backgroundColor: c.primary }]}>
-                  <Feather name="lock" size={26} color="#FFFFFF" />
+                <View style={styles.logoContainer}>
+                  <Image
+                    source={require('../../assets/logo-mark.png')}
+                    style={styles.logoImage}
+                    resizeMode="contain"
+                    accessibilityLabel="SmartAssets Logo"
+                  />
                 </View>
 
                 <Text style={[styles.heading, { color: c.warm }]}>Set a new password</Text>
@@ -117,6 +132,13 @@ export default function ResetPasswordScreen({ navigation, route, isDark: propIsD
                     <Text style={[styles.errorText, { color: c.danger || '#ff4444' }]}>
                       This reset authorization is invalid or has expired. Please go back and request a new one.
                     </Text>
+                    <TouchableOpacity
+                      style={[styles.primaryBtn, { backgroundColor: c.primary, marginTop: 12 }]}
+                      onPress={() => navigation.navigate(SCREENS.FORGOT_PASSWORD)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.primaryBtnText}>Request Recovery Code</Text>
+                    </TouchableOpacity>
                   </View>
                 ) : (
                   <>
@@ -235,7 +257,16 @@ const styles = StyleSheet.create({
   keyboard: { flex: 1 },
   scroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 60, paddingBottom: 50, justifyContent: 'center' },
   card: { width: '100%', maxWidth: 480, alignSelf: 'center', borderWidth: 1, borderRadius: 20, padding: 24 },
-  iconBox: { width: 54, height: 54, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 16, alignSelf: 'center' },
+  logoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  logoImage: {
+    width: 64,
+    height: 64,
+  },
   heading: { fontSize: 22, fontWeight: '800', marginBottom: 7, textAlign: 'center' },
   description: { fontSize: 14, lineHeight: 21, marginBottom: 22, textAlign: 'center' },
   fieldWrap: { marginBottom: 17 },
