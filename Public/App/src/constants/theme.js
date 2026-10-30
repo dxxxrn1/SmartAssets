@@ -102,6 +102,13 @@ export const ALIM = {
 };
 
 const light = {
+  // Aliases for clean theme consumption
+  bg: '#F8FAFC',
+  cardBg: '#FFFFFF',
+  text: '#0F172A',
+  textSecondary: '#64748B',
+  textMuted: '#94A3B8',
+
   // Primary – SmartAssets Violet & Electric Indigo
   primary: '#7C3AED',
   primaryLight: '#976af0',
@@ -137,6 +144,13 @@ const light = {
 };
 
 const dark = {
+  // Aliases for clean theme consumption
+  bg: '#0A0E1A',
+  cardBg: '#131A2F',
+  text: '#F8FAFC',
+  textSecondary: '#94A3B8',
+  textMuted: '#64748B',
+
   // Primary – Glowing SmartAssets Violet
   primary: '#976af0',
   primaryLight: '#A855F7',

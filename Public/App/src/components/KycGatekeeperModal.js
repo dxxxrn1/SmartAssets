@@ -87,14 +87,14 @@ export default function KycGatekeeperModal({
           {/* Title */}
           <Text style={styles.title}>
             {isSuspended
-              ? '🚫 Account Suspended by Compliance'
+              ? 'Account Suspended by Compliance'
               : needsBankApproval
               ? isPending
-                ? '⏳ Bank Account Approval Pending'
-                : '🏦 Approved Bank Account Required'
+                ? 'Bank Account Approval Pending'
+                : 'Approved Bank Account Required'
               : isPending
-              ? '⏳ Account Verification In Review'
-              : `🔒 Verify Your Account to ${actionTitle}`}
+              ? 'Account Verification In Review'
+              : `Verify Your Account to ${actionTitle}`}
           </Text>
 
           {/* Subtitle / Explanation */}

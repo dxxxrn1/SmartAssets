@@ -435,7 +435,7 @@ export default function ScanAndKnowScreen({ navigation }) {
                 <View style={styles.verifiedBadgeWrap}>
                   <View style={styles.verifiedBadge}>
                     <Text style={styles.verifiedBadgeText}>
-                      {`✅ VERIFIED IN SYSTEM • ${certIdDisplay} (Sepolia)`}
+                      {`VERIFIED IN SYSTEM • ${certIdDisplay} (Sepolia)`}
                     </Text>
                   </View>
                   <View style={styles.sepoliaSubRow}>

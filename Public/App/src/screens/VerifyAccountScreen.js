@@ -382,28 +382,31 @@ export default function VerifyAccountScreen({ navigation }) {
   const renderSlotBadge = (status) => {
     if (status === 'approved') {
       return (
-        <View style={{ backgroundColor: 'rgba(16,185,129,0.16)', borderColor: '#10B981', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 }}>
-          <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '800' }}>✅ Approved</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(16,185,129,0.16)', borderColor: '#10B981', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 }}>
+          <Ionicons name="checkmark-circle" size={12} color="#10B981" />
+          <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '800' }}>Approved</Text>
         </View>
       );
     }
     if (status === 'pending') {
       return (
-        <View style={{ backgroundColor: 'rgba(245,158,11,0.16)', borderColor: '#F59E0B', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 }}>
-          <Text style={{ color: '#F59E0B', fontSize: 11, fontWeight: '800' }}>⏳ Pending review</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(245,158,11,0.16)', borderColor: '#F59E0B', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 }}>
+          <Ionicons name="time-outline" size={12} color="#F59E0B" />
+          <Text style={{ color: '#F59E0B', fontSize: 11, fontWeight: '800' }}>Pending review</Text>
         </View>
       );
     }
     if (status === 'rejected') {
       return (
-        <View style={{ backgroundColor: 'rgba(239,68,68,0.16)', borderColor: '#EF4444', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 }}>
-          <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '800' }}>❌ Rejected</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(239,68,68,0.16)', borderColor: '#EF4444', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 }}>
+          <Ionicons name="close-circle" size={12} color="#EF4444" />
+          <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '800' }}>Rejected</Text>
         </View>
       );
     }
     return (
       <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.07)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 }}>
-        <Text style={{ color: t.textSecondary, fontSize: 11, fontWeight: '700' }}>Not uploaded</Text>
+        <Text style={{ color: isDark ? '#94A3B8' : '#64748B', fontSize: 11, fontWeight: '700' }}>Not uploaded</Text>
       </View>
     );
   };
@@ -574,9 +577,9 @@ export default function VerifyAccountScreen({ navigation }) {
                     placeholder={slot.metaPlaceholder}
                     placeholderTextColor={t.textMuted}
                     style={{
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#F8F5FF',
+                      backgroundColor: isDark ? '#1E293B' : '#F8F5FF',
                       borderWidth: 1,
-                      borderColor: t.border,
+                      borderColor: isDark ? 'rgba(255,255,255,0.15)' : t.border,
                       borderRadius: 11,
                       paddingHorizontal: 12,
                       paddingVertical: 9,
@@ -700,8 +703,10 @@ export default function VerifyAccountScreen({ navigation }) {
           <TouchableOpacity
             onPress={() => navigation.navigate(SCREENS.BANK_DETAILS)}
             style={{
-              backgroundColor: isDark ? '#1E293B' : '#EDE9FE',
+              backgroundColor: isDark ? 'rgba(124,92,252,0.16)' : '#EDE9FE',
               borderRadius: 12,
+              borderWidth: isDark ? 1 : 0,
+              borderColor: isDark ? 'rgba(192,132,252,0.35)' : 'transparent',
               paddingVertical: 12,
               alignItems: 'center',
               flexDirection: 'row',
@@ -709,8 +714,8 @@ export default function VerifyAccountScreen({ navigation }) {
               gap: 8,
             }}
           >
-            <Ionicons name="card-outline" size={18} color="#7C5CFC" />
-            <Text style={{ color: '#7C5CFC', fontWeight: '800', fontSize: 13.5 }}>
+            <Ionicons name="card-outline" size={18} color={isDark ? "#C084FC" : "#7C5CFC"} />
+            <Text style={{ color: isDark ? "#C084FC" : "#7C5CFC", fontWeight: '800', fontSize: 13.5 }}>
               Manage Bank Account Details &rarr;
             </Text>
           </TouchableOpacity>

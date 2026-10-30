@@ -67,7 +67,7 @@ export default function LiveRoomPreview(props) {
     asset?.glbUrl ||
     asset?.glb_url ||
     asset?.model?.glb_url ||
-    null;
+    'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/SheenChair/glTF-Binary/SheenChair.glb';
 
   const source =
     props.source ||
@@ -90,7 +90,7 @@ export default function LiveRoomPreview(props) {
     asset?.image ||
     asset?.imageUrl ||
     (Array.isArray(asset?.images) ? asset.images[0] : null) ||
-    'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1200&q=80';
+    'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80';
 
   const widthCm =
     Number(
@@ -98,8 +98,8 @@ export default function LiveRoomPreview(props) {
       params.widthCm ??
       asset?.dimensions?.widthCm ??
       asset?.widthCm ??
-      60
-    ) || 60;
+      75
+    ) || 75;
 
   const heightCm =
     Number(
@@ -107,8 +107,8 @@ export default function LiveRoomPreview(props) {
       params.heightCm ??
       asset?.dimensions?.heightCm ??
       asset?.heightCm ??
-      80
-    ) || 80;
+      85
+    ) || 85;
 
   const depthCm =
     Number(
@@ -116,15 +116,15 @@ export default function LiveRoomPreview(props) {
       params.depthCm ??
       asset?.dimensions?.depthCm ??
       asset?.depth_cm ??
-      DEFAULT_DEPTH_CM
-    ) || DEFAULT_DEPTH_CM;
+      80
+    ) || 80;
 
   const title =
     props.title ||
     params.title ||
     asset?.title ||
     asset?.name ||
-    'Room preview';
+    'Velvet Lounge Chair';
 
   const listingId =
     props.listingId ||

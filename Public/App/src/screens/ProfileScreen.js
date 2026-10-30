@@ -51,11 +51,16 @@ const isWalletOrMetaMaskString = (str) => {
 
 export default function ProfileScreen({ navigation, route, isDark: propIsDark, toggleTheme: propToggleTheme }) {
   const themeContext = useTheme();
-  // const isDark = propIsDark !== undefined ? propIsDark : themeContext.isDark;
-  // const toggleTheme = propToggleTheme || themeContext.toggleTheme;
-  const setIsDark = themeContext.setIsDark;
   const { user, token, logout, updateUser } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
+  const { isDark, toggleTheme, setIsDark } = themeContext;
+
+  // When navigated with makeDark or user requests dark mode on entering profile
+  useEffect(() => {
+    if (route?.params?.makeDark) {
+      setIsDark?.(true);
+      navigation?.setParams?.({ makeDark: undefined });
+    }
+  }, [route?.params?.makeDark, setIsDark, navigation]);
 
   // Web3 Linked Wallet Hook
   const {
@@ -702,10 +707,11 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
       });
       return;
     }
-    if (!kycForm.accountNumber.trim()) {
+    const cleanKycAcc = (kycForm.accountNumber || "").replace(/\s+/g, "");
+    if (!/^\d{8,12}$/.test(cleanKycAcc)) {
       showAlert({
-        title: "Required Field",
-        message: "Please enter your Bank Account Number for payouts.",
+        title: "Invalid Account Number",
+        message: "Bank account number must be between 8 and 12 digits.",
         type: "warning",
       });
       return;
@@ -1068,9 +1074,20 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
     },
   ];
 
+  const cardBg = isDark ? "#131A2F" : "#FFFFFF";
+  const itemBorder = isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0";
+  const textPrimary = isDark ? "#F8FAFC" : "#0F172A";
+  const textSecondary = isDark ? "#94A3B8" : "#64748B";
+  const textHeading = isDark ? "#93C5FD" : "#334155";
+  const expandedBg = isDark ? "#0B1120" : "#F8FAFC";
+  const inputBg = isDark ? "#1E293B" : "#FFFFFF";
+  const inputBorder = isDark ? "rgba(255,255,255,0.12)" : "#E2E8F0";
+  const inputTextColor = isDark ? "#F8FAFC" : "#0F172A";
+  const placeholderColor = isDark ? "#64748B" : "#94A3B8";
+
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* ── Header ── */}
+    <SafeAreaView style={[styles.safe, { backgroundColor: isDark ? "#0A0E1A" : "#F8FAFC" }]}>
+      {/* ── Header with Title & Theme Toggle ── */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={handleBack}
@@ -1079,8 +1096,25 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
           <Feather
             name="chevron-left"
             size={24}
-            color="#FFFFFF"
+            color={isDark ? "#FFFFFF" : "#0F172A"}
           />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: isDark ? "#FFFFFF" : "#0F172A" }]}>Profile</Text>
+        <TouchableOpacity
+          onPress={toggleTheme}
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            backgroundColor: isDark ? "rgba(255,255,255,0.12)" : "rgba(15,23,42,0.06)",
+            borderWidth: 1,
+            borderColor: isDark ? "rgba(255,255,255,0.2)" : "rgba(15,23,42,0.12)",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          activeOpacity={0.8}
+        >
+          <Feather name={isDark ? "sun" : "moon"} size={18} color={isDark ? "#FBBF24" : "#475569"} />
         </TouchableOpacity>
       </View>
 
@@ -1091,7 +1125,14 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
         {/* ── User Avatar & Info ── */}
         <View style={styles.userInfoWrap}>
           <TouchableOpacity
-            style={styles.avatarCircle}
+            style={[
+              styles.avatarCircle,
+              {
+                backgroundColor: isDark ? "#1E293B" : "#F1F5F9",
+                borderColor: isDark ? "rgba(0,194,255,0.4)" : "#E2E8F0",
+                borderWidth: 2,
+              },
+            ]}
             onPress={handlePickAvatar}
             activeOpacity={0.85}
           >
@@ -1103,15 +1144,15 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
               <Feather
                 name="user"
                 size={32}
-                color="#FFFFFF"
+                color={isDark ? "#00C2FF" : "#475569"}
               />
             )}
             <View style={styles.avatarCameraBadge}>
               <Feather name="camera" size={12} color="#FFFFFF" />
             </View>
           </TouchableOpacity>
-          <Text style={styles.userName}>{displayName}</Text>
-          <Text style={styles.userEmail}>{displayEmail}</Text>
+          <Text style={[styles.userName, { color: isDark ? "#FFFFFF" : "#0F172A" }]}>{displayName}</Text>
+          <Text style={[styles.userEmail, { color: isDark ? "#94A3B8" : "#64748B" }]}>{displayEmail}</Text>
         </View>
 
         {/* ── OFFLINE BANNER ── */}
@@ -1382,7 +1423,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                       backgroundColor: "transparent",
                       borderBottomWidth:
                         idx === MENU_ITEMS.length - 1 && !isExpanded ? 0 : 1,
-                      borderBottomColor: "#F1F5F9",
+                      borderBottomColor: isDark ? "rgba(255,255,255,0.08)" : "#F1F5F9",
                     },
                   ]}
                 >
@@ -1390,23 +1431,23 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                     <Feather
                       name={item.icon}
                       size={18}
-                      color={item.textColor}
+                      color={isDark ? (item.id === "delete" ? "#F87171" : "#38BDF8") : item.textColor}
                     />
-                    <Text style={[styles.menuItemLabel, { color: "#1E293B" }]}>
+                    <Text style={[styles.menuItemLabel, { color: isDark ? "#F8FAFC" : "#1E293B" }]}>
                       {item.label}
                     </Text>
                   </View>
                   <Feather
                     name={isExpanded ? "chevron-up" : "chevron-down"}
                     size={16}
-                    color="#94A3B8"
+                    color={isDark ? "#94A3B8" : "#94A3B8"}
                     style={{ opacity: 0.6 }}
                   />
                 </TouchableOpacity>
 
                 {/* ── Expanded: FICA / KYC & Banking Verification ── */}
                 {isExpanded && item.id === "kyc" && (
-                  <View style={[styles.expandedContent, { backgroundColor: "#F8FAFC" }]}>
+                  <View style={[styles.expandedContent, { backgroundColor: isDark ? "#0B1120" : "#F8FAFC" }]}>
                     {/* Status Card */}
                     <View
                       style={{
@@ -1469,15 +1510,15 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                           }}
                         >
                           {kycStatus === "verified"
-                            ? "✅ FICA Verified Investor"
+                            ? "FICA Verified Investor"
                             : kycStatus === "pending"
-                            ? "⏳ Pending Admin Compliance Review"
+                            ? "Pending Admin Compliance Review"
                             : kycStatus === "rejected"
-                            ? "❌ Compliance Dossier Rejected"
-                            : "⚠️ Unverified Investor Account"}
+                            ? "Compliance Dossier Rejected"
+                            : "Unverified Investor Account"}
                         </Text>
                       </View>
-                      <Text style={{ fontSize: 12, color: "#334155", lineHeight: 18 }}>
+                      <Text style={{ fontSize: 12, color: textSecondary, lineHeight: 18 }}>
                         {kycStatus === "verified"
                           ? "Your FICA compliance pack is fully approved. You are cleared for all marketplace listings, fractional trading tranches, and vault cash movements."
                           : kycStatus === "pending"
@@ -1489,18 +1530,18 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                     </View>
 
                     {/* Section 1: Required Document Uploads */}
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                    <Text style={[styles.sectionHeading, { color: textHeading }]}>
                       1. Required FICA Identity Documents
                     </Text>
 
                     {/* SA ID / Passport */}
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: textSecondary, marginBottom: 6 }}>
                       Government ID / Passport Number (Required)
                     </Text>
                     <TextInput
-                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      style={[styles.input, { color: inputTextColor, borderColor: inputBorder, backgroundColor: inputBg }]}
                       placeholder="e.g. 9001015009087 or ZA Passport"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={placeholderColor}
                       value={kycForm.idNumber}
                       onChangeText={(v) => setKycForm({ ...kycForm, idNumber: v })}
                     />
@@ -1512,11 +1553,11 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         flexDirection: "row",
                         alignItems: "center",
                         gap: 8,
-                        backgroundColor: "#FFFFFF",
+                        backgroundColor: inputBg,
                         padding: 12,
                         borderRadius: 10,
                         borderWidth: 1,
-                        borderColor: kycForm.idDocumentUrl ? "#10B981" : "#CBD5E1",
+                        borderColor: kycForm.idDocumentUrl ? "#10B981" : inputBorder,
                         borderStyle: kycForm.idDocumentUrl ? "solid" : "dashed",
                         marginBottom: 14,
                       }}
@@ -1530,22 +1571,22 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         </>
                       ) : (
                         <>
-                          <Feather name={kycForm.idDocumentUrl ? "check-circle" : "upload"} size={16} color={kycForm.idDocumentUrl ? "#10B981" : "#2563EB"} />
-                          <Text style={{ fontSize: 12, fontWeight: "600", color: kycForm.idDocumentUrl ? "#10B981" : "#2563EB" }}>
-                            {kycForm.idDocumentUrl ? "✅ ID Document Attached (Server Verified — Tap to replace)" : "Upload ID Document Photo / Scan (Required)"}
+                          <Feather name={kycForm.idDocumentUrl ? "check-circle" : "upload"} size={16} color={kycForm.idDocumentUrl ? "#10B981" : (isDark ? "#60A5FA" : "#2563EB")} />
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: kycForm.idDocumentUrl ? "#10B981" : (isDark ? "#60A5FA" : "#2563EB") }}>
+                            {kycForm.idDocumentUrl ? "ID Document Attached (Server Verified — Tap to replace)" : "Upload ID Document Photo / Scan (Required)"}
                           </Text>
                         </>
                       )}
                     </TouchableOpacity>
 
                     {/* SARS Tax Reference */}
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: textSecondary, marginBottom: 6 }}>
                       SARS Tax Reference Number (Required)
                     </Text>
                     <TextInput
-                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      style={[styles.input, { color: inputTextColor, borderColor: inputBorder, backgroundColor: inputBg }]}
                       placeholder="e.g. 9123456789"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={placeholderColor}
                       value={kycForm.taxNumber}
                       onChangeText={(v) => setKycForm({ ...kycForm, taxNumber: v })}
                     />
@@ -1557,11 +1598,11 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         flexDirection: "row",
                         alignItems: "center",
                         gap: 8,
-                        backgroundColor: "#FFFFFF",
+                        backgroundColor: inputBg,
                         padding: 12,
                         borderRadius: 10,
                         borderWidth: 1,
-                        borderColor: kycForm.taxDocumentUrl ? "#10B981" : "#CBD5E1",
+                        borderColor: kycForm.taxDocumentUrl ? "#10B981" : inputBorder,
                         borderStyle: kycForm.taxDocumentUrl ? "solid" : "dashed",
                         marginBottom: 14,
                       }}
@@ -1575,22 +1616,22 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         </>
                       ) : (
                         <>
-                          <Feather name={kycForm.taxDocumentUrl ? "check-circle" : "upload"} size={16} color={kycForm.taxDocumentUrl ? "#10B981" : "#2563EB"} />
-                          <Text style={{ fontSize: 12, fontWeight: "600", color: kycForm.taxDocumentUrl ? "#10B981" : "#2563EB" }}>
-                            {kycForm.taxDocumentUrl ? "✅ Tax Notice Attached (Server Verified — Tap to replace)" : "Upload SARS Notice / Certificate (Required)"}
+                          <Feather name={kycForm.taxDocumentUrl ? "check-circle" : "upload"} size={16} color={kycForm.taxDocumentUrl ? "#10B981" : (isDark ? "#60A5FA" : "#2563EB")} />
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: kycForm.taxDocumentUrl ? "#10B981" : (isDark ? "#60A5FA" : "#2563EB") }}>
+                            {kycForm.taxDocumentUrl ? "Tax Notice Attached (Server Verified — Tap to replace)" : "Upload SARS Notice / Certificate (Required)"}
                           </Text>
                         </>
                       )}
                     </TouchableOpacity>
 
                     {/* Proof of Residence */}
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: textSecondary, marginBottom: 6 }}>
                       Physical Residential Address (Required)
                     </Text>
                     <TextInput
-                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      style={[styles.input, { color: inputTextColor, borderColor: inputBorder, backgroundColor: inputBg }]}
                       placeholder="Street address, suburb, city, postal code"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={placeholderColor}
                       value={kycForm.residentialAddress}
                       onChangeText={(v) => setKycForm({ ...kycForm, residentialAddress: v })}
                     />
@@ -1602,11 +1643,11 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         flexDirection: "row",
                         alignItems: "center",
                         gap: 8,
-                        backgroundColor: "#FFFFFF",
+                        backgroundColor: inputBg,
                         padding: 12,
                         borderRadius: 10,
                         borderWidth: 1,
-                        borderColor: kycForm.proofOfResidenceUrl ? "#10B981" : "#CBD5E1",
+                        borderColor: kycForm.proofOfResidenceUrl ? "#10B981" : inputBorder,
                         borderStyle: kycForm.proofOfResidenceUrl ? "solid" : "dashed",
                         marginBottom: 20,
                       }}
@@ -1620,19 +1661,19 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         </>
                       ) : (
                         <>
-                          <Feather name={kycForm.proofOfResidenceUrl ? "check-circle" : "upload"} size={16} color={kycForm.proofOfResidenceUrl ? "#10B981" : "#2563EB"} />
-                          <Text style={{ fontSize: 12, fontWeight: "600", color: kycForm.proofOfResidenceUrl ? "#10B981" : "#2563EB" }}>
-                            {kycForm.proofOfResidenceUrl ? "✅ Utility Bill Attached (Server Verified — Tap to replace)" : "Upload Utility Bill / Bank Statement (< 3 months) (Required)"}
+                          <Feather name={kycForm.proofOfResidenceUrl ? "check-circle" : "upload"} size={16} color={kycForm.proofOfResidenceUrl ? "#10B981" : (isDark ? "#60A5FA" : "#2563EB")} />
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: kycForm.proofOfResidenceUrl ? "#10B981" : (isDark ? "#60A5FA" : "#2563EB") }}>
+                            {kycForm.proofOfResidenceUrl ? "Utility Bill Attached (Server Verified — Tap to replace)" : "Upload Utility Bill / Bank Statement (< 3 months) (Required)"}
                           </Text>
                         </>
                       )}
                     </TouchableOpacity>
 
                     {/* Section 2: Verified Banking Details */}
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                    <Text style={[styles.sectionHeading, { color: textHeading }]}>
                       2. Verified South African Banking Details
                     </Text>
-                    <Text style={{ fontSize: 12, color: "#64748B", marginBottom: 10 }}>
+                    <Text style={{ fontSize: 12, color: textSecondary, marginBottom: 10 }}>
                       Required for instant ZAR escrow payouts, dividends, and vault withdrawals.
                     </Text>
 
@@ -1649,12 +1690,12 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                               paddingHorizontal: 12,
                               paddingVertical: 8,
                               borderRadius: 8,
-                              backgroundColor: isSelected ? "#2563EB" : "#FFFFFF",
+                              backgroundColor: isSelected ? "#2563EB" : inputBg,
                               borderWidth: 1,
-                              borderColor: isSelected ? "#2563EB" : "#CBD5E1",
+                              borderColor: isSelected ? "#2563EB" : inputBorder,
                             }}
                           >
-                            <Text style={{ fontSize: 12, fontWeight: "700", color: isSelected ? "#FFFFFF" : "#334155" }}>
+                            <Text style={{ fontSize: 12, fontWeight: "700", color: isSelected ? "#FFFFFF" : textPrimary }}>
                               {bank.name}
                             </Text>
                           </TouchableOpacity>
@@ -1662,39 +1703,40 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                       })}
                     </View>
 
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: textSecondary, marginBottom: 6 }}>
                       Account Holder Name
                     </Text>
                     <TextInput
-                      style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                      style={[styles.input, { color: inputTextColor, borderColor: inputBorder, backgroundColor: inputBg }]}
                       placeholder="Account Holder Full Name"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={placeholderColor}
                       value={kycForm.accountHolder}
                       onChangeText={(v) => setKycForm({ ...kycForm, accountHolder: v })}
                     />
 
                     <View style={styles.rowInputs}>
                       <View style={[styles.inputWrap, { flex: 2, marginRight: 8 }]}>
-                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: textSecondary, marginBottom: 6 }}>
                           Account Number
                         </Text>
                         <TextInput
-                          style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                          style={[styles.input, { color: inputTextColor, borderColor: inputBorder, backgroundColor: inputBg }]}
                           placeholder="e.g. 62819203918"
-                          placeholderTextColor="#94A3B8"
-                          keyboardType="numeric"
+                          placeholderTextColor={placeholderColor}
+                          keyboardType="number-pad"
+                          maxLength={12}
                           value={kycForm.accountNumber}
-                          onChangeText={(v) => setKycForm({ ...kycForm, accountNumber: v })}
+                          onChangeText={(v) => setKycForm({ ...kycForm, accountNumber: v.replace(/[^0-9]/g, "") })}
                         />
                       </View>
                       <View style={[styles.inputWrap, { flex: 1 }]}>
-                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: textSecondary, marginBottom: 6 }}>
                           Branch Code
                         </Text>
                         <TextInput
-                          style={[styles.input, { color: "#0F172A", borderColor: "#E2E8F0", backgroundColor: "#FFFFFF" }]}
+                          style={[styles.input, { color: inputTextColor, borderColor: inputBorder, backgroundColor: inputBg }]}
                           placeholder="250655"
-                          placeholderTextColor="#94A3B8"
+                          placeholderTextColor={placeholderColor}
                           keyboardType="numeric"
                           value={kycForm.branchCode}
                           onChangeText={(v) => setKycForm({ ...kycForm, branchCode: v })}
@@ -1738,23 +1780,23 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                   <View
                     style={[
                       styles.expandedContent,
-                      { backgroundColor: "#F8FAFC" },
+                      { backgroundColor: expandedBg },
                     ]}
                   >
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                    <Text style={[styles.sectionHeading, { color: textHeading }]}>
                       Personal
                     </Text>
                     <TextInput
                       style={[
                         styles.input,
                         {
-                          color: "#0F172A",
-                          borderColor: "#E2E8F0",
-                          backgroundColor: "#FFFFFF",
+                          color: inputTextColor,
+                          borderColor: inputBorder,
+                          backgroundColor: inputBg,
                         },
                       ]}
                       placeholder="Full Name"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={placeholderColor}
                       value={form.fullName}
                       onChangeText={(v) => setForm({ ...form, fullName: v })}
                     />
@@ -1766,20 +1808,20 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                           style={[
                             styles.input,
                             {
-                              color: "#0F172A",
-                              borderColor: "#E2E8F0",
-                              backgroundColor: "#FFFFFF",
+                              color: inputTextColor,
+                              borderColor: inputBorder,
+                              backgroundColor: inputBg,
                             },
                           ]}
                           placeholder="Gender"
-                          placeholderTextColor="#94A3B8"
+                          placeholderTextColor={placeholderColor}
                           value={form.gender}
                           onChangeText={(v) => setForm({ ...form, gender: v })}
                         />
                         <Feather
                           name="users"
                           size={14}
-                          color="#94A3B8"
+                          color={placeholderColor}
                           style={styles.inputIcon}
                         />
                       </View>
@@ -1790,20 +1832,20 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                           style={[
                             styles.input,
                             {
-                              color: "#0F172A",
-                              borderColor: "#E2E8F0",
-                              backgroundColor: "#FFFFFF",
+                              color: inputTextColor,
+                              borderColor: inputBorder,
+                              backgroundColor: inputBg,
                             },
                           ]}
                           placeholder="YYYY-MM-DD"
-                          placeholderTextColor="#94A3B8"
+                          placeholderTextColor={placeholderColor}
                           value={form.dob}
                           onChangeText={(v) => setForm({ ...form, dob: v })}
                         />
                         <Feather
                           name="calendar"
                           size={14}
-                          color="#94A3B8"
+                          color={placeholderColor}
                           style={styles.inputIcon}
                         />
                       </View>
@@ -1812,7 +1854,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                     <Text
                       style={[
                         styles.sectionHeading,
-                        { color: "#334155", marginTop: 12 },
+                        { color: textHeading, marginTop: 12 },
                       ]}
                     >
                       Email and password
@@ -1821,13 +1863,13 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                       style={[
                         styles.input,
                         {
-                          color: "#64748B",
-                          borderColor: "#E2E8F0",
-                          backgroundColor: "#F1F5F9",
+                          color: textSecondary,
+                          borderColor: inputBorder,
+                          backgroundColor: isDark ? "#0F172A" : "#F1F5F9",
                         },
                       ]}
                       placeholder="Email"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={placeholderColor}
                       value={form.email}
                       editable={false}
                       keyboardType="email-address"
@@ -1837,13 +1879,13 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         style={[
                           styles.input,
                           {
-                            color: "#0F172A",
-                            borderColor: "#E2E8F0",
-                            backgroundColor: "#FFFFFF",
+                            color: inputTextColor,
+                            borderColor: inputBorder,
+                            backgroundColor: inputBg,
                           },
                         ]}
                         placeholder="New Password (optional)"
-                        placeholderTextColor="#94A3B8"
+                        placeholderTextColor={placeholderColor}
                         secureTextEntry
                         value={form.password}
                         onChangeText={(v) => setForm({ ...form, password: v })}
@@ -1851,7 +1893,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                       <Feather
                         name="eye-off"
                         size={14}
-                        color="#94A3B8"
+                        color={placeholderColor}
                         style={styles.inputIcon}
                       />
                     </View>
@@ -1888,16 +1930,16 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                   <View
                     style={[
                       styles.expandedContent,
-                      { backgroundColor: "#F8FAFC" },
+                      { backgroundColor: expandedBg },
                     ]}
                   >
                     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                      <Text style={[styles.sectionHeading, { color: "#334155", marginBottom: 0 }]}>
+                      <Text style={[styles.sectionHeading, { color: textHeading, marginBottom: 0 }]}>
                         Notification Preferences
                       </Text>
                       {loadingNotifs && <ActivityIndicator size="small" color="#3B82F6" />}
                     </View>
-                    <Text style={{ fontSize: 11.5, color: "#64748B", marginBottom: 14 }}>
+                    <Text style={{ fontSize: 11.5, color: textSecondary, marginBottom: 14 }}>
                       Preferences are synchronized to your account and active across all your devices.
                     </Text>
                     {[
@@ -1922,13 +1964,13 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         sub: "Invitations when rare verified assets are minted or listed",
                       },
                     ].map((n) => (
-                      <View key={n.key} style={styles.prefRow}>
+                      <View key={n.key} style={[styles.prefRow, { borderBottomColor: itemBorder }]}>
                         <View style={{ flex: 1, marginRight: 10 }}>
                           <Text
                             style={{
                               fontSize: 13,
                               fontWeight: "700",
-                              color: "#1E293B",
+                              color: textPrimary,
                             }}
                           >
                             {n.title}
@@ -1936,7 +1978,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                           <Text
                             style={{
                               fontSize: 11,
-                              color: "#64748B",
+                              color: textSecondary,
                               marginTop: 2,
                             }}
                           >
@@ -1963,13 +2005,13 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                   <View
                     style={[
                       styles.expandedContent,
-                      { backgroundColor: "#F8FAFC" },
+                      { backgroundColor: expandedBg },
                     ]}
                   >
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                    <Text style={[styles.sectionHeading, { color: textHeading }]}>
                       Terms of Service & Platform Policies (Informational)
                     </Text>
-                    <Text style={{ fontSize: 12, color: "#64748B", marginBottom: 12, lineHeight: 18 }}>
+                    <Text style={{ fontSize: 12, color: textSecondary, marginBottom: 12, lineHeight: 18 }}>
                       The following operational policies govern escrow custody, anti-fraud rules, certified appraisals, and buyer rights on the SmartAssets network.
                     </Text>
                     {[
@@ -1990,12 +2032,12 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         text: "If an item fails inspection or condition checks during transit, escrow funds are returned to the buyer according to platform resolution rules.",
                       },
                     ].map((t) => (
-                      <View key={t.title} style={styles.tosBox}>
+                      <View key={t.title} style={[styles.tosBox, { backgroundColor: inputBg, borderColor: itemBorder }]}>
                         <Text
                           style={{
                             fontSize: 12,
                             fontWeight: "700",
-                            color: "#1E293B",
+                            color: textPrimary,
                           }}
                         >
                           {t.title}
@@ -2003,7 +2045,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                         <Text
                           style={{
                             fontSize: 11,
-                            color: "#64748B",
+                            color: textSecondary,
                             marginTop: 3,
                             lineHeight: 16,
                           }}
@@ -2020,16 +2062,16 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                   <View
                     style={[
                       styles.expandedContent,
-                      { backgroundColor: "#F8FAFC" },
+                      { backgroundColor: expandedBg },
                     ]}
                   >
-                    <Text style={[styles.sectionHeading, { color: "#334155" }]}>
+                    <Text style={[styles.sectionHeading, { color: textHeading }]}>
                       Lodge a Support Inquiry
                     </Text>
                     <Text
                       style={{
                         fontSize: 12,
-                        color: "#64748B",
+                        color: textSecondary,
                         marginBottom: 10,
                       }}
                     >
@@ -2048,12 +2090,20 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                           key={c}
                           style={[
                             styles.catBtn,
-                            supportCategory === c
-                              ? {
-                                  backgroundColor: "#BBF7D0",
-                                  borderColor: "#14532D",
-                                }
-                              : {},
+                            {
+                              backgroundColor:
+                                supportCategory === c
+                                  ? isDark
+                                    ? "#14532D"
+                                    : "#BBF7D0"
+                                  : inputBg,
+                              borderColor:
+                                supportCategory === c
+                                  ? isDark
+                                    ? "#22C55E"
+                                    : "#14532D"
+                                  : inputBorder,
+                            },
                           ]}
                           onPress={() => setSupportCategory(c)}
                         >
@@ -2062,7 +2112,11 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                               fontSize: 10,
                               fontWeight: "700",
                               color:
-                                supportCategory === c ? "#14532D" : "#64748B",
+                                supportCategory === c
+                                  ? isDark
+                                    ? "#86EFAC"
+                                    : "#14532D"
+                                  : textSecondary,
                             }}
                           >
                             {c}
@@ -2075,13 +2129,13 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                       style={[
                         styles.input,
                         {
-                          color: "#0F172A",
-                          borderColor: "#E2E8F0",
-                          backgroundColor: "#FFFFFF",
+                          color: inputTextColor,
+                          borderColor: inputBorder,
+                          backgroundColor: inputBg,
                         },
                       ]}
                       placeholder="Subject (e.g. Escrow Inquiry #ORD-8921)"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={placeholderColor}
                       value={supportSubject}
                       onChangeText={setSupportSubject}
                     />
@@ -2090,15 +2144,15 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                       style={[
                         styles.input,
                         {
-                          color: "#0F172A",
-                          borderColor: "#E2E8F0",
-                          backgroundColor: "#FFFFFF",
+                          color: inputTextColor,
+                          borderColor: inputBorder,
+                          backgroundColor: inputBg,
                           height: 72,
                           textAlignVertical: "top",
                         },
                       ]}
                       placeholder="Please describe your issue or question..."
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={placeholderColor}
                       multiline
                       value={supportMessage}
                       onChangeText={setSupportMessage}
@@ -2136,14 +2190,14 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                           style={{
                             fontSize: 12,
                             fontWeight: "700",
-                            color: "#334155",
+                            color: textHeading,
                             marginBottom: 6,
                           }}
                         >
                           Your Recent Tickets
                         </Text>
                         {supportTickets.slice(0, 3).map((ticket) => (
-                          <View key={ticket.id} style={styles.ticketBox}>
+                          <View key={ticket.id} style={[styles.ticketBox, { backgroundColor: inputBg, borderColor: itemBorder }]}>
                             <View
                               style={{
                                 flexDirection: "row",
@@ -2154,7 +2208,7 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                                 style={{
                                   fontSize: 12,
                                   fontWeight: "700",
-                                  color: "#1E293B",
+                                  color: textPrimary,
                                 }}
                               >
                                 {ticket.subject}
@@ -2172,18 +2226,18 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                             <Text
                               style={{
                                 fontSize: 10,
-                                color: "#94A3B8",
+                                color: textSecondary,
                                 marginTop: 2,
                               }}
                             >
                               {ticket.id} · {ticket.category} · Priority: {ticket.priority || 'Normal'}
                             </Text>
                             {(ticket.resolutionNote || ticket.adminResponse) && (
-                              <View style={{ marginTop: 6, padding: 8, borderRadius: 6, backgroundColor: '#DCFCE7', borderWidth: 1, borderColor: '#86EFAC' }}>
-                                <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803D', marginBottom: 2 }}>
+                              <View style={{ marginTop: 6, padding: 8, borderRadius: 6, backgroundColor: isDark ? '#064E3B' : '#DCFCE7', borderWidth: 1, borderColor: isDark ? '#059669' : '#86EFAC' }}>
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#6EE7B7' : '#15803D', marginBottom: 2 }}>
                                   Admin Resolution:
                                 </Text>
-                                <Text style={{ fontSize: 11, color: '#166534', lineHeight: 16 }}>
+                                <Text style={{ fontSize: 11, color: isDark ? '#A7F3D0' : '#166534', lineHeight: 16 }}>
                                   {ticket.resolutionNote || ticket.adminResponse}
                                 </Text>
                               </View>
@@ -2200,16 +2254,16 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                   <View
                     style={[
                       styles.expandedContent,
-                      { backgroundColor: "#FEF2F2" },
+                      { backgroundColor: isDark ? "#2A0E0E" : "#FEF2F2" },
                     ]}
                   >
-                    <Text style={[styles.sectionHeading, { color: "#991B1B" }]}>
+                    <Text style={[styles.sectionHeading, { color: isDark ? "#F87171" : "#991B1B" }]}>
                       Are you sure?
                     </Text>
                     <Text
                       style={{
                         fontSize: 13,
-                        color: "#991B1B",
+                        color: isDark ? "#FCA5A5" : "#991B1B",
                         marginBottom: 12,
                         lineHeight: 18,
                       }}
@@ -2222,14 +2276,14 @@ export default function ProfileScreen({ navigation, route, isDark: propIsDark, t
                       style={[
                         styles.input,
                         {
-                          color: "#7F1D1D",
-                          borderColor: "#FCA5A5",
-                          backgroundColor: "#FFFFFF",
+                          color: "#EF4444",
+                          borderColor: isDark ? "#7F1D1D" : "#FCA5A5",
+                          backgroundColor: isDark ? "#1C0A0A" : "#FFFFFF",
                           fontWeight: "700",
                         },
                       ]}
                       placeholder='Type "DELETE" to confirm'
-                      placeholderTextColor="#F87171"
+                      placeholderTextColor={isDark ? "#991B1B" : "#F87171"}
                       autoCapitalize="characters"
                       value={deleteConfirmText}
                       onChangeText={setDeleteConfirmText}

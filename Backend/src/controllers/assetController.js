@@ -555,6 +555,22 @@ async function createAsset(req, res) {
     if (!name || !askingPrice) {
       return sendError(res, 400, 'Name and asking price are required.');
     }
+    const trimmedName = String(name || '').trim();
+    if (trimmedName.length <= 3) {
+      return sendError(res, 400, 'Asset name must be more than 3 characters.');
+    }
+    if (trimmedName.length > 20) {
+      return sendError(res, 400, 'Asset name must not be more than 20 characters.');
+    }
+    if (description && String(description).length > 150) {
+      return sendError(res, 400, 'Product listing description must not be more than 150 characters.');
+    }
+    if (condition && String(condition).trim().length > 10) {
+      return sendError(res, 400, 'Condition must not be more than 10 characters.');
+    }
+    if (year && !/^\d{4}$/.test(String(year).trim())) {
+      return sendError(res, 400, 'Year must be a 4-digit number.');
+    }
     if (!image) {
       return sendError(res, 400, 'A photograph is mandatory to list an asset.');
     }

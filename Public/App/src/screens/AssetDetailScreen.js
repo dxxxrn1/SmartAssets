@@ -334,19 +334,33 @@ export default function AssetDetailScreen({ navigation, route }) {
     const rawImage =
       asset?.image ||
       (Array.isArray(asset?.images) && asset.images.length > 0 ? asset.images[0] : null) ||
-      'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1200&q=80';
+      'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80';
     const imageUri = resolveImageUrl(rawImage);
-    const title = asset?.title || asset?.name || 'Luxury Collectible';
+    const title = asset?.title || asset?.name || 'Velvet Lounge Chair';
     const listingId = String(asset?.id || asset?._id || 'asset-detail');
-    const widthCm = Number(asset?.dimensions?.widthCm || asset?.widthCm) || 60;
-    const heightCm = Number(asset?.dimensions?.heightCm || asset?.heightCm) || 80;
+    const widthCm = Number(asset?.dimensions?.widthCm || asset?.widthCm) || 75;
+    const heightCm = Number(asset?.dimensions?.heightCm || asset?.heightCm) || 85;
+    const depthCm = Number(asset?.dimensions?.depthCm || asset?.depthCm) || 80;
+    const glbUrl =
+      asset?.glbUrl ||
+      asset?.glb_url ||
+      asset?.model?.glb_url ||
+      asset?.modelUrl ||
+      'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/SheenChair/glTF-Binary/SheenChair.glb';
+    const source = asset?.model?.source || 'ai_generated';
+    const isWallItem = (asset?.category || '').toLowerCase().includes('art') || (asset?.category || '').toLowerCase().includes('paint');
+    const placement = asset?.placement || (isWallItem ? 'wall' : 'floor');
 
     navigation.navigate(SCREENS.LIVE_ROOM_PREVIEW, {
       imageUri,
       title,
       listingId,
+      glbUrl,
+      source,
+      placement,
       widthCm,
       heightCm,
+      depthCm,
       asset,
       onBid: (id) => navigation.navigate(SCREENS.CHECKOUT, { listingId: id, asset }),
     });
@@ -1219,50 +1233,6 @@ export default function AssetDetailScreen({ navigation, route }) {
               {smartTake.body}
             </Text>
           </View>
-
-          {/* ════════════════════════════════════════════════════════════════════
-              5. IN-APP AR EXPERIENCE SPOTLIGHT CARD ("View in your room")
-          ════════════════════════════════════════════════════════════════════ */}
-          <TouchableOpacity
-            style={styles.arSpotlightCard}
-            onPress={handleOpenLiveRoomPreview}
-            activeOpacity={0.9}
-          >
-            <LinearGradient
-              colors={["#0F172A", "#1E1B4B", "#172554"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.arSpotlightGradient}
-            >
-              <View style={styles.arSpotlightTopRow}>
-                <View style={styles.arSpotlightBadge}>
-                  <Ionicons name="scan" size={13} color="#00C2FF" />
-                  <Text style={styles.arSpotlightBadgeText}>IN-APP AR EXPERIENCE</Text>
-                </View>
-                <View style={styles.ar1to1Badge}>
-                  <Text style={styles.ar1to1BadgeText}>1:1 PHYSICAL SCALE</Text>
-                </View>
-              </View>
-
-              <Text style={styles.arSpotlightTitle}>
-                View this collectible in your room
-              </Text>
-              <Text style={styles.arSpotlightSub}>
-                Detects walls and floors with millimeter accuracy. Experience real lighting, soft shadows, and interactive gestures.
-              </Text>
-
-              <View style={styles.arSpotlightActionRow}>
-                <View style={styles.arSpecsPill}>
-                  <Feather name="maximize-2" size={12} color="#CBD5E1" />
-                  <Text style={styles.arSpecsPillText}>True 1:1 Dimensions</Text>
-                </View>
-                <View style={styles.arLaunchBtn}>
-                  <Text style={styles.arLaunchBtnText}>Launch AR</Text>
-                  <Feather name="arrow-right" size={14} color="#00C2FF" style={{ marginLeft: 4 }} />
-                </View>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
         </ScrollView>
 
         {/* ── Bottom Floating Action Bar ── */}

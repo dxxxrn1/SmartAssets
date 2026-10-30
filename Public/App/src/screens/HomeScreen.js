@@ -22,6 +22,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
 import {
   getUserVault,
   getMarketAssets,
@@ -252,6 +253,7 @@ export default function HomeScreen({ navigation }) {
   const { width: screenWidth } = useWindowDimensions();
   const isDesktop = screenWidth >= 840;
   const { user, token, logout } = useAuth();
+  const { isDark, toggleTheme, setIsDark } = useTheme();
 
   const [greeting, setGreeting] = useState(() => getTimeBasedGreeting());
   const [refreshing, setRefreshing] = useState(false);
@@ -585,7 +587,10 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.appBarRight}>
               <TouchableOpacity
                 style={styles.profileAvatarBtn}
-                onPress={() => navigation.navigate(SCREENS.PROFILE)}
+                onPress={() => {
+                  setIsDark?.(true);
+                  navigation.navigate(SCREENS.PROFILE, { makeDark: true });
+                }}
                 activeOpacity={0.8}
               >
                 {userPhoto ? (
@@ -903,69 +908,119 @@ export default function HomeScreen({ navigation }) {
               </LinearGradient>
             </TouchableOpacity>
           </View>
-          {/* ── SCAN & KNOW CAMERA CTA ──────────────────────────────────────────── */}
-          <TouchableOpacity
-            style={styles.scanKnowCard}
-            onPress={() => navigation.navigate(SCREENS.SCAN_AND_KNOW)}
-            activeOpacity={0.9}
-          >
+          {/* ── UNIFIED SCAN & KNOW + 3D SPATIAL AR SUITE ─────────────────────── */}
+          <View style={styles.unifiedVisionCard}>
             <LinearGradient
-              colors={["#0F172A", "#1E1B4B", "#312E81"]}
+              colors={["#0B1120", "#1E1B4B", "#172554"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.scanKnowGradient}
+              style={styles.unifiedVisionGradient}
             >
-              <View style={styles.scanKnowIconWrap}>
-                <Ionicons name="scan" size={22} color="#00C2FF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.scanKnowKicker}>
-                  GEMINI VISION • ZAR ORACLE
-                </Text>
-                <Text style={styles.scanKnowTitle}>Scan & Know</Text>
-                <Text style={styles.scanKnowSub} numberOfLines={1}>
-                  Identify, value in Rands, and match Sepolia certificates
-                </Text>
-              </View>
-              <Feather name="camera" size={18} color="#FFFFFF" />
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* ── VISION SCANNER / AR VIEW CTA ─────────────────────────────────────── */}
-          <TouchableOpacity
-            style={[styles.scanKnowCard, { marginTop: 0 }]}
-            onPress={() => navigation.navigate(SCREENS.AR_VIEWER)}
-            activeOpacity={0.9}
-          >
-            <LinearGradient
-              colors={["#1E1B4B", "#4C1D95", "#6D28D9"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.scanKnowGradient}
-            >
-              <View
-                style={[
-                  styles.scanKnowIconWrap,
-                  {
-                    backgroundColor: "rgba(168,85,247,0.18)",
-                    borderColor: "rgba(168,85,247,0.4)",
-                  },
-                ]}
+              {/* Feature 1: Gemini Vision Scanner (Scan & Know) */}
+              <TouchableOpacity
+                style={styles.visionRow}
+                onPress={() => navigation.navigate(SCREENS.SCAN_AND_KNOW)}
+                activeOpacity={0.85}
               >
-                <Ionicons name="cube-outline" size={22} color="#C084FC" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.scanKnowKicker, { color: "#E9D5FF" }]}>
-                  AI VISION • 3D SPATIAL
-                </Text>
-                <Text style={styles.scanKnowTitle}>Vision Scanner</Text>
-                <Text style={styles.scanKnowSub} numberOfLines={1}>
-                  AR camera preview & high-resolution 3D asset inspection
-                </Text>
-              </View>
-              <Ionicons name="eye-outline" size={19} color="#FFFFFF" />
+                <View style={styles.scanKnowIconWrap}>
+                  <Ionicons name="scan" size={22} color="#00C2FF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.visionKickerRow}>
+                    <Text style={styles.scanKnowKicker}>
+                      GEMINI VISION • ZAR ORACLE
+                    </Text>
+                    <View style={styles.visionPillBadge}>
+                      <Text style={styles.visionPillBadgeText}>AI SCAN</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.scanKnowTitle}>Scan & Know</Text>
+                  <Text style={styles.scanKnowSub} numberOfLines={1}>
+                    Identify, value in Rands, and match Sepolia certificates
+                  </Text>
+                </View>
+                <View style={styles.visionActionBtn}>
+                  <Feather name="camera" size={17} color="#00C2FF" />
+                </View>
+              </TouchableOpacity>
+
+              {/* Elegant subtle glassmorphic divider */}
+              <View style={styles.visionDivider} />
+
+              {/* Feature 2: 3D Spatial AR Studio (Vision Scanner) */}
+              <TouchableOpacity
+                style={styles.visionRow}
+                onPress={() =>
+                  navigation.navigate(SCREENS.LIVE_ROOM_PREVIEW, {
+                    imageUri:
+                      "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80",
+                    title: "Velvet Lounge Chair",
+                    listingId: "showcase-chair-3d",
+                    glbUrl:
+                      "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/SheenChair/glTF-Binary/SheenChair.glb",
+                    source: "ai_generated",
+                    placement: "floor",
+                    widthCm: 75,
+                    heightCm: 85,
+                    depthCm: 80,
+                  })
+                }
+                activeOpacity={0.85}
+              >
+                <View
+                  style={[
+                    styles.scanKnowIconWrap,
+                    {
+                      backgroundColor: "rgba(168,85,247,0.18)",
+                      borderColor: "rgba(168,85,247,0.4)",
+                    },
+                  ]}
+                >
+                  <Ionicons name="cube-outline" size={22} color="#C084FC" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.visionKickerRow}>
+                    <Text style={[styles.scanKnowKicker, { color: "#E9D5FF" }]}>
+                      AI VISION • 3D SPATIAL AR
+                    </Text>
+                    <View
+                      style={[
+                        styles.visionPillBadge,
+                        {
+                          backgroundColor: "rgba(192, 132, 252, 0.15)",
+                          borderColor: "rgba(192, 132, 252, 0.4)",
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.visionPillBadgeText,
+                          { color: "#C084FC" },
+                        ]}
+                      >
+                        3D STUDIO
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.scanKnowTitle}>Vision Scanner & AR</Text>
+                  <Text style={styles.scanKnowSub} numberOfLines={1}>
+                    1:1 true scale preview & high-resolution 3D asset inspection
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.visionActionBtn,
+                    {
+                      borderColor: "rgba(192, 132, 252, 0.35)",
+                      backgroundColor: "rgba(192, 132, 252, 0.12)",
+                    },
+                  ]}
+                >
+                  <Ionicons name="eye-outline" size={18} color="#C084FC" />
+                </View>
+              </TouchableOpacity>
             </LinearGradient>
-          </TouchableOpacity>
+          </View>
           {/* 
         {/* ── SLIM SMART INSIGHT BANNER ───────────────────────────────────────── */}
           {/* <TouchableOpacity
@@ -995,73 +1050,6 @@ export default function HomeScreen({ navigation }) {
             />
           </View>
         </TouchableOpacity> */}
-
-          {/* ── IN-APP AR SHOWROOM SPOTLIGHT BANNER ──────────────────────────────── */}
-          <TouchableOpacity
-            style={styles.arShowroomBanner}
-            onPress={() =>
-              navigation.navigate(SCREENS.LIVE_ROOM_PREVIEW, {
-                imageUri:
-                  "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80",
-                title: "Velvet Lounge Chair",
-                listingId: "showcase-chair-3d",
-                glbUrl:
-                  "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/SheenChair/glTF-Binary/SheenChair.glb",
-                source: "ai_generated",
-                placement: "floor",
-                widthCm: 75,
-                heightCm: 85,
-                depthCm: 80,
-              })
-            }
-            activeOpacity={0.92}
-          >
-            <LinearGradient
-              colors={["#0F172A", "#1E1B4B", "#172554"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.arShowroomGradient}
-            >
-              <View style={styles.arShowroomTopRow}>
-                <View style={styles.arShowroomBadge}>
-                  <Ionicons name="scan" size={13} color="#00C2FF" />
-                  <Text style={styles.arShowroomBadgeText}>
-                    NEW • IN-APP AR EXPERIENCE
-                  </Text>
-                </View>
-                <View style={styles.arTrueScalePill}>
-                  <Text style={styles.arTrueScaleText}>1:1 SCALE</Text>
-                </View>
-              </View>
-
-              <Text style={styles.arShowroomTitle}>
-                Decorate your room with verified luxury
-              </Text>
-              <Text style={styles.arShowroomSubtitle}>
-                Hang paintings on your walls or place iconic furniture on your
-                floor. Live plane tracking & soft shadows.
-              </Text>
-
-              <View style={styles.arShowroomFooter}>
-                <View style={styles.arShowroomItemsPill}>
-                  <Ionicons name="cube-outline" size={13} color="#00C2FF" />
-                  <Text style={styles.arShowroomItemsText}>
-                    5 Showcase Collectibles
-                  </Text>
-                </View>
-
-                <View style={styles.arShowroomActionBtn}>
-                  <Text style={styles.arShowroomActionText}>Launch AR</Text>
-                  <Feather
-                    name="arrow-right"
-                    size={14}
-                    color="#00C2FF"
-                    style={{ marginLeft: 4 }}
-                  />
-                </View>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
 
           {/* ── BROWSE CATEGORIES (2x2 VISUAL IMAGE GRID) ───────────────────────── */}
           <View style={styles.dashboardSection}>
@@ -1513,6 +1501,63 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 16,
     elevation: 4,
+  },
+  unifiedVisionCard: {
+    marginTop: 4,
+    marginBottom: 16,
+    borderRadius: 22,
+    overflow: "hidden",
+    borderWidth: 1.2,
+    borderColor: "rgba(0, 194, 255, 0.28)",
+    shadowColor: "#00C2FF",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 5,
+  },
+  unifiedVisionGradient: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+  },
+  visionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    gap: 12,
+  },
+  visionKickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  visionPillBadge: {
+    backgroundColor: "rgba(0, 194, 255, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(0, 194, 255, 0.4)",
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+  },
+  visionPillBadgeText: {
+    color: "#00C2FF",
+    fontSize: 8.5,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  visionActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(0, 194, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(0, 194, 255, 0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  visionDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    marginVertical: 2,
   },
   scanKnowGradient: {
     flexDirection: "row",

@@ -577,8 +577,32 @@ export default function ListAssetScreen({ navigation, route }) {
       return;
     }
     const forceConfirm = forceConfirmArg === true;
-    if (!form.name.trim()) {
-      showAlert("Missing Details", "Please enter an asset name.");
+    const trimmedName = form.name.trim();
+    if (!trimmedName || trimmedName.length <= 3) {
+      showAlert("Invalid Name", "Asset name must be more than 3 characters.");
+      setStep(0);
+      return;
+    }
+    if (trimmedName.length > 20) {
+      showAlert("Invalid Name", "Asset name must not be more than 20 characters.");
+      setStep(0);
+      return;
+    }
+    const trimmedYear = String(form.year || "").trim();
+    if (!/^\d{4}$/.test(trimmedYear)) {
+      showAlert("Invalid Year", "Year must be a 4-digit number (e.g. 2024).");
+      setStep(0);
+      return;
+    }
+    const trimmedCondition = String(form.condition || "").trim();
+    if (trimmedCondition && trimmedCondition.length > 10) {
+      showAlert("Condition Too Long", "Condition must not be more than 10 characters.");
+      setStep(0);
+      return;
+    }
+    const trimmedDesc = String(form.description || "").trim();
+    if (trimmedDesc.length > 150) {
+      showAlert("Description Too Long", "Product listing description must not be more than 150 characters.");
       setStep(0);
       return;
     }
@@ -711,9 +735,31 @@ export default function ListAssetScreen({ navigation, route }) {
   };
 
   const next = () => {
-    if (step === 0 && !form.name.trim()) {
-      showAlert("Required Field", "Please enter a name for the asset.");
-      return;
+    if (step === 0) {
+      const trimmedName = form.name.trim();
+      if (!trimmedName || trimmedName.length <= 3) {
+        showAlert("Invalid Name", "Asset name must be more than 3 characters.");
+        return;
+      }
+      if (trimmedName.length > 20) {
+        showAlert("Invalid Name", "Asset name must not be more than 20 characters.");
+        return;
+      }
+      const trimmedYear = String(form.year || "").trim();
+      if (!/^\d{4}$/.test(trimmedYear)) {
+        showAlert("Invalid Year", "Year must be a 4-digit number (e.g. 2024).");
+        return;
+      }
+      const trimmedCondition = String(form.condition || "").trim();
+      if (trimmedCondition && trimmedCondition.length > 10) {
+        showAlert("Condition Too Long", "Condition must not be more than 10 characters (e.g. Mint).");
+        return;
+      }
+      const trimmedDesc = String(form.description || "").trim();
+      if (trimmedDesc.length > 150) {
+        showAlert("Description Too Long", "Product listing description must not be more than 150 characters.");
+        return;
+      }
     }
     if (step === 1) {
       if (!form.images.length) {
@@ -894,11 +940,17 @@ export default function ListAssetScreen({ navigation, route }) {
                   </View>
 
                   <View style={styles.fieldWrap}>
-                    <Text style={styles.fieldLabel}>ASSET NAME *</Text>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <Text style={styles.fieldLabel}>ASSET NAME</Text>
+                      <Text style={{ fontSize: 11, color: form.name.length > 20 || (form.name.length > 0 && form.name.length <= 3) ? "#EF4444" : "#94A3B8" }}>
+                        {form.name.length}/20
+                      </Text>
+                    </View>
                     <TextInput
                       value={form.name}
                       onChangeText={(val) => setForm({ ...form, name: val })}
-                      placeholder="e.g. Rolex Daytona 116500LN"
+                      maxLength={20}
+                      placeholder="e.g. Rolex Daytona"
                       placeholderTextColor="#94A3B8"
                       style={styles.input}
                     />
@@ -950,21 +1002,28 @@ export default function ListAssetScreen({ navigation, route }) {
                       <Text style={styles.fieldLabel}>YEAR</Text>
                       <TextInput
                         value={form.year}
-                        onChangeText={(val) => setForm({ ...form, year: val })}
-                        placeholder="2023"
+                        onChangeText={(val) => setForm({ ...form, year: val.replace(/[^0-9]/g, "") })}
+                        maxLength={4}
+                        placeholder="2024"
                         keyboardType="number-pad"
                         placeholderTextColor="#94A3B8"
                         style={styles.input}
                       />
                     </View>
                     <View style={[styles.fieldWrap, { flex: 1.5 }]}>
-                      <Text style={styles.fieldLabel}>CONDITION</Text>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <Text style={styles.fieldLabel}>conditionGrade</Text>
+                        <Text style={{ fontSize: 11, color: form.condition.length > 10 ? "#EF4444" : "#94A3B8" }}>
+                          {form.condition.length}/10
+                        </Text>
+                      </View>
                       <TextInput
                         value={form.condition}
                         onChangeText={(val) =>
                           setForm({ ...form, condition: val })
                         }
-                        placeholder="Mint / Original Box"
+                        maxLength={10}
+                        placeholder="Mint"
                         placeholderTextColor="#94A3B8"
                         style={styles.input}
                       />
@@ -972,12 +1031,18 @@ export default function ListAssetScreen({ navigation, route }) {
                   </View>
 
                   <View style={styles.fieldWrap}>
-                    <Text style={styles.fieldLabel}>DESCRIPTION</Text>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <Text style={styles.fieldLabel}>DESCRIPTION (MAX 150 CHARS)</Text>
+                      <Text style={{ fontSize: 11, color: form.description.length > 150 ? "#EF4444" : "#94A3B8" }}>
+                        {form.description.length}/150
+                      </Text>
+                    </View>
                     <TextInput
                       value={form.description}
                       onChangeText={(val) =>
                         setForm({ ...form, description: val })
                       }
+                      maxLength={150}
                       placeholder="Describe the asset, its provenance, unique features, and documentation…"
                       placeholderTextColor="#94A3B8"
                       multiline

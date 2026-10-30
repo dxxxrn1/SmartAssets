@@ -512,6 +512,13 @@ async function submitBankAccount({
     throw err;
   }
 
+  const cleanAccNumber = String(accountNumber).replace(/\s+/g, '');
+  if (!/^\d{8,12}$/.test(cleanAccNumber)) {
+    const err = new Error('Please enter a valid bank account number (8 to 12 digits).');
+    err.statusCode = 400;
+    throw err;
+  }
+
   // Ensure compliance hydration has run
   if (!hydrated) {
     await hydrateComplianceFromSupabase().catch(() => {});
@@ -546,7 +553,6 @@ async function submitBankAccount({
 
   const bankId = existing ? existing.id : crypto.randomUUID();
   const now = new Date().toISOString();
-  const cleanAccNumber = String(accountNumber).trim();
 
   let record = {
     id: bankId,
