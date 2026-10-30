@@ -83,29 +83,20 @@ export default function RegisterScreen({
 
     setLoading(true);
     try {
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanFullName = fullName.trim();
+
       await registerUser({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password,
-        fullName: fullName.trim(),
+        fullName: cleanFullName,
       });
 
-      if (Platform.OS === "web") {
-        window.alert(
-          "Account Created — FICA Notice\n\nYour SmartAssets account has been created! To list assets, trade fractional shares, and deposit funds, please submit your FICA compliance pack in your Profile upon signing in."
-        );
-        navigation.navigate(SCREENS.LOGIN);
-      } else {
-        Alert.alert(
-          "Account Created — FICA Notice",
-          "Your SmartAssets account has been created! To list assets, trade fractional shares, and deposit funds, please submit your FICA compliance pack (ID, Tax Number, Proof of Residence, and Banking details) in your Profile upon signing in.",
-          [
-            {
-              text: "Continue to Sign In",
-              onPress: () => navigation.navigate(SCREENS.LOGIN),
-            },
-          ]
-        );
-      }
+      // Navigate to dedicated email verification OTP screen
+      navigation.navigate(SCREENS.VERIFY_EMAIL, {
+        email: cleanEmail,
+        fullName: cleanFullName,
+      });
     } catch (err) {
       setError(err.message || "Registration failed. Please try again.");
     } finally {
@@ -499,6 +490,16 @@ export default function RegisterScreen({
         onClose={() => setCompleteProfileVisible(false)}
         walletAddress={pendingWalletAddress}
         verificationToken={pendingVerificationToken}
+        onSuccess={(data) => {
+          setCompleteProfileVisible(false);
+          navigation.navigate(SCREENS.VERIFY_EMAIL, {
+            email: data?.email || data?.user?.email,
+            fullName: data?.user?.fullName || data?.fullName,
+            isWallet: true,
+            walletAddress: pendingWalletAddress,
+            verificationToken: pendingVerificationToken,
+          });
+        }}
       />
 
       {/* ── Install MetaMask Modal (Friendly Mobile Install Screen) ── */}

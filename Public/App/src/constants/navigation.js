@@ -7,6 +7,9 @@ export const SCREENS = {
   ONBOARDING: 'Onboarding',
   LOGIN: 'Login',
   REGISTER: 'Register',
+  VERIFY_EMAIL: 'VerifyEmail',
+  FORGOT_PASSWORD: 'ForgotPassword',
+  VERIFY_RECOVERY_CODE: 'VerifyRecoveryCode',
   RESET_PASSWORD: 'ResetPassword',
 
   // Main tab shell

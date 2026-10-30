@@ -108,6 +108,15 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
         err?.message?.includes('ConnectException')
       ) {
         setError(err.message || 'Cannot connect to SmartAssets backend. Please make sure your phone and PC are on the same Wi-Fi.');
+      } else if (
+        err?.code === 'EMAIL_NOT_VERIFIED' ||
+        err?.message?.toLowerCase().includes('not verified') ||
+        err?.message?.toLowerCase().includes('not confirmed')
+      ) {
+        setError(err.message || 'Your email is not verified yet.');
+        navigation.navigate(SCREENS.VERIFY_EMAIL, {
+          email: email.trim().toLowerCase(),
+        });
       } else {
         setError(
           err?.message ||
@@ -189,10 +198,9 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
   };
 
   const openForgotPassword = () => {
-    setForgotError('');
-    setForgotSent(false);
-    setForgotEmail(email);
-    setForgotModalVisible(true);
+    navigation.navigate(SCREENS.FORGOT_PASSWORD, {
+      email: email.trim().toLowerCase(),
+    });
   };
 
   // --------------------------------------------------

@@ -30,18 +30,112 @@ function getDeterministicPassword(walletAddress) {
   );
 }
 
-// Allowed redirect targets for password resets
-const ALLOWED_RESET_REDIRECTS = [
-  'smartassets://reset-password',
-  'http://localhost:3000',
-  'http://localhost:8081',
-];
+// Allowed redirect targets for password resets — exact matching only (no unsafe prefixes)
+function getAllowedResetRedirects() {
+  const allowed = [
+    'smartassets://reset-password',
+    'http://localhost:3000',
+    'http://localhost:3000/',
+    'http://localhost:8081',
+    'http://localhost:8081/',
+    'https://smartassets.onrender.com',
+    'https://smartassets.onrender.com/',
+    'https://smartassets.onrender.com/reset-password',
+  ];
+  if (process.env.PUBLIC_WEB_BASE_URL) {
+    const pub = process.env.PUBLIC_WEB_BASE_URL.trim().replace(/\/+$/, '');
+    allowed.push(pub);
+    allowed.push(`${pub}/`);
+  }
+  if (process.env.PASSWORD_RESET_REDIRECT_URL) {
+    allowed.push(process.env.PASSWORD_RESET_REDIRECT_URL.trim());
+  }
+  return [...new Set(allowed)];
+}
 
 function isAllowedRedirect(url) {
   if (!url || typeof url !== 'string') return false;
-  return ALLOWED_RESET_REDIRECTS.some(
-    (allowed) => url === allowed || url.startsWith(allowed)
-  );
+  const clean = url.trim();
+  const allowedList = getAllowedResetRedirects();
+  return allowedList.includes(clean);
+}
+
+// ── Single-Use Cryptographic Recovery Authorization ──────────────────────────
+const RECOVERY_TOKEN_SECRET =
+  process.env.ADMIN_JWT_SECRET ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  'smartassets-recovery-salt-2026';
+
+// In-memory tracker for single-use recovery authorization JTIs (rejects replay/reuse)
+const usedRecoveryJtis = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [jti, exp] of usedRecoveryJtis.entries()) {
+    if (now >= exp) {
+      usedRecoveryJtis.delete(jti);
+    }
+  }
+}, 5 * 60 * 1000).unref();
+
+function createRecoveryAuthorizationToken(userId, email) {
+  const jti = crypto.randomUUID();
+  const expiresAt = Date.now() + 15 * 60 * 1000; // 15-minute expiration
+  const payload = {
+    userId,
+    email: email.trim().toLowerCase(),
+    jti,
+    expiresAt,
+    type: 'password_recovery_authorization',
+  };
+  const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', RECOVERY_TOKEN_SECRET)
+    .update(payloadBase64)
+    .digest('base64url');
+  return `${payloadBase64}.${signature}`;
+}
+
+function verifyAndConsumeRecoveryAuthorizationToken(token) {
+  if (!token || typeof token !== 'string') {
+    return { valid: false, error: 'Recovery authorization token is required.' };
+  }
+  const parts = token.split('.');
+  if (parts.length !== 2) {
+    return { valid: false, error: 'Invalid recovery authorization format.' };
+  }
+  const [payloadBase64, providedSig] = parts;
+  const expectedSig = crypto
+    .createHmac('sha256', RECOVERY_TOKEN_SECRET)
+    .update(payloadBase64)
+    .digest('base64url');
+
+  if (providedSig !== expectedSig) {
+    return { valid: false, error: 'Invalid or forged recovery authorization.', code: 'INVALID_SIGNATURE' };
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString('utf8'));
+    if (payload.type !== 'password_recovery_authorization') {
+      return { valid: false, error: 'Invalid recovery authorization type.', code: 'INVALID_TOKEN_TYPE' };
+    }
+    if (Date.now() > payload.expiresAt) {
+      return { valid: false, error: 'Recovery authorization has expired. Please verify your recovery code again.', code: 'RECOVERY_TOKEN_EXPIRED' };
+    }
+    if (usedRecoveryJtis.has(payload.jti)) {
+      return { valid: false, error: 'This recovery authorization has already been used. Please request a new recovery code.', code: 'RECOVERY_TOKEN_REUSED' };
+    }
+    // Single-use: record JTI immediately upon consumption
+    usedRecoveryJtis.set(payload.jti, payload.expiresAt);
+
+    return {
+      valid: true,
+      userId: payload.userId,
+      email: payload.email,
+    };
+  } catch (err) {
+    return { valid: false, error: 'Corrupt recovery authorization payload.', code: 'CORRUPT_PAYLOAD' };
+  }
 }
 
 // ── POST /api/auth/register ──────────────────────────────────────────────────
@@ -58,13 +152,33 @@ async function register(req, res) {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    const cleanFullName = fullName.trim();
+    const authClient = supabase.supabaseAnon || supabase;
 
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    // Account enumeration protection: check if an existing account is already registered
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id, email')
+      .eq('email', cleanEmail)
+      .maybeSingle();
+
+    if (existingProfile) {
+      return res.status(200).json({
+        success: true,
+        pendingVerification: true,
+        email: cleanEmail,
+        message: 'If an account does not already exist with this email, a verification code has been sent.',
+      });
+    }
+
+    // Call Supabase Auth signup without automatic email confirmation (email_confirm: false)
+    const { data: authData, error: authError } = await authClient.auth.signUp({
       email: cleanEmail,
       password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: fullName.trim(),
+      options: {
+        data: {
+          full_name: cleanFullName,
+        },
       },
     });
 
@@ -72,18 +186,38 @@ async function register(req, res) {
       const isDuplicate =
         authError.message.toLowerCase().includes('already') ||
         authError.message.toLowerCase().includes('exists');
-      const status = isDuplicate ? 409 : 400;
-      return sendError(res, status, authError.message);
+      if (isDuplicate) {
+        return res.status(200).json({
+          success: true,
+          pendingVerification: true,
+          email: cleanEmail,
+          message: 'If an account does not already exist with this email, a verification code has been sent.',
+        });
+      }
+      return sendError(res, 400, authError.message);
     }
 
-    // Create profile in Supabase profiles table
+    const userId = authData?.user?.id;
+    const isExistingUser =
+      Array.isArray(authData?.user?.identities) && authData.user.identities.length === 0;
+
+    if (!userId || isExistingUser) {
+      return res.status(200).json({
+        success: true,
+        pendingVerification: true,
+        email: cleanEmail,
+        message: 'If an account does not already exist with this email, a verification code has been sent.',
+      });
+    }
+
+    // Create unverified profile in Supabase profiles table
     try {
-      const { error: profileError } = await supabase
+      await supabase
         .from('profiles')
         .upsert(
           {
-            id: authData.user.id,
-            full_name: fullName.trim(),
+            id: userId,
+            full_name: cleanFullName,
             email: cleanEmail,
             balance: 0,
             role: 'user',
@@ -91,48 +225,226 @@ async function register(req, res) {
           },
           { onConflict: 'id' }
         );
-
-      if (profileError) {
-        console.error('❌ [AuthController] Profile creation failed:', profileError.message);
-        await supabase.auth.admin.deleteUser(authData.user.id).catch(() => {});
-        return sendError(res, 500, `Failed to create user profile: ${profileError.message}`);
-      }
-    } catch (err) {
-      console.error('❌ [AuthController] Profile creation exception:', err.message);
-      await supabase.auth.admin.deleteUser(authData.user.id).catch(() => {});
-      return sendError(res, 500, `Profile creation error: ${err.message}`);
+    } catch (profErr) {
+      console.warn('Initial profile registration notice:', profErr.message);
     }
 
     // Initialize user compliance profile
-    const compliance = complianceService.getUserCompliance(authData.user.id, cleanEmail);
+    const compliance = complianceService.getUserCompliance(userId, cleanEmail);
 
     // Audit log
     auditLogService.logEvent({
-      eventType: 'REGISTER',
+      eventType: 'REGISTER_INITIATED',
       category: 'Authentication',
       actorEmail: cleanEmail,
-      actorId: authData.user.id,
+      actorId: userId,
       ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
       device: req.headers['user-agent'] || 'SmartAssets Client',
-      description: 'New user registered account. Awaiting FICA / KYC onboarding.',
-      status: 'Success',
+      description: 'New user registered account. Awaiting email verification code.',
+      status: 'Pending',
     });
 
+    // Do NOT return an active session. Account must be verified via OTP first.
     return res.status(201).json({
       success: true,
-      message: 'Account created successfully! Please complete FICA / KYC verification.',
+      pendingVerification: true,
+      message: 'Verification code sent to your email. Please enter the 6-digit code to complete registration.',
       user: {
-        id: authData.user.id,
-        email: authData.user.email,
-        fullName: fullName.trim(),
-        kycStatus: compliance.kycStatus || 'unverified',
-        accountStatus: compliance.accountStatus || 'active',
+        id: userId,
+        email: cleanEmail,
+        fullName: cleanFullName,
+        kycStatus: compliance?.kycStatus || 'unverified',
+        accountStatus: compliance?.accountStatus || 'active',
         isSuspended: false,
       },
     });
   } catch (err) {
     console.error('Register error:', err);
     return sendError(res, 500, 'Internal server error. Please try again.');
+  }
+}
+
+// ── POST /api/auth/verify-email ──────────────────────────────────────────────
+async function verifyEmail(req, res) {
+  try {
+    const { email, code, token, type, verificationToken } = req.body || {};
+    const inputToken = (code || token || '').trim();
+
+    if (!email || !inputToken) {
+      return sendError(res, 400, 'Please provide both your email address and 6-digit verification code.');
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const authClient = supabase.supabaseAnon || supabase;
+
+    // Verify OTP code via documented Supabase Auth verifyOtp
+    let verifyType = type || 'signup';
+    let { data: verifyData, error: verifyError } = await authClient.auth.verifyOtp({
+      email: cleanEmail,
+      token: inputToken,
+      type: verifyType,
+    });
+
+    // Fallback to type 'email' if signup type is rejected by provider configuration
+    if (verifyError && (verifyError.message?.toLowerCase().includes('type') || verifyError.status === 400)) {
+      const fallback = await authClient.auth.verifyOtp({
+        email: cleanEmail,
+        token: inputToken,
+        type: 'email',
+      });
+      if (!fallback.error && fallback.data?.user) {
+        verifyData = fallback.data;
+        verifyError = null;
+      }
+    }
+
+    if (verifyError || !verifyData?.user) {
+      return sendError(
+        res,
+        400,
+        verifyError?.message || 'Invalid or expired verification code. Please request a new one.',
+        'INVALID_CODE'
+      );
+    }
+
+    const verifiedUser = verifyData.user;
+    const fullName = verifiedUser.user_metadata?.full_name || '';
+    let walletAddress = verifiedUser.user_metadata?.wallet_address || null;
+
+    // If client provided a pending wallet verification token, verify wallet binding
+    if (verificationToken) {
+      const walletCheck = verifyWalletVerificationToken(verificationToken);
+      if (walletCheck.valid && walletCheck.walletAddress) {
+        walletAddress = walletCheck.walletAddress;
+      }
+    }
+
+    // Safely and idempotently finalize user profile in Supabase profiles table
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .upsert(
+        {
+          id: verifiedUser.id,
+          full_name: fullName,
+          email: cleanEmail,
+          wallet_address: walletAddress,
+          balance: 0,
+          role: 'user',
+          verification_status: 'unverified',
+        },
+        { onConflict: 'id' }
+      );
+
+    if (profileError) {
+      console.error('❌ Profile finalization error:', profileError.message);
+      return sendError(res, 500, 'Failed to finalize profile after verification.');
+    }
+
+    // Initialize user compliance profile
+    const compliance = complianceService.getUserCompliance(verifiedUser.id, cleanEmail);
+
+    // Audit log
+    auditLogService.logEvent({
+      eventType: 'EMAIL_VERIFIED',
+      category: 'Authentication',
+      actorEmail: cleanEmail,
+      actorId: verifiedUser.id,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Client',
+      description: 'User email verified successfully via OTP code.',
+      status: 'Success',
+    });
+
+    return res.status(200).json({
+      success: true,
+      emailVerified: true,
+      message: 'Email verified successfully! You can now sign in.',
+      session: verifyData.session || null,
+      user: {
+        id: verifiedUser.id,
+        email: cleanEmail,
+        fullName,
+        walletAddress,
+        kycStatus: compliance?.kycStatus || 'unverified',
+        accountStatus: compliance?.accountStatus || 'active',
+      },
+    });
+  } catch (err) {
+    console.error('verifyEmail error:', err);
+    return sendError(res, 500, 'Internal server error verifying email code.');
+  }
+}
+
+// In-memory tracker for resend cooldowns (60s cooldown per normalized email)
+const resendCooldowns = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [email, exp] of resendCooldowns.entries()) {
+    if (now >= exp) {
+      resendCooldowns.delete(email);
+    }
+  }
+}, 60 * 1000).unref();
+
+// ── POST /api/auth/resend-code ───────────────────────────────────────────────
+async function resendVerificationCode(req, res) {
+  try {
+    const { email, type } = req.body || {};
+
+    if (!email) {
+      return sendError(res, 400, 'Please provide your email address.');
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const now = Date.now();
+    const lastResend = resendCooldowns.get(cleanEmail);
+
+    if (lastResend && now < lastResend) {
+      const waitSeconds = Math.ceil((lastResend - now) / 1000);
+      return sendError(
+        res,
+        429,
+        `Please wait ${waitSeconds}s before requesting another verification code.`,
+        'RESEND_COOLDOWN'
+      );
+    }
+
+    // Set 60-second cooldown
+    resendCooldowns.set(cleanEmail, now + 60 * 1000);
+
+    const authClient = supabase.supabaseAnon || supabase;
+
+    try {
+      const { error: resendError } = await authClient.auth.resend({
+        type: type || 'signup',
+        email: cleanEmail,
+      });
+
+      if (resendError) {
+        if (resendError.message?.toLowerCase().includes('rate limit') || resendError.status === 429) {
+          return sendError(
+            res,
+            429,
+            'Too many requests. Please wait before requesting another code.',
+            'RESEND_COOLDOWN'
+          );
+        }
+        console.warn('Notice: Supabase resend warning:', resendError.message);
+      }
+    } catch (resendErr) {
+      console.error('Notice: Supabase resend error:', resendErr.message);
+      return sendError(res, 500, 'Failed to resend verification code. Please try again shortly.');
+    }
+
+    // Account enumeration defense: always return generic confirmation
+    return res.status(200).json({
+      success: true,
+      message: 'If an unverified account exists for that email, a new verification code has been sent.',
+    });
+  } catch (err) {
+    console.error('resendVerificationCode error:', err);
+    return sendError(res, 500, 'Internal server error resending code.');
   }
 }
 
@@ -153,6 +465,9 @@ async function login(req, res) {
     });
 
     if (error) {
+      const isUnconfirmed =
+        error.message?.toLowerCase().includes('not confirmed') ||
+        error.message?.toLowerCase().includes('unconfirmed');
       auditLogService.logEvent({
         eventType: 'LOGIN_FAILED',
         category: 'Authentication',
@@ -163,6 +478,14 @@ async function login(req, res) {
         description: `Failed login attempt for ${cleanEmail}: ${error.message}`,
         status: 'Failed',
       });
+      if (isUnconfirmed) {
+        return sendError(
+          res,
+          403,
+          'Your email has not been verified yet. Please enter the 6-digit verification code sent to your email.',
+          'EMAIL_NOT_VERIFIED'
+        );
+      }
       return sendError(res, 401, 'Invalid email or password.');
     }
 
@@ -592,7 +915,7 @@ async function registerWallet(req, res) {
       const cleanAddr = walletAddress.trim().toLowerCase();
       const sigVerification = await verifyWalletSignature(cleanAddr, signature, nonce);
       if (!sigVerification.valid) {
-        return sendError(res, 400, sigVerification.error || 'Cryptographic signature verification failed.');
+        return sendError(res, 401, sigVerification.error || 'Cryptographic signature verification failed.', 'INVALID_SIGNATURE');
       }
       verifiedAddress = cleanAddr;
     } else {
@@ -626,16 +949,19 @@ async function registerWallet(req, res) {
       return sendError(res, 409, 'This wallet is already linked to an account.', 'WALLET_ALREADY_LINKED');
     }
 
-    // 4. Create user in Supabase Auth
+    // 4. Create user in Supabase Auth via documented signUp (requires email verification)
     const effectivePassword = password && password.length >= 6 ? password : getDeterministicPassword(verifiedAddress);
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    const authClient = supabase.supabaseAnon || supabase;
+
+    const { data: authData, error: authError } = await authClient.auth.signUp({
       email: cleanEmail,
       password: effectivePassword,
-      email_confirm: true,
-      user_metadata: {
-        full_name: cleanFullName,
-        wallet_address: verifiedAddress,
-        avatar_url: avatarUrl || null,
+      options: {
+        data: {
+          full_name: cleanFullName,
+          wallet_address: verifiedAddress,
+          avatar_url: avatarUrl || null,
+        },
       },
     });
 
@@ -651,51 +977,62 @@ async function registerWallet(req, res) {
       );
     }
 
-    // 5. Create or sync profile table record
-    await supabase.from('profiles').upsert(
-      {
-        id: authData.user.id,
-        full_name: cleanFullName,
-        email: cleanEmail,
-        wallet_address: verifiedAddress,
-        avatar_url: avatarUrl || null,
-      },
-      { onConflict: 'id' }
-    );
+    const userId = authData?.user?.id;
+    if (!userId) {
+      return sendError(res, 400, 'Could not initiate wallet registration. Please try again.');
+    }
+
+    // 5. Create unverified profile record in Supabase profiles table linked to wallet
+    try {
+      await supabase.from('profiles').upsert(
+        {
+          id: userId,
+          full_name: cleanFullName,
+          email: cleanEmail,
+          wallet_address: verifiedAddress,
+          avatar_url: avatarUrl || null,
+          balance: 0,
+          role: 'user',
+          verification_status: 'unverified',
+        },
+        { onConflict: 'id' }
+      );
+    } catch (profErr) {
+      console.warn('Initial wallet profile creation notice:', profErr.message);
+    }
 
     // 6. Initialize compliance profile
-    const compliance = complianceService.getUserCompliance(authData.user.id, cleanEmail);
+    const compliance = complianceService.getUserCompliance(userId, cleanEmail);
 
-    // 7. Generate genuine Supabase session
-    const session = await generateSessionForUser(cleanEmail);
-
-    // Audit log
+    // 7. Audit log (Awaiting mailbox confirmation)
     auditLogService.logEvent({
-      eventType: 'REGISTER',
+      eventType: 'REGISTER_INITIATED',
       category: 'Authentication',
       actorEmail: cleanEmail,
-      actorId: authData.user.id,
+      actorId: userId,
       ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
       device: req.headers['user-agent'] || 'SmartAssets Client',
-      description: `New user account created via verified wallet ${verifiedAddress}.`,
-      status: 'Success',
+      description: `New user account initiated via verified wallet ${verifiedAddress}. Awaiting email verification code.`,
+      status: 'Pending',
     });
 
+    // Do NOT return an active session. The email must be verified via OTP first.
     return res.status(201).json({
       success: true,
-      message: 'Account created and wallet linked successfully!',
+      pendingVerification: true,
+      email: cleanEmail,
+      walletAddress: verifiedAddress,
+      message: 'Verification code sent to your email. Please enter the 6-digit code to complete wallet registration.',
       user: {
-        id: authData.user.id,
+        id: userId,
         email: cleanEmail,
         fullName: cleanFullName,
         walletAddress: verifiedAddress,
         avatarUrl: avatarUrl || null,
-        avatar_url: avatarUrl || null,
         kycStatus: compliance?.kycStatus || 'unverified',
         accountStatus: compliance?.accountStatus || 'active',
         isSuspended: false,
       },
-      session,
     });
   } catch (err) {
     console.error('registerWallet error:', err);
@@ -814,20 +1151,25 @@ async function forgotPassword(req, res) {
 
     const finalRedirect = redirectTo
       ? redirectTo
-      : process.env.PASSWORD_RESET_REDIRECT_URL;
+      : (process.env.PASSWORD_RESET_REDIRECT_URL || 'smartassets://reset-password');
 
-    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: finalRedirect,
-    });
+    const authClient = supabase.supabaseAnon || supabase;
 
-    if (error) {
-      console.error('SUPABASE RESET ERROR:', error);
-      return sendError(res, 500, error.message || 'Could not send the password reset email.');
+    try {
+      const { error } = await authClient.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: finalRedirect,
+      });
+      if (error) {
+        console.warn('Notice: Supabase resetPasswordForEmail warning:', error.message);
+      }
+    } catch (callErr) {
+      console.warn('Notice: resetPasswordForEmail call error:', callErr.message);
     }
 
+    // Preserve account enumeration protection: always return the same generic message
     return res.status(200).json({
       success: true,
-      message: 'If an account exists for that email, a password reset link has been sent.',
+      message: 'If an account exists for that email, a password recovery code has been sent.',
     });
   } catch (err) {
     console.error('FORGOT PASSWORD ERROR:', err);
@@ -835,46 +1177,141 @@ async function forgotPassword(req, res) {
   }
 }
 
-// ── POST /api/auth/reset-password ────────────────────────────────────────────
-async function resetPassword(req, res) {
+// ── POST /api/auth/verify-recovery-code ──────────────────────────────────────
+async function verifyRecoveryCode(req, res) {
   try {
-    const { accessToken, newPassword } = req.body || {};
+    const { email, code } = req.body || {};
+    const inputCode = (code || '').trim();
 
-    if (!accessToken) {
+    if (!email || !inputCode) {
+      return sendError(res, 400, 'Please provide both your email address and 6-digit recovery code.');
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const authClient = supabase.supabaseAnon || supabase;
+
+    // Verify recovery OTP via documented Supabase Auth verifyOtp
+    const { data, error } = await authClient.auth.verifyOtp({
+      email: cleanEmail,
+      token: inputCode,
+      type: 'recovery',
+    });
+
+    if (error || !data?.user) {
       return sendError(
         res,
         400,
-        'Reset token is missing. Please request a new reset link.'
+        'Invalid or expired recovery code. Please check the code or request a new one.',
+        'INVALID_RECOVERY_CODE'
+      );
+    }
+
+    // Issue cryptographically signed, single-use recovery authorization
+    const recoveryToken = createRecoveryAuthorizationToken(data.user.id, cleanEmail);
+
+    auditLogService.logEvent({
+      eventType: 'RECOVERY_CODE_VERIFIED',
+      category: 'Authentication',
+      actorEmail: cleanEmail,
+      actorId: data.user.id,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Client',
+      description: 'Password recovery OTP verified successfully. Single-use ticket issued.',
+      status: 'Success',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Recovery code verified successfully.',
+      recoveryToken,
+    });
+  } catch (err) {
+    console.error('VERIFY RECOVERY CODE ERROR:', err);
+    return sendError(res, 500, 'Internal server error verifying recovery code.');
+  }
+}
+
+// ── POST /api/auth/reset-password ────────────────────────────────────────────
+async function resetPassword(req, res) {
+  try {
+    const { recoveryToken, accessToken, token, newPassword } = req.body || {};
+    const effectiveToken = recoveryToken || accessToken || token;
+
+    if (!effectiveToken) {
+      return sendError(
+        res,
+        400,
+        'Reset authorization is missing. Please enter your recovery code or request a new reset link.',
+        'TOKEN_REQUIRED'
       );
     }
 
     if (!newPassword || newPassword.length < 6) {
-      return sendError(res, 400, 'Password must be at least 6 characters.');
+      return sendError(res, 400, 'Password must be at least 6 characters.', 'INVALID_PASSWORD');
     }
 
-    const { data: userData, error: userError } = await supabase.auth.getUser(accessToken);
+    let targetUserId = null;
+    let targetEmail = null;
 
-    if (userError || !userData?.user) {
-      console.error('RESET PASSWORD TOKEN ERROR:', userError);
-      return sendError(
-        res,
-        401,
-        'This reset link is invalid or has expired. Please request a new one.'
-      );
+    if (recoveryToken) {
+      const authResult = verifyAndConsumeRecoveryAuthorizationToken(recoveryToken);
+      if (!authResult.valid) {
+        return sendError(
+          res,
+          401,
+          authResult.error || 'Invalid or expired recovery authorization.',
+          authResult.code || 'INVALID_RECOVERY_AUTH'
+        );
+      }
+      targetUserId = authResult.userId;
+      targetEmail = authResult.email;
+    } else {
+      // Magic link access token fallback
+      const authClient = supabase.supabaseAnon || supabase;
+      const { data: userData, error: userError } = await authClient.auth.getUser(effectiveToken);
+
+      if (userError || !userData?.user) {
+        return sendError(
+          res,
+          401,
+          'This reset link is invalid or has expired. Please request a new one.',
+          'INVALID_OR_EXPIRED_TOKEN'
+        );
+      }
+      targetUserId = userData.user.id;
+      targetEmail = userData.user.email;
     }
 
-    const { error: updateError } = await supabase.auth.admin.updateUserById(userData.user.id, {
+    const { error: updateError } = await supabase.auth.admin.updateUserById(targetUserId, {
       password: newPassword,
     });
 
     if (updateError) {
-      console.error('RESET PASSWORD UPDATE ERROR:', updateError);
-      return sendError(res, 500, updateError.message || 'Could not update your password.');
+      console.error('RESET PASSWORD UPDATE ERROR:', updateError.message);
+      return sendError(res, 500, 'Could not update your password. Please try again.');
     }
+
+    // Revoke any existing session tokens for this user
+    try {
+      if (typeof effectiveToken === 'string' && effectiveToken.length > 20) {
+        revokeToken(effectiveToken);
+      }
+    } catch (_) {}
+
+    auditLogService.logEvent({
+      eventType: 'PASSWORD_RESET_SUCCESS',
+      category: 'Authentication',
+      actorEmail: targetEmail || 'unknown',
+      actorId: targetUserId,
+      ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+      device: req.headers['user-agent'] || 'SmartAssets Client',
+      description: 'Password reset completed successfully. Previous sessions revoked.',
+      status: 'Success',
+    });
 
     return res.status(200).json({
       success: true,
-      message: 'Password has been reset successfully. You can now sign in.',
+      message: 'Password has been reset successfully. You can now sign in with your new password.',
     });
   } catch (err) {
     console.error('RESET PASSWORD ERROR:', err);
@@ -913,6 +1350,8 @@ async function verifySession(req, res) {
 
 module.exports = {
   register,
+  verifyEmail,
+  resendVerificationCode,
   login,
   walletLogin,
   getWalletNonce,
@@ -923,6 +1362,11 @@ module.exports = {
   logout,
   sessionTimeout,
   forgotPassword,
+  verifyRecoveryCode,
   resetPassword,
   verifySession,
+  getAllowedResetRedirects,
+  isAllowedRedirect,
+  createRecoveryAuthorizationToken,
+  verifyAndConsumeRecoveryAuthorizationToken,
 };

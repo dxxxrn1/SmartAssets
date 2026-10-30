@@ -25,7 +25,9 @@ export default function ResetPasswordScreen({ navigation, route, isDark: propIsD
   const toggleTheme = propToggleTheme || themeContext.toggleTheme;
   const c = useColors(isDark);
   const { isConnected, isOffline, checkConnection } = useNetwork();
-  const accessToken = route?.params?.accessToken || null;
+  const recoveryToken = route?.params?.recoveryToken || null;
+  const accessToken = route?.params?.accessToken || route?.params?.token || null;
+  const hasAuthorization = !!(recoveryToken || accessToken);
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -46,8 +48,8 @@ export default function ResetPasswordScreen({ navigation, route, isDark: propIsD
       return;
     }
 
-    if (!accessToken) {
-      setError('This reset link is invalid or has expired. Please request a new one.');
+    if (!hasAuthorization) {
+      setError('Password recovery authorization is missing or has expired. Please request a new recovery code.');
       return;
     }
 
@@ -64,7 +66,7 @@ export default function ResetPasswordScreen({ navigation, route, isDark: propIsD
     setLoading(true);
 
     try {
-      await resetPasswordApi({ accessToken, newPassword });
+      await resetPasswordApi({ recoveryToken, accessToken, newPassword });
       setSuccess(true);
     } catch (err) {
       setError(err?.message || 'Could not reset your password. Please try again.');
@@ -110,10 +112,10 @@ export default function ResetPasswordScreen({ navigation, route, isDark: propIsD
                   Choose a new password for your SmartAssets account.
                 </Text>
 
-                {!accessToken ? (
+                {!hasAuthorization ? (
                   <View style={[styles.errorBox, { backgroundColor: '#ff000015', borderColor: c.danger || '#ff4444' }]}>
                     <Text style={[styles.errorText, { color: c.danger || '#ff4444' }]}>
-                      This reset link is invalid or has expired. Please go back and request a new one.
+                      This reset authorization is invalid or has expired. Please go back and request a new one.
                     </Text>
                   </View>
                 ) : (

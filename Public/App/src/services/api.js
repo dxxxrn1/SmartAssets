@@ -276,7 +276,29 @@ export async function completeWalletProfileApi(params) {
 export const registerWalletApi = completeWalletProfileApi;
 
 /**
- * Request a password reset email.
+ * Verify signup email or wallet email with 6-digit OTP code.
+ * @param {{ email: string, code?: string, token?: string, type?: string, verificationToken?: string }} params
+ */
+export async function verifyEmailApi({ email, code, token, type = 'signup', verificationToken }) {
+  return apiRequest('/auth/verify-email', {
+    method: 'POST',
+    body: JSON.stringify({ email, code, token, type, verificationToken }),
+  });
+}
+
+/**
+ * Resend verification OTP code for unconfirmed account.
+ * @param {{ email: string, type?: string }} params
+ */
+export async function resendVerificationCodeApi({ email, type = 'signup' }) {
+  return apiRequest('/auth/resend-code', {
+    method: 'POST',
+    body: JSON.stringify({ email, type }),
+  });
+}
+
+/**
+ * Request a password reset code or email link.
  * @param {{ email: string, redirectTo?: string }} params
  */
 export async function forgotPasswordApi({ email, redirectTo }) {
@@ -287,13 +309,24 @@ export async function forgotPasswordApi({ email, redirectTo }) {
 }
 
 /**
- * Complete a password reset using the access_token from the reset email link.
- * @param {{ accessToken: string, newPassword: string }} params
+ * Verify a 6-digit password recovery code.
+ * @param {{ email: string, code: string }} params
  */
-export async function resetPasswordApi({ accessToken, newPassword }) {
+export async function verifyRecoveryCodeApi({ email, code }) {
+  return apiRequest('/auth/verify-recovery-code', {
+    method: 'POST',
+    body: JSON.stringify({ email, code }),
+  });
+}
+
+/**
+ * Complete a password reset using single-use recoveryToken or link-based accessToken/token.
+ * @param {{ recoveryToken?: string, accessToken?: string, token?: string, newPassword: string }} params
+ */
+export async function resetPasswordApi({ recoveryToken, accessToken, token, newPassword }) {
   return apiRequest("/auth/reset-password", {
     method: "POST",
-    body: JSON.stringify({ accessToken, newPassword }),
+    body: JSON.stringify({ recoveryToken, accessToken, token, newPassword }),
   });
 }
 

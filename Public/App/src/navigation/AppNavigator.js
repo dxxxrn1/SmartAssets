@@ -18,6 +18,9 @@ import SplashScreen      from '../screens/SplashScreen';
 import OnboardingScreen  from '../screens/OnboardingScreen';
 import LoginScreen       from '../screens/LoginScreen';
 import RegisterScreen    from '../screens/RegisterScreen';
+import VerifyEmailScreen from '../screens/VerifyEmailScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import VerifyRecoveryCodeScreen from '../screens/VerifyRecoveryCodeScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import HomeScreen        from '../screens/HomeScreen';
 import SearchScreen      from '../screens/SearchScreen';
@@ -52,31 +55,57 @@ const navigationRef = createNavigationContainerRef();
 function extractResetToken(url) {
   if (!url || typeof url !== 'string') return null;
 
-  const hashIndex = url.indexOf('#');
-  const queryIndex = url.indexOf('?');
+  try {
+    const params = {};
 
-  let paramsString = '';
-  if (hashIndex !== -1) {
-    paramsString = url.substring(hashIndex + 1);
-  } else if (queryIndex !== -1) {
-    paramsString = url.substring(queryIndex + 1);
-  }
+    const parseSegment = (seg) => {
+      if (!seg) return;
+      seg.split('&').forEach((pair) => {
+        const [rawKey, rawVal] = pair.split('=');
+        if (rawKey) {
+          try {
+            params[decodeURIComponent(rawKey.trim())] = decodeURIComponent((rawVal || '').trim());
+          } catch (_) {}
+        }
+      });
+    };
 
-  if (!paramsString) return null;
+    const hashIndex = url.indexOf('#');
+    const queryIndex = url.indexOf('?');
 
-  const params = {};
-  paramsString.split('&').forEach((pair) => {
-    const [key, value] = pair.split('=');
-    if (key) {
-      params[decodeURIComponent(key)] = decodeURIComponent(value || '');
+    if (queryIndex !== -1) {
+      const queryPart =
+        hashIndex !== -1 && hashIndex > queryIndex
+          ? url.substring(queryIndex + 1, hashIndex)
+          : url.substring(queryIndex + 1);
+      parseSegment(queryPart);
     }
-  });
 
-  if (params.type === 'recovery' && params.access_token) {
-    return params.access_token;
+    if (hashIndex !== -1) {
+      const hashPart = url.substring(hashIndex + 1);
+      parseSegment(hashPart);
+    }
+
+    // Ignore error responses
+    if (params.error || params.error_code || params.error_description) {
+      return null;
+    }
+
+    // Support Supabase recovery link format, explicit token, or PKCE code
+    if (params.type === 'recovery' || url.includes('recovery') || url.includes('reset-password')) {
+      if (params.access_token) return params.access_token;
+      if (params.token) return params.token;
+      if (params.code) return params.code;
+    }
+
+    if (params.access_token) return params.access_token;
+    if (params.token) return params.token;
+    if (params.code) return params.code;
+
+    return null;
+  } catch (_) {
+    return null;
   }
-
-  return null;
 }
 
 // ── Modern Floating Tab Bar Palette ──────────────────────────────────────────
@@ -326,7 +355,7 @@ export default function Navigation() {
           attempts++;
         }
         if (navigationRef.isReady()) {
-          navigationRef.navigate(SCREENS.RESET_PASSWORD, { token });
+          navigationRef.navigate(SCREENS.RESET_PASSWORD, { token, accessToken: token });
         }
       }
     }
@@ -385,6 +414,18 @@ export default function Navigation() {
 
             <Stack.Screen name={SCREENS.REGISTER}>
               {(props) => <RegisterScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.VERIFY_EMAIL}>
+              {(props) => <VerifyEmailScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.FORGOT_PASSWORD}>
+              {(props) => <ForgotPasswordScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.VERIFY_RECOVERY_CODE}>
+              {(props) => <VerifyRecoveryCodeScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.RESET_PASSWORD}>

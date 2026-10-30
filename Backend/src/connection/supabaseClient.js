@@ -38,4 +38,20 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   },
 });
 
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ? normalizeJwt(process.env.SUPABASE_ANON_KEY) : null;
+
+const supabaseAnon = supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+      realtime: {
+        transport: require('ws'),
+      },
+    })
+  : supabase;
+
+supabase.supabaseAnon = supabaseAnon;
+
 module.exports = supabase;
