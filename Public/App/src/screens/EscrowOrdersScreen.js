@@ -21,8 +21,9 @@ const statusOf = (order) => order.status || "payment_secured";
 const titleOf = (order) => order.assetName || order.asset_name || "Escrow order";
 const amountOf = (order) => Number(order.amountZar || order.amount_zar || 0);
 
-export default function EscrowOrdersScreen({ navigation, isDark }) {
-  const c = useColors(isDark);
+export default function EscrowOrdersScreen({ navigation }) {
+  // Escrow screens strictly maintain light theme regardless of global/profile theme
+  const c = useColors(false);
   const { token } = useAuth();
   const [filter, setFilter] = useState("all");
   const [orders, setOrders] = useState([]);

@@ -489,11 +489,11 @@ export default function Navigation() {
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.ESCROW_TRACKER}>
-              {(props) => <EscrowTrackerScreen {...props} isDark={isDark} />}
+              {(props) => <EscrowTrackerScreen {...props} isDark={false} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.ESCROW_ORDERS}>
-              {(props) => <EscrowOrdersScreen {...props} isDark={isDark} />}
+              {(props) => <EscrowOrdersScreen {...props} isDark={false} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.PROFILE}>

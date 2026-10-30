@@ -32,8 +32,9 @@ import {
 } from "../services/api";
 import { SCREENS } from "../constants/navigation";
 
-export default function EscrowTrackerScreen({ navigation, route, isDark }) {
-  const c = useColors(isDark);
+export default function EscrowTrackerScreen({ navigation, route }) {
+  // Escrow screens strictly maintain light theme regardless of global/profile theme
+  const c = useColors(false);
   const { token, user } = useAuth();
   const orderId = route?.params?.orderId || "ORD-892104";
   const initialAsset = route?.params?.asset || {};
