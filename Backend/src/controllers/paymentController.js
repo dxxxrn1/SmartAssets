@@ -483,77 +483,105 @@ async function processPayment(req, res) {
 
     try {
       if (isFractional && asset?.id) {
-        // 5A. Fractional Investment Path: Record durable investor position
-        await investmentPositionService.recordInvestmentPosition({
-          assetId: asset.id,
-          investorId: userId,
-          sharesCount: sharesToBuy,
-          costBasisZar: actualPriceZar,
-          costBasisEth: ethVal,
-          orderId,
-          txHash: verifiedTxHash || null,
-        });
-
-        // Insert fractional holding into buyer's vault
-        await supabase.from('user_holdings').insert({
-          user_id: userId,
-          name: holdingName,
-          category: assetCategory,
-          price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
-          price_num: actualPriceZar,
-          image: assetImage,
-          asset_type: 'fractional',
-          gain: '+0.0%',
-          gain_pct: '0%',
-          positive: true,
-        });
-
-        const newSharesSold = (asset.shares_sold || 0) + sharesToBuy;
-        const updateData = { shares_sold: newSharesSold };
-        if (newSharesSold >= (asset.shares || 100)) {
-          updateData.status = 'funded';
-        }
-        await supabase.from('assets').update(updateData).eq('id', asset.id);
-
-        const milestoneEvent = `Fractional Investment: Acquired ${sharesToBuy} Shares (${((sharesToBuy / (asset.shares || 100)) * 100).toFixed(1)}% Co-Ownership)`;
-        await supabase.from('asset_history').insert({
-          asset_id: asset.id,
-          year: String(new Date().getFullYear()),
-          event: milestoneEvent,
-          party: `Verified Buyer (${req.user.fullName || req.user.email})`,
-          hash: transactionId,
-          tx_hash: verifiedTxHash || transactionId,
-          verified: true,
-        });
-
-        if (asset.token_id) {
-          web3Service.recordMilestoneOnChain(asset.token_id, {
-            year: new Date().getFullYear(),
-            event: milestoneEvent,
-            party: `Buyer (${userId.substring(0, 8)})`,
+        if (!isSettled) {
+          // 5A-1. Pending Settlement Path (e.g. Bank Wire Awaiting Treasury Verification)
+          // CRITICAL REQUIREMENT: A pending payment must NOT allocate shares, create an active position,
+          // reduce available shares, or notify the seller that shares were sold.
+          const pendingMilestone = `Fractional Order Recorded: Submitted payment reference via ${paymentRailName}. Order ${orderId}. Allocation pending settlement verification.`;
+          await supabase.from('asset_history').insert({
+            asset_id: asset.id,
+            year: String(new Date().getFullYear()),
+            event: pendingMilestone,
+            party: `Buyer (${req.user.fullName || req.user.email})`,
             hash: transactionId,
+            tx_hash: verifiedTxHash || transactionId,
+            verified: false,
           });
-        }
 
-        // Notify investor & seller
-        await notificationService.sendNotification({
-          userId,
-          type: 'shares_purchased',
-          title: 'Investment Confirmed',
-          message: `You successfully acquired ${sharesToBuy} shares in "${assetName}". Registered to your Vault.`,
-          orderId,
-          assetId: asset.id,
-        });
-
-        if (sellerId) {
           await notificationService.sendNotification({
-            userId: sellerId,
-            type: 'shares_sold',
-            title: 'Shares Sold on Marketplace',
-            message: `${sharesToBuy} shares of "${assetName}" were purchased by an investor.`,
+            userId,
+            type: 'fractional_pending_settlement',
+            title: 'Order Placed — Pending Settlement',
+            message: `Your payment reference for ${sharesToBuy} shares in "${assetName}" has been recorded. Once your payment clears and is verified by SmartAssets treasury, shares will be secured in your Vault.`,
             orderId,
             assetId: asset.id,
           });
+        } else {
+          // 5A-2. Settled Investment Path: Independent payment verification confirmed!
+          await investmentPositionService.recordInvestmentPosition({
+            assetId: asset.id,
+            investorId: userId,
+            sharesCount: sharesToBuy,
+            costBasisZar: actualPriceZar,
+            costBasisEth: ethVal,
+            orderId,
+            txHash: verifiedTxHash || null,
+            paymentRail: paymentRailName,
+            idempotencyKey: req.body.idempotencyKey || `order_${orderId}`,
+            isSettled: true,
+          });
+
+          // Insert fractional holding into buyer's vault
+          await supabase.from('user_holdings').insert({
+            user_id: userId,
+            name: holdingName,
+            category: assetCategory,
+            price: `R${actualPriceZar.toLocaleString('en-ZA')}`,
+            price_num: actualPriceZar,
+            image: assetImage,
+            asset_type: 'fractional',
+            gain: '+0.0%',
+            gain_pct: '0%',
+            positive: true,
+          });
+
+          const newSharesSold = (asset.shares_sold || 0) + sharesToBuy;
+          const updateData = { shares_sold: newSharesSold };
+          if (newSharesSold >= (asset.shares || 100)) {
+            updateData.status = 'funded';
+          }
+          await supabase.from('assets').update(updateData).eq('id', asset.id);
+
+          const milestoneEvent = `Fractional Investment: Acquired ${sharesToBuy} Shares (${((sharesToBuy / (asset.shares || 100)) * 100).toFixed(1)}% Co-Ownership)`;
+          await supabase.from('asset_history').insert({
+            asset_id: asset.id,
+            year: String(new Date().getFullYear()),
+            event: milestoneEvent,
+            party: `Verified Buyer (${req.user.fullName || req.user.email})`,
+            hash: transactionId,
+            tx_hash: verifiedTxHash || transactionId,
+            verified: true,
+          });
+
+          if (asset.token_id) {
+            web3Service.recordMilestoneOnChain(asset.token_id, {
+              year: new Date().getFullYear(),
+              event: milestoneEvent,
+              party: `Buyer (${userId.substring(0, 8)})`,
+              hash: transactionId,
+            });
+          }
+
+          // Notify investor & seller ONLY AFTER SETTLEMENT
+          await notificationService.sendNotification({
+            userId,
+            type: 'shares_purchased',
+            title: 'Investment Confirmed',
+            message: `You successfully acquired ${sharesToBuy} shares in "${assetName}". Registered to your Vault.`,
+            orderId,
+            assetId: asset.id,
+          });
+
+          if (sellerId) {
+            await notificationService.sendNotification({
+              userId: sellerId,
+              type: 'shares_sold',
+              title: 'Shares Sold on Marketplace',
+              message: `${sharesToBuy} shares of "${assetName}" were purchased by an investor.`,
+              orderId,
+              assetId: asset.id,
+            });
+          }
         }
       } else if (!isFractional && asset?.id) {
         // 5B. Whole-Item Outright Purchase Path (Aligned with Escrow Lifecycle)
@@ -642,7 +670,9 @@ async function processPayment(req, res) {
     return res.status(200).json({
       success: true,
       message: isFractional
-        ? 'Investment verified and shares added to your vault!'
+        ? isSettled
+          ? 'Investment verified and shares added to your vault!'
+          : 'Bank reference submitted. Awaiting settlement verification by SmartAssets treasury before shares are allocated.'
         : isSettled
         ? 'Payment verified and secured in escrow! The seller has been notified to ship.'
         : 'Bank reference submitted. Awaiting settlement verification by SmartAssets treasury.',
@@ -681,8 +711,167 @@ async function processPayment(req, res) {
   }
 }
 
+/**
+ * GET /api/payments/investments/share-redemption-quote
+ * Returns transparent share pricing, 2.5% platform fee, and net estimated proceeds.
+ */
+async function getShareRedemptionQuote(req, res) {
+  try {
+    const investorId = req.user.id;
+    const { positionId, sharesCount } = req.query;
+
+    if (!positionId) {
+      return sendError(res, 400, 'Position ID is required.');
+    }
+
+    const quote = await investmentPositionService.getShareRedemptionQuote({
+      positionId,
+      investorId,
+      sharesCount: sharesCount || 1,
+    });
+
+    return res.json({
+      success: true,
+      quote,
+    });
+  } catch (err) {
+    console.error('getShareRedemptionQuote error:', err);
+    return sendError(res, 400, err.message || 'Failed to compute redemption quote.');
+  }
+}
+
+/**
+ * POST /api/payments/investments/sell-shares (protected — requireAuth, requireVerified)
+ * Atomically reserves shares from the caller's active position and records a redemption request.
+ */
+async function requestShareRedemption(req, res) {
+  try {
+    const investorId = req.user.id;
+    const complianceService = require('../services/complianceService');
+    const comp = complianceService.getUserCompliance(investorId, req.user?.email);
+    if (comp && comp.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
+    }
+    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(investorId, req.user?.email));
+    if (!bundle || bundle.verification_status !== 'verified') {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        error: 'KYC Verification Required: You must complete KYC verification before redeeming shares.',
+      });
+    }
+
+    const { positionId, sharesCount, destinationMethod, destinationDetails, idempotencyKey } = req.body;
+
+    if (!positionId) {
+      return sendError(res, 400, 'Position ID is required.');
+    }
+    if (!sharesCount || Number(sharesCount) <= 0) {
+      return sendError(res, 400, 'Valid shares count (minimum 1) is required.');
+    }
+
+    const request = await investmentPositionService.requestShareRedemption({
+      positionId,
+      investorId,
+      sharesCount: Number(sharesCount),
+      destinationMethod: destinationMethod || 'vault_cash',
+      destinationDetails: destinationDetails || {},
+      idempotencyKey: idempotencyKey || req.headers['idempotency-key'] || null,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Share redemption request submitted. Shares reserved and pending custodial settlement review.',
+      request,
+    });
+  } catch (err) {
+    console.error('requestShareRedemption error:', err);
+    return sendError(res, 400, err.message || 'Failed to submit share redemption request.');
+  }
+}
+
+/**
+ * POST /api/payments/investments/cancel-sell-request/:id (protected — requireAuth)
+ * Cancels a pending redemption request and un-reserves the shares.
+ * Rejected if settlement is already in progress.
+ */
+async function cancelShareRedemption(req, res) {
+  try {
+    const investorId = req.user.id;
+    const requestId = req.params.id;
+
+    if (!requestId) {
+      return sendError(res, 400, 'Redemption request ID is required.');
+    }
+
+    const result = await investmentPositionService.cancelShareRedemption({
+      requestId,
+      investorId,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Redemption request cancelled and shares unreserved.',
+      ...result,
+    });
+  } catch (err) {
+    console.error('cancelShareRedemption error:', err);
+    return sendError(res, 400, err.message || 'Failed to cancel share redemption request.');
+  }
+}
+
+/**
+ * GET /api/payments/investments/my-redemptions (protected — requireAuth)
+ * Returns all redemption/sale requests for the authenticated investor.
+ */
+async function getUserRedemptions(req, res) {
+  try {
+    const investorId = req.user.id;
+    const requests = await investmentPositionService.getUserRedemptionRequests(investorId);
+
+    return res.json({
+      success: true,
+      requests,
+    });
+  } catch (err) {
+    console.error('getUserRedemptions error:', err);
+    return sendError(res, 500, 'Failed to fetch redemption requests.');
+  }
+}
+
+/**
+ * POST /api/payments/investments/settle-sell-request/:id (admin / custody privileged)
+ */
+async function settleShareRedemption(req, res) {
+  try {
+    const requestId = req.params.id;
+    const { settlementRef, settlementNotes } = req.body;
+
+    const result = await investmentPositionService.settleShareRedemption({
+      requestId,
+      settlementRef,
+      settlementNotes,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Share redemption settled and proceeds distributed.',
+      ...result,
+    });
+  } catch (err) {
+    console.error('settleShareRedemption error:', err);
+    return sendError(res, 400, err.message || 'Failed to settle share redemption.');
+  }
+}
+
 module.exports = {
   getRates,
   createIntent,
   processPayment,
+  getShareRedemptionQuote,
+  requestShareRedemption,
+  cancelShareRedemption,
+  getUserRedemptions,
+  settleShareRedemption,
 };
+

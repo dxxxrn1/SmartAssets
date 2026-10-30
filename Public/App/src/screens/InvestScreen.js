@@ -301,19 +301,36 @@ export default function InvestScreen({ navigation }) {
       setKycGatekeeperVisible(true);
       return;
     }
-    const sharePriceNum =
-      Number(offering.sharePriceNum) ||
-      parseFloat(String(offering.share_price || "").replace(/[^0-9.]/g, "")) || 100;
 
-    Alert.alert(
-      "Share Custody & Liquidity",
-      `Your shares in "${offering.name}" are registered in durable Vault custody at an oracle value of R${sharePriceNum}/share.\n\n` +
-      `When this collectible is bought outright, your full pro-rata share of the verified net proceeds will automatically credit directly to your Vault cash balance.`,
-      [
-        { text: "Got It", style: "default" },
-      ]
+    // Check if user holds active shares in this offering
+    const userHolding = userHoldings.find(
+      (h) =>
+        (h.asset_type === 'fractional' || String(h.name || '').includes('Share')) &&
+        h.name &&
+        offering.name &&
+        h.name.toLowerCase().includes(offering.name.toLowerCase())
     );
+
+    if (userHolding) {
+      // User holds shares: navigate directly to Vault Co-Owned tab with sell flow
+      navigation.navigate(SCREENS.VAULT, {
+        activeTab: 'fractions',
+        openSellFor: offering.name,
+      });
+    } else {
+      Alert.alert(
+        "No Shares Held",
+        `You do not currently hold fractional shares in "${offering.name}".\n\n` +
+        `To sell or redeem shares, first invest in an active offering or navigate to your Vault to manage your existing holdings.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Buy Shares", onPress: () => handleBuyShares(offering) },
+          { text: "Go to Vault", onPress: () => navigation.navigate(SCREENS.VAULT) },
+        ]
+      );
+    }
   };
+
 
   const handleOpenDetails = (item) => {
     if (!item) return;

@@ -143,8 +143,11 @@ async function getVault(req, res) {
     });
 
     const vaultTxService = require('../services/vaultTransactionService');
-    const availableBalanceNum = await vaultTxService.getUserBalance(userId);
-    const availableBalanceFormatted = vaultTxService.formatZar(availableBalanceNum);
+    const balanceDetails = await vaultTxService.getUserBalanceDetails(userId);
+    const availableBalanceNum = balanceDetails.availableBalanceNum;
+    const availableBalanceFormatted = balanceDetails.availableBalanceFormatted;
+    const reservedBalanceNum = balanceDetails.reservedBalanceNum;
+    const reservedBalanceFormatted = balanceDetails.reservedBalanceFormatted;
 
     // Compute separate escrow balances for funds locked in custody
     let escrowBalanceNum = 0;
@@ -240,6 +243,8 @@ async function getVault(req, res) {
       summary: {
         availableBalanceNum,
         availableBalanceFormatted,
+        reservedBalanceNum,
+        reservedBalanceFormatted,
         escrowBalanceNum,
         escrowBalanceFormatted,
         sellerPendingEscrowNum,
@@ -626,7 +631,7 @@ async function deleteAccount(req, res) {
 }
 
 // ── POST /api/user/deposit ───────────────────────────────────────────────────
-// Deposits funds into user's vault balance
+// Records a deposit request or credits verified provider settlement
 async function deposit(req, res) {
   try {
     const userId = req.user.id;
@@ -649,34 +654,62 @@ async function deposit(req, res) {
         error: 'Bank Verification Required: You must link and get your bank account approved by an administrator before depositing funds.',
       });
     }
-    const { amount, method, reference, notes } = req.body;
+
+    const {
+      amount,
+      currency,
+      method,
+      reference,
+      notes,
+      paymentIntentId,
+      idempotencyKey: bodyIdempKey,
+    } = req.body || {};
+    const idempotencyKey = bodyIdempKey || req.headers?.['x-idempotency-key'] || null;
 
     if (!amount || Number(amount) <= 0) {
       return sendError(res, 400, 'Please enter a valid deposit amount greater than R0.');
     }
 
+    // Never allow client HTTP requests to spoof internal system payout methods
+    const rawMethod = String(method || 'Manual Bank EFT').trim();
+    const isClientStripe = Boolean(paymentIntentId) || rawMethod.toLowerCase().includes('stripe') || rawMethod.toLowerCase() === 'card';
+    const sanitizedMethod = isClientStripe ? 'Card (Stripe)' : 'Manual Bank EFT';
+
     const vaultTxService = require('../services/vaultTransactionService');
     const result = await vaultTxService.depositFunds({
       userId,
       amount: Number(amount),
-      method,
+      currency: currency || 'zar',
+      method: sanitizedMethod,
       reference,
       notes,
+      paymentIntentId,
+      idempotencyKey,
     });
 
-    return res.status(200).json({
+    const msg = result.credited
+      ? `Verified deposit of ${vaultTxService.formatZar(amount)} settled and credited to your Vault!`
+      : `Deposit request of ${vaultTxService.formatZar(amount)} recorded as Pending Verification. Your spendable balance will be credited once receipt of funds is confirmed.`;
+
+    const statusCode = result.credited ? 200 : 202;
+    return res.status(statusCode).json({
       success: true,
-      message: `Successfully deposited ${vaultTxService.formatZar(amount)} into your vault!`,
+      message: msg,
       ...result,
     });
   } catch (err) {
     console.error('deposit error:', err);
-    return sendError(res, 400, err.message || 'Deposit failed. Please try again.');
+    const statusCode = err.statusCode || 400;
+    return res.status(statusCode).json({
+      success: false,
+      code: err.code || 'DEPOSIT_FAILED',
+      error: err.message || 'Deposit failed. Please try again.',
+    });
   }
 }
 
 // ── POST /api/user/withdraw ──────────────────────────────────────────────────
-// Withdraws funds from user's vault balance (requires verified account + approved bank account)
+// Creates a pending withdrawal request & atomically reserves funds to the approved bank account on file
 async function withdraw(req, res) {
   try {
     const userId = req.user.id;
@@ -702,56 +735,99 @@ async function withdraw(req, res) {
       });
     }
 
-    const { amount, method, bankDetails, walletAddress, notes } = req.body;
+    const {
+      amount,
+      method,
+      bankDetails,
+      walletAddress,
+      notes,
+      idempotencyKey: bodyIdempKey,
+    } = req.body || {};
+    const idempotencyKey = bodyIdempKey || req.headers?.['x-idempotency-key'] || null;
 
     if (!amount || Number(amount) <= 0) {
       return sendError(res, 400, 'Please enter a valid withdrawal amount greater than R0.');
     }
 
-    const effectiveBankDetails = bankDetails || {
-      bankName: approvedBank.bank_name,
-      accountHolder: approvedBank.account_holder,
-      accountNumber: approvedBank.account_number,
-      branchCode: approvedBank.branch_code,
-      accountType: approvedBank.account_type,
-    };
-
     const vaultTxService = require('../services/vaultTransactionService');
     const result = await vaultTxService.withdrawFunds({
       userId,
+      userEmail: req.user?.email,
       amount: Number(amount),
-      method: method || 'bank_transfer',
-      bankDetails: effectiveBankDetails,
+      method: method || 'Approved Bank EFT',
+      bankDetails,
       walletAddress,
       notes,
+      idempotencyKey,
+      approvedBank,
     });
 
     return res.status(200).json({
       success: true,
-      message: `Successfully processed withdrawal of ${vaultTxService.formatZar(amount)} to your approved ${approvedBank.bank_name} account!`,
+      message: `Withdrawal request of ${vaultTxService.formatZar(amount)} submitted for review. Funds are reserved and will be paid to your approved ${approvedBank.bank_name || approvedBank.bankName} account upon settlement confirmation.`,
       ...result,
     });
   } catch (err) {
     console.error('withdraw error:', err);
-    return sendError(res, 400, err.message || 'Withdrawal failed. Please try again.');
+    const statusCode = err.code === 'UNAPPROVED_DESTINATION' || err.code === 'BANK_APPROVAL_REQUIRED' ? 403 : 400;
+    return res.status(statusCode).json({
+      success: false,
+      code: err.code || 'WITHDRAWAL_FAILED',
+      error: err.message || 'Withdrawal failed. Please try again.',
+    });
+  }
+}
+
+// ── POST /api/user/withdraw/:id/cancel ───────────────────────────────────────
+// Cancels a user's own pending_review withdrawal and restores reserved funds
+async function cancelWithdrawal(req, res) {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const vaultTxService = require('../services/vaultTransactionService');
+
+    const result = await vaultTxService.cancelOrRejectWithdrawal({
+      transactionId: id,
+      actorId: userId,
+      newStatus: 'cancelled',
+      reason: req.body?.reason || 'Cancelled by user prior to payout processing',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Pending withdrawal cancelled. Reserved funds have been restored to your spendable balance.',
+      ...result,
+    });
+  } catch (err) {
+    console.error('cancelWithdrawal error:', err);
+    const statusCode = err.statusCode || (err.code === 'CANCELLATION_LOCKED' ? 409 : 400);
+    return res.status(statusCode).json({
+      success: false,
+      code: err.code || 'CANCEL_FAILED',
+      error: err.message || 'Could not cancel withdrawal.',
+    });
   }
 }
 
 // ── GET /api/user/transactions ───────────────────────────────────────────────
-// Returns transaction history for the authenticated user
+// Returns transaction history and balance breakdown for the authenticated user
 async function getTransactions(req, res) {
   try {
     const userId = req.user.id;
     const vaultTxService = require('../services/vaultTransactionService');
     const transactions = await vaultTxService.fetchUserTransactions(userId);
-    const balanceNum = await vaultTxService.getUserBalance(userId);
+    const balanceDetails = await vaultTxService.getUserBalanceDetails(userId);
 
     return res.status(200).json({
       success: true,
       transactions,
       balance: {
-        amountNum: balanceNum,
-        amountFormatted: vaultTxService.formatZar(balanceNum),
+        amountNum: balanceDetails.availableBalanceNum,
+        amountFormatted: balanceDetails.availableBalanceFormatted,
+        totalBalanceNum: balanceDetails.totalBalanceNum,
+        totalBalanceFormatted: balanceDetails.totalBalanceFormatted,
+        reservedBalanceNum: balanceDetails.reservedBalanceNum,
+        reservedBalanceFormatted: balanceDetails.reservedBalanceFormatted,
       },
     });
   } catch (err) {
@@ -1432,6 +1508,7 @@ module.exports = {
   deleteAccount,
   deposit,
   withdraw,
+  cancelWithdrawal,
   getTransactions,
   lodgeSupport,
   getSupportTickets,

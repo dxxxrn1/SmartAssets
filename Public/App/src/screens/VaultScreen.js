@@ -33,10 +33,16 @@ import {
   getUserVault,
   depositFundsApi,
   withdrawFundsApi,
+  cancelVaultWithdrawalApi,
   getVaultTransactionsApi,
   getMarketOracleApi,
   resolveImageUrl,
+  getShareRedemptionQuoteApi,
+  requestShareRedemptionApi,
+  cancelShareRedemptionApi,
+  getUserRedemptionsApi,
 } from "../services/api";
+
 import storage, { STORAGE_KEYS } from "../utils/storage";
 
 // ── Currency Formatter (South African Rand R) ─────────────────────────────────
@@ -61,7 +67,7 @@ const DEFAULT_FRACTIONAL_ITEMS = [];
 const DEFAULT_ACTIVITY_LOG = [];
 
 
-export default function VaultScreen({ navigation }) {
+export default function VaultScreen({ navigation, route }) {
   const { width: screenWidth } = useWindowDimensions();
   const isDesktop = screenWidth >= 860;
   const cardWidth = isDesktop
@@ -120,17 +126,28 @@ export default function VaultScreen({ navigation }) {
 
   // Deposit Form
   const [depositAmount, setDepositAmount] = useState("");
-  const [depositMethod, setDepositMethod] = useState("Instant EFT / Card");
+  const [depositMethod, setDepositMethod] = useState("Manual Bank EFT");
+  const [depositReference, setDepositReference] = useState("");
   const [depositing, setDepositing] = useState(false);
 
   // Withdraw Form
   const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [withdrawMethod, setWithdrawMethod] = useState("Bank EFT");
-  const [bankName, setBankName] = useState("Barclays UK");
-  const [accountNumber, setAccountNumber] = useState("");
-  const [accountHolder, setAccountHolder] = useState(user?.fullName || "");
-  const [cryptoAddress, setCryptoAddress] = useState(user?.walletAddress || "");
+  const [withdrawMethod, setWithdrawMethod] = useState("Approved Bank EFT");
   const [withdrawing, setWithdrawing] = useState(false);
+
+  // Share Redemption State & Modal
+  const [sellModalVisible, setSellModalVisible] = useState(false);
+  const [selectedSellItem, setSelectedSellItem] = useState(null);
+  const [sellSharesCount, setSellSharesCount] = useState("1");
+  const [sellQuote, setSellQuote] = useState(null);
+  const [loadingSellQuote, setLoadingSellQuote] = useState(false);
+  const [submittingSell, setSubmittingSell] = useState(false);
+  const [sellDestinationMethod, setSellDestinationMethod] = useState("escrow_wallet");
+  const [sellBankName, setSellBankName] = useState("Standard Bank");
+  const [sellAccountNumber, setSellAccountNumber] = useState("");
+  const [sellAccountHolder, setSellAccountHolder] = useState(user?.fullName || "");
+  const [redemptionRequests, setRedemptionRequests] = useState([]);
+  const [cancellingRequestId, setCancellingRequestId] = useState(null);
 
   const [syncingPrices, setSyncingPrices] = useState(false);
   const lastVaultFetchRef = useRef(0);
@@ -155,16 +172,22 @@ export default function VaultScreen({ navigation }) {
                 h.name &&
                 f.name.toLowerCase() === h.name.toLowerCase())
           );
+          const sOwned = Number(h.sharesOwned ?? h.shares_count ?? h.shares ?? 1);
+          const sReserved = Number(h.reserved_shares ?? h.reservedShares ?? 0);
+          const sAvailable = Math.max(0, sOwned - sReserved);
           const mapped = {
             id: h.id || `fraction-${Math.random()}`,
+            asset_id: h.asset_id || h.assetId || h.id,
             name: h.name,
             category: h.category || "Watches",
             image: resolveImageUrl(h.image),
-            sharesOwned: Number(h.sharesOwned) || 1,
+            sharesOwned: sOwned,
+            reservedShares: sReserved,
+            availableShares: sAvailable,
             sharePrice: Number(h.price_num) || 100,
             sharePriceFormatted: formatGBP(h.price_num || 100) + "/sh",
-            myStake: Number(h.myStake) || Number(h.price_num) || 100,
-            myStakeFormatted: formatGBP(h.myStake || h.price_num || 100),
+            myStake: Number(h.myStake) || (sOwned * (Number(h.price_num) || 100)),
+            myStakeFormatted: formatGBP(Number(h.myStake) || (sOwned * (Number(h.price_num) || 100))),
             returnPct:
               h.badgeText ||
               (h.gain ? h.gain.split("<!--")[0].trim() : "+0.0% Return"),
@@ -413,11 +436,35 @@ export default function VaultScreen({ navigation }) {
         })
         .catch(() => {});
 
+      getUserRedemptionsApi(token)
+        .then((redRes) => {
+          if (
+            isMounted &&
+            redRes?.success &&
+            Array.isArray(redRes.redemptions)
+          ) {
+            setRedemptionRequests(redRes.redemptions);
+          }
+        })
+        .catch(() => {});
+
       return () => {
         isMounted = false;
       };
     }, [token, processHoldingsIntoTabs])
   );
+
+  // ── Handle incoming route navigation parameters (e.g. from InvestScreen) ────
+  useEffect(() => {
+    if (route?.params?.tab) {
+      setActiveTab(route.params.tab);
+    }
+    if (route?.params?.openSellFor) {
+      const target = route.params.openSellFor;
+      setActiveTab("fractions");
+      openSellModal(target);
+    }
+  }, [route?.params]);
 
   // ── Sync Live Market Prices Handler ─────────────────────────────────────────
   const handleSyncLiveMarket = useCallback(
@@ -537,6 +584,10 @@ export default function VaultScreen({ navigation }) {
         if (txRes?.success && Array.isArray(txRes.transactions)) {
           setTransactions(txRes.transactions);
         }
+        const redRes = await getUserRedemptionsApi(token).catch(() => null);
+        if (redRes?.success && Array.isArray(redRes.redemptions)) {
+          setRedemptionRequests(redRes.redemptions);
+        }
       }
     } catch (_) {}
     setRefreshing(false);
@@ -560,39 +611,49 @@ export default function VaultScreen({ navigation }) {
 
     try {
       setDepositing(true);
+      const idempotencyKey = `dep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const res = await depositFundsApi(
-        { amount: amt, method: depositMethod },
+        {
+          amount: amt,
+          method: depositMethod || "Manual Bank EFT",
+          reference: depositReference ? depositReference.trim() : undefined,
+          idempotencyKey,
+        },
         token,
-      ).catch(() => ({ success: true, newBalanceNum: escrowCash + amt, newBalanceFormatted: `R${escrowCash + amt}` }));
+      );
 
-      const updatedCash = (res?.newBalanceNum && !isNaN(res.newBalanceNum)) ? res.newBalanceNum : (escrowCash + amt);
-      setEscrowCash(updatedCash);
-      await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, updatedCash);
+      if (!res?.success) {
+        throw new Error(res?.error || "Deposit request failed.");
+      }
 
-      const newLog = {
-        id: "dep-" + Date.now(),
-        type: "escrow_deposit",
-        title: "Escrow Deposit Confirmed",
-        assetName: "Escrow Wallet Balance",
-        reference: "ESC-" + Date.now(),
-        hash: null,
-        hashDisplay: null,
-        amount: `+R${amt.toLocaleString()}`,
-        timestamp: "Just now",
-        status: "Escrow Protected",
-        network: "SmartAssets Escrow v2",
-        icon: "shield-checkmark-outline",
-        badgeColor: "#2563EB",
-      };
-      setActivityLog((prev) => [newLog, ...prev]);
+      // Only update spendable balance from authoritative server response
+      if (typeof res.newBalanceNum === "number" && !isNaN(res.newBalanceNum)) {
+        setEscrowCash(res.newBalanceNum);
+        await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, res.newBalanceNum);
+      }
+
+      // Refresh authoritative transaction ledger from backend
+      if (token) {
+        const txRes = await getVaultTransactionsApi(token).catch(() => null);
+        if (txRes?.success && Array.isArray(txRes.transactions)) {
+          setTransactions(txRes.transactions);
+        }
+      }
 
       setDepositModalVisible(false);
       setDepositAmount("");
-      const msg = `Deposit of R${amt.toLocaleString()} confirmed! New Escrow Balance: R${updatedCash.toLocaleString()}`;
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Deposit Confirmed", msg);
+      setDepositReference("");
+
+      const msg =
+        res.message ||
+        (res.credited
+          ? `Verified deposit of R${amt.toLocaleString("en-ZA")} credited to your Vault.`
+          : `Deposit request of R${amt.toLocaleString("en-ZA")} submitted (Pending Verification). Your spendable balance will update once treasury confirms receipt of funds.`);
+      const alertTitle = res.credited ? "Deposit Credited" : "Deposit Pending Review";
+      Platform.OS === "web" ? alert(msg) : Alert.alert(alertTitle, msg);
     } catch (err) {
-      const msg = err.message || "Failed to process deposit.";
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Notice", msg);
+      const msg = err.message || "Failed to submit deposit request.";
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Deposit Failed", msg);
     } finally {
       setDepositing(false);
     }
@@ -624,7 +685,7 @@ export default function VaultScreen({ navigation }) {
     }
 
     if (amt > available) {
-      const msg = `Insufficient available balance. You requested R${amt.toLocaleString()} but available cash is R${available.toLocaleString()}.`;
+      const msg = `Insufficient available balance. You requested R${amt.toLocaleString("en-ZA")} but available spendable cash is R${available.toLocaleString("en-ZA")}.`;
       Platform.OS === "web"
         ? alert(msg)
         : Alert.alert("Insufficient Balance", msg);
@@ -633,52 +694,199 @@ export default function VaultScreen({ navigation }) {
 
     try {
       setWithdrawing(true);
+      const idempotencyKey = `wth_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const payload = {
         amount: amt,
-        method: withdrawMethod,
-        bankDetails:
-          withdrawMethod === "Bank EFT"
-            ? { bankName, accountNumber, accountHolder }
-            : null,
-        walletAddress:
-          withdrawMethod === "Crypto Wallet" ? cryptoAddress : null,
+        method: "Approved Bank EFT",
+        idempotencyKey,
       };
 
-      await withdrawFundsApi(payload, token).catch(() => ({
-        success: true,
-        newBalanceNum: Math.max(0, escrowCash - amt),
-        newBalanceFormatted: `R${Math.max(0, escrowCash - amt)}`,
-      }));
+      const res = await withdrawFundsApi(payload, token);
+      if (!res?.success) {
+        throw new Error(res?.error || "Withdrawal request failed.");
+      }
 
-      const updatedCash = Math.max(0, escrowCash - amt);
-      setEscrowCash(updatedCash);
-      await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, updatedCash);
+      if (typeof res.newBalanceNum === "number" && !isNaN(res.newBalanceNum)) {
+        setEscrowCash(res.newBalanceNum);
+        await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, res.newBalanceNum);
+      }
 
-      const newLog = {
-        id: "wd-" + Date.now(),
-        type: "escrow_deposit",
-        title: "Escrow Withdrawal Processed",
-        assetName: "Escrow Wallet Balance",
-        hash: "0x" + Math.random().toString(16).substring(2, 10) + "85db9",
-        hashDisplay: "0x85d...b9",
-        amount: `-R${amt.toLocaleString()}`,
-        timestamp: "Just now",
-        status: "Settled via " + withdrawMethod,
-        network: "SmartAssets Escrow v2",
-        icon: "arrow-up-circle-outline",
-        badgeColor: "#64748B",
-      };
-      setActivityLog((prev) => [newLog, ...prev]);
+      // Refresh authoritative transaction ledger from backend
+      if (token) {
+        const txRes = await getVaultTransactionsApi(token).catch(() => null);
+        if (txRes?.success && Array.isArray(txRes.transactions)) {
+          setTransactions(txRes.transactions);
+        }
+      }
 
       setWithdrawModalVisible(false);
       setWithdrawAmount("");
-      const msg = `Withdrawal of R${amt.toLocaleString()} processed via ${withdrawMethod}. Remaining Escrow Wallet: R${updatedCash.toLocaleString()}`;
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Withdrawal Processed", msg);
+      const msg =
+        res.message ||
+        `Withdrawal request of R${amt.toLocaleString("en-ZA")} submitted (Pending Review). Funds are reserved for payout to your approved bank account (${res.destination || "on file"}).`;
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Withdrawal Request Submitted", msg);
     } catch (err) {
-      const msg = err.message || "Failed to process withdrawal.";
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Notice", msg);
+      const msg = err.message || "Failed to submit withdrawal request.";
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Withdrawal Failed", msg);
     } finally {
       setWithdrawing(false);
+    }
+  };
+
+  // ── Share Redemption Modal & Action Handlers ──────────────────────────────
+  const fetchQuote = useCallback(
+    async (assetId, shares) => {
+      if (!assetId || !shares || shares <= 0) return;
+      setLoadingSellQuote(true);
+      try {
+        const res = await getShareRedemptionQuoteApi(assetId, shares, token);
+        if (res?.success && res.quote) {
+          setSellQuote(res.quote);
+        }
+      } catch (err) {
+        console.warn("[VaultScreen] Quote fetch warning:", err.message);
+      } finally {
+        setLoadingSellQuote(false);
+      }
+    },
+    [token]
+  );
+
+  const openSellModal = useCallback(
+    (item) => {
+      const avail =
+        item.availableShares !== undefined
+          ? item.availableShares
+          : Math.max(
+              0,
+              (Number(item.sharesOwned ?? item.shares_count ?? item.shares) || 1) -
+                (Number(item.reservedShares ?? item.reserved_shares) || 0)
+            );
+
+      if (avail <= 0) {
+        const msg =
+          "All of your shares in this offering are currently reserved in pending redemption requests. You can manage or cancel pending requests below.";
+        Platform.OS === "web" ? alert(msg) : Alert.alert("No Shares Available", msg);
+        return;
+      }
+
+      setSelectedSellItem(item);
+      setSellSharesCount("1");
+      setSellModalVisible(true);
+      fetchQuote(item.asset_id || item.id, 1);
+    },
+    [fetchQuote]
+  );
+
+  const handleConfirmSell = async () => {
+    if (!selectedSellItem) return;
+    const count = parseInt(sellSharesCount, 10);
+    const maxAvailable =
+      selectedSellItem.availableShares !== undefined
+        ? selectedSellItem.availableShares
+        : Math.max(
+            0,
+            (Number(selectedSellItem.sharesOwned ?? selectedSellItem.shares_count ?? selectedSellItem.shares) || 1) -
+              (Number(selectedSellItem.reservedShares ?? selectedSellItem.reserved_shares) || 0)
+          );
+
+    if (isNaN(count) || count < 1 || count > maxAvailable) {
+      const msg = `Please enter between 1 and ${maxAvailable} shares to redeem.`;
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Invalid Share Quantity", msg);
+      return;
+    }
+
+    if (sellDestinationMethod === "bank_account" && !sellAccountNumber.trim()) {
+      const msg = "Please enter your bank account number for the settlement payout.";
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Bank Account Required", msg);
+      return;
+    }
+
+    setSubmittingSell(true);
+    try {
+      const targetAssetId = selectedSellItem.asset_id || selectedSellItem.id;
+      const res = await requestShareRedemptionApi(
+        {
+          assetId: targetAssetId,
+          sharesToRedeem: count,
+          payoutDestination: sellDestinationMethod,
+          payoutDetails:
+            sellDestinationMethod === "bank_account"
+              ? {
+                  bankName: sellBankName,
+                  accountNumber: sellAccountNumber.trim(),
+                  accountHolder: sellAccountHolder,
+                }
+              : { walletAddress: user?.walletAddress || "SmartAssets Escrow Cash Wallet" },
+        },
+        token
+      );
+
+      if (res?.success) {
+        setSellModalVisible(false);
+        const grossFmt = res.redemption?.grossValuationFormatted || "";
+        const netFmt = res.redemption?.netPayoutFormatted || "";
+        const msg = `Redemption Request Placed!\n\nYour request to redeem ${count} share${count > 1 ? "s" : ""} (${grossFmt}) for an estimated net payout of ${netFmt} has been placed into custodial review.\n\nShares have been reserved from your active trading pool. Payout will settle once approved.`;
+        Platform.OS === "web" ? alert(msg) : Alert.alert("Redemption Request Submitted", msg);
+        onRefresh();
+      } else {
+        const msg = res?.error || "Failed to submit share redemption request.";
+        Platform.OS === "web" ? alert(msg) : Alert.alert("Redemption Notice", msg);
+      }
+    } catch (err) {
+      const msg = err.message || "Failed to submit redemption request.";
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Notice", msg);
+    } finally {
+      setSubmittingSell(false);
+    }
+  };
+
+  const handleCancelRedemption = (request) => {
+    if (request.status === "settlement_processing") {
+      const msg =
+        "This redemption request is currently processing settlement with the custodial bank and cannot be cancelled.";
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Settlement in Progress", msg);
+      return;
+    }
+
+    const proceedCancel = async () => {
+      setCancellingRequestId(request.id);
+      try {
+        const res = await cancelShareRedemptionApi(request.id, token);
+        if (res?.success) {
+          const msg =
+            "Your redemption request has been cancelled and your reserved shares have been restored to your active vault portfolio.";
+          Platform.OS === "web" ? alert(msg) : Alert.alert("Request Cancelled", msg);
+          onRefresh();
+        } else {
+          const msg = res?.error || "Could not cancel request.";
+          Platform.OS === "web" ? alert(msg) : Alert.alert("Cancellation Notice", msg);
+        }
+      } catch (err) {
+        const msg = err.message || "Could not cancel request.";
+        Platform.OS === "web" ? alert(msg) : Alert.alert("Notice", msg);
+      } finally {
+        setCancellingRequestId(null);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (
+        window.confirm(
+          `Cancel redemption request for ${request.shares_to_redeem} shares? Your shares will be unreserved immediately.`
+        )
+      ) {
+        proceedCancel();
+      }
+    } else {
+      Alert.alert(
+        "Cancel Share Redemption",
+        `Are you sure you want to cancel your redemption request for ${request.shares_to_redeem} shares? Your shares will be restored to your active portfolio.`,
+        [
+          { text: "Keep Request", style: "cancel" },
+          { text: "Yes, Cancel Request", style: "destructive", onPress: proceedCancel },
+        ]
+      );
     }
   };
 
@@ -1270,6 +1478,11 @@ export default function VaultScreen({ navigation }) {
                             <Text style={styles.fractionalMetricLabel}>Shares Owned</Text>
                             <Text style={styles.fractionalMetricValue}>
                               {item.sharesOwned ?? 2}
+                              {item.reservedShares > 0 ? (
+                                <Text style={{ fontSize: 10, color: "#94A3B8" }}>
+                                  {" "}({item.availableShares} free)
+                                </Text>
+                              ) : null}
                             </Text>
                           </View>
                           <View style={styles.fractionalMetricBox}>
@@ -1293,15 +1506,26 @@ export default function VaultScreen({ navigation }) {
                           </Text>
                         </View>
 
-                        {/* Trade Shares -> Button Stacked on its Own Full-Width Row */}
-                        <TouchableOpacity
-                          style={styles.tradeSharesSmallBtn}
-                          onPress={() => navigation.navigate(SCREENS.INVEST)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={styles.tradeSharesSmallBtnText}>Trade Shares</Text>
-                          <Feather name="arrow-right" size={11} color="#FFFFFF" style={{ marginLeft: 5 }} />
-                        </TouchableOpacity>
+                        {/* Dual Action Buttons: Sell Shares / Buy More */}
+                        <View style={styles.fractionalActionsRow}>
+                          <TouchableOpacity
+                            style={styles.fractionalSellBtn}
+                            onPress={() => openSellModal(item)}
+                            activeOpacity={0.8}
+                          >
+                            <Feather name="arrow-up-right" size={12} color="#4F46E5" style={{ marginRight: 4 }} />
+                            <Text style={styles.fractionalSellBtnText}>Sell Shares</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.fractionalBuyBtn}
+                            onPress={() => navigation.navigate(SCREENS.INVEST)}
+                            activeOpacity={0.8}
+                          >
+                            <Feather name="plus" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+                            <Text style={styles.fractionalBuyBtnText}>Buy More</Text>
+                          </TouchableOpacity>
+                        </View>
 
                         <Text style={styles.fractionalPoolMeta}>
                           Pool: {item.poolValuation || "R18,500"} • {item.fundingPct || 77}% funded
@@ -1311,6 +1535,120 @@ export default function VaultScreen({ navigation }) {
                   ))}
                 </View>
               )}
+
+              {/* ── Share Redemption Requests Section ── */}
+              <View style={styles.redemptionSectionWrap}>
+                <View style={styles.redemptionHeaderSection}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.collectionSectionTitle}>Share Redemption Requests</Text>
+                    <Text style={styles.collectionSectionSub}>
+                      Custodial reviews and pending bank/escrow settlements
+                    </Text>
+                  </View>
+                  <View style={styles.redemptionCounterBadge}>
+                    <Text style={styles.redemptionCounterText}>{redemptionRequests.length}</Text>
+                  </View>
+                </View>
+
+                {redemptionRequests.length === 0 ? (
+                  <View style={styles.emptyRedemptionCard}>
+                    <Feather name="shield" size={24} color="#6366F1" />
+                    <Text style={styles.emptyRedemptionTitle}>No active redemption requests</Text>
+                    <Text style={styles.emptyRedemptionSub}>
+                      When you submit a request to redeem shares, the compliance review and payout status will appear here.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={{ gap: 10 }}>
+                    {redemptionRequests.map((req) => {
+                      const isSettling = req.status === "settlement_processing";
+                      const isReviewOrApproved = req.status === "pending_review" || req.status === "approved";
+
+                      return (
+                        <View key={req.id} style={styles.redemptionCard}>
+                          <View style={styles.redemptionHeaderRow}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                              <Text style={styles.redemptionAssetName} numberOfLines={1}>
+                                {req.assets?.name || req.asset_name || "Asset Shares"}
+                              </Text>
+                              <Text style={styles.redemptionMeta}>
+                                {req.shares_to_redeem} share{req.shares_to_redeem > 1 ? "s" : ""} • {req.payout_destination === "bank_account" ? "Bank EFT" : "Escrow Cash"}
+                              </Text>
+                            </View>
+                            <View
+                              style={[
+                                styles.redemptionStatusBadge,
+                                req.status === "pending_review" && styles.statusBadgeReview,
+                                req.status === "approved" && styles.statusBadgeApproved,
+                                req.status === "settlement_processing" && styles.statusBadgeSettling,
+                                req.status === "completed" && styles.statusBadgeCompleted,
+                                req.status === "cancelled" && styles.statusBadgeCancelled,
+                                req.status === "rejected" && styles.statusBadgeRejected,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.redemptionStatusText,
+                                  req.status === "pending_review" && styles.statusTextReview,
+                                  req.status === "approved" && styles.statusTextApproved,
+                                  req.status === "settlement_processing" && styles.statusTextSettling,
+                                  req.status === "completed" && styles.statusTextCompleted,
+                                  req.status === "cancelled" && styles.statusTextCancelled,
+                                  req.status === "rejected" && styles.statusTextRejected,
+                                ]}
+                              >
+                                {req.status === "pending_review"
+                                  ? "Pending Review"
+                                  : req.status === "approved"
+                                  ? "Approved"
+                                  : req.status === "settlement_processing"
+                                  ? "Settling Payout"
+                                  : req.status === "completed"
+                                  ? "Settled & Paid"
+                                  : req.status === "cancelled"
+                                  ? "Cancelled"
+                                  : "Rejected"}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.redemptionBodyRow}>
+                            <View>
+                              <Text style={styles.redemptionLabel}>Estimated Net Payout</Text>
+                              <Text style={styles.redemptionValue}>
+                                {formatZAR(req.net_payout || 0)}
+                              </Text>
+                            </View>
+                            {isReviewOrApproved && (
+                              <TouchableOpacity
+                                style={styles.cancelRedemptionBtn}
+                                onPress={() => handleCancelRedemption(req)}
+                                disabled={cancellingRequestId === req.id}
+                                activeOpacity={0.8}
+                              >
+                                {cancellingRequestId === req.id ? (
+                                  <ActivityIndicator size="small" color="#DC2626" />
+                                ) : (
+                                  <>
+                                    <Feather name="x-circle" size={13} color="#DC2626" style={{ marginRight: 4 }} />
+                                    <Text style={styles.cancelRedemptionBtnText}>Cancel Request</Text>
+                                  </>
+                                )}
+                              </TouchableOpacity>
+                            )}
+                            {isSettling && (
+                              <View style={styles.settlementLockedBadge}>
+                                <Feather name="lock" size={12} color="#7C3AED" style={{ marginRight: 4 }} />
+                                <Text style={styles.settlementLockedText}>Settlement Locked</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
             </View>
           )}
 
@@ -1326,6 +1664,17 @@ export default function VaultScreen({ navigation }) {
                 (transactions || []).forEach((tx) => {
                   const isDep = tx.type === "deposit" || tx.type === "sale";
                   const isPurchase = tx.type === "purchase";
+                  const rawStatus = String(tx.status || "").toLowerCase();
+                  const statusLabel =
+                    rawStatus === "completed"
+                      ? "Settled"
+                      : rawStatus === "settlement_processing"
+                      ? "Payout Processing"
+                      : rawStatus === "cancelled"
+                      ? "Cancelled"
+                      : rawStatus === "rejected" || rawStatus === "failed"
+                      ? "Rejected"
+                      : "Pending Review";
                   combinedLogs.push({
                     id: tx.id || `tx-${Math.random()}`,
                     type: isPurchase ? "purchase" : isDep ? "deposit" : "withdrawal",
@@ -1333,30 +1682,47 @@ export default function VaultScreen({ navigation }) {
                       tx.title ||
                       (isPurchase
                         ? "Marketplace Purchase"
-                        : isDep
+                        : tx.type === "sale"
                         ? "Marketplace Sale Proceeds"
-                        : "Vault Cash Deposit"),
-                    status: tx.status === "completed" ? "Verified" : "Pending",
+                        : isDep
+                        ? rawStatus === "completed"
+                          ? "Vault Cash Deposit"
+                          : "Vault Deposit Request"
+                        : rawStatus === "completed"
+                        ? "Vault Withdrawal Settled"
+                        : "Vault Withdrawal Request"),
+                    status: statusLabel,
                     assetName: tx.notes || tx.reference || "Vault Transaction",
                     detail: `${tx.method || "Direct Transfer"}${
-                      tx.reference ? ` • Ref: ${tx.reference}` : ""
-                    }`,
-                    hash: tx.reference || tx.id,
-                    hashDisplay: tx.reference
-                      ? tx.reference.length > 16
-                        ? tx.reference.slice(0, 14) + "..."
+                      tx.destinationSummary ? ` • To: ${tx.destinationSummary}` : ""
+                    }${
+                      tx.settlementRef
+                        ? ` • Settled Ref: ${tx.settlementRef}`
                         : tx.reference
+                        ? ` • Ref: ${tx.reference}`
+                        : ""
+                    }`,
+                    hash: tx.settlementRef || tx.reference || tx.id,
+                    hashDisplay: tx.settlementRef || tx.reference
+                      ? (tx.settlementRef || tx.reference).length > 16
+                        ? (tx.settlementRef || tx.reference).slice(0, 14) + "..."
+                        : tx.settlementRef || tx.reference
                       : String(tx.id || "").slice(-8),
                     amount:
                       tx.amountFormatted ||
                       (isDep
                         ? `+${formatGBP(tx.amount)}`
                         : `-${formatGBP(tx.amount)}`),
-                    badgeColor: isPurchase
-                      ? "#8B5CF6"
-                      : isDep
-                      ? "#10B981"
-                      : "#F59E0B",
+                    badgeColor:
+                      rawStatus === "rejected" || rawStatus === "failed" || rawStatus === "cancelled"
+                        ? "#EF4444"
+                        : isPurchase
+                        ? "#8B5CF6"
+                        : isDep
+                        ? rawStatus === "completed"
+                          ? "#10B981"
+                          : "#F59E0B"
+                        : "#F59E0B",
                     timestamp: tx.createdAt
                       ? new Date(tx.createdAt).toLocaleDateString("en-ZA", {
                           month: "short",
@@ -1567,6 +1933,24 @@ export default function VaultScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
 
+              <View
+                style={{
+                  backgroundColor: "#FFFBEB",
+                  borderRadius: 10,
+                  padding: 10,
+                  marginBottom: 12,
+                  borderWidth: 1,
+                  borderColor: "#FDE68A",
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "700", color: "#92400E" }}>
+                  Manual Bank EFT — Pending Treasury Verification
+                </Text>
+                <Text style={{ fontSize: 11, color: "#B45309", marginTop: 2 }}>
+                  Submitting a deposit request records it as Pending Review. Your spendable balance increases only after settlement is independently verified.
+                </Text>
+              </View>
+
               <Text style={styles.modalLabel}>Deposit Amount (R)</Text>
               <TextInput
                 value={depositAmount}
@@ -1590,6 +1974,15 @@ export default function VaultScreen({ navigation }) {
                 ))}
               </View>
 
+              <Text style={styles.modalLabel}>Bank EFT Reference (Optional)</Text>
+              <TextInput
+                value={depositReference}
+                onChangeText={setDepositReference}
+                placeholder="e.g. EFT-2026-88412"
+                style={styles.modalInput}
+                placeholderTextColor="#94A3B8"
+              />
+
               <TouchableOpacity
                 style={styles.modalSubmitBtn}
                 onPress={handleDeposit}
@@ -1598,7 +1991,7 @@ export default function VaultScreen({ navigation }) {
                 {depositing ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.modalSubmitBtnText}>Confirm Deposit</Text>
+                  <Text style={styles.modalSubmitBtnText}>Submit Deposit Request</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1615,12 +2008,30 @@ export default function VaultScreen({ navigation }) {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Withdraw Funds</Text>
+                <Text style={styles.modalTitle}>Request Withdrawal</Text>
                 <TouchableOpacity
                   onPress={() => setWithdrawModalVisible(false)}
                 >
                   <Feather name="x" size={20} color="#0F172A" />
                 </TouchableOpacity>
+              </View>
+
+              <View
+                style={{
+                  backgroundColor: "#EFF6FF",
+                  borderRadius: 10,
+                  padding: 10,
+                  marginBottom: 12,
+                  borderWidth: 1,
+                  borderColor: "#BFDBFE",
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "700", color: "#1E40AF" }}>
+                  Destination: Approved Bank Account on File
+                </Text>
+                <Text style={{ fontSize: 11, color: "#1D4ED8", marginTop: 2 }}>
+                  Payouts are sent exclusively to your KYC-verified, admin-approved bank account. Funds are reserved immediately while pending treasury settlement.
+                </Text>
               </View>
 
               <Text style={styles.modalLabel}>Withdrawal Amount (R)</Text>
@@ -1629,15 +2040,6 @@ export default function VaultScreen({ navigation }) {
                 onChangeText={setWithdrawAmount}
                 placeholder="e.g. 1000"
                 keyboardType="numeric"
-                style={styles.modalInput}
-                placeholderTextColor="#94A3B8"
-              />
-
-              <Text style={styles.modalLabel}>Destination Account Number</Text>
-              <TextInput
-                value={accountNumber}
-                onChangeText={setAccountNumber}
-                placeholder="SA Bank Account / Account No"
                 style={styles.modalInput}
                 placeholderTextColor="#94A3B8"
               />
@@ -1651,10 +2053,224 @@ export default function VaultScreen({ navigation }) {
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={styles.modalSubmitBtnText}>
-                    Process Withdrawal
+                    Submit Withdrawal Request
                   </Text>
                 )}
               </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* ── SHARE REDEMPTION MODAL ────────────────────────────────────────────── */}
+        <Modal
+          visible={sellModalVisible}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setSellModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { maxHeight: "90%" }]}>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.modalHeader}>
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={styles.modalTitle}>Redeem Asset Shares</Text>
+                    <Text style={styles.modalSubTitle} numberOfLines={1}>
+                      {selectedSellItem?.name || "Asset Offering"}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setSellModalVisible(false)}>
+                    <Feather name="x" size={20} color="#0F172A" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Informational Regulatory Notice */}
+                <View style={styles.redemptionNoticeBox}>
+                  <Feather name="info" size={15} color="#4F46E5" style={{ marginRight: 8, marginTop: 2 }} />
+                  <Text style={styles.redemptionNoticeText}>
+                    Share redemptions are processed as formal exit requests pending custodial verification. Once payout settlement begins, requests are locked. Your shares are reserved immediately upon submission to prevent double-trading.
+                  </Text>
+                </View>
+
+                {/* Shares Selection */}
+                <Text style={styles.modalLabel}>
+                  Shares to Redeem (Available: {selectedSellItem?.availableShares ?? selectedSellItem?.sharesOwned ?? 1})
+                </Text>
+                <View style={styles.sharesStepperRow}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => {
+                      const cur = parseInt(sellSharesCount, 10) || 1;
+                      if (cur > 1) {
+                        const next = cur - 1;
+                        setSellSharesCount(String(next));
+                        fetchQuote(selectedSellItem?.asset_id || selectedSellItem?.id, next);
+                      }
+                    }}
+                  >
+                    <Feather name="minus" size={16} color="#0F172A" />
+                  </TouchableOpacity>
+                  <TextInput
+                    value={sellSharesCount}
+                    onChangeText={(txt) => {
+                      const cleaned = txt.replace(/[^0-9]/g, "");
+                      setSellSharesCount(cleaned);
+                      const num = parseInt(cleaned, 10);
+                      if (num > 0) {
+                        fetchQuote(selectedSellItem?.asset_id || selectedSellItem?.id, num);
+                      }
+                    }}
+                    keyboardType="numeric"
+                    style={styles.stepperInput}
+                  />
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    onPress={() => {
+                      const cur = parseInt(sellSharesCount, 10) || 0;
+                      const max = selectedSellItem?.availableShares ?? selectedSellItem?.sharesOwned ?? 1;
+                      if (cur < max) {
+                        const next = cur + 1;
+                        setSellSharesCount(String(next));
+                        fetchQuote(selectedSellItem?.asset_id || selectedSellItem?.id, next);
+                      }
+                    }}
+                  >
+                    <Feather name="plus" size={16} color="#0F172A" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.maxSharesBtn}
+                    onPress={() => {
+                      const max = selectedSellItem?.availableShares ?? selectedSellItem?.sharesOwned ?? 1;
+                      setSellSharesCount(String(max));
+                      fetchQuote(selectedSellItem?.asset_id || selectedSellItem?.id, max);
+                    }}
+                  >
+                    <Text style={styles.maxSharesBtnText}>MAX</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Live Financial Breakdown Quote */}
+                <View style={styles.quoteSummaryBox}>
+                  {loadingSellQuote ? (
+                    <ActivityIndicator size="small" color="#4F46E5" style={{ paddingVertical: 12 }} />
+                  ) : (
+                    <>
+                      <View style={styles.quoteRow}>
+                        <Text style={styles.quoteLabel}>Authoritative Share Price</Text>
+                        <Text style={styles.quoteVal}>{sellQuote?.sharePriceFormatted || "R0"}</Text>
+                      </View>
+                      <View style={styles.quoteRow}>
+                        <Text style={styles.quoteLabel}>Gross Valuation</Text>
+                        <Text style={styles.quoteVal}>{sellQuote?.grossValuationFormatted || "R0"}</Text>
+                      </View>
+                      <View style={styles.quoteRow}>
+                        <Text style={styles.quoteLabel}>Platform Redemption Fee (2.5%)</Text>
+                        <Text style={[styles.quoteVal, { color: "#DC2626" }]}>
+                          -{sellQuote?.redemptionFeeFormatted || "R0"}
+                        </Text>
+                      </View>
+                      <View style={[styles.quoteRow, styles.quoteTotalRow]}>
+                        <Text style={styles.quoteTotalLabel}>Estimated Net Proceeds</Text>
+                        <Text style={styles.quoteTotalVal}>
+                          {sellQuote?.estimatedNetProceedsFormatted || "R0"}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+
+                {/* Payout Destination Selector */}
+                <Text style={styles.modalLabel}>Payout Destination</Text>
+                <View style={styles.destinationOptionsRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.destinationOption,
+                      sellDestinationMethod === "escrow_wallet" && styles.destinationOptionActive,
+                    ]}
+                    onPress={() => setSellDestinationMethod("escrow_wallet")}
+                  >
+                    <Feather
+                      name="shield"
+                      size={16}
+                      color={sellDestinationMethod === "escrow_wallet" ? "#4F46E5" : "#64748B"}
+                      style={{ marginBottom: 4 }}
+                    />
+                    <Text
+                      style={[
+                        styles.destinationOptionText,
+                        sellDestinationMethod === "escrow_wallet" && styles.destinationOptionTextActive,
+                      ]}
+                    >
+                      SmartAssets Escrow
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.destinationOption,
+                      sellDestinationMethod === "bank_account" && styles.destinationOptionActive,
+                    ]}
+                    onPress={() => setSellDestinationMethod("bank_account")}
+                  >
+                    <Feather
+                      name="credit-card"
+                      size={16}
+                      color={sellDestinationMethod === "bank_account" ? "#4F46E5" : "#64748B"}
+                      style={{ marginBottom: 4 }}
+                    />
+                    <Text
+                      style={[
+                        styles.destinationOptionText,
+                        sellDestinationMethod === "bank_account" && styles.destinationOptionTextActive,
+                      ]}
+                    >
+                      Bank EFT
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {sellDestinationMethod === "bank_account" && (
+                  <View style={{ marginTop: 10 }}>
+                    <Text style={styles.modalSubLabel}>Bank Name</Text>
+                    <TextInput
+                      value={sellBankName}
+                      onChangeText={setSellBankName}
+                      placeholder="e.g. Standard Bank / FNB / Absa"
+                      style={styles.modalInput}
+                      placeholderTextColor="#94A3B8"
+                    />
+                    <Text style={styles.modalSubLabel}>Account Number</Text>
+                    <TextInput
+                      value={sellAccountNumber}
+                      onChangeText={setSellAccountNumber}
+                      placeholder="Enter your bank account number"
+                      keyboardType="numeric"
+                      style={styles.modalInput}
+                      placeholderTextColor="#94A3B8"
+                    />
+                    <Text style={styles.modalSubLabel}>Account Holder Name</Text>
+                    <TextInput
+                      value={sellAccountHolder}
+                      onChangeText={setSellAccountHolder}
+                      placeholder="Account holder name"
+                      style={styles.modalInput}
+                      placeholderTextColor="#94A3B8"
+                    />
+                  </View>
+                )}
+
+                {/* Submit Button */}
+                <TouchableOpacity
+                  style={[styles.modalSubmitBtn, { marginTop: 20 }]}
+                  onPress={handleConfirmSell}
+                  disabled={submittingSell}
+                >
+                  {submittingSell ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.modalSubmitBtnText}>Submit Redemption Request</Text>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -2465,5 +3081,357 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: "#7C3AED",
+  },
+
+  // ── Fractional Actions & Redemption Styling ─────────────────────────────
+  fractionalActionsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  fractionalSellBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EEF2FF",
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  fractionalSellBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#4F46E5",
+  },
+  fractionalBuyBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#5835F5",
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  fractionalBuyBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  redemptionSectionWrap: {
+    marginTop: 24,
+    marginBottom: 8,
+  },
+  redemptionHeaderSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  redemptionCounterBadge: {
+    backgroundColor: "#EEF2FF",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  redemptionCounterText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#4F46E5",
+  },
+  emptyRedemptionCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 20,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderStyle: "dashed",
+  },
+  emptyRedemptionTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginTop: 8,
+  },
+  emptyRedemptionSub: {
+    fontSize: 11,
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 4,
+    lineHeight: 16,
+    paddingHorizontal: 12,
+  },
+  redemptionCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  redemptionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  redemptionAssetName: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  redemptionMeta: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 2,
+    fontWeight: "600",
+  },
+  redemptionStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  statusBadgeReview: {
+    backgroundColor: "#FEF3C7",
+  },
+  statusTextReview: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#D97706",
+  },
+  statusBadgeApproved: {
+    backgroundColor: "#DBEAFE",
+  },
+  statusTextApproved: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#2563EB",
+  },
+  statusBadgeSettling: {
+    backgroundColor: "#EDE9FE",
+  },
+  statusTextSettling: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#7C3AED",
+  },
+  statusBadgeCompleted: {
+    backgroundColor: "#DCFCE7",
+  },
+  statusTextCompleted: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#15803D",
+  },
+  statusBadgeCancelled: {
+    backgroundColor: "#F1F5F9",
+  },
+  statusTextCancelled: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+  statusBadgeRejected: {
+    backgroundColor: "#FEE2E2",
+  },
+  statusTextRejected: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#DC2626",
+  },
+  redemptionStatusText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  redemptionBodyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  redemptionLabel: {
+    fontSize: 10,
+    color: "#94A3B8",
+    fontWeight: "600",
+    textTransform: "uppercase",
+  },
+  redemptionValue: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginTop: 1,
+  },
+  cancelRedemptionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  cancelRedemptionBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#DC2626",
+  },
+  settlementLockedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F5F3FF",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  settlementLockedText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#7C3AED",
+  },
+  modalSubTitle: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+    fontWeight: "600",
+  },
+  redemptionNoticeBox: {
+    flexDirection: "row",
+    backgroundColor: "#EEF2FF",
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+  },
+  redemptionNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    color: "#3730A3",
+    lineHeight: 16,
+  },
+  sharesStepperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 14,
+  },
+  stepperBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepperInput: {
+    flex: 1,
+    height: 42,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 10,
+    textAlign: "center",
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  maxSharesBtn: {
+    backgroundColor: "#EDE9FE",
+    paddingHorizontal: 12,
+    height: 42,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  maxSharesBtnText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#6D28D9",
+  },
+  quoteSummaryBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  quoteRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  quoteLabel: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "500",
+  },
+  quoteVal: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  quoteTotalRow: {
+    marginTop: 6,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    marginBottom: 0,
+  },
+  quoteTotalLabel: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  quoteTotalVal: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#15803D",
+  },
+  destinationOptionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 10,
+  },
+  destinationOption: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+  },
+  destinationOptionActive: {
+    backgroundColor: "#EEF2FF",
+    borderColor: "#4F46E5",
+  },
+  destinationOptionText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+  destinationOptionTextActive: {
+    color: "#4F46E5",
+  },
+  modalSubLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#475569",
+    marginTop: 8,
+    marginBottom: 4,
   },
 });

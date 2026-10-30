@@ -391,7 +391,9 @@ export default function CheckoutScreen({ navigation, route }) {
         );
 
         if (res?.success) {
-          await recordFractionalHolding();
+          if (res.receipt?.isSettled) {
+            await recordFractionalHolding();
+          }
           setReceiptData(res.receipt);
           setConfirmed(true);
         } else {
@@ -411,6 +413,8 @@ export default function CheckoutScreen({ navigation, route }) {
 
   // ── Success Receipt Screen ─────────────────────────────────────────────────
   if (confirmed) {
+    const isOrderSettled = Boolean(receiptData?.isSettled);
+
     return (
       <View style={styles.root}>
         {/* ── Background Mesh Gradient (Matches HomeScreen.js) ── */}
@@ -425,12 +429,18 @@ export default function CheckoutScreen({ navigation, route }) {
         <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safe}>
           <ScrollView contentContainerStyle={styles.successScroll} showsVerticalScrollIndicator={false}>
             <View style={styles.successIcon}>
-              <Ionicons name="checkmark-circle" size={64} color="#10B981" />
+              <Ionicons
+                name={isOrderSettled ? "checkmark-circle" : "time-outline"}
+                size={64}
+                color={isOrderSettled ? "#10B981" : "#F59E0B"}
+              />
             </View>
 
             <Text style={styles.successTitle}>
               {isFractional
-                ? 'Investment Confirmed!'
+                ? isOrderSettled
+                  ? 'Investment Confirmed!'
+                  : 'Order Placed — Pending Settlement'
                 : ['sandbox', 'test'].includes(String(receiptData?.stripeMode || '').toLowerCase())
                 ? 'Test Payment Simulated'
                 : receiptData?.escrowStatus === 'pending_payment'
@@ -439,7 +449,9 @@ export default function CheckoutScreen({ navigation, route }) {
             </Text>
             <Text style={styles.successSub}>
               {isFractional
-                ? `${sharesCount} shares (${((sharesCount / totalShares) * 100).toFixed(1)}% ownership) in ${asset.name} registered to your Vault.`
+                ? isOrderSettled
+                  ? `${sharesCount} shares (${((sharesCount / totalShares) * 100).toFixed(1)}% ownership) in ${asset.name} registered to your Vault.`
+                  : `Your bank transfer reference for ${sharesCount} shares in "${asset.name}" has been recorded. Once your payment clears and is verified by SmartAssets treasury, shares will be secured in your Vault.`
                 : ['sandbox', 'test'].includes(String(receiptData?.stripeMode || '').toLowerCase())
                 ? 'Test-only Stripe simulation. No real funds were collected or secured in escrow.'
                 : receiptData?.escrowStatus === 'pending_payment'
@@ -451,14 +463,14 @@ export default function CheckoutScreen({ navigation, route }) {
             <View style={styles.receiptCard}>
               <View style={styles.receiptHeaderRow}>
                 <Text style={styles.receiptCardTitle}>
-                  {receiptData?.escrowStatus === 'pending_payment'
+                  {!isOrderSettled || receiptData?.escrowStatus === 'pending_payment'
                     ? 'ESCROW ORDER RECORD'
                     : 'OFFICIAL SETTLEMENT RECEIPT'}
                 </Text>
                 <View
                   style={[
                     styles.settledBadge,
-                    receiptData?.escrowStatus === 'pending_payment' && {
+                    (!isOrderSettled || receiptData?.escrowStatus === 'pending_payment') && {
                       backgroundColor: 'rgba(245, 158, 11, 0.15)',
                       borderColor: '#F59E0B',
                     },
@@ -467,10 +479,10 @@ export default function CheckoutScreen({ navigation, route }) {
                   <Text
                     style={[
                       styles.settledBadgeText,
-                      receiptData?.escrowStatus === 'pending_payment' && { color: '#F59E0B' },
+                      (!isOrderSettled || receiptData?.escrowStatus === 'pending_payment') && { color: '#F59E0B' },
                     ]}
                   >
-                    {receiptData?.escrowStatus === 'pending_payment'
+                    {!isOrderSettled || receiptData?.escrowStatus === 'pending_payment'
                       ? 'PENDING SETTLEMENT'
                       : isFractional
                       ? 'SETTLED'
@@ -478,6 +490,7 @@ export default function CheckoutScreen({ navigation, route }) {
                   </Text>
                 </View>
               </View>
+
 
               <View style={styles.receiptRow}>
                 <Text style={styles.receiptLabel}>ORDER ID</Text>

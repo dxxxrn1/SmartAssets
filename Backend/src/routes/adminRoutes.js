@@ -69,4 +69,11 @@ router.get('/bank-accounts', adminController.getAdminBankAccounts);
 router.post('/bank-accounts/:id/approve', adminActionLimiter, adminController.approveAdminBankAccount);
 router.post('/bank-accounts/:id/reject', adminActionLimiter, adminController.rejectAdminBankAccount);
 
+// Treasury Vault Deposit & Withdrawal Reconciliation Desk
+router.get('/vault-transactions', adminController.getAdminVaultTransactions);
+router.post('/deposits/:id/confirm', adminActionLimiter, adminController.confirmAdminDeposit);
+router.post('/deposits/:id/reject', adminActionLimiter, adminController.rejectAdminDeposit);
+router.post('/withdrawals/:id/settle', adminActionLimiter, adminController.settleAdminWithdrawal);
+router.post('/withdrawals/:id/reject', adminActionLimiter, adminController.rejectAdminWithdrawal);
+
 module.exports = router;

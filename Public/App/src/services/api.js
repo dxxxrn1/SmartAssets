@@ -754,6 +754,61 @@ export async function processPaymentApi(paymentData, token) {
   );
 }
 
+/**
+ * Fetch share redemption / liquidity quote with fees and estimated net proceeds.
+ * @param {{ positionId: string, sharesCount: number }} params
+ * @param {string} token
+ */
+export async function getShareRedemptionQuoteApi(params, token) {
+  const query = new URLSearchParams({
+    positionId: params.positionId || "",
+    sharesCount: String(params.sharesCount || 1),
+  }).toString();
+  return apiRequest(`/payments/investments/share-redemption-quote?${query}`, { method: "GET" }, token);
+}
+
+/**
+ * Submit an investor share redemption / sale request.
+ * @param {{ positionId: string, sharesCount: number, destinationMethod?: string, destinationDetails?: object, idempotencyKey?: string }} payload
+ * @param {string} token
+ */
+export async function requestShareRedemptionApi(payload, token) {
+  invalidateVaultCache();
+  return apiRequest(
+    "/payments/investments/sell-shares",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+/**
+ * Cancel a pending share redemption request and un-reserve the shares.
+ * @param {string} requestId
+ * @param {string} token
+ */
+export async function cancelShareRedemptionApi(requestId, token) {
+  invalidateVaultCache();
+  return apiRequest(
+    `/payments/investments/cancel-sell-request/${requestId}`,
+    {
+      method: "POST",
+    },
+    token,
+  );
+}
+
+/**
+ * Fetch all share redemption requests for the authenticated investor.
+ * @param {string} token
+ */
+export async function getUserRedemptionsApi(token) {
+  return apiRequest("/payments/investments/my-redemptions", { method: "GET" }, token);
+}
+
+
 // ── Smart Contract Escrow API ────────────────────────────────────────────────
 
 /**
@@ -933,8 +988,8 @@ export async function getUserSupportTicketsApi(token) {
 // ── Vault Balance, Deposits & Withdrawals API ────────────────────────────────
 
 /**
- * Deposit funds into user's vault balance.
- * @param {{ amount: number, method?: string, reference?: string, notes?: string }} depositData
+ * Submit a Vault deposit request or verified settlement.
+ * @param {{ amount: number, method?: string, reference?: string, notes?: string, paymentIntentId?: string, idempotencyKey?: string }} depositData
  */
 export async function depositFundsApi(depositData, token) {
   invalidateVaultCache();
@@ -949,8 +1004,8 @@ export async function depositFundsApi(depositData, token) {
 }
 
 /**
- * Withdraw funds from user's vault balance.
- * @param {{ amount: number, method?: string, bankDetails?: object, walletAddress?: string, notes?: string }} withdrawData
+ * Submit a Vault withdrawal request to the user's approved bank account on file.
+ * @param {{ amount: number, method?: string, notes?: string, idempotencyKey?: string }} withdrawData
  */
 export async function withdrawFundsApi(withdrawData, token) {
   invalidateVaultCache();
@@ -959,6 +1014,20 @@ export async function withdrawFundsApi(withdrawData, token) {
     {
       method: "POST",
       body: JSON.stringify(withdrawData),
+    },
+    token,
+  );
+}
+
+/**
+ * Cancel a user's pending_review Vault withdrawal and restore reserved funds.
+ */
+export async function cancelVaultWithdrawalApi(withdrawalId, token) {
+  invalidateVaultCache();
+  return apiRequest(
+    `/user/withdraw/${encodeURIComponent(withdrawalId)}/cancel`,
+    {
+      method: "POST",
     },
     token,
   );

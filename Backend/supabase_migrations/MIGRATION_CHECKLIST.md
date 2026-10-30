@@ -26,6 +26,8 @@ Apply migrations in the exact chronological order below.
 | **12** | `20261024_wallet_linking_and_cleanup.sql` | *Optional* | Wallet challenge nonces and signature replay defense tables. |
 | **13** | `20261028_portfolio_snapshots.sql` | *Optional* | Periodic portfolio value history snapshots table. |
 | **14** | `20261029_escrow_seller_updates.sql` | *Optional* | Supplementary seller escrow notification flags. |
+| **15** | `20261031_atomic_investment_and_share_sales.sql` | **REQUIRED** | Atomic share purchases, anti-whale cap, `reserved_shares`, `share_redemption_requests`, `payment_idempotency`, and PostgreSQL RPCs. |
+| **16** | `20261031_vault_deposit_and_withdrawal_atomic.sql` | **REQUIRED** | Atomic Vault deposits, pending bank review, `reserved_balance` on `profiles`, approved-bank-only withdrawals, RLS hardening, and settlement RPCs. |
 
 ---
 
@@ -54,7 +56,9 @@ FROM (
         ('bank_accounts'),
         ('investor_positions'),
         ('escrow_orders'),
-        ('revoked_tokens')
+        ('revoked_tokens'),
+        ('share_redemption_requests'),
+        ('payment_idempotency')
 ) AS t(table_name)
 LEFT JOIN information_schema.tables c 
     ON c.table_schema = 'public' AND c.table_name = t.table_name

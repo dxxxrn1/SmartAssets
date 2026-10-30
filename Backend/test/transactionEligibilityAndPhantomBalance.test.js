@@ -55,21 +55,41 @@ async function runTests() {
   console.log(`   ✅ Fresh user balance is strictly R0 (no R15,000 phantom starter credit).`);
 
   console.log('\n🧪 [TEST 2] Verifying deposit and withdrawal calculations from R0 base...');
-  const dep = await vaultTxService.depositFunds({
+  const pendingDep = await vaultTxService.depositFunds({
     userId: freshUserId,
     amount: 2500,
-    method: 'Instant EFT',
+    method: 'Manual Bank EFT',
     reference: 'REF-TEST-001',
   });
-  assert.strictEqual(dep.newBalanceNum, 2500, 'Balance after R2,500 deposit must be exactly R2,500');
+  assert.strictEqual(pendingDep.status, 'pending_review');
+  assert.strictEqual(pendingDep.newBalanceNum, 0, 'Unverified deposit must not credit spendable balance');
+
+  const dep = await vaultTxService.confirmDeposit({
+    transactionId: pendingDep.transaction.id,
+    reviewer: 'admin',
+    settlementRef: 'SETTLED-REF-TEST-001',
+  });
+  assert.strictEqual(dep.newBalanceNum, 2500, 'Balance after R2,500 verified deposit must be exactly R2,500');
+
+  const freshBank = await complianceService.submitBankAccount({
+    userId: freshUserId,
+    userEmail: `${freshUserId}@smartassets.io`,
+    fullName: 'Fresh Tester',
+    accountHolder: 'Fresh Tester',
+    bankName: 'Standard Bank',
+    accountNumber: '123456789',
+    branchCode: '051001',
+    accountType: 'Cheque / Current',
+  });
+  await complianceService.approveBankAccount(freshBank.id, 'admin');
 
   const wth = await vaultTxService.withdrawFunds({
     userId: freshUserId,
     amount: 1000,
     method: 'bank',
-    bankDetails: { bankName: 'Standard Bank', accountNumber: '123456789' },
   });
-  assert.strictEqual(wth.newBalanceNum, 1500, 'Balance after R1,000 withdrawal must be exactly R1,500');
+  assert.strictEqual(wth.status, 'pending_review');
+  assert.strictEqual(wth.newBalanceNum, 1500, 'Spendable balance after R1,000 reserved withdrawal must be R1,500');
 
   let rejectedOverdraft = false;
   try {
@@ -82,7 +102,7 @@ async function runTests() {
     rejectedOverdraft = true;
   }
   assert.ok(rejectedOverdraft, 'Overdraft exceeding available balance must be rejected');
-  console.log(`   ✅ Balance state transitions strictly follow real transactions (0 -> 2500 -> 1500).`);
+  console.log(`   ✅ Balance state transitions strictly follow real transactions (0 -> pending -> 2500 -> 1500).`);
 
   // ──────────────────────────────────────────────────────────────────────────
   // RULE 2: Fail Closed When Compliance Data is Missing or Unverified

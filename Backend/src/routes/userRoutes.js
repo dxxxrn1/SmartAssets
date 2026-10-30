@@ -19,6 +19,7 @@ const {
   deleteAccount,
   deposit,
   withdraw,
+  cancelWithdrawal,
   getTransactions,
   lodgeSupport,
   getSupportTickets,
@@ -43,6 +44,7 @@ router.post('/seed-starter', seedStarterHoldings);
 // Vault Balance, Deposits & Withdrawals (server-side KYC + Bank Account enforcement)
 router.post('/deposit', requireVerified, requireApprovedBank, deposit);
 router.post('/withdraw', requireVerified, requireApprovedBank, withdraw);
+router.post('/withdraw/:id/cancel', cancelWithdrawal);
 router.get('/transactions', getTransactions);
 
 // Profile & Account Management
