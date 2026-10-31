@@ -908,7 +908,7 @@ export default function HomeScreen({ navigation }) {
               </LinearGradient>
             </TouchableOpacity>
           </View>
-          {/* ── UNIFIED SCAN & KNOW + 3D SPATIAL AR SUITE ─────────────────────── */}
+          {/* ── UNIFIED AI VISION SCANNER + DEMO ROOM PREVIEW SUITE ────────────── */}
           <View style={styles.unifiedVisionCard}>
             <LinearGradient
               colors={["#0B1120", "#1E1B4B", "#172554"]}
@@ -916,11 +916,14 @@ export default function HomeScreen({ navigation }) {
               end={{ x: 1, y: 1 }}
               style={styles.unifiedVisionGradient}
             >
-              {/* Feature 1: Gemini Vision Scanner (Scan & Know) */}
+              {/* Feature 1: Gemini AI Vision Scanner (Scan & Know) */}
               <TouchableOpacity
                 style={styles.visionRow}
                 onPress={() => navigation.navigate(SCREENS.SCAN_AND_KNOW)}
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Open AI Vision Scanner (Scan and Know)"
+                accessibilityHint="Captures or selects a photo to identify the asset, estimate ZAR market value, and match Sepolia certificates"
               >
                 <View style={styles.scanKnowIconWrap}>
                   <Ionicons name="scan" size={22} color="#00C2FF" />
@@ -934,7 +937,9 @@ export default function HomeScreen({ navigation }) {
                       <Text style={styles.visionPillBadgeText}>AI SCAN</Text>
                     </View>
                   </View>
-                  <Text style={styles.scanKnowTitle}>Scan & Know</Text>
+                  <Text style={styles.scanKnowTitle}>
+                    Vision Scanner (Scan & Know)
+                  </Text>
                   <Text style={styles.scanKnowSub} numberOfLines={1}>
                     Identify, value in Rands, and match Sepolia certificates
                   </Text>
@@ -947,25 +952,19 @@ export default function HomeScreen({ navigation }) {
               {/* Elegant subtle glassmorphic divider */}
               <View style={styles.visionDivider} />
 
-              {/* Feature 2: 3D Spatial AR Studio (Vision Scanner) */}
+              {/* Feature 2: Demo Room Preview (Sample 3D Model Camera Overlay) */}
               <TouchableOpacity
                 style={styles.visionRow}
                 onPress={() =>
                   navigation.navigate(SCREENS.LIVE_ROOM_PREVIEW, {
-                    imageUri:
-                      "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80",
-                    title: "Velvet Lounge Chair",
-                    listingId: "showcase-chair-3d",
-                    glbUrl:
-                      "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/SheenChair/glTF-Binary/SheenChair.glb",
-                    source: "ai_generated",
-                    placement: "floor",
-                    widthCm: 75,
-                    heightCm: 85,
-                    depthCm: 80,
+                    isDemoShowcase: true,
+                    showcaseId: "showcase-lounge-chair",
                   })
                 }
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Open Demo Room Preview Showcase"
+                accessibilityHint="Opens the sample 3D model showcase over a live camera background"
               >
                 <View
                   style={[
@@ -981,7 +980,7 @@ export default function HomeScreen({ navigation }) {
                 <View style={{ flex: 1 }}>
                   <View style={styles.visionKickerRow}>
                     <Text style={[styles.scanKnowKicker, { color: "#E9D5FF" }]}>
-                      AI VISION • 3D SPATIAL AR
+                      CAMERA OVERLAY • DEMO SHOWCASE
                     </Text>
                     <View
                       style={[
@@ -998,13 +997,13 @@ export default function HomeScreen({ navigation }) {
                           { color: "#C084FC" },
                         ]}
                       >
-                        3D STUDIO
+                        DEMO 3D
                       </Text>
                     </View>
                   </View>
-                  <Text style={styles.scanKnowTitle}>Vision Scanner & AR</Text>
+                  <Text style={styles.scanKnowTitle}>Demo Room Preview</Text>
                   <Text style={styles.scanKnowSub} numberOfLines={1}>
-                    1:1 true scale preview & high-resolution 3D asset inspection
+                    Sample 3D model overlay on live camera feed
                   </Text>
                 </View>
                 <View

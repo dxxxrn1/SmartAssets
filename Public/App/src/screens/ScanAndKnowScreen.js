@@ -20,6 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { SCREENS } from "../constants/navigation";
 import { useAuth } from "../context/AuthContext";
@@ -36,14 +37,15 @@ const showAlert = (title, message) => {
 
 /**
  * Ensures any picked/captured image asset is converted to a base64 data URI
- * across iOS, Android, and Web (including blob: URLs on web).
+ * across iOS, Android, and Web (including blob: URLs on web and file:///content:// URIs on Android).
  */
-async function toDataUri(asset) {
+export async function toDataUri(asset) {
   if (!asset) return null;
+  const mime = asset.mimeType || "image/jpeg";
   if (asset.base64) {
-    if (String(asset.base64).startsWith("data:")) return asset.base64;
-    const mime = asset.mimeType || "image/jpeg";
-    return `data:${mime};base64,${asset.base64}`;
+    const cleanB64 = String(asset.base64).trim();
+    if (cleanB64.startsWith("data:")) return cleanB64;
+    return `data:${mime};base64,${cleanB64}`;
   }
   const uri = asset.uri || null;
   if (!uri) return null;
@@ -63,6 +65,31 @@ async function toDataUri(asset) {
       return uri;
     }
   }
+
+  // Native Android / iOS fallback: read local file:// or content:// URI as base64
+  if (
+    Platform.OS !== "web" &&
+    (uri.startsWith("file:") || uri.startsWith("content:")) &&
+    typeof FileSystem?.readAsStringAsync === "function"
+  ) {
+    try {
+      const b64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType?.Base64 || "base64",
+      });
+      if (b64 && b64.length > 32) {
+        return `data:${mime};base64,${b64}`;
+      }
+    } catch (_) {
+      // Fall through to validation check below
+    }
+  }
+
+  if (/^(file|content|ph|assets-library):/i.test(uri)) {
+    throw new Error(
+      "Could not encode the selected photo into a base64 image payload. Please retake the photo or select a standard JPEG/PNG image.",
+    );
+  }
+
   return uri;
 }
 
@@ -173,9 +200,9 @@ export default function ScanAndKnowScreen({ navigation }) {
       }
       const picked = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: "images",
-        allowsEditing: true,
+        allowsEditing: Platform.OS === "ios",
         aspect: [3, 4],
-        quality: 0.7,
+        quality: 0.65,
         base64: true,
       });
       if (picked.canceled || !picked.assets?.[0]) return;
@@ -183,6 +210,7 @@ export default function ScanAndKnowScreen({ navigation }) {
       setPreviewUri(uri);
       await runScan(uri);
     } catch (err) {
+      setError(err.message);
       showAlert("Gallery error", err.message);
     }
   };
@@ -202,9 +230,9 @@ export default function ScanAndKnowScreen({ navigation }) {
         return;
       }
       const captured = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
+        allowsEditing: Platform.OS === "ios",
         aspect: [3, 4],
-        quality: 0.7,
+        quality: 0.65,
         base64: true,
       });
       if (captured.canceled || !captured.assets?.[0]) return;
@@ -212,6 +240,7 @@ export default function ScanAndKnowScreen({ navigation }) {
       setPreviewUri(uri);
       await runScan(uri);
     } catch (err) {
+      setError(err.message);
       showAlert("Camera error", err.message);
     }
   };
@@ -350,22 +379,49 @@ export default function ScanAndKnowScreen({ navigation }) {
             onPress={() => navigation.goBack()}
             style={styles.iconBtn}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Close Vision Scanner"
+            accessibilityHint="Returns to the previous screen"
           >
             <Feather name="x" size={20} color="#FFFFFF" />
           </TouchableOpacity>
           <View style={styles.topTitleWrap}>
-            <Text style={styles.topKicker}>GEMINI • ZAR ORACLE • SEPOLIA</Text>
-            <Text style={styles.topTitle}>Scan & Know</Text>
+            <Text style={styles.topKicker} maxFontSizeMultiplier={1.2}>
+              GEMINI • ZAR ORACLE • SEPOLIA
+            </Text>
+            <Text style={styles.topTitle} maxFontSizeMultiplier={1.3}>
+              Scan & Know
+            </Text>
           </View>
           <TouchableOpacity
             onPress={resetScan}
             style={styles.iconBtn}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Reset scan"
+            accessibilityHint="Clears the current photo and scan result"
           >
             <Feather name="refresh-cw" size={16} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       </SafeAreaView>
+
+      {error && !scanning && !result && (
+        <View style={styles.errorBanner} accessibilityRole="alert">
+          <Ionicons name="alert-circle-outline" size={20} color="#FCA5A5" />
+          <Text style={styles.errorBannerText}>{error}</Text>
+          {previewUri && (
+            <TouchableOpacity
+              style={styles.retryPill}
+              onPress={() => runScan(previewUri)}
+              accessibilityRole="button"
+              accessibilityLabel="Retry AI Vision scan"
+            >
+              <Text style={styles.retryPillText}>Retry</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {!result && !scanning && (
         <View style={styles.captureDock}>
@@ -373,11 +429,14 @@ export default function ScanAndKnowScreen({ navigation }) {
             style={styles.sideAction}
             onPress={pickFromGallery}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Pick photo from gallery"
+            accessibilityHint="Opens your device photo library to scan an item"
           >
             <View style={styles.sideIconBubble}>
               <Feather name="image" size={18} color="#FFFFFF" />
             </View>
-            <Text style={styles.sideActionLabel}>
+            <Text style={styles.sideActionLabel} maxFontSizeMultiplier={1.2}>
               {Platform.OS === "web" ? "Upload" : "Gallery"}
             </Text>
           </TouchableOpacity>
@@ -386,6 +445,9 @@ export default function ScanAndKnowScreen({ navigation }) {
             onPress={snapPhoto}
             activeOpacity={0.9}
             style={styles.shutterOuter}
+            accessibilityRole="button"
+            accessibilityLabel="Capture photo with camera"
+            accessibilityHint="Takes a photo and starts AI Vision and ZAR valuation analysis"
           >
             <LinearGradient
               colors={["#00C2FF", "#7C3AED"]}
@@ -401,11 +463,16 @@ export default function ScanAndKnowScreen({ navigation }) {
             style={styles.sideAction}
             onPress={pickFromGallery}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Select photo for AI inspection"
+            accessibilityHint="Selects an existing photo for Scan and Know analysis"
           >
             <View style={styles.sideIconBubble}>
               <Feather name="upload-cloud" size={18} color="#00C2FF" />
             </View>
-            <Text style={styles.sideActionLabel}>Select Photo</Text>
+            <Text style={styles.sideActionLabel} maxFontSizeMultiplier={1.2}>
+              Select Photo
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -654,12 +721,12 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(15,23,42,0.55)",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(15,23,42,0.65)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(255,255,255,0.22)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -671,6 +738,42 @@ const styles = StyleSheet.create({
     letterSpacing: 1.3,
   },
   topTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "800" },
+  errorBanner: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    bottom: 136,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: "rgba(127,29,29,0.88)",
+    borderWidth: 1,
+    borderColor: "rgba(252,165,165,0.45)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  errorBannerText: {
+    flex: 1,
+    color: "#FEE2E2",
+    fontSize: 12.5,
+    fontWeight: "600",
+    lineHeight: 17,
+  },
+  retryPill: {
+    minHeight: 44,
+    minWidth: 68,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: "#EF4444",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  retryPillText: {
+    color: "#FFFFFF",
+    fontSize: 12.5,
+    fontWeight: "800",
+  },
   captureDock: {
     position: "absolute",
     left: 0,
@@ -680,11 +783,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-evenly",
   },
-  sideAction: { alignItems: "center", gap: 6, width: 84 },
+  sideAction: { alignItems: "center", gap: 6, width: 92, minHeight: 48 },
   sideIconBubble: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: "rgba(15,23,42,0.65)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.2)",

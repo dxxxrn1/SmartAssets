@@ -330,26 +330,32 @@ export default function AssetDetailScreen({ navigation, route }) {
     }
   };
 
+  const explicitAssetGlbUrl =
+    asset?.glbUrl ||
+    asset?.glb_url ||
+    asset?.model?.glb_url ||
+    asset?.modelUrl ||
+    null;
+
   const handleOpenLiveRoomPreview = () => {
     const rawImage =
       asset?.image ||
-      (Array.isArray(asset?.images) && asset.images.length > 0 ? asset.images[0] : null) ||
-      'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80';
-    const imageUri = resolveImageUrl(rawImage);
-    const title = asset?.title || asset?.name || 'Velvet Lounge Chair';
-    const listingId = String(asset?.id || asset?._id || 'asset-detail');
-    const widthCm = Number(asset?.dimensions?.widthCm || asset?.widthCm) || 75;
-    const heightCm = Number(asset?.dimensions?.heightCm || asset?.heightCm) || 85;
-    const depthCm = Number(asset?.dimensions?.depthCm || asset?.depthCm) || 80;
-    const glbUrl =
-      asset?.glbUrl ||
-      asset?.glb_url ||
-      asset?.model?.glb_url ||
-      asset?.modelUrl ||
-      'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/SheenChair/glTF-Binary/SheenChair.glb';
-    const source = asset?.model?.source || 'ai_generated';
-    const isWallItem = (asset?.category || '').toLowerCase().includes('art') || (asset?.category || '').toLowerCase().includes('paint');
-    const placement = asset?.placement || (isWallItem ? 'wall' : 'floor');
+      (Array.isArray(asset?.images) && asset.images.length > 0
+        ? asset.images[0]
+        : null) ||
+      null;
+    const imageUri = resolveImageUrl(rawImage, null);
+    const title = asset?.title || asset?.name || "Marketplace Listing";
+    const listingId = String(asset?.id || asset?._id || "asset-detail");
+    const widthCm = Number(asset?.dimensions?.widthCm || asset?.widthCm) || 40;
+    const heightCm = Number(asset?.dimensions?.heightCm || asset?.heightCm) || 40;
+    const depthCm = Number(asset?.dimensions?.depthCm || asset?.depthCm) || 25;
+    const glbUrl = explicitAssetGlbUrl;
+    const source = asset?.model?.source || (glbUrl ? "verified_3d" : "listing_photo");
+    const isWallItem =
+      (asset?.category || "").toLowerCase().includes("art") ||
+      (asset?.category || "").toLowerCase().includes("paint");
+    const placement = asset?.placement || (isWallItem ? "wall" : "floor");
 
     navigation.navigate(SCREENS.LIVE_ROOM_PREVIEW, {
       imageUri,
@@ -361,6 +367,7 @@ export default function AssetDetailScreen({ navigation, route }) {
       widthCm,
       heightCm,
       depthCm,
+      isDemoShowcase: false,
       asset,
       onBid: (id) => navigation.navigate(SCREENS.CHECKOUT, { listingId: id, asset }),
     });
@@ -696,14 +703,28 @@ export default function AssetDetailScreen({ navigation, route }) {
               </View>
             </View>
 
-            {/* Top Right "View in AR" Floating Action Pill */}
+            {/* Top Right "Room Preview" Floating Action Pill */}
             <TouchableOpacity
               style={styles.heroArFloatingBtn}
               onPress={handleOpenLiveRoomPreview}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={
+                explicitAssetGlbUrl
+                  ? "Open 3D Room Preview"
+                  : "Open Live Room Preview"
+              }
+              accessibilityHint="Previews this listing over a live camera background"
             >
-              <Ionicons name="cube-outline" size={14} color="#00C2FF" style={{ marginRight: 4 }} />
-              <Text style={styles.heroArFloatingText}>View in AR</Text>
+              <Ionicons
+                name={explicitAssetGlbUrl ? "cube-outline" : "camera-outline"}
+                size={14}
+                color="#00C2FF"
+                style={{ marginRight: 4 }}
+              />
+              <Text style={styles.heroArFloatingText}>
+                {explicitAssetGlbUrl ? "3D Room Preview" : "Room Preview"}
+              </Text>
             </TouchableOpacity>
 
             {/* Bottom title & category overlay vignette */}
@@ -1241,8 +1262,19 @@ export default function AssetDetailScreen({ navigation, route }) {
             style={styles.bottomArBtn}
             onPress={handleOpenLiveRoomPreview}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={
+              explicitAssetGlbUrl
+                ? "Open 3D Room Preview"
+                : "Open Live Room Preview"
+            }
+            accessibilityHint="Previews this listing over a live camera background"
           >
-            <Ionicons name="cube-outline" size={18} color="#00C2FF" />
+            <Ionicons
+              name={explicitAssetGlbUrl ? "cube-outline" : "camera-outline"}
+              size={18}
+              color="#00C2FF"
+            />
           </TouchableOpacity>
 
           <TouchableOpacity

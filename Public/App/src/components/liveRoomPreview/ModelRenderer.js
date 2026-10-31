@@ -9,7 +9,7 @@
 //   - Soft contact shadow (floor) and subtle mounting bracket (wall)
 //   - Smooth 30 fps cap and full resource cleanup on unmount
 
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import {
   View,
   StyleSheet,
@@ -449,6 +449,16 @@ function buildThreeHtml() {
         gestureRotY = 0;
       }
 
+      if (data.type === 'ROTATE_BY') {
+        var deltaRad = ((Number(data.deltaDeg) || 45) * Math.PI) / 180;
+        gestureRotY += deltaRad;
+      }
+
+      if (data.type === 'SCALE_BY') {
+        var factor = Number(data.factor) || 1.15;
+        gestureScale = Math.max(0.35, Math.min(3.5, gestureScale * factor));
+      }
+
       if (data.type === 'GESTURE') {
         if (data.panX !== undefined && data.panY !== undefined) {
           // Convert pixel pan into scene metric offsets
@@ -519,7 +529,7 @@ function buildThreeHtml() {
 /**
  * `<ModelRenderer />` Component
  */
-export default function ModelRenderer({
+const ModelRenderer = forwardRef(function ModelRenderer({
   glbDataUri,
   widthCm = 60,
   heightCm = 80,
@@ -532,7 +542,7 @@ export default function ModelRenderer({
   resetTrigger = 0,
   onLoaded,
   onError,
-}) {
+}, ref) {
   const webViewRef = useRef(null);
   const isWebViewReady = useRef(false);
 
@@ -543,6 +553,22 @@ export default function ModelRenderer({
       webViewRef.current.injectJavaScript(script);
     }
   }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      rotateBy(deltaDeg = 45) {
+        postToWebView({ type: 'ROTATE_BY', deltaDeg });
+      },
+      scaleBy(factor = 1.15) {
+        postToWebView({ type: 'SCALE_BY', factor });
+      },
+      resetTransform() {
+        postToWebView({ type: 'RECENTER' });
+      },
+    }),
+    [postToWebView],
+  );
 
   // Update model source whenever glbDataUri, placement, or dimensions change
   useEffect(() => {
@@ -657,7 +683,9 @@ export default function ModelRenderer({
       />
     </View>
   );
-}
+});
+
+export default ModelRenderer;
 
 const styles = StyleSheet.create({
   webView: {

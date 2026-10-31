@@ -30,44 +30,72 @@ function getMetroLanBaseUrl() {
   return null;
 }
 
-const DEPLOYED_RENDER_API = "https://smartassets.onrender.com/api";
+export const DEPLOYED_RENDER_API = "https://smartassets.onrender.com/api";
+
+export function normalizeApiBaseUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== "string") return null;
+  const trimmed = rawUrl.trim().replace(/\/+$/, "");
+  if (!trimmed) return null;
+  return /\/api$/i.test(trimmed) ? trimmed : `${trimmed}/api`;
+}
+
+function isLocalOrLanApiUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  return (
+    url.includes("10.0.2.2") ||
+    url.includes("localhost") ||
+    url.includes("127.0.0.1") ||
+    /^http:\/\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/i.test(url)
+  );
+}
 
 /// ── Base URL — defaults to live Render production backend ───────────────────
 export const getBaseUrl = () => {
-  // 1. Explicit environment variable takes precedence
-  if (process.env.EXPO_PUBLIC_API_BASE_URL) {
-    return process.env.EXPO_PUBLIC_API_BASE_URL;
+  // 1. Explicit environment variable takes precedence (set via EAS build profile or .env)
+  const envUrl = normalizeApiBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
+  if (envUrl) {
+    return envUrl;
   }
 
-  // 2. In browser / web mode, default directly to the deployed Render backend
-  if (Platform.OS === "web") {
+  // 2. In browser / web mode or standalone production APK builds, always target Render directly
+  const isProductionBuild = typeof __DEV__ !== "undefined" && !__DEV__;
+  if (Platform.OS === "web" || isProductionBuild) {
     return DEPLOYED_RENDER_API;
   }
 
-  // 3. On physical mobile devices in development, try Metro LAN if available
+  // 3. In local Expo Go development, try Metro LAN if available, otherwise Render
   const metroBase = getMetroLanBaseUrl();
   if (metroBase) return metroBase;
 
-  // 4. Android emulator localhost alias
-  if (Platform.OS === "android") return "http://10.0.2.2:5000/api";
-
-  // 5. Default production backend
+  // 4. Default directly to the deployed Render backend (never default physical Android devices to 10.0.2.2)
   return DEPLOYED_RENDER_API;
 };
 
 export let API_BASE_URL = getBaseUrl();
 
-function getFallbackBaseUrls() {
+export function getFallbackBaseUrls() {
   const prodUrl = DEPLOYED_RENDER_API;
-  const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+  const envUrl = normalizeApiBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
+  const isProductionBuild = typeof __DEV__ !== "undefined" && !__DEV__;
 
   if (Platform.OS === "web") {
     return [
-      envUrl || prodUrl,
-      prodUrl,
-      API_BASE_URL,
-      "http://localhost:5000/api",
-    ].filter(Boolean);
+      ...new Set(
+        [
+          envUrl || prodUrl,
+          prodUrl,
+          API_BASE_URL,
+          "http://localhost:5000/api",
+        ].filter(Boolean),
+      ),
+    ];
+  }
+
+  if (isProductionBuild) {
+    const prodCandidates = [envUrl, prodUrl, API_BASE_URL].filter(
+      (u) => Boolean(u) && !isLocalOrLanApiUrl(u),
+    );
+    return [...new Set(prodCandidates.length ? prodCandidates : [prodUrl])];
   }
 
   const candidates = [
@@ -116,8 +144,12 @@ async function apiRequest(endpoint, options = {}, token = null) {
 
   for (const base of candidates) {
     const url = `${base}${endpoint}`;
+    const candidateTimeoutMs =
+      candidates.length > 1 && isLocalOrLanApiUrl(base)
+        ? Math.min(timeoutMs, 3500)
+        : timeoutMs;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), candidateTimeoutMs);
 
     try {
       const response = await fetch(url, {
@@ -162,7 +194,7 @@ async function apiRequest(endpoint, options = {}, token = null) {
       }
       lastError =
         error.name === "AbortError"
-          ? new Error(`Request timed out after ${timeoutMs / 1000}s.`)
+          ? new Error(`Request timed out after ${candidateTimeoutMs / 1000}s.`)
           : error;
     } finally {
       clearTimeout(timer);
@@ -182,7 +214,7 @@ async function apiRequest(endpoint, options = {}, token = null) {
     lastError?.message?.includes("NoRouteToHostException")
   ) {
     throw new Error(
-      `Cannot connect to SmartAssets backend (${API_BASE_URL}). Make sure your backend server is running ('npm run dev' in Backend) and your phone is on the same Wi-Fi.`,
+      `Cannot connect to SmartAssets server (${API_BASE_URL}). Please check your internet connection and try again.`,
     );
   }
   throw lastError || new Error("Network error");
@@ -619,7 +651,7 @@ export async function scanAndKnowApi(payload, token) {
     {
       method: "POST",
       body: JSON.stringify(payload),
-      timeoutMs: 60000,
+      timeoutMs: 90000,
     },
     token,
   );

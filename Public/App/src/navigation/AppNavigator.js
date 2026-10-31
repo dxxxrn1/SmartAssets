@@ -39,7 +39,6 @@ import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
 import EscrowOrdersScreen from '../screens/EscrowOrdersScreen';
 import ProfileScreen     from '../screens/ProfileScreen';
 import ProfileAnalyticsScreen from '../screens/ProfileAnalyticsScreen';
-import ARScreen          from '../screens/ARScreen';
 import LiveRoomPreview from '../components/liveRoomPreview/LiveRoomPreview';
 import ScanAndKnowScreen from '../screens/ScanAndKnowScreen';
 

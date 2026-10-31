@@ -9,14 +9,30 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://smartassets.onrender.com/api",
+        "PUBLIC_WEB_BASE_URL": "https://smartassets.onrender.com"
       }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://smartassets.onrender.com/api",
+        "PUBLIC_WEB_BASE_URL": "https://smartassets.onrender.com"
       }
     },
-    "production": {}
+    "production": {
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://smartassets.onrender.com/api",
+        "PUBLIC_WEB_BASE_URL": "https://smartassets.onrender.com"
+      }
+    }
   }
 }
