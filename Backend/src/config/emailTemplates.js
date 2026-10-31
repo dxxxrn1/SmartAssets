@@ -1,4 +1,4 @@
-// ─── Production Email Templates for Supabase Auth ──────────────────────────────
+// ─── Production Email Templates for Supabase Auth & Vault Security ───────────
 // Strictly code-only OTP templates: no clickable confirmation links, no tokens in URLs.
 // Uses verified public HTTPS logo URL without shadows.
 
@@ -163,8 +163,106 @@ If you did not create an account with SmartAssets, you can safely disregard this
 © SmartAssets • Secure Physical & Digital Asset Investment`,
 };
 
+const WITHDRAWAL_OTP_EMAIL_TEMPLATE = {
+  subject: 'SmartAssets Vault Withdrawal Verification Code',
+  logoUrl: PUBLIC_LOGO_URL,
+  render({
+    code,
+    amountFormatted = 'R0',
+    maskedDestination = 'Approved Bank Account (****)',
+    attemptId = '',
+    expiresInSeconds = 120,
+  }) {
+    const minutesText = Math.max(1, Math.round(Number(expiresInSeconds || 120) / 60));
+    const safeAmount = String(amountFormatted || 'R0').replace(/[<>&"']/g, '');
+    const safeDest = String(maskedDestination || 'Approved Bank Account (****)').replace(/[<>&"']/g, '');
+    const safeAttempt = String(attemptId || '').replace(/[<>&"']/g, '');
+    const safeCode = String(code || '').replace(/[^0-9]/g, '');
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartAssets Withdrawal Verification</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0B1120; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color: #0B1120; width: 100%; margin: 0; padding: 32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="max-width: 520px; background-color: #111C33; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; overflow: hidden; margin: 0 auto;">
+          <tr>
+            <td align="center" style="padding: 36px 24px 16px 24px;">
+              <img src="${PUBLIC_LOGO_URL}" alt="SmartAssets" width="64" height="64" style="display: block; width: 64px; height: 64px; border: 0; outline: none; margin: 0 auto;" />
+              <h1 style="color: #FFFFFF; font-size: 22px; font-weight: 700; margin: 18px 0 0 0;">SmartAssets</h1>
+              <p style="color: #64748B; font-size: 13px; font-weight: 500; margin: 4px 0 0 0;">Vault Withdrawal Verification</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 32px 28px 32px; text-align: center;">
+              <p style="color: #E2E8F0; font-size: 15px; line-height: 22px; margin: 0 0 16px 0;">
+                A withdrawal request of <strong>${safeAmount}</strong> to your approved bank account (<strong>${safeDest}</strong>) requires email confirmation.
+              </p>
+              <p style="color: #94A3B8; font-size: 13px; line-height: 19px; margin: 0 0 20px 0;">
+                Enter this single-use 6-digit security code in the SmartAssets app within <strong>${minutesText} minutes (${expiresInSeconds} seconds)</strong>:
+              </p>
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto 24px auto;">
+                <tr>
+                  <td align="center" style="background-color: #0A0F1D; border: 1.5px solid #00C2FF; border-radius: 12px; padding: 16px 28px;">
+                    <span style="font-family: 'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #00C2FF; display: block; line-height: 1;">${safeCode}</span>
+                  </td>
+                </tr>
+              </table>
+              <p style="color: #F59E0B; font-size: 12px; line-height: 18px; margin: 0 0 16px 0;">
+                Security Notice: This code is valid for <strong>1 attempt only</strong> and expires in ${expiresInSeconds} seconds. Never share this code with anyone.
+              </p>
+              <div style="height: 1px; background-color: rgba(255, 255, 255, 0.08); margin: 24px 0;"></div>
+              <p style="color: #64748B; font-size: 12px; line-height: 18px; margin: 0;">
+                Reference: ${safeAttempt || 'Vault Withdrawal'} • If you did not initiate this withdrawal, cancel it in the app or ignore this message—no funds will leave your account without verification.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #0E172A; padding: 18px 24px; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.06);">
+              <p style="color: #475569; font-size: 11px; margin: 0; line-height: 16px;">
+                &copy; SmartAssets • Secure Physical &amp; Digital Asset Investment
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+    const plainText = `SmartAssets Vault Withdrawal Verification
+
+A withdrawal request of ${safeAmount} to your approved bank account (${safeDest}) requires email confirmation.
+
+Your single-use 6-digit verification code is:
+${safeCode}
+
+Important Security Rules:
+- This code expires in ${expiresInSeconds} seconds (${minutesText} minutes).
+- This code is valid for 1 submission attempt only.
+- Reference: ${safeAttempt || 'Vault Withdrawal'}
+
+If you did not initiate this withdrawal request, do not enter this code. No funds will be reserved or withdrawn without verification.
+
+© SmartAssets • Secure Physical & Digital Asset Investment`;
+
+    return {
+      subject: this.subject,
+      html,
+      plainText,
+    };
+  },
+};
+
 module.exports = {
   PUBLIC_LOGO_URL,
   RECOVERY_EMAIL_TEMPLATE,
   CONFIRM_SIGNUP_EMAIL_TEMPLATE,
+  WITHDRAWAL_OTP_EMAIL_TEMPLATE,
 };

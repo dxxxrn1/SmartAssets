@@ -18,6 +18,9 @@ const {
   updateProfile,
   deleteAccount,
   deposit,
+  initiateWithdrawalChallenge,
+  cancelWithdrawalChallenge,
+  verifyWithdrawalChallenge,
   withdraw,
   cancelWithdrawal,
   getTransactions,
@@ -41,8 +44,12 @@ router.get('/vault', getVault);
 router.post('/vault', addHolding);
 router.post('/seed-starter', seedStarterHoldings);
 
-// Vault Balance, Deposits & Withdrawals (server-side KYC + Bank Account enforcement)
+// Vault Balance, Deposits & Withdrawals (server-side KYC + Bank Account + Email OTP enforcement)
 router.post('/deposit', requireVerified, requireApprovedBank, deposit);
+router.post('/withdraw/challenge', requireVerified, requireApprovedBank, initiateWithdrawalChallenge);
+router.post('/withdraw/challenge/cancel', cancelWithdrawalChallenge);
+router.post('/withdraw/challenge/:id/cancel', cancelWithdrawalChallenge);
+router.post('/withdraw/verify', requireVerified, requireApprovedBank, verifyWithdrawalChallenge);
 router.post('/withdraw', requireVerified, requireApprovedBank, withdraw);
 router.post('/withdraw/:id/cancel', cancelWithdrawal);
 router.get('/transactions', getTransactions);

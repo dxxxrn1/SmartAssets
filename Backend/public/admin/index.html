@@ -1463,6 +1463,21 @@
           Bank Accounts
           <span class="nav-counter" id="badge-banks-count">0</span>
         </li>
+        <li
+          class="nav-item"
+          data-view="treasury"
+          onclick="navigate('treasury')"
+        >
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          Treasury &amp; Vault
+          <span class="nav-counter" id="badge-treasury-count">0</span>
+        </li>
         <li class="nav-item" data-view="users" onclick="navigate('users')">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -2903,7 +2918,214 @@
             </div>
           </div>
         </section>
+
+        <!-- ════════════════════════════════════════════════════════════════════ -->
+        <!-- VIEW 9: TREASURY & VAULT RECONCILIATION                             -->
+        <!-- ════════════════════════════════════════════════════════════════════ -->
+        <section id="view-treasury" class="view-panel">
+          <div class="view-header">
+            <div class="view-title-group">
+              <h1>Treasury &amp; Vault Reconciliation Desk</h1>
+              <div class="view-subtitle">
+                Manual verification of pending bank EFT deposits and settlement
+                of approved bank withdrawal requests.
+              </div>
+            </div>
+            <div class="view-actions-group">
+              <button
+                class="btn btn-secondary btn-sm"
+                onclick="loadTreasuryTransactions(true)"
+              >
+                Refresh Treasury Queue
+              </button>
+            </div>
+          </div>
+
+          <!-- Mandatory Manual Verification Policy Banner -->
+          <div
+            style="
+              background: rgba(245, 158, 11, 0.12);
+              border: 1px solid rgba(245, 158, 11, 0.35);
+              border-radius: 10px;
+              padding: 14px 18px;
+              margin-bottom: 20px;
+              display: flex;
+              align-items: flex-start;
+              gap: 12px;
+            "
+          >
+            <div style="color: #fbbf24; font-weight: 800; font-size: 16px">
+              &#9888;
+            </div>
+            <div style="font-size: 12.5px; color: var(--text); line-height: 1.5">
+              <strong>Manual Treasury Verification Policy:</strong> User-entered
+              EFT references are <em>unverified claims</em> and never proof of
+              payment. Confirm a deposit only after independently verifying
+              cleared funds in the SmartAssets treasury bank statement and
+              recording the bank settlement reference. Mark a withdrawal
+              completed only after executing the bank EFT payout to the
+              collector&rsquo;s approved bank account on file and recording the
+              bank payout reference.
+            </div>
+          </div>
+
+          <!-- Treasury Summary KPIs -->
+          <div class="kpi-grid" style="margin-bottom: 20px">
+            <div class="kpi-card">
+              <div class="kpi-card-header">
+                <span class="kpi-title">Pending Deposits (Review)</span>
+              </div>
+              <div class="kpi-value" id="treasury-pending-dep-count">0</div>
+              <div class="kpi-meta">
+                <span class="kpi-subvalue"
+                  >Awaiting bank statement verification</span
+                >
+              </div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-card-header">
+                <span class="kpi-title">Pending Withdrawals (Reserved)</span>
+              </div>
+              <div class="kpi-value" id="treasury-pending-wth-count">0</div>
+              <div class="kpi-meta">
+                <span class="kpi-subvalue"
+                  >Funds reserved; awaiting EFT payout</span
+                >
+              </div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-card-header">
+                <span class="kpi-title">Confirmed Deposits</span>
+              </div>
+              <div class="kpi-value" id="treasury-completed-dep-count">0</div>
+              <div class="kpi-meta">
+                <span class="kpi-subvalue">Verified &amp; credited</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-card-header">
+                <span class="kpi-title">Settled Withdrawals</span>
+              </div>
+              <div class="kpi-value" id="treasury-completed-wth-count">0</div>
+              <div class="kpi-meta">
+                <span class="kpi-subvalue">Paid to approved bank on file</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filter Controls -->
+          <div class="controls-bar">
+            <div class="filter-input-wrap">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              <input
+                type="text"
+                class="filter-input"
+                id="treasury-search-input"
+                placeholder="Search by Transaction ID, Collector Email/Name, or Settlement Reference..."
+                oninput="filterTreasuryTable()"
+              />
+            </div>
+            <select
+              class="filter-select"
+              id="treasury-type-filter"
+              onchange="filterTreasuryTable()"
+            >
+              <option value="All">All Types (Deposits &amp; Withdrawals)</option>
+              <option value="deposit">Deposits Only</option>
+              <option value="withdraw">Withdrawals Only</option>
+            </select>
+            <select
+              class="filter-select"
+              id="treasury-status-filter"
+              onchange="filterTreasuryTable()"
+            >
+              <option value="All">All Statuses</option>
+              <option value="pending_review">Pending Treasury Review</option>
+              <option value="settlement_processing">
+                Settlement Processing
+              </option>
+              <option value="completed">Completed / Settled</option>
+              <option value="rejected">Rejected / Cancelled</option>
+            </select>
+          </div>
+
+          <!-- Treasury Transactions Table -->
+          <div class="table-card">
+            <div class="table-card-header">
+              <div class="table-card-title">
+                Vault Deposit &amp; Withdrawal Queue (<span
+                  id="treasury-filtered-count"
+                  >0</span
+                >
+                records)
+              </div>
+              <div class="table-card-meta">
+                Masked Bank Destinations &middot; Atomic PostgreSQL Ledger
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Transaction ID</th>
+                    <th>Request Time</th>
+                    <th>Collector Identity</th>
+                    <th>Type &amp; Rail</th>
+                    <th>Amount (ZAR)</th>
+                    <th>Masked Destination / Unverified User Ref</th>
+                    <th>Settlement &amp; Audit Trail</th>
+                    <th>Status</th>
+                    <th>Treasury Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="treasury-tbody">
+                  <tr>
+                    <td
+                      colspan="9"
+                      class="td-muted"
+                      style="text-align: center; padding: 32px"
+                    >
+                      Loading treasury deposit and withdrawal requests...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       </main>
+    </div>
+
+    <!-- ── MODAL: TREASURY DEPOSIT / WITHDRAWAL ACTION ──────────────────────── -->
+    <div class="modal-overlay" id="modal-treasury">
+      <div class="modal-container">
+        <div class="modal-header">
+          <div class="modal-title" id="modal-treasury-title">
+            Treasury Verification &amp; Settlement
+          </div>
+          <button class="modal-close" onclick="closeModal('modal-treasury')">
+            &times;
+          </button>
+        </div>
+        <div class="modal-body" id="modal-treasury-body">
+          <!-- Injected via openTreasuryModal(txId, mode) -->
+        </div>
+        <div class="modal-footer" id="modal-treasury-footer">
+          <button
+            class="btn btn-secondary btn-sm"
+            onclick="closeModal('modal-treasury')"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- ── MODAL: ESCROW CUSTODY DETAILS & TIMELINE ─────────────────────────── -->
@@ -3366,6 +3588,7 @@
             tickets: "Customer Support Desk",
             verifications: "FICA / KYC Compliance Verification Desk",
             "bank-accounts": "Bank Account Approval Desk",
+            treasury: "Treasury & Vault Reconciliation Desk",
             users: "Platform User Directory",
             activity: "Chronological Operations Ledger",
             api: "Live API Explorer & Diagnostics",
@@ -3393,6 +3616,9 @@
               window.loadBankAccounts(true);
           } else if (viewName === "bank-accounts") {
             loadBankAccounts(true);
+          } else if (viewName === "treasury") {
+            if (typeof window.loadTreasuryTransactions === "function")
+              window.loadTreasuryTransactions(true);
           } else if (viewName === "users") {
             if (!STATE.users.length) loadUsers();
           } else if (viewName === "activity") {
@@ -3424,6 +3650,8 @@
           loadTickets(true);
           loadUsers(true);
           loadVerifications(true);
+          if (typeof window.loadTreasuryTransactions === "function")
+            window.loadTreasuryTransactions(true);
           loadActivity(true);
         };
 
@@ -6115,6 +6343,494 @@
             });
         };
 
+        // ── Treasury & Vault Reconciliation Desk ──
+        STATE.treasuryTransactions = [];
+
+        function maskAccountText(str) {
+          if (!str) return "—";
+          return String(str).replace(/\b\d{6,}\b/g, function (m) {
+            return "****" + m.slice(-4);
+          });
+        }
+
+        window.loadTreasuryTransactions = function (silent) {
+          const tbody = document.getElementById("treasury-tbody");
+          if (tbody && !silent && !STATE.treasuryTransactions.length) {
+            tbody.innerHTML =
+              '<tr><td colspan="9" class="td-muted" style="text-align: center; padding: 32px">Loading treasury deposit and withdrawal requests...</td></tr>';
+          }
+
+          return apiFetch("/api/admin/vault-transactions")
+            .then(function (r) {
+              return r.json();
+            })
+            .then(function (data) {
+              if (!data || !data.success) {
+                throw new Error((data && data.error) || "Failed to load treasury queue.");
+              }
+              STATE.treasuryTransactions = Array.isArray(data.transactions)
+                ? data.transactions
+                : [];
+
+              const summary = data.summary || {};
+              const pendingDep =
+                summary.pendingDepositsCount !== undefined
+                  ? summary.pendingDepositsCount
+                  : STATE.treasuryTransactions.filter(function (t) {
+                      return t.type === "deposit" && t.status === "pending_review";
+                    }).length;
+              const pendingWth =
+                summary.pendingWithdrawalsCount !== undefined
+                  ? summary.pendingWithdrawalsCount
+                  : STATE.treasuryTransactions.filter(function (t) {
+                      return (
+                        t.type === "withdraw" &&
+                        (t.status === "pending_review" ||
+                          t.status === "settlement_processing")
+                      );
+                    }).length;
+              const completedDep =
+                summary.completedDepositsCount !== undefined
+                  ? summary.completedDepositsCount
+                  : STATE.treasuryTransactions.filter(function (t) {
+                      return t.type === "deposit" && t.status === "completed";
+                    }).length;
+              const completedWth =
+                summary.completedWithdrawalsCount !== undefined
+                  ? summary.completedWithdrawalsCount
+                  : STATE.treasuryTransactions.filter(function (t) {
+                      return t.type === "withdraw" && t.status === "completed";
+                    }).length;
+
+              const badgeEl = document.getElementById("badge-treasury-count");
+              if (badgeEl) badgeEl.textContent = String(pendingDep + pendingWth);
+
+              const depEl = document.getElementById("treasury-pending-dep-count");
+              if (depEl) depEl.textContent = String(pendingDep);
+              const wthEl = document.getElementById("treasury-pending-wth-count");
+              if (wthEl) wthEl.textContent = String(pendingWth);
+              const cDepEl = document.getElementById("treasury-completed-dep-count");
+              if (cDepEl) cDepEl.textContent = String(completedDep);
+              const cWthEl = document.getElementById("treasury-completed-wth-count");
+              if (cWthEl) cWthEl.textContent = String(completedWth);
+
+              window.filterTreasuryTable();
+            })
+            .catch(function (err) {
+              console.error("loadTreasuryTransactions error:", err);
+              if (tbody) {
+                tbody.innerHTML =
+                  '<tr><td colspan="9" class="td-muted" style="text-align: center; padding: 32px; color: #f87171">' +
+                  escapeHtml(err.message || "Error loading treasury transactions.") +
+                  "</td></tr>";
+              }
+            });
+        };
+
+        window.filterTreasuryTable = function () {
+          const tbody = document.getElementById("treasury-tbody");
+          if (!tbody) return;
+
+          const searchVal = (
+            (document.getElementById("treasury-search-input") || {}).value || ""
+          )
+            .toLowerCase()
+            .trim();
+          const typeFilter =
+            (document.getElementById("treasury-type-filter") || {}).value || "All";
+          const statusFilter =
+            (document.getElementById("treasury-status-filter") || {}).value ||
+            "All";
+
+          const filtered = STATE.treasuryTransactions.filter(function (tx) {
+            if (tx.type !== "deposit" && tx.type !== "withdraw") return false;
+            if (typeFilter !== "All" && tx.type !== typeFilter) return false;
+            if (statusFilter !== "All") {
+              if (statusFilter === "rejected") {
+                if (tx.status !== "rejected" && tx.status !== "cancelled")
+                  return false;
+              } else if (tx.status !== statusFilter) {
+                return false;
+              }
+            }
+            if (searchVal) {
+              const hay = [
+                tx.id,
+                tx.userId,
+                tx.userFullName,
+                tx.userEmail,
+                tx.reference,
+                tx.settlementRef,
+                tx.destination,
+                tx.notes,
+              ]
+                .join(" ")
+                .toLowerCase();
+              if (hay.indexOf(searchVal) === -1) return false;
+            }
+            return true;
+          });
+
+          const countEl = document.getElementById("treasury-filtered-count");
+          if (countEl) countEl.textContent = String(filtered.length);
+
+          if (!filtered.length) {
+            tbody.innerHTML =
+              '<tr><td colspan="9" class="td-muted" style="text-align: center; padding: 32px">No matching deposit or withdrawal requests found.</td></tr>';
+            return;
+          }
+
+          tbody.innerHTML = filtered
+            .map(function (tx) {
+              const isDep = tx.type === "deposit";
+              const typeBadge = isDep
+                ? '<span class="pill pill-green">DEPOSIT</span>'
+                : '<span class="pill pill-blue">WITHDRAWAL</span>';
+              const statusLabel =
+                tx.status === "pending_review"
+                  ? "Pending Review"
+                  : tx.status === "settlement_processing"
+                  ? "Processing Payout"
+                  : tx.status === "completed"
+                  ? "Completed"
+                  : tx.status === "rejected"
+                  ? "Rejected"
+                  : tx.status === "cancelled"
+                  ? "Cancelled"
+                  : tx.status;
+
+              const destDisplay = isDep
+                ? tx.reference
+                  ? '<span class="td-mono">' +
+                    escapeHtml(tx.reference) +
+                    '</span> <span class="pill pill-amber" style="font-size:10px">Unverified Claim</span>'
+                  : '<span class="td-muted">No user reference supplied</span>'
+                : '<span class="td-strong">' +
+                  escapeHtml(
+                    maskAccountText(
+                      tx.destinationSummary ||
+                        tx.destination ||
+                        "Approved Bank Account (****)"
+                    )
+                  ) +
+                  "</span>";
+
+              const auditTrail = tx.settlementRef
+                ? '<div class="td-mono" style="color:#34d399;font-size:11.5px">Ref: ' +
+                  escapeHtml(tx.settlementRef) +
+                  "</div>" +
+                  (tx.reviewedBy
+                    ? '<div class="td-muted" style="font-size:11px">By ' +
+                      escapeHtml(tx.reviewedBy) +
+                      "</div>"
+                    : "")
+                : tx.reviewedBy
+                ? '<div class="td-muted" style="font-size:11px">Reviewed by ' +
+                  escapeHtml(tx.reviewedBy) +
+                  "</div>" +
+                  (tx.auditReason
+                    ? '<div class="td-muted" style="font-size:11px">' +
+                      escapeHtml(tx.auditReason) +
+                      "</div>"
+                    : "")
+                : '<span class="td-muted">Awaiting manual review</span>';
+
+              let actionsHtml = "";
+              if (isDep && tx.status === "pending_review") {
+                actionsHtml =
+                  '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+                  '<button class="btn btn-primary btn-sm" onclick="openTreasuryModal(\'' +
+                  escapeHtml(tx.id) +
+                  "', 'confirm_deposit')\">Confirm Receipt</button>" +
+                  '<button class="btn btn-danger btn-sm" onclick="openTreasuryModal(\'' +
+                  escapeHtml(tx.id) +
+                  "', 'reject_deposit')\">Reject</button>" +
+                  "</div>";
+              } else if (
+                !isDep &&
+                (tx.status === "pending_review" ||
+                  tx.status === "settlement_processing")
+              ) {
+                actionsHtml =
+                  '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+                  '<button class="btn btn-primary btn-sm" onclick="openTreasuryModal(\'' +
+                  escapeHtml(tx.id) +
+                  "', 'settle_withdrawal')\">Record EFT Settlement</button>" +
+                  '<button class="btn btn-danger btn-sm" onclick="openTreasuryModal(\'' +
+                  escapeHtml(tx.id) +
+                  "', 'reject_withdrawal')\">Reject &amp; Restore</button>" +
+                  "</div>";
+              } else {
+                actionsHtml =
+                  '<button class="btn btn-secondary btn-sm" onclick="openTreasuryModal(\'' +
+                  escapeHtml(tx.id) +
+                  "', 'inspect')\">Inspect</button>";
+              }
+
+              return (
+                "<tr>" +
+                '<td class="td-mono">' +
+                escapeHtml(tx.id) +
+                "</td>" +
+                "<td>" +
+                escapeHtml(formatDate(tx.createdAt)) +
+                "</td>" +
+                "<td><div class=\"td-strong\">" +
+                escapeHtml(tx.userFullName || "Collector") +
+                '</div><div class="td-muted" style="font-size:11.5px">' +
+                escapeHtml(tx.userEmail || tx.userId || "—") +
+                "</div></td>" +
+                "<td>" +
+                typeBadge +
+                '<div class="td-muted" style="font-size:11px;margin-top:3px">' +
+                escapeHtml(tx.method || "Manual Bank EFT") +
+                "</div></td>" +
+                '<td class="td-strong" style="color:' +
+                (isDep ? "#34d399" : "#60a5fa") +
+                '">' +
+                escapeHtml(tx.amountFormatted || formatZar(tx.amount)) +
+                "</td>" +
+                "<td>" +
+                destDisplay +
+                "</td>" +
+                "<td>" +
+                auditTrail +
+                "</td>" +
+                "<td>" +
+                renderStatusPill(statusLabel) +
+                "</td>" +
+                "<td>" +
+                actionsHtml +
+                "</td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+        };
+
+        window.openTreasuryModal = function (txId, mode) {
+          const tx = STATE.treasuryTransactions.find(function (t) {
+            return t.id === txId;
+          });
+          if (!tx) return;
+
+          const modal = document.getElementById("modal-treasury");
+          const titleEl = document.getElementById("modal-treasury-title");
+          const bodyEl = document.getElementById("modal-treasury-body");
+          const footerEl = document.getElementById("modal-treasury-footer");
+          if (!modal || !bodyEl || !footerEl) return;
+
+          const isDep = tx.type === "deposit";
+          const maskedDest = maskAccountText(
+            tx.destinationSummary ||
+              tx.destination ||
+              (isDep ? tx.reference || "Manual Bank EFT" : "Approved Bank Account (****)")
+          );
+
+          let formHtml = "";
+          let footerHtml =
+            '<button class="btn btn-secondary btn-sm" onclick="closeModal(\'modal-treasury\')">Cancel</button>';
+
+          if (mode === "confirm_deposit") {
+            titleEl.textContent = "Confirm Manual Bank Deposit Receipt";
+            formHtml =
+              '<div style="margin-top:14px;padding:12px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);border-radius:8px">' +
+              '<div style="font-size:12px;color:var(--text);margin-bottom:8px"><strong>Independent Treasury Verification Required:</strong> Confirm that cleared funds matching <strong>' +
+              escapeHtml(tx.amountFormatted || formatZar(tx.amount)) +
+              "</strong> have been received in the SmartAssets treasury bank statement.</div>" +
+              '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Bank Statement Settlement Reference (Required, min 4 chars) *</label>' +
+              '<input type="text" id="treasury-settlement-ref-input" class="filter-input" style="width:100%;margin-bottom:10px" placeholder="e.g. FNB-STMT-20261031-8841" />' +
+              '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Audit Note / Reconciliation Reason</label>' +
+              '<input type="text" id="treasury-audit-reason-input" class="filter-input" style="width:100%" placeholder="Verified against FNB treasury statement" />' +
+              "</div>";
+            footerHtml +=
+              '<button class="btn btn-primary btn-sm" id="treasury-submit-btn" onclick="submitTreasuryAction(\'' +
+              escapeHtml(tx.id) +
+              "', 'confirm_deposit')\">Verify &amp; Credit Deposit</button>";
+          } else if (mode === "reject_deposit") {
+            titleEl.textContent = "Reject Unverified Deposit Request";
+            formHtml =
+              '<div style="margin-top:14px;padding:12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);border-radius:8px">' +
+              '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Rejection Reason (Required) *</label>' +
+              '<input type="text" id="treasury-audit-reason-input" class="filter-input" style="width:100%" placeholder="e.g. No matching EFT receipt found in treasury bank statement" />' +
+              "</div>";
+            footerHtml +=
+              '<button class="btn btn-danger btn-sm" id="treasury-submit-btn" onclick="submitTreasuryAction(\'' +
+              escapeHtml(tx.id) +
+              "', 'reject_deposit')\">Reject Deposit Request</button>";
+          } else if (mode === "settle_withdrawal") {
+            titleEl.textContent = "Record Bank EFT Withdrawal Settlement";
+            formHtml =
+              '<div style="margin-top:14px;padding:12px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.3);border-radius:8px">' +
+              '<div style="font-size:12px;color:var(--text);margin-bottom:8px"><strong>Approved Bank Destination Only:</strong> Execute the EFT payout to the collector\'s approved bank account on file (<strong>' +
+              escapeHtml(maskedDest) +
+              "</strong>) and record the bank payout reference below.</div>" +
+              '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Bank EFT Payout Reference (Required, min 4 chars) *</label>' +
+              '<input type="text" id="treasury-settlement-ref-input" class="filter-input" style="width:100%;margin-bottom:10px" placeholder="e.g. EFT-PAYOUT-20261031-9920" />' +
+              '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Audit Note / Settlement Reason</label>' +
+              '<input type="text" id="treasury-audit-reason-input" class="filter-input" style="width:100%" placeholder="EFT executed to approved bank account on file" />' +
+              "</div>";
+            footerHtml +=
+              '<button class="btn btn-primary btn-sm" id="treasury-submit-btn" onclick="submitTreasuryAction(\'' +
+              escapeHtml(tx.id) +
+              "', 'settle_withdrawal')\">Confirm EFT Payout Settled</button>";
+          } else if (mode === "reject_withdrawal") {
+            titleEl.textContent = "Reject Withdrawal & Restore Reserved Funds";
+            formHtml =
+              '<div style="margin-top:14px;padding:12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);border-radius:8px">' +
+              '<div style="font-size:12px;color:var(--text);margin-bottom:8px">Rejecting this withdrawal will atomically restore <strong>' +
+              escapeHtml(tx.amountFormatted || formatZar(tx.amount)) +
+              "</strong> from reserved funds back to the collector's spendable Vault balance exactly once.</div>" +
+              '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Rejection Reason (Required) *</label>' +
+              '<input type="text" id="treasury-audit-reason-input" class="filter-input" style="width:100%" placeholder="e.g. Bank EFT returned / compliance hold" />' +
+              "</div>";
+            footerHtml +=
+              '<button class="btn btn-danger btn-sm" id="treasury-submit-btn" onclick="submitTreasuryAction(\'' +
+              escapeHtml(tx.id) +
+              "', 'reject_withdrawal')\">Reject &amp; Restore Funds</button>";
+          } else {
+            titleEl.textContent = "Treasury Transaction Dossier";
+          }
+
+          bodyEl.innerHTML =
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">' +
+            "<div><span class=\"td-muted\">Transaction ID:</span><br/><strong>" +
+            escapeHtml(tx.id) +
+            "</strong></div>" +
+            "<div><span class=\"td-muted\">Type &amp; Status:</span><br/><strong>" +
+            escapeHtml(tx.type.toUpperCase() + " — " + tx.status) +
+            "</strong></div>" +
+            "<div><span class=\"td-muted\">Collector:</span><br/><strong>" +
+            escapeHtml(tx.userFullName || "Collector") +
+            "</strong> (" +
+            escapeHtml(tx.userEmail || tx.userId) +
+            ")</div>" +
+            "<div><span class=\"td-muted\">Amount (ZAR):</span><br/><strong>" +
+            escapeHtml(tx.amountFormatted || formatZar(tx.amount)) +
+            "</strong></div>" +
+            "<div><span class=\"td-muted\">Masked Destination / User Ref:</span><br/><strong>" +
+            escapeHtml(maskedDest) +
+            "</strong></div>" +
+            "<div><span class=\"td-muted\">Requested At:</span><br/><strong>" +
+            escapeHtml(formatDate(tx.createdAt)) +
+            "</strong></div>" +
+            (tx.settlementRef
+              ? "<div><span class=\"td-muted\">Settlement Ref:</span><br/><strong>" +
+                escapeHtml(tx.settlementRef) +
+                "</strong></div>"
+              : "") +
+            (tx.reviewedBy
+              ? "<div><span class=\"td-muted\">Reviewed By:</span><br/><strong>" +
+                escapeHtml(tx.reviewedBy) +
+                " (" +
+                escapeHtml(formatDate(tx.reviewedAt)) +
+                ")</strong></div>"
+              : "") +
+            "</div>" +
+            (tx.notes
+              ? '<div style="margin-top:10px;font-size:12px;color:var(--text-muted)"><strong>Ledger Notes:</strong> ' +
+                escapeHtml(tx.notes) +
+                "</div>"
+              : "") +
+            formHtml;
+
+          footerEl.innerHTML = footerHtml;
+          modal.classList.add("open");
+          modal.classList.add("active");
+        };
+
+        window.submitTreasuryAction = function (txId, mode) {
+          const refInput = document.getElementById("treasury-settlement-ref-input");
+          const reasonInput = document.getElementById("treasury-audit-reason-input");
+          const btn = document.getElementById("treasury-submit-btn");
+
+          const settlementRef = refInput ? String(refInput.value || "").trim() : "";
+          const reason = reasonInput ? String(reasonInput.value || "").trim() : "";
+
+          let endpoint = "";
+          let payload = {};
+
+          if (mode === "confirm_deposit") {
+            if (!settlementRef || settlementRef.length < 4) {
+              showToast(
+                "An authoritative bank settlement reference (min 4 chars) is required to confirm a deposit.",
+                "error"
+              );
+              return;
+            }
+            endpoint = "/api/admin/deposits/" + encodeURIComponent(txId) + "/confirm";
+            payload = {
+              settlementRef: settlementRef,
+              reason: reason || "Treasury bank statement receipt verified",
+            };
+          } else if (mode === "reject_deposit") {
+            if (!reason) {
+              showToast("A rejection reason is required to reject a deposit.", "error");
+              return;
+            }
+            endpoint = "/api/admin/deposits/" + encodeURIComponent(txId) + "/reject";
+            payload = { reason: reason };
+          } else if (mode === "settle_withdrawal") {
+            if (!settlementRef || settlementRef.length < 4) {
+              showToast(
+                "An authoritative bank EFT payout reference (min 4 chars) is required to settle a withdrawal.",
+                "error"
+              );
+              return;
+            }
+            endpoint = "/api/admin/withdrawals/" + encodeURIComponent(txId) + "/settle";
+            payload = {
+              settlementRef: settlementRef,
+              reason: reason || "Bank EFT payout executed to approved bank account on file",
+            };
+          } else if (mode === "reject_withdrawal") {
+            if (!reason) {
+              showToast(
+                "A rejection reason is required to reject a withdrawal.",
+                "error"
+              );
+              return;
+            }
+            endpoint = "/api/admin/withdrawals/" + encodeURIComponent(txId) + "/reject";
+            payload = { reason: reason };
+          } else {
+            return;
+          }
+
+          if (btn) btn.disabled = true;
+
+          apiFetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+            .then(function (r) {
+              return r.json().then(function (body) {
+                return { status: r.status, body: body };
+              });
+            })
+            .then(function (res) {
+              if (res.status >= 400 || !res.body || !res.body.success) {
+                throw new Error(
+                  (res.body && res.body.error) || "Treasury action failed."
+                );
+              }
+              closeModal("modal-treasury");
+              showToast(
+                res.body.message || "Treasury transaction updated.",
+                "success"
+              );
+              window.loadTreasuryTransactions(true);
+              if (typeof window.loadUsers === "function") window.loadUsers();
+            })
+            .catch(function (err) {
+              showToast(err.message || "Failed to process treasury action.", "error");
+            })
+            .finally(function () {
+              if (btn) btn.disabled = false;
+            });
+        };
+
         // ── Initial Boot & Admin Route Protection ──
         document.addEventListener("DOMContentLoaded", async function () {
           const sess = getAdminSession();
@@ -6167,6 +6883,8 @@
             window.navigate("overview");
             window.loadVerifications(true);
             window.loadBankAccounts(true);
+            if (typeof window.loadTreasuryTransactions === "function")
+              window.loadTreasuryTransactions(true);
 
             // Background Real-Time Polling for Online Users and Dashboard Metrics (30s gentle interval, pauses when tab hidden)
             setInterval(function () {

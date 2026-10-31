@@ -708,8 +708,117 @@ async function deposit(req, res) {
   }
 }
 
-// ── POST /api/user/withdraw ──────────────────────────────────────────────────
-// Creates a pending withdrawal request & atomically reserves funds to the approved bank account on file
+// ── POST /api/user/withdraw/challenge ────────────────────────────────────────
+// Initiates a single-use 6-digit email OTP challenge (120s server-clock expiry, 1 attempt max)
+// ONLY after the user confirms their masked approved bank account details on file.
+async function initiateWithdrawalChallenge(req, res) {
+  try {
+    const userId = req.user.id;
+    const comp = complianceService.getUserCompliance(userId, req.user?.email);
+    if (comp && comp.isSuspended) {
+      return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
+    }
+    const bundle =
+      req.verificationBundle ||
+      (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    if (!bundle || bundle.verification_status !== 'verified') {
+      return res.status(403).json({
+        success: false,
+        code: 'KYC_REQUIRED',
+        error:
+          'KYC Verification Required: You must upload and get all 3 verification documents approved before withdrawing funds.',
+      });
+    }
+
+    const approvedBank =
+      req.approvedBankAccount || complianceService.getUserBankAccount(userId, req.user?.email);
+    if (!approvedBank || approvedBank.status !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        code: 'BANK_APPROVAL_REQUIRED',
+        error:
+          'Approved bank account required. Please submit your bank details and wait for admin approval before withdrawing funds.',
+      });
+    }
+
+    const {
+      amount,
+      currency = 'ZAR',
+      confirmedBankDetails,
+      attemptId,
+      idempotencyKey: bodyIdempKey,
+    } = req.body || {};
+    const idempotencyKey = bodyIdempKey || req.headers?.['x-idempotency-key'] || null;
+    const requestIp = req.ip || req.connection?.remoteAddress || '127.0.0.1';
+
+    const withdrawalVerificationService = require('../services/withdrawalVerificationService');
+    const challengeResult = await withdrawalVerificationService.requestWithdrawalChallenge({
+      userId,
+      userEmail: req.user?.email,
+      amount,
+      currency,
+      confirmedBankDetails: Boolean(confirmedBankDetails),
+      attemptId,
+      idempotencyKey,
+      requestIp,
+      rawBody: req.body || {},
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `A 6-digit verification code has been sent to ${challengeResult.maskedEmail}. It expires in 2 minutes and allows 1 submission attempt.`,
+      ...challengeResult,
+    });
+  } catch (err) {
+    console.error('initiateWithdrawalChallenge error:', err.message);
+    const statusCode = err.statusCode || 400;
+    return res.status(statusCode).json({
+      success: false,
+      code: err.code || 'CHALLENGE_INITIATION_FAILED',
+      error: err.message || 'Could not initiate withdrawal verification challenge.',
+      ...(err.retryAfterSeconds ? { retryAfterSeconds: err.retryAfterSeconds } : {}),
+    });
+  }
+}
+
+// ── POST /api/user/withdraw/challenge/cancel & /:id/cancel ──────────────────
+// Cancels an active withdrawal verification challenge or records bank confirmation cancellation.
+async function cancelWithdrawalChallenge(req, res) {
+  try {
+    const userId = req.user.id;
+    const challengeId = req.params?.id || req.body?.challengeId || null;
+    const reason = req.body?.reason || 'user_cancelled';
+    const requestIp = req.ip || req.connection?.remoteAddress || '127.0.0.1';
+
+    const withdrawalVerificationService = require('../services/withdrawalVerificationService');
+    const result = await withdrawalVerificationService.cancelWithdrawalChallenge({
+      challengeId,
+      userId,
+      userEmail: req.user?.email,
+      reason,
+      requestIp,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Withdrawal verification cancelled. No funds were reserved or deducted.',
+      ...result,
+    });
+  } catch (err) {
+    console.error('cancelWithdrawalChallenge error:', err.message);
+    const statusCode = err.statusCode || 400;
+    return res.status(statusCode).json({
+      success: false,
+      code: err.code || 'CHALLENGE_CANCEL_FAILED',
+      error: err.message || 'Could not cancel withdrawal challenge.',
+    });
+  }
+}
+
+// ── POST /api/user/withdraw & POST /api/user/withdraw/verify ─────────────────
+// Verifies the single-use 6-digit email OTP challenge (120s limit, 1 attempt max),
+// re-verifies account/KYC/approved bank/balance eligibility, atomically reserves funds,
+// and creates a `pending_review` withdrawal in the admin treasury queue.
 async function withdraw(req, res) {
   try {
     const userId = req.user.id;
@@ -717,66 +826,84 @@ async function withdraw(req, res) {
     if (comp && comp.isSuspended) {
       return sendError(res, 403, 'Account Suspended by Compliance. Transactions blocked.');
     }
-    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    const bundle =
+      req.verificationBundle ||
+      (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
     if (!bundle || bundle.verification_status !== 'verified') {
       return res.status(403).json({
         success: false,
         code: 'KYC_REQUIRED',
-        error: 'KYC Verification Required: You must upload and get all 3 verification documents approved before withdrawing funds.',
+        error:
+          'KYC Verification Required: You must upload and get all 3 verification documents approved before withdrawing funds.',
       });
     }
 
-    const approvedBank = req.approvedBankAccount || complianceService.getUserBankAccount(userId, req.user?.email);
+    const approvedBank =
+      req.approvedBankAccount || complianceService.getUserBankAccount(userId, req.user?.email);
     if (!approvedBank || approvedBank.status !== 'approved') {
       return res.status(403).json({
         success: false,
         code: 'BANK_APPROVAL_REQUIRED',
-        error: 'Approved bank account required. Please submit your bank details and wait for admin approval before withdrawing funds.',
+        error:
+          'Approved bank account required. Please submit your bank details and wait for admin approval before withdrawing funds.',
       });
     }
 
     const {
+      challengeId,
+      code,
+      otpCode,
       amount,
-      method,
-      bankDetails,
-      walletAddress,
+      currency = 'ZAR',
       notes,
       idempotencyKey: bodyIdempKey,
     } = req.body || {};
     const idempotencyKey = bodyIdempKey || req.headers?.['x-idempotency-key'] || null;
+    const requestIp = req.ip || req.connection?.remoteAddress || '127.0.0.1';
 
-    if (!amount || Number(amount) <= 0) {
-      return sendError(res, 400, 'Please enter a valid withdrawal amount greater than R0.');
-    }
-
+    const withdrawalVerificationService = require('../services/withdrawalVerificationService');
     const vaultTxService = require('../services/vaultTransactionService');
-    const result = await vaultTxService.withdrawFunds({
+
+    const result = await withdrawalVerificationService.verifyWithdrawalChallengeAndSubmit({
+      challengeId,
+      code: code !== undefined ? code : otpCode,
       userId,
       userEmail: req.user?.email,
-      amount: Number(amount),
-      method: method || 'Approved Bank EFT',
-      bankDetails,
-      walletAddress,
+      amount: amount !== undefined ? amount : null,
+      currency,
       notes,
       idempotencyKey,
-      approvedBank,
+      requestIp,
+      rawBody: req.body || {},
     });
+
+    const verifiedAmount = result?.transaction?.amount || Number(amount) || 0;
 
     return res.status(200).json({
       success: true,
-      message: `Withdrawal request of ${vaultTxService.formatZar(amount)} submitted for review. Funds are reserved and will be paid to your approved ${approvedBank.bank_name || approvedBank.bankName} account upon settlement confirmation.`,
+      message: `Email verified. Withdrawal request of ${vaultTxService.formatZar(verifiedAmount)} submitted for admin treasury review. Funds are reserved and will be paid to your approved ${approvedBank.bank_name || approvedBank.bankName} account upon EFT settlement confirmation.`,
       ...result,
     });
   } catch (err) {
-    console.error('withdraw error:', err);
-    const statusCode = err.code === 'UNAPPROVED_DESTINATION' || err.code === 'BANK_APPROVAL_REQUIRED' ? 403 : 400;
+    console.error('withdraw error:', err.message);
+    const statusCode =
+      err.statusCode ||
+      (err.code === 'UNAPPROVED_DESTINATION' ||
+      err.code === 'BANK_APPROVAL_REQUIRED' ||
+      err.code === 'WITHDRAWAL_OTP_REQUIRED' ||
+      err.code === 'BANK_DETAILS_CHANGED'
+        ? 403
+        : 400);
     return res.status(statusCode).json({
       success: false,
       code: err.code || 'WITHDRAWAL_FAILED',
       error: err.message || 'Withdrawal failed. Please try again.',
+      ...(err.retryAfterSeconds ? { retryAfterSeconds: err.retryAfterSeconds } : {}),
     });
   }
 }
+
+const verifyWithdrawalChallenge = withdraw;
 
 // ── POST /api/user/withdraw/:id/cancel ───────────────────────────────────────
 // Cancels a user's own pending_review withdrawal and restores reserved funds
@@ -1507,6 +1634,9 @@ module.exports = {
   updateProfile,
   deleteAccount,
   deposit,
+  initiateWithdrawalChallenge,
+  cancelWithdrawalChallenge,
+  verifyWithdrawalChallenge,
   withdraw,
   cancelWithdrawal,
   getTransactions,

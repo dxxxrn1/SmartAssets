@@ -667,3 +667,17 @@ BEGIN
   );
 END;
 $$;
+
+
+-- 10. REVOKE PUBLIC / ANON / AUTHENTICATED EXECUTION ON SECURITY DEFINER RPCS
+REVOKE ALL ON FUNCTION public.purchase_asset_shares_atomic(TEXT, UUID, INTEGER, NUMERIC, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.purchase_asset_shares_atomic(TEXT, UUID, INTEGER, NUMERIC, TEXT, TEXT, TEXT, TEXT) TO service_role, postgres;
+
+REVOKE ALL ON FUNCTION public.request_share_redemption_atomic(UUID, UUID, INTEGER, TEXT, JSONB, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.request_share_redemption_atomic(UUID, UUID, INTEGER, TEXT, JSONB, TEXT) TO service_role, postgres;
+
+REVOKE ALL ON FUNCTION public.cancel_share_redemption_atomic(UUID, UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.cancel_share_redemption_atomic(UUID, UUID) TO service_role, postgres;
+
+REVOKE ALL ON FUNCTION public.settle_share_redemption_atomic(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.settle_share_redemption_atomic(UUID, TEXT, TEXT) TO service_role, postgres;

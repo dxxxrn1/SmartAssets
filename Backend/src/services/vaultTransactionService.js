@@ -13,7 +13,7 @@ const transactionsMap = new Map();       // id -> tx
 const balancesMap = new Map();           // userId -> total balance number
 const reservedBalancesMap = new Map();   // userId -> reserved withdrawal balance number
 const idempotencyStore = new Map();      // idempotencyKey -> cached response
-const creditedProviderRefs = new Set();  // providerRef / paymentIntentId -> credited once
+const creditedProviderRefs = new Set();  // providerRef / paymentIntentId / settlementRef -> credited once
 const userVaultLocks = new Map();        // userId -> Promise chain mutex
 
 let hydrated = false;
@@ -67,6 +67,33 @@ function isUuid(id) {
 }
 
 /**
+ * Masks any bank destination string so full account numbers are never exposed in logs or admin queues.
+ * Example: "First National Bank (FNB) (6289100022)" -> "First National Bank (FNB) (****0022)"
+ */
+function maskBankDestination(dest, bankObj = null) {
+  if (bankObj && (bankObj.bank_name || bankObj.bankName)) {
+    const bName = String(bankObj.bank_name || bankObj.bankName).trim();
+    const rawAcc = String(bankObj.account_number || bankObj.accountNumber || '').replace(/\s+/g, '');
+    const last4 = rawAcc.length >= 4 ? `****${rawAcc.slice(-4)}` : '****';
+    return `${bName} (${last4})`;
+  }
+  if (!dest) return null;
+  return String(dest).replace(/\b\d{6,}\b/g, (match) => `****${match.slice(-4)}`);
+}
+
+/**
+ * Clears in-memory runtime caches to test restart-safety against PostgreSQL persistence.
+ */
+function _clearRuntimeCacheForTesting() {
+  transactionsMap.clear();
+  balancesMap.clear();
+  reservedBalancesMap.clear();
+  idempotencyStore.clear();
+  creditedProviderRefs.clear();
+  hydrated = false;
+}
+
+/**
  * Maps a Supabase vault_transactions DB row to a standardized transaction object.
  */
 function mapDbRowToTx(row) {
@@ -111,28 +138,36 @@ function mapDbRowToTx(row) {
   const amt = Number(row.amount) || 0;
   const formatted =
     row.amount_formatted ||
+    row.amountFormatted ||
     (isDep ? `+${formatZar(amt)}` : `-${formatZar(amt)}`);
+
+  const maskedDest = maskBankDestination(
+    row.destination_summary || row.destinationSummary || row.destination || null
+  );
 
   return {
     id: row.id,
-    userId: row.user_id,
+    userId: row.user_id || row.userId,
     type: row.type || 'deposit',
     title,
     amount: amt,
     amountFormatted: formatted,
     method: row.method || 'Manual Bank EFT',
-    destination: row.destination_summary || row.destination || null,
+    destination: maskedDest,
+    destinationSummary: maskedDest,
     bankAccountId: row.bank_account_id || row.bankAccountId || null,
     reference: row.reference || null,
     providerRef: row.provider_ref || row.providerRef || null,
     settlementRef: row.settlement_ref || row.settlementRef || null,
+    auditReason: row.audit_reason || row.auditReason || null,
+    idempotencyKey: row.idempotency_key || row.idempotencyKey || null,
     notes: row.notes || null,
     status,
     positive: isDep,
     reviewedBy: row.reviewed_by || row.reviewedBy || null,
     reviewedAt: row.reviewed_at || row.reviewedAt || null,
-    createdAt: row.created_at || new Date().toISOString(),
-    updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+    createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+    updatedAt: row.updated_at || row.updatedAt || row.created_at || row.createdAt || new Date().toISOString(),
   };
 }
 
@@ -155,6 +190,9 @@ async function hydrateTransactionsFromSupabase() {
         if (mapped.providerRef && mapped.status === 'completed') {
           creditedProviderRefs.add(mapped.providerRef);
         }
+        if (mapped.settlementRef && mapped.status === 'completed') {
+          creditedProviderRefs.add(mapped.settlementRef);
+        }
       });
       hydrated = true;
     }
@@ -163,6 +201,146 @@ async function hydrateTransactionsFromSupabase() {
 
 // Kick off initial hydration in background
 hydrateTransactionsFromSupabase();
+
+/**
+ * Restart-safe lookup for a transaction by ID (checks in-memory map, then Supabase vault_transactions).
+ */
+async function resolveTransactionById(transactionId) {
+  if (!transactionId) return null;
+  let tx = transactionsMap.get(transactionId);
+  try {
+    const { data, error } = await supabase
+      .from('vault_transactions')
+      .select('*')
+      .eq('id', transactionId)
+      .maybeSingle();
+    if (!error && data && data.id) {
+      tx = mapDbRowToTx(data);
+      transactionsMap.set(tx.id, tx);
+      if (tx.settlementRef && tx.status === 'completed') {
+        creditedProviderRefs.add(tx.settlementRef);
+      }
+      if (tx.providerRef && tx.status === 'completed') {
+        creditedProviderRefs.add(tx.providerRef);
+      }
+    }
+  } catch (_) {}
+  return tx || null;
+}
+
+/**
+ * Restart-safe check whether an idempotencyKey has already been processed in memory or DB.
+ */
+async function lookupIdempotencyRecord(idempotencyKey, userId) {
+  if (!idempotencyKey) return null;
+  if (idempotencyStore.has(idempotencyKey)) {
+    const cached = idempotencyStore.get(idempotencyKey);
+    if (cached.userId && String(cached.userId) !== String(userId)) {
+      const err = new Error('Idempotency key belongs to a different user.');
+      err.code = 'IDEMPOTENCY_USER_MISMATCH';
+      err.statusCode = 403;
+      throw err;
+    }
+    return { ...cached, duplicate: true };
+  }
+
+  // Query vault_transactions by idempotency_key (survives server restarts)
+  try {
+    const { data, error } = await supabase
+      .from('vault_transactions')
+      .select('*')
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle();
+
+    if (!error && data && data.id) {
+      const txOwner = data.user_id || data.userId;
+      if (txOwner && String(txOwner) !== String(userId)) {
+        const err = new Error('Idempotency key belongs to a different user.');
+        err.code = 'IDEMPOTENCY_USER_MISMATCH';
+        err.statusCode = 403;
+        throw err;
+      }
+      const mapped = mapDbRowToTx(data);
+      transactionsMap.set(mapped.id, mapped);
+      const balDetails = await getUserBalanceDetails(userId);
+      const reconstructed = {
+        userId,
+        transaction: mapped,
+        status: mapped.status,
+        credited: mapped.type === 'deposit' && mapped.status === 'completed',
+        destination: mapped.destination,
+        bankAccountId: mapped.bankAccountId,
+        newBalanceNum: balDetails.availableBalanceNum,
+        newBalanceFormatted: balDetails.availableBalanceFormatted,
+        totalBalanceNum: balDetails.totalBalanceNum,
+        reservedBalanceNum: balDetails.reservedBalanceNum,
+        reservedBalanceFormatted: balDetails.reservedBalanceFormatted,
+        duplicate: true,
+      };
+      idempotencyStore.set(idempotencyKey, reconstructed);
+      return reconstructed;
+    }
+  } catch (err) {
+    if (err.code === 'IDEMPOTENCY_USER_MISMATCH') throw err;
+  }
+
+  return null;
+}
+
+/**
+ * Restart-safe check whether a settlementRef or providerRef has already been used on another transaction.
+ */
+async function isSettlementOrProviderRefUsed(ref, excludeTxId = null) {
+  if (!ref) return false;
+  const clean = String(ref).trim();
+  if (!clean) return false;
+
+  // Check in-memory transactions first
+  for (const tx of transactionsMap.values()) {
+    if (excludeTxId && tx.id === excludeTxId) continue;
+    if (
+      tx.status === 'completed' &&
+      (tx.settlementRef === clean || tx.providerRef === clean || tx.reference === clean)
+    ) {
+      return true;
+    }
+  }
+
+  if (!excludeTxId && creditedProviderRefs.has(clean)) {
+    return true;
+  }
+
+  // Check Supabase vault_transactions for restart-safe deduplication
+  try {
+    const { data: bySettlement } = await supabase
+      .from('vault_transactions')
+      .select('id, status, settlement_ref, provider_ref, reference')
+      .eq('settlement_ref', clean);
+
+    if (Array.isArray(bySettlement)) {
+      const conflict = bySettlement.find((r) => r && r.id && r.id !== excludeTxId);
+      if (conflict) {
+        creditedProviderRefs.add(clean);
+        return true;
+      }
+    }
+
+    const { data: byProvider } = await supabase
+      .from('vault_transactions')
+      .select('id, status, settlement_ref, provider_ref, reference')
+      .eq('provider_ref', clean);
+
+    if (Array.isArray(byProvider)) {
+      const conflict = byProvider.find((r) => r && r.id && r.id !== excludeTxId && r.status === 'completed');
+      if (conflict) {
+        creditedProviderRefs.add(clean);
+        return true;
+      }
+    }
+  } catch (_) {}
+
+  return false;
+}
 
 /**
  * Get detailed balance breakdown (total, reserved, spendable) for a user.
@@ -251,6 +429,7 @@ async function persistUserBalancesToDb(userId, totalBalance, reservedBalance, si
   if (simulateDbError) {
     const err = new Error('Failed to update balance in database: Simulated database write failure.');
     err.code = 'DB_WRITE_FAILED';
+    err.statusCode = 500;
     throw err;
   }
   if (!isUuid(userId)) return;
@@ -271,17 +450,210 @@ async function persistUserBalancesToDb(userId, totalBalance, reservedBalance, si
           .update({ balance: spendable })
           .eq('id', userId);
         if (fallbackErr) {
-          throw new Error(`Failed to update balance in database: ${fallbackErr.message}`);
+          const dbErr = new Error(`Failed to update balance in database: ${fallbackErr.message}`);
+          dbErr.code = 'DB_WRITE_FAILED';
+          dbErr.statusCode = 500;
+          throw dbErr;
         }
       } else {
-        throw new Error(`Failed to update balance in database: ${updateErr.message}`);
+        const dbErr = new Error(`Failed to update balance in database: ${updateErr.message}`);
+        dbErr.code = 'DB_WRITE_FAILED';
+        dbErr.statusCode = 500;
+        throw dbErr;
       }
     }
   } catch (err) {
-    if (err.message && err.message.startsWith('Failed to update balance in database')) {
-      throw err;
+    if (err.code === 'DB_WRITE_FAILED') throw err;
+    const dbErr = new Error(
+      err.message && err.message.startsWith('Failed to update balance in database')
+        ? err.message
+        : `Failed to update balance in database: ${err.message}`
+    );
+    dbErr.code = 'DB_WRITE_FAILED';
+    dbErr.statusCode = 500;
+    throw dbErr;
+  }
+}
+
+/**
+ * Persist a new vault_transactions row to Supabase.
+ * Fails closed and throws DB_WRITE_FAILED if the insert returns an error (never swallows errors).
+ */
+async function persistVaultTransactionInsert(rowPayload, { userId, simulateTxDbError = false }) {
+  if (simulateTxDbError) {
+    const err = new Error('Failed to persist vault transaction in database: Simulated ledger write failure.');
+    err.code = 'DB_WRITE_FAILED';
+    err.statusCode = 500;
+    throw err;
+  }
+  if (!isUuid(userId)) return;
+
+  const { error } = await supabase.from('vault_transactions').insert(rowPayload);
+  if (error) {
+    const msg = String(error.message || '');
+    // Handle pre-migration schema fallback if extended columns are not yet applied
+    if (
+      msg.includes('column') &&
+      (msg.includes('provider_ref') ||
+        msg.includes('settlement_ref') ||
+        msg.includes('destination_summary') ||
+        msg.includes('bank_account_id') ||
+        msg.includes('audit_reason') ||
+        msg.includes('idempotency_key') ||
+        msg.includes('reviewed_by') ||
+        msg.includes('reviewed_at'))
+    ) {
+      const basePayload = {
+        id: rowPayload.id,
+        user_id: rowPayload.user_id,
+        type: rowPayload.type,
+        amount: rowPayload.amount,
+        amount_formatted: rowPayload.amount_formatted,
+        method: rowPayload.method,
+        reference: rowPayload.reference,
+        notes: rowPayload.notes,
+        status: rowPayload.status,
+        created_at: rowPayload.created_at,
+      };
+      const { error: fallbackErr } = await supabase.from('vault_transactions').insert(basePayload);
+      if (fallbackErr) {
+        const dbErr = new Error(`Failed to persist vault transaction in database: ${fallbackErr.message}`);
+        dbErr.code = 'DB_WRITE_FAILED';
+        dbErr.statusCode = 500;
+        throw dbErr;
+      }
+      return;
     }
-    throw new Error(`Failed to update balance in database: ${err.message}`);
+
+    if (msg.includes('idx_vault_tx_settlement_ref_unique') || msg.includes('duplicate key')) {
+      const dupErr = new Error('Duplicate settlement or provider reference detected in database.');
+      dupErr.code = 'DUPLICATE_SETTLEMENT_REF';
+      dupErr.statusCode = 409;
+      throw dupErr;
+    }
+
+    const dbErr = new Error(`Failed to persist vault transaction in database: ${msg}`);
+    dbErr.code = 'DB_WRITE_FAILED';
+    dbErr.statusCode = 500;
+    throw dbErr;
+  }
+}
+
+/**
+ * Persist a status/audit update on an existing vault_transactions row in Supabase.
+ * Fails closed and throws DB_WRITE_FAILED if the update returns an error (never swallows errors).
+ */
+async function persistVaultTransactionUpdate(txId, updatePayload, { userId, simulateTxDbError = false }) {
+  if (simulateTxDbError) {
+    const err = new Error('Failed to update vault transaction in database: Simulated ledger update failure.');
+    err.code = 'DB_WRITE_FAILED';
+    err.statusCode = 500;
+    throw err;
+  }
+  if (!isUuid(userId)) return;
+
+  const { error } = await supabase
+    .from('vault_transactions')
+    .update(updatePayload)
+    .eq('id', txId);
+
+  if (error) {
+    const msg = String(error.message || '');
+    if (
+      msg.includes('column') &&
+      (msg.includes('provider_ref') ||
+        msg.includes('settlement_ref') ||
+        msg.includes('audit_reason') ||
+        msg.includes('reviewed_by') ||
+        msg.includes('reviewed_at') ||
+        msg.includes('updated_at'))
+    ) {
+      const baseUpdate = {
+        status: updatePayload.status,
+        reference: updatePayload.reference,
+        notes: updatePayload.notes,
+      };
+      const { error: fallbackErr } = await supabase
+        .from('vault_transactions')
+        .update(baseUpdate)
+        .eq('id', txId);
+      if (fallbackErr) {
+        const dbErr = new Error(`Failed to update vault transaction in database: ${fallbackErr.message}`);
+        dbErr.code = 'DB_WRITE_FAILED';
+        dbErr.statusCode = 500;
+        throw dbErr;
+      }
+      return;
+    }
+
+    if (msg.includes('idx_vault_tx_settlement_ref_unique') || msg.includes('duplicate key')) {
+      const dupErr = new Error('Duplicate settlement reference detected in database.');
+      dupErr.code = 'DUPLICATE_SETTLEMENT_REF';
+      dupErr.statusCode = 409;
+      throw dupErr;
+    }
+
+    const dbErr = new Error(`Failed to update vault transaction in database: ${msg}`);
+    dbErr.code = 'DB_WRITE_FAILED';
+    dbErr.statusCode = 500;
+    throw dbErr;
+  }
+}
+
+/**
+ * Helper to attempt a PostgreSQL atomic RPC when available.
+ * Returns null if the RPC is not yet installed in the database schema cache so the caller can execute the DB fallback.
+ */
+async function tryVaultAtomicRpc(fnName, params) {
+  if (typeof supabase.rpc !== 'function') return null;
+  try {
+    const { data, error } = await supabase.rpc(fnName, params);
+    if (error) {
+      const msg = String(error.message || '');
+      const code = String(error.code || '');
+      // Function not yet deployed in schema cache or offline environment
+      if (
+        code === 'PGRST202' ||
+        code === '42883' ||
+        msg.includes('Could not find the function') ||
+        msg.includes('does not exist') ||
+        msg.includes('fetch failed')
+      ) {
+        return null;
+      }
+      // Application-level exception raised inside the PostgreSQL RPC
+      const appErr = new Error(msg || `Database RPC ${fnName} failed.`);
+      if (msg.includes('DUPLICATE_SETTLEMENT_REF') || msg.includes('Duplicate settlement reference')) {
+        appErr.code = 'DUPLICATE_SETTLEMENT_REF';
+        appErr.statusCode = 409;
+      } else if (msg.includes('SETTLEMENT_REF_REQUIRED')) {
+        appErr.code = 'SETTLEMENT_REF_REQUIRED';
+        appErr.statusCode = 400;
+      } else if (msg.includes('REASON_REQUIRED')) {
+        appErr.code = 'REASON_REQUIRED';
+        appErr.statusCode = 400;
+      } else if (msg.includes('INSUFFICIENT_FUNDS')) {
+        appErr.code = 'INSUFFICIENT_FUNDS';
+        appErr.statusCode = 400;
+      } else if (msg.includes('BANK_APPROVAL_REQUIRED')) {
+        appErr.code = 'BANK_APPROVAL_REQUIRED';
+        appErr.statusCode = 400;
+      } else if (msg.includes('CANCELLATION_LOCKED')) {
+        appErr.code = 'CANCELLATION_LOCKED';
+        appErr.statusCode = 409;
+      } else if (msg.includes('FORBIDDEN') || msg.includes('UNAUTHORIZED_CALLER')) {
+        appErr.code = 'FORBIDDEN';
+        appErr.statusCode = 403;
+      }
+      throw appErr;
+    }
+    if (data && typeof data === 'object' && (data.tx_id || data.status)) {
+      return data;
+    }
+    return null;
+  } catch (err) {
+    if (err.code || err.statusCode) throw err;
+    return null;
   }
 }
 
@@ -307,6 +679,7 @@ async function depositFunds({
   isVerifiedSettlement = false,
   idempotencyKey = null,
   simulateDbError = false,
+  simulateTxDbError = false,
   stripeVerifier = null,
 }) {
   if (!userId) {
@@ -324,17 +697,15 @@ async function depositFunds({
     throw new Error(`Unsupported deposit currency "${currency}". Vault deposits must be denominated in ZAR.`);
   }
 
-  if (idempotencyKey && idempotencyStore.has(idempotencyKey)) {
-    const cached = idempotencyStore.get(idempotencyKey);
-    if (cached.userId && String(cached.userId) !== String(userId)) {
-      throw new Error('Idempotency key belongs to a different user.');
-    }
-    return { ...cached, duplicate: true };
+  if (idempotencyKey) {
+    const existingIdem = await lookupIdempotencyRecord(idempotencyKey, userId);
+    if (existingIdem) return existingIdem;
   }
 
   return withUserVaultLock(userId, async () => {
-    if (idempotencyKey && idempotencyStore.has(idempotencyKey)) {
-      return { ...idempotencyStore.get(idempotencyKey), duplicate: true };
+    if (idempotencyKey) {
+      const existingIdem = await lookupIdempotencyRecord(idempotencyKey, userId);
+      if (existingIdem) return existingIdem;
     }
 
     const isInternalPayout = INTERNAL_SETTLED_PAYOUT_METHODS.has(method);
@@ -343,14 +714,19 @@ async function depositFunds({
 
     if (isInternalPayout) {
       verifiedSettlement = true;
-      authoritativeProviderRef = providerRef || reference || `SYS-PAYOUT-${Date.now()}-${ crypto.randomBytes(4).toString('hex') }`;
-    } else if (paymentIntentId || String(method).toLowerCase().includes('stripe') || String(method).toLowerCase() === 'card') {
+      authoritativeProviderRef =
+        providerRef || reference || `SYS-PAYOUT-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    } else if (
+      paymentIntentId ||
+      String(method).toLowerCase().includes('stripe') ||
+      String(method).toLowerCase() === 'card'
+    ) {
       // Card / Stripe deposit: MUST verify settlement via Stripe API / verifier
       if (!paymentIntentId) {
         throw new Error('Card deposit requires a verified Stripe PaymentIntent ID. Raw or unverified card deposits are not permitted.');
       }
 
-      if (creditedProviderRefs.has(paymentIntentId)) {
+      if (await isSettlementOrProviderRefUsed(paymentIntentId)) {
         const err = new Error(`Duplicate provider payment reference: ${paymentIntentId} has already been credited.`);
         err.code = 'DUPLICATE_PROVIDER_REFERENCE';
         err.statusCode = 409;
@@ -371,8 +747,6 @@ async function depositFunds({
         throw err;
       }
 
-      // Support both structured stripeService.verifyPaymentIntent result ({ verified, status, ... })
-      // and direct PaymentIntent objects ({ id, status, amount, currency, metadata })
       if (verification.verified === false) {
         const err = new Error(`Deposit payment verification failed: ${verification.reason || 'PaymentIntent not verified.'}`);
         if (verification.status === 'amount_mismatch') {
@@ -423,12 +797,11 @@ async function depositFunds({
       verifiedSettlement = true;
       authoritativeProviderRef = verification.paymentIntentId || verification.id || paymentIntentId;
     } else if (isVerifiedSettlement === true) {
-      // Explicit verified settlement (e.g. signed webhook or verified treasury credit)
       const refToUse = providerRef || reference;
       if (!refToUse || String(refToUse).trim().length < 4) {
         throw new Error('Verified deposit settlement requires an authoritative provider reference.');
       }
-      if (creditedProviderRefs.has(refToUse)) {
+      if (await isSettlementOrProviderRefUsed(refToUse)) {
         const err = new Error(`Duplicate provider payment reference: ${refToUse} has already been credited.`);
         err.code = 'DUPLICATE_PROVIDER_REFERENCE';
         err.statusCode = 409;
@@ -441,30 +814,76 @@ async function depositFunds({
       verifiedSettlement = false;
     }
 
+    // Attempt PostgreSQL atomic RPC for unverified manual deposit when available
+    if (!verifiedSettlement && isUuid(userId) && !simulateDbError && !simulateTxDbError) {
+      const rpcRes = await tryVaultAtomicRpc('request_vault_deposit_atomic', {
+        p_user_id: userId,
+        p_amount: depositNum,
+        p_method: method || 'Manual Bank EFT',
+        p_reference: reference || null,
+        p_notes: notes || null,
+        p_idempotency_key: idempotencyKey || null,
+      });
+
+      if (rpcRes && rpcRes.tx_id) {
+        const txRow = await resolveTransactionById(rpcRes.tx_id);
+        const spendable = Number(rpcRes.spendable_balance) || 0;
+        const total = Number(rpcRes.total_balance) || 0;
+        const reserved = Number(rpcRes.reserved_balance) || 0;
+        balancesMap.set(userId, total);
+        reservedBalancesMap.set(userId, reserved);
+        const rpcResponse = {
+          userId,
+          transaction:
+            txRow ||
+            mapDbRowToTx({
+              id: rpcRes.tx_id,
+              user_id: userId,
+              type: 'deposit',
+              amount: depositNum,
+              method: method || 'Manual Bank EFT',
+              reference,
+              notes,
+              status: 'pending_review',
+            }),
+          status: 'pending_review',
+          credited: false,
+          newBalanceNum: spendable,
+          newBalanceFormatted: formatZar(spendable),
+          totalBalanceNum: total,
+          reservedBalanceNum: reserved,
+          duplicate: Boolean(rpcRes.idempotent),
+        };
+        if (idempotencyKey) idempotencyStore.set(idempotencyKey, rpcResponse);
+        return rpcResponse;
+      }
+    }
+
     const balDetails = await getUserBalanceDetails(userId);
     const currentTotal = balDetails.totalBalanceNum;
     const currentReserved = balDetails.reservedBalanceNum;
     const newTotal = verifiedSettlement ? currentTotal + depositNum : currentTotal;
     const newSpendable = Math.max(0, newTotal - currentReserved);
 
-    // If verified settlement, update DB profile balance first (fail closed on DB write failure)
     if (verifiedSettlement) {
       await persistUserBalancesToDb(userId, newTotal, currentReserved, simulateDbError);
       balancesMap.set(userId, newTotal);
-      if (authoritativeProviderRef) {
-        creditedProviderRefs.add(authoritativeProviderRef);
-      }
     } else if (simulateDbError) {
       const err = new Error('Failed to record deposit request in database: Simulated database write failure.');
       err.code = 'DB_WRITE_FAILED';
+      err.statusCode = 500;
       throw err;
     }
 
-    const txId = 'TXN-DEP-' + Math.floor(100000 + Math.random() * 900000) + '-' + crypto.randomBytes(2).toString('hex').toUpperCase();
+    const txId =
+      'TXN-DEP-' +
+      Math.floor(100000 + Math.random() * 900000) +
+      '-' +
+      crypto.randomBytes(2).toString('hex').toUpperCase();
     const now = new Date().toISOString();
     const txStatus = verifiedSettlement ? 'completed' : 'pending_review';
 
-    const txRecord = mapDbRowToTx({
+    const rowPayload = {
       id: txId,
       user_id: userId,
       type: 'deposit',
@@ -474,6 +893,7 @@ async function depositFunds({
       reference: reference || authoritativeProviderRef || null,
       provider_ref: authoritativeProviderRef,
       settlement_ref: verifiedSettlement ? authoritativeProviderRef : null,
+      idempotency_key: idempotencyKey || null,
       notes:
         notes ||
         (verifiedSettlement
@@ -482,26 +902,26 @@ async function depositFunds({
       status: txStatus,
       created_at: now,
       updated_at: now,
-    });
+    };
 
-    // Persist to Supabase vault_transactions
-    if (isUuid(userId)) {
-      try {
-        await supabase.from('vault_transactions').insert({
-          id: txId,
-          user_id: userId,
-          type: 'deposit',
-          amount: depositNum,
-          amount_formatted: txRecord.amountFormatted,
-          method: txRecord.method,
-          reference: txRecord.reference,
-          notes: txRecord.notes,
-          status: txStatus,
-          created_at: now,
-        });
-      } catch (_e) {}
+    try {
+      await persistVaultTransactionInsert(rowPayload, { userId, simulateTxDbError });
+    } catch (txErr) {
+      // Roll back balance if verified settlement was already persisted
+      if (verifiedSettlement) {
+        balancesMap.set(userId, currentTotal);
+        try {
+          await persistUserBalancesToDb(userId, currentTotal, currentReserved, false);
+        } catch (_) {}
+      }
+      throw txErr;
     }
 
+    if (verifiedSettlement && authoritativeProviderRef) {
+      creditedProviderRefs.add(authoritativeProviderRef);
+    }
+
+    const txRecord = mapDbRowToTx(rowPayload);
     transactionsMap.set(txId, txRecord);
 
     auditLogService.logEvent({
@@ -512,12 +932,6 @@ async function depositFunds({
         ? `Credited ${formatZar(depositNum)} to user ${userId} via ${txRecord.method} (Ref: ${authoritativeProviderRef}). Spendable balance: ${formatZar(newSpendable)}.`
         : `Recorded pending deposit request ${txId} of ${formatZar(depositNum)} for user ${userId} via ${txRecord.method} (User Ref: ${reference || 'N/A'}). Spendable balance unchanged at ${formatZar(newSpendable)}.`,
     });
-
-    console.log(
-      verifiedSettlement
-        ? `💰 [VaultTxService] Verified deposit of ${formatZar(depositNum)} for user ${userId}. New Balance: ${formatZar(newSpendable)}`
-        : `⏳ [VaultTxService] Pending deposit request ${txId} of ${formatZar(depositNum)} for user ${userId}. Balance unchanged: ${formatZar(newSpendable)}`
-    );
 
     const responseObj = {
       userId,
@@ -548,9 +962,14 @@ async function confirmDeposit({
   adminId,
   reviewer,
   settlementRef,
+  reason = null,
+  auditReason = null,
   simulateDbError = false,
+  simulateTxDbError = false,
 }) {
   const effectiveAdminId = adminId || reviewer;
+  const effectiveReason = auditReason || reason || 'Treasury bank statement receipt verified';
+
   if (!transactionId) {
     throw new Error('Deposit transaction ID is required.');
   }
@@ -560,103 +979,149 @@ async function confirmDeposit({
   if (!settlementRef || String(settlementRef).trim().length < 4) {
     const err = new Error('An authoritative bank/treasury settlement reference (min 4 chars) is required to confirm a deposit.');
     err.code = 'SETTLEMENT_REF_REQUIRED';
+    err.statusCode = 400;
     throw err;
   }
 
   const cleanSettlementRef = String(settlementRef).trim();
 
-  // Locate transaction in memory or Supabase
-  let tx = transactionsMap.get(transactionId);
+  // Locate transaction in memory or Supabase (restart-safe)
+  const tx = await resolveTransactionById(transactionId);
   if (!tx) {
-    try {
-      const { data } = await supabase
-        .from('vault_transactions')
-        .select('*')
-        .eq('id', transactionId)
-        .maybeSingle();
-      if (data) {
-        tx = mapDbRowToTx(data);
-        transactionsMap.set(tx.id, tx);
-      }
-    } catch (_) {}
-  }
-
-  if (!tx) {
-    throw new Error(`Deposit transaction "${transactionId}" not found.`);
+    const err = new Error(`Deposit transaction "${transactionId}" not found.`);
+    err.statusCode = 404;
+    throw err;
   }
   if (tx.type !== 'deposit') {
-    throw new Error(`Transaction "${transactionId}" is not a deposit.`);
+    const err = new Error(`Transaction "${transactionId}" is not a deposit.`);
+    err.statusCode = 400;
+    throw err;
   }
 
   return withUserVaultLock(tx.userId, async () => {
-    const currentTx = transactionsMap.get(transactionId) || tx;
+    const currentTx = (await resolveTransactionById(transactionId)) || tx;
 
-    // Idempotent return if already completed
+    // Idempotent return if already completed with the same reference
     if (currentTx.status === 'completed') {
+      if (currentTx.settlementRef && currentTx.settlementRef !== cleanSettlementRef) {
+        const err = new Error(
+          `Deposit "${transactionId}" was already confirmed with a different settlement reference (${currentTx.settlementRef}).`
+        );
+        err.code = 'ALREADY_CONFIRMED_DIFFERENT_REF';
+        err.statusCode = 409;
+        throw err;
+      }
       const balDetails = await getUserBalanceDetails(currentTx.userId);
       return {
         transaction: currentTx,
         status: 'completed',
         alreadyCompleted: true,
         idempotent: true,
+        settlementRef: currentTx.settlementRef || cleanSettlementRef,
         newBalanceNum: balDetails.availableBalanceNum,
         newBalanceFormatted: balDetails.availableBalanceFormatted,
+        totalBalanceNum: balDetails.totalBalanceNum,
+        reservedBalanceNum: balDetails.reservedBalanceNum,
       };
     }
 
     if (currentTx.status !== 'pending_review') {
-      throw new Error(`Cannot confirm deposit in status "${currentTx.status}". Only pending_review deposits can be confirmed.`);
-    }
-
-    if (creditedProviderRefs.has(cleanSettlementRef)) {
-      const err = new Error(`Duplicate settlement reference: "${cleanSettlementRef}" has already been used to credit a deposit.`);
-      err.code = 'DUPLICATE_PROVIDER_REFERENCE';
+      const err = new Error(`Cannot confirm deposit in status "${currentTx.status}". Only pending_review deposits can be confirmed.`);
+      err.code = 'INVALID_STATUS_TRANSITION';
+      err.statusCode = 409;
       throw err;
     }
 
+    // Check duplicate settlement reference across all deposits & withdrawals (memory + DB)
+    if (await isSettlementOrProviderRefUsed(cleanSettlementRef, currentTx.id)) {
+      const err = new Error(`Duplicate settlement reference: "${cleanSettlementRef}" has already been used.`);
+      err.code = 'DUPLICATE_SETTLEMENT_REF';
+      err.statusCode = 409;
+      throw err;
+    }
+
+    // Attempt PostgreSQL atomic RPC first if available
+    if (isUuid(currentTx.userId) && !simulateDbError && !simulateTxDbError) {
+      const rpcRes = await tryVaultAtomicRpc('confirm_vault_deposit_atomic', {
+        p_tx_id: currentTx.id,
+        p_admin_id: String(effectiveAdminId),
+        p_settlement_ref: cleanSettlementRef,
+        p_audit_reason: effectiveReason,
+      });
+
+      if (rpcRes && rpcRes.status === 'completed') {
+        creditedProviderRefs.add(cleanSettlementRef);
+        const refreshedTx = await resolveTransactionById(currentTx.id);
+        const spendable = Number(rpcRes.spendable_balance) || 0;
+        const total = Number(rpcRes.total_balance) || 0;
+        balancesMap.set(currentTx.userId, total);
+        return {
+          transaction: refreshedTx || currentTx,
+          status: 'completed',
+          alreadyCompleted: Boolean(rpcRes.idempotent),
+          idempotent: Boolean(rpcRes.idempotent),
+          newBalanceNum: spendable,
+          newBalanceFormatted: formatZar(spendable),
+          totalBalanceNum: total,
+          settlementRef: cleanSettlementRef,
+        };
+      }
+    }
+
     const balDetails = await getUserBalanceDetails(currentTx.userId);
-    const newTotal = balDetails.totalBalanceNum + currentTx.amount;
+    const previousTotal = balDetails.totalBalanceNum;
     const currentReserved = balDetails.reservedBalanceNum;
+    const newTotal = previousTotal + currentTx.amount;
     const newSpendable = Math.max(0, newTotal - currentReserved);
 
-    // Fail closed if DB update fails
+    // 1. Update DB profile balance first (fail closed on DB write failure)
     await persistUserBalancesToDb(currentTx.userId, newTotal, currentReserved, simulateDbError);
+
+    const now = new Date().toISOString();
+    const updatedNotes = `${currentTx.notes || 'Bank EFT Deposit'} | Verified by Admin (${effectiveAdminId}) Ref: ${cleanSettlementRef}${effectiveReason ? ` — ${effectiveReason}` : ''}`;
+
+    const updatePayload = {
+      status: 'completed',
+      reference: currentTx.reference || cleanSettlementRef,
+      provider_ref: cleanSettlementRef,
+      settlement_ref: cleanSettlementRef,
+      audit_reason: effectiveReason,
+      notes: updatedNotes,
+      reviewed_by: String(effectiveAdminId),
+      reviewed_at: now,
+      updated_at: now,
+    };
+
+    // 2. Persist status transition to vault_transactions — roll back balance if this fails!
+    try {
+      await persistVaultTransactionUpdate(currentTx.id, updatePayload, {
+        userId: currentTx.userId,
+        simulateTxDbError,
+      });
+    } catch (txErr) {
+      balancesMap.set(currentTx.userId, previousTotal);
+      try {
+        await persistUserBalancesToDb(currentTx.userId, previousTotal, currentReserved, false);
+      } catch (_) {}
+      throw txErr;
+    }
+
     balancesMap.set(currentTx.userId, newTotal);
     creditedProviderRefs.add(cleanSettlementRef);
 
-    const now = new Date().toISOString();
     const updatedTx = mapDbRowToTx({
+      ...currentTx,
       id: currentTx.id,
       user_id: currentTx.userId,
       type: 'deposit',
       amount: currentTx.amount,
       amount_formatted: currentTx.amountFormatted,
       method: currentTx.method,
-      reference: currentTx.reference || cleanSettlementRef,
-      provider_ref: cleanSettlementRef,
-      settlement_ref: cleanSettlementRef,
-      notes: `${currentTx.notes || 'Bank EFT Deposit'} | Verified by Admin (${effectiveAdminId}) Ref: ${cleanSettlementRef}`,
-      status: 'completed',
-      reviewed_by: effectiveAdminId,
-      reviewed_at: now,
+      ...updatePayload,
       created_at: currentTx.createdAt,
-      updated_at: now,
     });
 
     transactionsMap.set(currentTx.id, updatedTx);
-
-    if (isUuid(currentTx.userId)) {
-      try {
-        await supabase
-          .from('vault_transactions')
-          .update({
-            status: 'completed',
-            reference: updatedTx.reference,
-            notes: updatedTx.notes,
-          })
-          .eq('id', currentTx.id);
-      } catch (_e) {}
-    }
 
     auditLogService.logEvent({
       eventType: 'VAULT_DEPOSIT_CONFIRMED_BY_ADMIN',
@@ -683,91 +1148,131 @@ async function confirmDeposit({
  * Authorized Admin Rejection of a Pending Deposit Request.
  * Marks deposit rejected and never increases user balance.
  */
-async function rejectDeposit({ transactionId, adminId, reason = 'Bank transfer receipt could not be verified' }) {
+async function rejectDeposit({
+  transactionId,
+  adminId,
+  reviewer,
+  reason,
+  simulateDbError = false,
+  simulateTxDbError = false,
+}) {
+  const effectiveAdminId = adminId || reviewer;
   if (!transactionId) {
     throw new Error('Deposit transaction ID is required.');
   }
-  if (!adminId) {
+  if (!effectiveAdminId) {
     throw new Error('Authorized administrator ID is required to reject a deposit.');
   }
-
-  let tx = transactionsMap.get(transactionId);
-  if (!tx) {
-    try {
-      const { data } = await supabase
-        .from('vault_transactions')
-        .select('*')
-        .eq('id', transactionId)
-        .maybeSingle();
-      if (data) {
-        tx = mapDbRowToTx(data);
-        transactionsMap.set(tx.id, tx);
-      }
-    } catch (_) {}
+  if (!reason || !String(reason).trim()) {
+    const err = new Error('A rejection reason is required when rejecting a deposit.');
+    err.code = 'REASON_REQUIRED';
+    err.statusCode = 400;
+    throw err;
   }
 
+  const cleanReason = String(reason).trim();
+
+  const tx = await resolveTransactionById(transactionId);
   if (!tx) {
-    throw new Error(`Deposit transaction "${transactionId}" not found.`);
+    const err = new Error(`Deposit transaction "${transactionId}" not found.`);
+    err.statusCode = 404;
+    throw err;
   }
   if (tx.type !== 'deposit') {
-    throw new Error(`Transaction "${transactionId}" is not a deposit.`);
+    const err = new Error(`Transaction "${transactionId}" is not a deposit.`);
+    err.statusCode = 400;
+    throw err;
   }
 
   return withUserVaultLock(tx.userId, async () => {
-    const currentTx = transactionsMap.get(transactionId) || tx;
+    const currentTx = (await resolveTransactionById(transactionId)) || tx;
+
     if (currentTx.status === 'completed') {
-      throw new Error('Cannot reject a deposit that has already been confirmed and credited.');
+      const err = new Error('Cannot reject a deposit that has already been confirmed and credited.');
+      err.code = 'INVALID_STATUS_TRANSITION';
+      err.statusCode = 409;
+      throw err;
     }
+
     if (currentTx.status === 'rejected') {
       const balDetails = await getUserBalanceDetails(currentTx.userId);
       return {
         transaction: currentTx,
         status: 'rejected',
         alreadyRejected: true,
+        idempotent: true,
         newBalanceNum: balDetails.availableBalanceNum,
+        newBalanceFormatted: balDetails.availableBalanceFormatted,
       };
     }
 
+    if (simulateDbError) {
+      const err = new Error('Failed to reject deposit in database: Simulated database write failure.');
+      err.code = 'DB_WRITE_FAILED';
+      err.statusCode = 500;
+      throw err;
+    }
+
+    if (isUuid(currentTx.userId) && !simulateTxDbError) {
+      const rpcRes = await tryVaultAtomicRpc('reject_vault_deposit_atomic', {
+        p_tx_id: currentTx.id,
+        p_admin_id: String(effectiveAdminId),
+        p_reason: cleanReason,
+      });
+      if (rpcRes && rpcRes.status === 'rejected') {
+        const refreshedTx = await resolveTransactionById(currentTx.id);
+        const balDetails = await getUserBalanceDetails(currentTx.userId);
+        return {
+          transaction: refreshedTx || currentTx,
+          status: 'rejected',
+          alreadyRejected: Boolean(rpcRes.idempotent),
+          idempotent: Boolean(rpcRes.idempotent),
+          newBalanceNum: balDetails.availableBalanceNum,
+          newBalanceFormatted: balDetails.availableBalanceFormatted,
+        };
+      }
+    }
+
     const now = new Date().toISOString();
+    const updatePayload = {
+      status: 'rejected',
+      audit_reason: cleanReason,
+      notes: `Rejected by Admin (${effectiveAdminId}): ${cleanReason}`,
+      reviewed_by: String(effectiveAdminId),
+      reviewed_at: now,
+      updated_at: now,
+    };
+
+    await persistVaultTransactionUpdate(currentTx.id, updatePayload, {
+      userId: currentTx.userId,
+      simulateTxDbError,
+    });
+
     const updatedTx = mapDbRowToTx({
       ...currentTx,
+      id: currentTx.id,
       user_id: currentTx.userId,
       amount_formatted: currentTx.amountFormatted,
-      status: 'rejected',
-      notes: `Rejected by Admin: ${reason}`,
-      reviewed_by: adminId,
-      reviewed_at: now,
+      ...updatePayload,
       created_at: currentTx.createdAt,
-      updated_at: now,
     });
 
     transactionsMap.set(currentTx.id, updatedTx);
-
-    if (isUuid(currentTx.userId)) {
-      try {
-        await supabase
-          .from('vault_transactions')
-          .update({
-            status: 'rejected',
-            notes: updatedTx.notes,
-          })
-          .eq('id', currentTx.id);
-      } catch (_e) {}
-    }
 
     const balDetails = await getUserBalanceDetails(currentTx.userId);
 
     auditLogService.logEvent({
       eventType: 'VAULT_DEPOSIT_REJECTED_BY_ADMIN',
-      actorId: adminId,
+      actorId: effectiveAdminId,
       category: 'Vault',
-      description: `Admin ${adminId} rejected deposit ${currentTx.id} (${formatZar(currentTx.amount)}) for user ${currentTx.userId}. Reason: ${reason}.`,
+      description: `Admin ${effectiveAdminId} rejected deposit ${currentTx.id} (${formatZar(currentTx.amount)}) for user ${currentTx.userId}. Reason: ${cleanReason}.`,
     });
 
     return {
       transaction: updatedTx,
       status: 'rejected',
       alreadyRejected: false,
+      idempotent: false,
       newBalanceNum: balDetails.availableBalanceNum,
       newBalanceFormatted: balDetails.availableBalanceFormatted,
     };
@@ -795,6 +1300,7 @@ async function withdrawFunds({
   idempotencyKey = null,
   approvedBank = null,
   simulateDbError = false,
+  simulateTxDbError = false,
 }) {
   if (!userId) {
     throw new Error('Authenticated user ID is required.');
@@ -814,15 +1320,13 @@ async function withdrawFunds({
       'Unapproved withdrawal destination: Crypto wallet withdrawals are not supported. Withdrawals can only be sent to your approved South African bank account on file.'
     );
     err.code = 'UNAPPROVED_DESTINATION';
+    err.statusCode = 400;
     throw err;
   }
 
-  if (idempotencyKey && idempotencyStore.has(idempotencyKey)) {
-    const cached = idempotencyStore.get(idempotencyKey);
-    if (cached.userId && String(cached.userId) !== String(userId)) {
-      throw new Error('Idempotency key belongs to a different user.');
-    }
-    return { ...cached, duplicate: true };
+  if (idempotencyKey) {
+    const existingIdem = await lookupIdempotencyRecord(idempotencyKey, userId);
+    if (existingIdem) return existingIdem;
   }
 
   // Resolve authoritative approved bank account on file
@@ -834,6 +1338,7 @@ async function withdrawFunds({
       'Approved bank account required. Please submit your bank details and wait for admin approval before withdrawing funds.'
     );
     err.code = 'BANK_APPROVAL_REQUIRED';
+    err.statusCode = 400;
     throw err;
   }
 
@@ -850,6 +1355,7 @@ async function withdrawFunds({
           'Unapproved withdrawal destination: Supplied account number does not match your approved bank account on file.'
         );
         err.code = 'UNAPPROVED_DESTINATION';
+        err.statusCode = 400;
         throw err;
       }
     }
@@ -860,14 +1366,16 @@ async function withdrawFunds({
           'Unapproved withdrawal destination: Supplied bank name does not match your approved bank account on file.'
         );
         err.code = 'UNAPPROVED_DESTINATION';
+        err.statusCode = 400;
         throw err;
       }
     }
   }
 
   return withUserVaultLock(userId, async () => {
-    if (idempotencyKey && idempotencyStore.has(idempotencyKey)) {
-      return { ...idempotencyStore.get(idempotencyKey), duplicate: true };
+    if (idempotencyKey) {
+      const existingIdem = await lookupIdempotencyRecord(idempotencyKey, userId);
+      if (existingIdem) return existingIdem;
     }
 
     const balDetails = await getUserBalanceDetails(userId);
@@ -890,17 +1398,17 @@ async function withdrawFunds({
     // 1. Update DB profile reserved_balance first — fail closed if DB write fails
     await persistUserBalancesToDb(userId, totalBal, newReserved, simulateDbError);
 
-    // 2. Update in-memory runtime cache
-    reservedBalancesMap.set(userId, newReserved);
-    balancesMap.set(userId, totalBal);
-
-    // 3. Create pending withdrawal transaction bound strictly to approved bank on file
-    const txId = 'TXN-WTH-' + Math.floor(100000 + Math.random() * 900000) + '-' + crypto.randomBytes(2).toString('hex').toUpperCase();
+    // 2. Create pending withdrawal transaction bound strictly to approved bank on file (masked destination)
+    const txId =
+      'TXN-WTH-' +
+      Math.floor(100000 + Math.random() * 900000) +
+      '-' +
+      crypto.randomBytes(2).toString('hex').toUpperCase();
     const now = new Date().toISOString();
-    const maskedAcc = authoritativeAccNum ? '...' + authoritativeAccNum.slice(-4) : 'Approved Account';
+    const maskedAcc = authoritativeAccNum ? '****' + authoritativeAccNum.slice(-4) : '****';
     const destinationDesc = `${authoritativeBankName} (${maskedAcc})`;
 
-    const txRecord = mapDbRowToTx({
+    const rowPayload = {
       id: txId,
       user_id: userId,
       type: 'withdraw',
@@ -911,31 +1419,30 @@ async function withdrawFunds({
       bank_account_id: resolvedBank.id || null,
       reference: null,
       settlement_ref: null,
+      idempotency_key: idempotencyKey || null,
       notes: notes || `Pending admin review & EFT payout to approved ${destinationDesc} (${authoritativeHolder})`,
       status: 'pending_review',
       created_at: now,
       updated_at: now,
-    });
+    };
 
-    transactionsMap.set(txId, txRecord);
-
-    // 4. Log to Supabase vault_transactions table
-    if (isUuid(userId)) {
+    // 3. Persist to Supabase vault_transactions — roll back reserved_balance if this fails!
+    try {
+      await persistVaultTransactionInsert(rowPayload, { userId, simulateTxDbError });
+    } catch (txErr) {
+      reservedBalancesMap.set(userId, currentReserved);
+      balancesMap.set(userId, totalBal);
       try {
-        await supabase.from('vault_transactions').insert({
-          id: txId,
-          user_id: userId,
-          type: 'withdraw',
-          amount: withdrawNum,
-          amount_formatted: txRecord.amountFormatted,
-          method: txRecord.method,
-          reference: null,
-          notes: txRecord.notes,
-          status: 'pending_review',
-          created_at: now,
-        });
-      } catch (_e) {}
+        await persistUserBalancesToDb(userId, totalBal, currentReserved, false);
+      } catch (_) {}
+      throw txErr;
     }
+
+    reservedBalancesMap.set(userId, newReserved);
+    balancesMap.set(userId, totalBal);
+
+    const txRecord = mapDbRowToTx(rowPayload);
+    transactionsMap.set(txId, txRecord);
 
     auditLogService.logEvent({
       eventType: 'VAULT_WITHDRAWAL_REQUESTED',
@@ -943,10 +1450,6 @@ async function withdrawFunds({
       category: 'Vault',
       description: `User ${userId} requested withdrawal ${txId} of ${formatZar(withdrawNum)} to approved account ${destinationDesc}. Reserved: ${formatZar(newReserved)}, Spendable remaining: ${formatZar(newSpendable)}.`,
     });
-
-    console.log(
-      `⏳ [VaultTxService] Withdrawal request ${txId} of ${formatZar(withdrawNum)} reserved for user ${userId}. Spendable Balance: ${formatZar(newSpendable)} (Reserved: ${formatZar(newReserved)})`
-    );
 
     const responseObj = {
       userId,
@@ -973,21 +1476,33 @@ async function withdrawFunds({
 /**
  * Transition a withdrawal from pending_review to settlement_processing (locks user cancellation).
  */
-async function markWithdrawalProcessing({ transactionId, adminId, reviewer }) {
+async function markWithdrawalProcessing({ transactionId, adminId, reviewer, simulateTxDbError = false }) {
   const effectiveAdminId = adminId || reviewer;
   if (!transactionId) throw new Error('Withdrawal transaction ID is required.');
   if (!effectiveAdminId) throw new Error('Authorized administrator ID is required.');
 
-  const tx = transactionsMap.get(transactionId);
+  const tx = await resolveTransactionById(transactionId);
   if (!tx) throw new Error(`Withdrawal transaction "${transactionId}" not found.`);
   if (tx.type !== 'withdraw') throw new Error(`Transaction "${transactionId}" is not a withdrawal.`);
 
   return withUserVaultLock(tx.userId, async () => {
-    const currentTx = transactionsMap.get(transactionId);
+    const currentTx = (await resolveTransactionById(transactionId)) || tx;
     if (currentTx.status !== 'pending_review') {
       throw new Error(`Cannot mark withdrawal processing from status "${currentTx.status}".`);
     }
     const now = new Date().toISOString();
+    const updatePayload = {
+      status: 'settlement_processing',
+      reviewed_by: String(effectiveAdminId),
+      reviewed_at: now,
+      updated_at: now,
+    };
+
+    await persistVaultTransactionUpdate(transactionId, updatePayload, {
+      userId: currentTx.userId,
+      simulateTxDbError,
+    });
+
     const updatedTx = {
       ...currentTx,
       status: 'settlement_processing',
@@ -997,15 +1512,6 @@ async function markWithdrawalProcessing({ transactionId, adminId, reviewer }) {
       updatedAt: now,
     };
     transactionsMap.set(transactionId, updatedTx);
-
-    if (isUuid(currentTx.userId)) {
-      try {
-        await supabase
-          .from('vault_transactions')
-          .update({ status: 'settlement_processing' })
-          .eq('id', transactionId);
-      } catch (_e) {}
-    }
 
     return { transaction: updatedTx, status: 'settlement_processing' };
   });
@@ -1021,9 +1527,14 @@ async function settleWithdrawal({
   adminId,
   reviewer,
   settlementRef,
+  reason = null,
+  auditReason = null,
   simulateDbError = false,
+  simulateTxDbError = false,
 }) {
   const effectiveAdminId = adminId || reviewer;
+  const effectiveReason = auditReason || reason || 'Bank EFT payout executed to approved account on file';
+
   if (!transactionId) {
     throw new Error('Withdrawal transaction ID is required.');
   }
@@ -1033,63 +1544,139 @@ async function settleWithdrawal({
   if (!settlementRef || String(settlementRef).trim().length < 4) {
     const err = new Error('An authoritative bank EFT settlement reference (min 4 chars) is required to mark a withdrawal completed.');
     err.code = 'SETTLEMENT_REF_REQUIRED';
+    err.statusCode = 400;
     throw err;
   }
 
   const cleanRef = String(settlementRef).trim();
 
-  let tx = transactionsMap.get(transactionId);
+  const tx = await resolveTransactionById(transactionId);
   if (!tx) {
-    try {
-      const { data } = await supabase
-        .from('vault_transactions')
-        .select('*')
-        .eq('id', transactionId)
-        .maybeSingle();
-      if (data) {
-        tx = mapDbRowToTx(data);
-        transactionsMap.set(tx.id, tx);
-      }
-    } catch (_) {}
-  }
-
-  if (!tx) {
-    throw new Error(`Withdrawal transaction "${transactionId}" not found.`);
+    const err = new Error(`Withdrawal transaction "${transactionId}" not found.`);
+    err.statusCode = 404;
+    throw err;
   }
   if (tx.type !== 'withdraw') {
-    throw new Error(`Transaction "${transactionId}" is not a withdrawal.`);
+    const err = new Error(`Transaction "${transactionId}" is not a withdrawal.`);
+    err.statusCode = 400;
+    throw err;
   }
 
   return withUserVaultLock(tx.userId, async () => {
-    const currentTx = transactionsMap.get(transactionId) || tx;
+    const currentTx = (await resolveTransactionById(transactionId)) || tx;
 
     if (currentTx.status === 'completed') {
+      if (currentTx.settlementRef && currentTx.settlementRef !== cleanRef) {
+        const err = new Error(
+          `Withdrawal "${transactionId}" was already settled with a different reference (${currentTx.settlementRef}).`
+        );
+        err.code = 'ALREADY_SETTLED_DIFFERENT_REF';
+        err.statusCode = 409;
+        throw err;
+      }
       const balDetails = await getUserBalanceDetails(currentTx.userId);
       return {
         transaction: currentTx,
         status: 'completed',
         alreadyCompleted: true,
         idempotent: true,
+        settlementRef: currentTx.settlementRef || cleanRef,
         newBalanceNum: balDetails.availableBalanceNum,
         newBalanceFormatted: balDetails.availableBalanceFormatted,
+        totalBalanceNum: balDetails.totalBalanceNum,
+        reservedBalanceNum: balDetails.reservedBalanceNum,
       };
     }
 
     if (!['pending_review', 'settlement_processing'].includes(currentTx.status)) {
-      throw new Error(`Cannot settle withdrawal in status "${currentTx.status}".`);
+      const err = new Error(`Cannot settle withdrawal in status "${currentTx.status}".`);
+      err.code = 'INVALID_STATUS_TRANSITION';
+      err.statusCode = 409;
+      throw err;
+    }
+
+    // Prevent duplicate settlement reference across transactions (memory + DB)
+    if (await isSettlementOrProviderRefUsed(cleanRef, currentTx.id)) {
+      const err = new Error(`Duplicate settlement reference: "${cleanRef}" has already been used.`);
+      err.code = 'DUPLICATE_SETTLEMENT_REF';
+      err.statusCode = 409;
+      throw err;
+    }
+
+    // Attempt PostgreSQL atomic RPC first if available
+    if (isUuid(currentTx.userId) && !simulateDbError && !simulateTxDbError) {
+      const rpcRes = await tryVaultAtomicRpc('settle_vault_withdrawal_atomic', {
+        p_tx_id: currentTx.id,
+        p_admin_id: String(effectiveAdminId),
+        p_settlement_ref: cleanRef,
+        p_audit_reason: effectiveReason,
+      });
+
+      if (rpcRes && rpcRes.status === 'completed') {
+        creditedProviderRefs.add(cleanRef);
+        const refreshedTx = await resolveTransactionById(currentTx.id);
+        const spendable = Number(rpcRes.spendable_balance) || 0;
+        const total = Number(rpcRes.total_balance) || 0;
+        const reserved = Number(rpcRes.reserved_balance) || 0;
+        balancesMap.set(currentTx.userId, total);
+        reservedBalancesMap.set(currentTx.userId, reserved);
+        return {
+          transaction: refreshedTx || currentTx,
+          status: 'completed',
+          alreadyCompleted: Boolean(rpcRes.idempotent),
+          idempotent: Boolean(rpcRes.idempotent),
+          settlementRef: cleanRef,
+          newBalanceNum: spendable,
+          newBalanceFormatted: formatZar(spendable),
+          totalBalanceNum: total,
+          reservedBalanceNum: reserved,
+        };
+      }
     }
 
     const balDetails = await getUserBalanceDetails(currentTx.userId);
-    const newTotal = Math.max(0, balDetails.totalBalanceNum - currentTx.amount);
-    const newReserved = Math.max(0, balDetails.reservedBalanceNum - currentTx.amount);
+    const prevTotal = balDetails.totalBalanceNum;
+    const prevReserved = balDetails.reservedBalanceNum;
+    const newTotal = Math.max(0, prevTotal - currentTx.amount);
+    const newReserved = Math.max(0, prevReserved - currentTx.amount);
     const newSpendable = Math.max(0, newTotal - newReserved);
 
     await persistUserBalancesToDb(currentTx.userId, newTotal, newReserved, simulateDbError);
-    balancesMap.set(currentTx.userId, newTotal);
-    reservedBalancesMap.set(currentTx.userId, newReserved);
 
     const now = new Date().toISOString();
+    const updatedNotes = `${currentTx.notes || 'Vault Withdrawal'} | Settled by Admin (${effectiveAdminId}) EFT Ref: ${cleanRef}${effectiveReason ? ` — ${effectiveReason}` : ''}`;
+
+    const updatePayload = {
+      status: 'completed',
+      reference: cleanRef,
+      settlement_ref: cleanRef,
+      audit_reason: effectiveReason,
+      notes: updatedNotes,
+      reviewed_by: String(effectiveAdminId),
+      reviewed_at: now,
+      updated_at: now,
+    };
+
+    try {
+      await persistVaultTransactionUpdate(currentTx.id, updatePayload, {
+        userId: currentTx.userId,
+        simulateTxDbError,
+      });
+    } catch (txErr) {
+      balancesMap.set(currentTx.userId, prevTotal);
+      reservedBalancesMap.set(currentTx.userId, prevReserved);
+      try {
+        await persistUserBalancesToDb(currentTx.userId, prevTotal, prevReserved, false);
+      } catch (_) {}
+      throw txErr;
+    }
+
+    balancesMap.set(currentTx.userId, newTotal);
+    reservedBalancesMap.set(currentTx.userId, newReserved);
+    creditedProviderRefs.add(cleanRef);
+
     const updatedTx = mapDbRowToTx({
+      ...currentTx,
       id: currentTx.id,
       user_id: currentTx.userId,
       type: 'withdraw',
@@ -1098,30 +1685,11 @@ async function settleWithdrawal({
       method: currentTx.method,
       destination_summary: currentTx.destination,
       bank_account_id: currentTx.bankAccountId,
-      reference: cleanRef,
-      settlement_ref: cleanRef,
-      notes: `${currentTx.notes || 'Vault Withdrawal'} | Settled via EFT Ref: ${cleanRef}`,
-      status: 'completed',
-      reviewed_by: effectiveAdminId,
-      reviewed_at: now,
+      ...updatePayload,
       created_at: currentTx.createdAt,
-      updated_at: now,
     });
 
     transactionsMap.set(currentTx.id, updatedTx);
-
-    if (isUuid(currentTx.userId)) {
-      try {
-        await supabase
-          .from('vault_transactions')
-          .update({
-            status: 'completed',
-            reference: cleanRef,
-            notes: updatedTx.notes,
-          })
-          .eq('id', currentTx.id);
-      } catch (_e) {}
-    }
 
     auditLogService.logEvent({
       eventType: 'VAULT_WITHDRAWAL_SETTLED',
@@ -1153,6 +1721,7 @@ async function cancelOrRejectWithdrawal({
   newStatus = 'rejected',
   reason = null,
   simulateDbError = false,
+  simulateTxDbError = false,
 }) {
   if (!transactionId) {
     throw new Error('Withdrawal transaction ID is required.');
@@ -1163,31 +1732,29 @@ async function cancelOrRejectWithdrawal({
   if (!['rejected', 'cancelled', 'failed'].includes(newStatus)) {
     throw new Error(`Invalid withdrawal reversal status "${newStatus}".`);
   }
-
-  let tx = transactionsMap.get(transactionId);
-  if (!tx) {
-    try {
-      const { data } = await supabase
-        .from('vault_transactions')
-        .select('*')
-        .eq('id', transactionId)
-        .maybeSingle();
-      if (data) {
-        tx = mapDbRowToTx(data);
-        transactionsMap.set(tx.id, tx);
-      }
-    } catch (_) {}
+  if (newStatus === 'rejected' && (!reason || !String(reason).trim())) {
+    const err = new Error('A rejection reason is required when rejecting a withdrawal.');
+    err.code = 'REASON_REQUIRED';
+    err.statusCode = 400;
+    throw err;
   }
 
+  const cleanReason = reason ? String(reason).trim() : null;
+
+  const tx = await resolveTransactionById(transactionId);
   if (!tx) {
-    throw new Error(`Withdrawal transaction "${transactionId}" not found.`);
+    const err = new Error(`Withdrawal transaction "${transactionId}" not found.`);
+    err.statusCode = 404;
+    throw err;
   }
   if (tx.type !== 'withdraw') {
-    throw new Error(`Transaction "${transactionId}" is not a withdrawal.`);
+    const err = new Error(`Transaction "${transactionId}" is not a withdrawal.`);
+    err.statusCode = 400;
+    throw err;
   }
 
   return withUserVaultLock(tx.userId, async () => {
-    const currentTx = transactionsMap.get(transactionId) || tx;
+    const currentTx = (await resolveTransactionById(transactionId)) || tx;
 
     // Idempotent check: if already reversed, do NOT restore balance a second time!
     if (['rejected', 'cancelled', 'failed'].includes(currentTx.status)) {
@@ -1199,6 +1766,7 @@ async function cancelOrRejectWithdrawal({
         idempotent: true,
         newBalanceNum: balDetails.availableBalanceNum,
         newBalanceFormatted: balDetails.availableBalanceFormatted,
+        totalBalanceNum: balDetails.totalBalanceNum,
         reservedBalanceNum: balDetails.reservedBalanceNum,
       };
     }
@@ -1226,17 +1794,78 @@ async function cancelOrRejectWithdrawal({
       }
     }
 
+    // Attempt PostgreSQL atomic RPC first if available
+    if (isUuid(currentTx.userId) && !simulateDbError && !simulateTxDbError) {
+      const rpcRes = await tryVaultAtomicRpc('cancel_or_reject_vault_withdrawal_atomic', {
+        p_tx_id: currentTx.id,
+        p_actor_id: isUuid(actorId) ? actorId : currentTx.userId,
+        p_is_admin: newStatus !== 'cancelled',
+        p_new_status: newStatus,
+        p_reason: cleanReason,
+        p_admin_identifier: String(actorId),
+      });
+
+      if (rpcRes && ['rejected', 'cancelled', 'failed'].includes(rpcRes.status)) {
+        const refreshedTx = await resolveTransactionById(currentTx.id);
+        const spendable = Number(rpcRes.spendable_balance) || 0;
+        const total = Number(rpcRes.total_balance) || 0;
+        const reserved = Number(rpcRes.reserved_balance) || 0;
+        balancesMap.set(currentTx.userId, total);
+        reservedBalancesMap.set(currentTx.userId, reserved);
+        return {
+          transaction: refreshedTx || currentTx,
+          status: rpcRes.status,
+          alreadyReversed: Boolean(rpcRes.idempotent),
+          idempotent: Boolean(rpcRes.idempotent),
+          newBalanceNum: spendable,
+          newBalanceFormatted: formatZar(spendable),
+          totalBalanceNum: total,
+          reservedBalanceNum: reserved,
+        };
+      }
+    }
+
     const balDetails = await getUserBalanceDetails(currentTx.userId);
     const totalBal = balDetails.totalBalanceNum;
-    const newReserved = Math.max(0, balDetails.reservedBalanceNum - currentTx.amount);
+    const prevReserved = balDetails.reservedBalanceNum;
+    const newReserved = Math.max(0, prevReserved - currentTx.amount);
     const newSpendable = Math.max(0, totalBal - newReserved);
 
     await persistUserBalancesToDb(currentTx.userId, totalBal, newReserved, simulateDbError);
+
+    const now = new Date().toISOString();
+    const updatedNotes = cleanReason
+      ? `${currentTx.notes || ''} | ${newStatus.toUpperCase()} (${actorId}): ${cleanReason}`
+      : currentTx.notes;
+
+    const updatePayload = {
+      status: newStatus,
+      audit_reason: cleanReason,
+      notes: updatedNotes,
+      reviewed_by: String(actorId),
+      reviewed_at: now,
+      updated_at: now,
+    };
+
+    try {
+      await persistVaultTransactionUpdate(currentTx.id, updatePayload, {
+        userId: currentTx.userId,
+        simulateTxDbError,
+      });
+    } catch (txErr) {
+      reservedBalancesMap.set(currentTx.userId, prevReserved);
+      balancesMap.set(currentTx.userId, totalBal);
+      try {
+        await persistUserBalancesToDb(currentTx.userId, totalBal, prevReserved, false);
+      } catch (_) {}
+      throw txErr;
+    }
+
     reservedBalancesMap.set(currentTx.userId, newReserved);
     balancesMap.set(currentTx.userId, totalBal);
 
-    const now = new Date().toISOString();
     const updatedTx = mapDbRowToTx({
+      ...currentTx,
       id: currentTx.id,
       user_id: currentTx.userId,
       type: 'withdraw',
@@ -1246,27 +1875,11 @@ async function cancelOrRejectWithdrawal({
       destination_summary: currentTx.destination,
       bank_account_id: currentTx.bankAccountId,
       reference: currentTx.reference,
-      notes: reason ? `${currentTx.notes || ''} | ${newStatus.toUpperCase()}: ${reason}` : currentTx.notes,
-      status: newStatus,
-      reviewed_by: actorId,
-      reviewed_at: now,
+      ...updatePayload,
       created_at: currentTx.createdAt,
-      updated_at: now,
     });
 
     transactionsMap.set(currentTx.id, updatedTx);
-
-    if (isUuid(currentTx.userId)) {
-      try {
-        await supabase
-          .from('vault_transactions')
-          .update({
-            status: newStatus,
-            notes: updatedTx.notes,
-          })
-          .eq('id', currentTx.id);
-      } catch (_e) {}
-    }
 
     auditLogService.logEvent({
       eventType: `VAULT_WITHDRAWAL_${newStatus.toUpperCase()}`,
@@ -1279,6 +1892,7 @@ async function cancelOrRejectWithdrawal({
       transaction: updatedTx,
       status: newStatus,
       alreadyReversed: false,
+      idempotent: false,
       newBalanceNum: newSpendable,
       newBalanceFormatted: formatZar(newSpendable),
       totalBalanceNum: totalBal,
@@ -1377,6 +1991,73 @@ async function fetchUserTransactions(userId) {
 }
 
 /**
+ * Fetch all deposit and withdrawal transactions for the Admin Treasury Desk.
+ * Queries Supabase directly (restart-safe) and enriches with collector identity and masked bank destinations.
+ */
+async function fetchAllTransactionsForAdmin({ status = null, type = null } = {}) {
+  await hydrateTransactionsFromSupabase();
+
+  // Build user identity lookup from profiles and complianceService
+  const profileLookup = new Map();
+  try {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, email');
+    if (Array.isArray(profiles)) {
+      profiles.forEach((p) => {
+        if (p && p.id) {
+          profileLookup.set(p.id, {
+            fullName: p.full_name || '',
+            email: p.email || '',
+          });
+        }
+      });
+    }
+  } catch (_) {}
+
+  let complianceService = null;
+  try {
+    complianceService = require('./complianceService');
+  } catch (_) {}
+
+  const allTxs = Array.from(transactionsMap.values())
+    .filter((tx) => {
+      if (type && type !== 'All' && tx.type !== type) return false;
+      if (status && status !== 'All' && tx.status !== status) return false;
+      return true;
+    })
+    .map((tx) => {
+      const prof = profileLookup.get(tx.userId) || {};
+      const comp = complianceService ? complianceService.getUserCompliance(tx.userId, prof.email) : {};
+      const bank = complianceService ? complianceService.getUserBankAccount(tx.userId, prof.email) : null;
+
+      const userEmail = prof.email || comp?.userEmail || '—';
+      const userFullName =
+        (prof.fullName && prof.fullName.trim()) ||
+        comp?.fullName ||
+        (userEmail !== '—' ? userEmail.split('@')[0] : 'Collector');
+
+      // Mask destination summary — never expose full bank account numbers in treasury queue
+      const maskedDest =
+        tx.type === 'withdraw'
+          ? maskBankDestination(tx.destination || tx.destinationSummary, bank) || 'Approved Bank Account (****)'
+          : tx.reference
+          ? `User EFT Ref: ${tx.reference} (Unverified)`
+          : 'SmartAssets Treasury Account';
+
+      return {
+        ...tx,
+        userFullName,
+        userEmail,
+        destination: maskedDest,
+        destinationSummary: maskedDest,
+      };
+    });
+
+  return allTxs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+/**
  * Get all transactions for a user from in-memory cache (synchronous).
  */
 function getUserTransactions(userId) {
@@ -1413,6 +2094,7 @@ function getAllTransactions() {
 
 module.exports = {
   formatZar,
+  maskBankDestination,
   getUserBalance,
   getUserBalanceDetails,
   depositFunds,
@@ -1424,8 +2106,10 @@ module.exports = {
   cancelOrRejectWithdrawal,
   recordTransaction,
   fetchUserTransactions,
+  fetchAllTransactionsForAdmin,
   getUserTransactions,
   getTransactionById,
   getAllTransactions,
   hydrateTransactionsFromSupabase,
+  _clearRuntimeCacheForTesting,
 };

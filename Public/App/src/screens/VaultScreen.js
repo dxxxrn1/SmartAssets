@@ -33,6 +33,10 @@ import {
   getUserVault,
   depositFundsApi,
   withdrawFundsApi,
+  requestWithdrawalChallengeApi,
+  verifyWithdrawalChallengeApi,
+  cancelWithdrawalChallengeApi,
+  getBankAccountApi,
   cancelVaultWithdrawalApi,
   getVaultTransactionsApi,
   getMarketOracleApi,
@@ -130,10 +134,45 @@ export default function VaultScreen({ navigation, route }) {
   const [depositReference, setDepositReference] = useState("");
   const [depositing, setDepositing] = useState(false);
 
-  // Withdraw Form
+  // Withdraw Form & 3-Step Email OTP Verification State
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawMethod, setWithdrawMethod] = useState("Approved Bank EFT");
   const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawStep, setWithdrawStep] = useState("amount"); // 'amount' | 'confirm_bank' | 'otp_entry'
+  const [withdrawBankDetails, setWithdrawBankDetails] = useState(null);
+  const [withdrawChallengeId, setWithdrawChallengeId] = useState(null);
+  const [withdrawAttemptId, setWithdrawAttemptId] = useState(null);
+  const [withdrawMaskedEmail, setWithdrawMaskedEmail] = useState("");
+  const [withdrawOtpCode, setWithdrawOtpCode] = useState("");
+  const [withdrawCountdownSec, setWithdrawCountdownSec] = useState(0);
+  const [withdrawChallengeStatus, setWithdrawChallengeStatus] = useState("idle"); // 'idle' | 'pending' | 'expired' | 'cancelled' | 'error'
+  const [withdrawStatusMessage, setWithdrawStatusMessage] = useState("");
+  const [sendingWithdrawOtp, setSendingWithdrawOtp] = useState(false);
+
+  // Informational 2-minute countdown timer for active withdrawal OTP popup (server clock is authoritative)
+  useEffect(() => {
+    if (
+      !withdrawModalVisible ||
+      withdrawStep !== "otp_entry" ||
+      withdrawChallengeStatus !== "pending" ||
+      withdrawCountdownSec <= 0
+    ) {
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      setWithdrawCountdownSec((prev) => {
+        if (prev <= 1) {
+          setWithdrawChallengeStatus("expired");
+          setWithdrawStatusMessage(
+            "Verification code expired after 2 minutes. This withdrawal attempt was cancelled and no funds were reserved."
+          );
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [withdrawModalVisible, withdrawStep, withdrawChallengeStatus, withdrawCountdownSec]);
 
   // Share Redemption State & Modal
   const [sellModalVisible, setSellModalVisible] = useState(false);
@@ -659,9 +698,23 @@ export default function VaultScreen({ navigation, route }) {
     }
   };
 
-  const handleWithdraw = async () => {
-    const isVerified = user?.verification_status === 'verified' || user?.kycStatus === 'verified';
-    const hasApprovedBank = user?.bankStatus === 'approved' || user?.bankAccount?.status === 'approved';
+  const resetWithdrawFlowState = useCallback(() => {
+    setWithdrawStep("amount");
+    setWithdrawChallengeId(null);
+    setWithdrawAttemptId(null);
+    setWithdrawMaskedEmail("");
+    setWithdrawOtpCode("");
+    setWithdrawCountdownSec(0);
+    setWithdrawChallengeStatus("idle");
+    setWithdrawStatusMessage("");
+    setSendingWithdrawOtp(false);
+    setWithdrawing(false);
+  }, []);
+
+  // Step 1: Validate amount & load masked approved bank details for confirmation prompt
+  const handleProceedToBankConfirmation = async () => {
+    const isVerified = user?.verification_status === "verified" || user?.kycStatus === "verified";
+    const hasApprovedBank = user?.bankStatus === "approved" || user?.bankAccount?.status === "approved";
     if (user && (!isVerified || user.isSuspended)) {
       setGatekeeperRequireBankOnly(false);
       setGatekeeperActionTitle("Withdraw Funds");
@@ -675,7 +728,8 @@ export default function VaultScreen({ navigation, route }) {
       setKycGatekeeperVisible(true);
       return;
     }
-    const amt = parseFloat(withdrawAmount.replace(/[^0-9.]/g, ""));
+
+    const amt = parseFloat(String(withdrawAmount || "").replace(/[^0-9.]/g, ""));
     const available = escrowCash;
 
     if (isNaN(amt) || amt <= 0) {
@@ -686,24 +740,154 @@ export default function VaultScreen({ navigation, route }) {
 
     if (amt > available) {
       const msg = `Insufficient available balance. You requested R${amt.toLocaleString("en-ZA")} but available spendable cash is R${available.toLocaleString("en-ZA")}.`;
-      Platform.OS === "web"
-        ? alert(msg)
-        : Alert.alert("Insufficient Balance", msg);
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Insufficient Balance", msg);
       return;
     }
 
     try {
-      setWithdrawing(true);
-      const idempotencyKey = `wth_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const payload = {
-        amount: amt,
-        method: "Approved Bank EFT",
-        idempotencyKey,
-      };
+      setSendingWithdrawOtp(true);
+      let bankInfo = user?.bankAccount || null;
+      if (token) {
+        const bankRes = await getBankAccountApi(token).catch(() => null);
+        const fetched = bankRes?.bankAccount || bankRes?.bank_account || null;
+        if (fetched) {
+          bankInfo = fetched;
+        }
+      }
 
-      const res = await withdrawFundsApi(payload, token);
+      const rawAcc = String(
+        bankInfo?.account_number_masked ||
+          bankInfo?.accountNumberMasked ||
+          bankInfo?.account_number ||
+          bankInfo?.accountNumber ||
+          ""
+      ).replace(/\s+/g, "");
+      const maskedAcc = rawAcc.startsWith("****")
+        ? rawAcc
+        : rawAcc.length >= 4
+        ? `****${rawAcc.slice(-4)}`
+        : "****";
+
+      setWithdrawBankDetails({
+        id: bankInfo?.id || null,
+        bankName: bankInfo?.bank_name || bankInfo?.bankName || "Approved Bank",
+        accountHolder:
+          bankInfo?.account_holder || bankInfo?.accountHolder || user?.fullName || "Account Holder",
+        accountNumberMasked: maskedAcc,
+        branchCode: bankInfo?.branch_code || bankInfo?.branchCode || "—",
+        accountType: bankInfo?.account_type || bankInfo?.accountType || "Cheque / Current",
+        status: bankInfo?.status || "approved",
+      });
+      setWithdrawStatusMessage("");
+      setWithdrawStep("confirm_bank");
+    } catch (err) {
+      const msg = err.message || "Could not load your approved bank account details.";
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Bank Details Error", msg);
+    } finally {
+      setSendingWithdrawOtp(false);
+    }
+  };
+
+  // Step 2 -> Step 3: Only after user taps Confirm on "Are these your bank details?", send 6-digit email OTP
+  const handleConfirmBankAndSendOtp = async () => {
+    const amt = parseFloat(String(withdrawAmount || "").replace(/[^0-9.]/g, ""));
+    if (isNaN(amt) || amt <= 0) return;
+
+    try {
+      setSendingWithdrawOtp(true);
+      setWithdrawStatusMessage("");
+      setWithdrawOtpCode("");
+
+      const res = await requestWithdrawalChallengeApi(
+        {
+          amount: amt,
+          confirmedBankDetails: true,
+        },
+        token
+      );
+
+      if (!res?.success || !res?.challengeId) {
+        throw new Error(res?.error || "Failed to send verification code to your email.");
+      }
+
+      if (res.bankAccount) {
+        setWithdrawBankDetails({
+          id: res.bankAccount.id,
+          bankName: res.bankAccount.bankName || "Approved Bank",
+          accountHolder: res.bankAccount.accountHolder || user?.fullName || "Account Holder",
+          accountNumberMasked: res.bankAccount.accountNumberMasked || "****",
+          branchCode: res.bankAccount.branchCode || "—",
+          accountType: res.bankAccount.accountType || "Cheque / Current",
+          status: res.bankAccount.status || "approved",
+        });
+      }
+
+      setWithdrawChallengeId(res.challengeId);
+      setWithdrawAttemptId(res.attemptId || null);
+      setWithdrawMaskedEmail(res.maskedEmail || user?.email || "your verified email");
+      setWithdrawCountdownSec(Number(res.expiresInSeconds) || 120);
+      setWithdrawChallengeStatus("pending");
+      setWithdrawStep("otp_entry");
+    } catch (err) {
+      const msg = err.message || "Unable to send verification code. Please try again.";
+      setWithdrawChallengeStatus("error");
+      setWithdrawStatusMessage(msg);
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Verification Code Error", msg);
+    } finally {
+      setSendingWithdrawOtp(false);
+    }
+  };
+
+  // Cancel withdrawal at bank confirmation or OTP popup stage
+  const handleCancelWithdrawalFlow = async (reason = "user_cancelled") => {
+    const activeChallengeId = withdrawChallengeId;
+    resetWithdrawFlowState();
+    setWithdrawModalVisible(false);
+    setWithdrawAmount("");
+    if (token) {
+      cancelWithdrawalChallengeApi(
+        {
+          challengeId: activeChallengeId || undefined,
+          reason,
+        },
+        token
+      ).catch(() => {});
+    }
+  };
+
+  // Step 3: Submit single-use 6-digit email OTP code to verify & create pending_review withdrawal
+  const handleVerifyOtpAndSubmitWithdrawal = async () => {
+    const cleanCode = String(withdrawOtpCode || "").trim();
+    if (!/^\d{6}$/.test(cleanCode)) {
+      const msg = "Please enter the 6-digit verification code sent to your email.";
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Invalid Code Format", msg);
+      return;
+    }
+
+    if (withdrawChallengeStatus !== "pending" || withdrawCountdownSec <= 0) {
+      const msg =
+        "This verification challenge has expired or been cancelled. Please request a new code.";
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Challenge Inactive", msg);
+      return;
+    }
+
+    const amt = parseFloat(String(withdrawAmount || "").replace(/[^0-9.]/g, ""));
+
+    try {
+      setWithdrawing(true);
+      const idempotencyKey = `wth_${ withdrawChallengeId || Date.now() }`;
+      const res = await verifyWithdrawalChallengeApi(
+        {
+          challengeId: withdrawChallengeId,
+          code: cleanCode,
+          amount: amt,
+          idempotencyKey,
+        },
+        token
+      );
+
       if (!res?.success) {
-        throw new Error(res?.error || "Withdrawal request failed.");
+        throw new Error(res?.error || "Withdrawal verification failed.");
       }
 
       if (typeof res.newBalanceNum === "number" && !isNaN(res.newBalanceNum)) {
@@ -711,7 +895,6 @@ export default function VaultScreen({ navigation, route }) {
         await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, res.newBalanceNum);
       }
 
-      // Refresh authoritative transaction ledger from backend
       if (token) {
         const txRes = await getVaultTransactionsApi(token).catch(() => null);
         if (txRes?.success && Array.isArray(txRes.transactions)) {
@@ -719,19 +902,27 @@ export default function VaultScreen({ navigation, route }) {
         }
       }
 
+      resetWithdrawFlowState();
       setWithdrawModalVisible(false);
       setWithdrawAmount("");
+
       const msg =
         res.message ||
-        `Withdrawal request of R${amt.toLocaleString("en-ZA")} submitted (Pending Review). Funds are reserved for payout to your approved bank account (${res.destination || "on file"}).`;
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Withdrawal Request Submitted", msg);
+        `Email verified. Withdrawal request of R${amt.toLocaleString("en-ZA")} submitted (Pending Review in Admin Treasury Queue). Funds are reserved for payout to your approved bank account (${res.destination || "on file"}).`;
+      Platform.OS === "web" ? alert(msg) : Alert.alert("Withdrawal Submitted for Review", msg);
     } catch (err) {
-      const msg = err.message || "Failed to submit withdrawal request.";
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Withdrawal Failed", msg);
+      const msg = err.message || "Failed to verify withdrawal code.";
+      // A wrong first code or expired challenge immediately invalidates the challenge on the server
+      setWithdrawChallengeStatus("cancelled");
+      setWithdrawCountdownSec(0);
+      setWithdrawOtpCode("");
+      setWithdrawStatusMessage(msg);
     } finally {
       setWithdrawing(false);
     }
   };
+
+  const handleWithdraw = handleProceedToBankConfirmation;
 
   // ── Share Redemption Modal & Action Handlers ──────────────────────────────
   const fetchQuote = useCallback(
@@ -1132,6 +1323,7 @@ export default function VaultScreen({ navigation, route }) {
                     setKycGatekeeperVisible(true);
                     return;
                   }
+                  resetWithdrawFlowState();
                   setWithdrawModalVisible(true);
                 }}
                 activeOpacity={0.85}
@@ -1998,65 +2190,388 @@ export default function VaultScreen({ navigation, route }) {
           </View>
         </Modal>
 
-        {/* ── WITHDRAW MODAL ───────────────────────────────────────────────────── */}
+        {/* ── WITHDRAW MODAL (3-STAGE: AMOUNT -> BANK CONFIRMATION -> 6-DIGIT EMAIL OTP) ── */}
         <Modal
           visible={withdrawModalVisible}
           animationType="slide"
           transparent
-          onRequestClose={() => setWithdrawModalVisible(false)}
+          onRequestClose={() => handleCancelWithdrawalFlow("modal_dismissed")}
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Request Withdrawal</Text>
+                <Text style={styles.modalTitle}>
+                  {withdrawStep === "confirm_bank"
+                    ? "Confirm Bank Details"
+                    : withdrawStep === "otp_entry"
+                    ? "Email Code Verification"
+                    : "Request Withdrawal"}
+                </Text>
                 <TouchableOpacity
-                  onPress={() => setWithdrawModalVisible(false)}
+                  onPress={() => handleCancelWithdrawalFlow("user_closed_modal")}
                 >
                   <Feather name="x" size={20} color="#0F172A" />
                 </TouchableOpacity>
               </View>
 
-              <View
-                style={{
-                  backgroundColor: "#EFF6FF",
-                  borderRadius: 10,
-                  padding: 10,
-                  marginBottom: 12,
-                  borderWidth: 1,
-                  borderColor: "#BFDBFE",
-                }}
-              >
-                <Text style={{ fontSize: 12, fontWeight: "700", color: "#1E40AF" }}>
-                  Destination: Approved Bank Account on File
-                </Text>
-                <Text style={{ fontSize: 11, color: "#1D4ED8", marginTop: 2 }}>
-                  Payouts are sent exclusively to your KYC-verified, admin-approved bank account. Funds are reserved immediately while pending treasury settlement.
-                </Text>
-              </View>
+              {/* STAGE 1: ENTER AMOUNT */}
+              {withdrawStep === "amount" && (
+                <>
+                  <View
+                    style={{
+                      backgroundColor: "#EFF6FF",
+                      borderRadius: 10,
+                      padding: 10,
+                      marginBottom: 12,
+                      borderWidth: 1,
+                      borderColor: "#BFDBFE",
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#1E40AF" }}>
+                      Destination: Approved Bank Account on File
+                    </Text>
+                    <Text style={{ fontSize: 11, color: "#1D4ED8", marginTop: 2 }}>
+                      Payouts are sent exclusively to your KYC-verified, admin-approved bank account after you confirm your bank details and verify a single-use 6-digit email code.
+                    </Text>
+                  </View>
 
-              <Text style={styles.modalLabel}>Withdrawal Amount (R)</Text>
-              <TextInput
-                value={withdrawAmount}
-                onChangeText={setWithdrawAmount}
-                placeholder="e.g. 1000"
-                keyboardType="numeric"
-                style={styles.modalInput}
-                placeholderTextColor="#94A3B8"
-              />
+                  <Text style={styles.modalLabel}>Withdrawal Amount (R)</Text>
+                  <TextInput
+                    value={withdrawAmount}
+                    onChangeText={setWithdrawAmount}
+                    placeholder="e.g. 1000"
+                    keyboardType="numeric"
+                    style={styles.modalInput}
+                    placeholderTextColor="#94A3B8"
+                  />
 
-              <TouchableOpacity
-                style={styles.modalSubmitBtn}
-                onPress={handleWithdraw}
-                disabled={withdrawing}
-              >
-                {withdrawing ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalSubmitBtnText}>
-                    Submit Withdrawal Request
-                  </Text>
-                )}
-              </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalSubmitBtn}
+                    onPress={handleProceedToBankConfirmation}
+                    disabled={sendingWithdrawOtp}
+                  >
+                    {sendingWithdrawOtp ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.modalSubmitBtnText}>Continue</Text>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {/* STAGE 2: BANK DETAILS CONFIRMATION ("Are these your bank details?") */}
+              {withdrawStep === "confirm_bank" && (
+                <>
+                  <View
+                    style={{
+                      backgroundColor: "#F8FAFC",
+                      borderRadius: 12,
+                      padding: 14,
+                      marginBottom: 14,
+                      borderWidth: 1,
+                      borderColor: "#CBD5E1",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: "800",
+                        color: "#0F172A",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Are these your bank details?
+                    </Text>
+                    <Text style={{ fontSize: 12, color: "#475569", marginBottom: 12 }}>
+                      Please verify your approved payout destination below. Destination bank details cannot be replaced during a withdrawal.
+                    </Text>
+
+                    <View style={{ gap: 6 }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
+                          Withdrawal Amount:
+                        </Text>
+                        <Text style={{ fontSize: 13, color: "#0F172A", fontWeight: "800" }}>
+                          {formatZAR(withdrawAmount)}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
+                          Bank Name:
+                        </Text>
+                        <Text style={{ fontSize: 12, color: "#0F172A", fontWeight: "700" }}>
+                          {withdrawBankDetails?.bankName || "Approved Bank"}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
+                          Account Holder:
+                        </Text>
+                        <Text style={{ fontSize: 12, color: "#0F172A", fontWeight: "700" }}>
+                          {withdrawBankDetails?.accountHolder || user?.fullName || "Verified Holder"}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
+                          Account Number (Masked):
+                        </Text>
+                        <Text style={{ fontSize: 13, color: "#4F46E5", fontWeight: "800" }}>
+                          {withdrawBankDetails?.accountNumberMasked || "****"}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
+                          Branch Code:
+                        </Text>
+                        <Text style={{ fontSize: 12, color: "#0F172A", fontWeight: "700" }}>
+                          {withdrawBankDetails?.branchCode || "—"}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {withdrawStatusMessage ? (
+                    <View
+                      style={{
+                        backgroundColor: "#FEF2F2",
+                        borderRadius: 8,
+                        padding: 10,
+                        marginBottom: 12,
+                        borderWidth: 1,
+                        borderColor: "#FECACA",
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, color: "#B91C1C", fontWeight: "600" }}>
+                        {withdrawStatusMessage}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  <View style={{ flexDirection: "row", gap: 10 }}>
+                    <TouchableOpacity
+                      style={[
+                        styles.modalSubmitBtn,
+                        {
+                          flex: 1,
+                          backgroundColor: "#F1F5F9",
+                          borderWidth: 1,
+                          borderColor: "#CBD5E1",
+                        },
+                      ]}
+                      onPress={() => handleCancelWithdrawalFlow("user_declined_bank_details")}
+                      disabled={sendingWithdrawOtp}
+                    >
+                      <Text style={[styles.modalSubmitBtnText, { color: "#334155" }]}>
+                        Cancel
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.modalSubmitBtn, { flex: 1 }]}
+                      onPress={handleConfirmBankAndSendOtp}
+                      disabled={sendingWithdrawOtp}
+                    >
+                      {sendingWithdrawOtp ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.modalSubmitBtnText}>Confirm</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+
+              {/* STAGE 3: 6-DIGIT EMAIL CODE POPUP WITH 2-MINUTE COUNTDOWN */}
+              {withdrawStep === "otp_entry" && (
+                <>
+                  <View
+                    style={{
+                      backgroundColor: "#EEF2FF",
+                      borderRadius: 10,
+                      padding: 12,
+                      marginBottom: 12,
+                      borderWidth: 1,
+                      borderColor: "#C7D2FE",
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#3730A3" }}>
+                      6-Digit Verification Code Sent to {withdrawMaskedEmail}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: "#4338CA", marginTop: 3 }}>
+                      Amount: {formatZAR(withdrawAmount)} • Destination:{" "}
+                      {withdrawBankDetails?.bankName || "Bank"} (
+                      {withdrawBankDetails?.accountNumberMasked || "****"})
+                    </Text>
+                    <Text style={{ fontSize: 11, color: "#6366F1", marginTop: 3, fontWeight: "600" }}>
+                      Single attempt only: Entering a wrong code or letting the 2-minute timer expire immediately cancels this withdrawal attempt.
+                    </Text>
+                  </View>
+
+                  {/* Visible 2-Minute Countdown Pill */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      backgroundColor:
+                        withdrawChallengeStatus === "pending" && withdrawCountdownSec > 0
+                          ? "#F0FDF4"
+                          : "#FEF2F2",
+                      borderRadius: 10,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      marginBottom: 12,
+                      borderWidth: 1,
+                      borderColor:
+                        withdrawChallengeStatus === "pending" && withdrawCountdownSec > 0
+                          ? "#BBF7D0"
+                          : "#FECACA",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "700",
+                        color:
+                          withdrawChallengeStatus === "pending" && withdrawCountdownSec > 0
+                            ? "#166534"
+                            : "#991B1B",
+                      }}
+                    >
+                      {withdrawChallengeStatus === "pending" && withdrawCountdownSec > 0
+                        ? "Code Expires In:"
+                        : withdrawChallengeStatus === "expired"
+                        ? "Challenge Expired"
+                        : "Challenge Cancelled"}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: "800",
+                        fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+                        color:
+                          withdrawChallengeStatus === "pending" && withdrawCountdownSec > 30
+                            ? "#15803D"
+                            : "#DC2626",
+                      }}
+                    >
+                      {`${String(Math.floor(withdrawCountdownSec / 60)).padStart(2, "0")}:${String(
+                        withdrawCountdownSec % 60
+                      ).padStart(2, "0")}`}
+                    </Text>
+                  </View>
+
+                  {withdrawStatusMessage ? (
+                    <View
+                      style={{
+                        backgroundColor: "#FEF2F2",
+                        borderRadius: 8,
+                        padding: 10,
+                        marginBottom: 12,
+                        borderWidth: 1,
+                        borderColor: "#FECACA",
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, color: "#B91C1C", fontWeight: "600" }}>
+                        {withdrawStatusMessage}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {withdrawChallengeStatus === "pending" && withdrawCountdownSec > 0 ? (
+                    <>
+                      <Text style={styles.modalLabel}>Enter 6-Digit Email Code</Text>
+                      <TextInput
+                        value={withdrawOtpCode}
+                        onChangeText={(val) =>
+                          setWithdrawOtpCode(String(val || "").replace(/[^0-9]/g, "").slice(0, 6))
+                        }
+                        placeholder="6-digit code"
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        style={[
+                          styles.modalInput,
+                          {
+                            letterSpacing: 6,
+                            fontSize: 18,
+                            fontWeight: "800",
+                            textAlign: "center",
+                          },
+                        ]}
+                        placeholderTextColor="#94A3B8"
+                      />
+
+                      <View style={{ flexDirection: "row", gap: 10 }}>
+                        <TouchableOpacity
+                          style={[
+                            styles.modalSubmitBtn,
+                            {
+                              flex: 1,
+                              backgroundColor: "#F1F5F9",
+                              borderWidth: 1,
+                              borderColor: "#CBD5E1",
+                            },
+                          ]}
+                          onPress={() => handleCancelWithdrawalFlow("user_cancelled_otp_popup")}
+                          disabled={withdrawing}
+                        >
+                          <Text style={[styles.modalSubmitBtnText, { color: "#334155" }]}>
+                            Cancel
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.modalSubmitBtn, { flex: 1.5 }]}
+                          onPress={handleVerifyOtpAndSubmitWithdrawal}
+                          disabled={withdrawing || withdrawOtpCode.length !== 6}
+                        >
+                          {withdrawing ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.modalSubmitBtnText}>
+                              Verify & Submit
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    <View style={{ flexDirection: "row", gap: 10 }}>
+                      <TouchableOpacity
+                        style={[
+                          styles.modalSubmitBtn,
+                          {
+                            flex: 1,
+                            backgroundColor: "#F1F5F9",
+                            borderWidth: 1,
+                            borderColor: "#CBD5E1",
+                          },
+                        ]}
+                        onPress={() => handleCancelWithdrawalFlow("closed_after_invalidation")}
+                        disabled={sendingWithdrawOtp}
+                      >
+                        <Text style={[styles.modalSubmitBtnText, { color: "#334155" }]}>
+                          Close
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.modalSubmitBtn, { flex: 1.5 }]}
+                        onPress={handleConfirmBankAndSendOtp}
+                        disabled={sendingWithdrawOtp}
+                      >
+                        {sendingWithdrawOtp ? (
+                          <ActivityIndicator color="#FFFFFF" />
+                        ) : (
+                          <Text style={styles.modalSubmitBtnText}>
+                            Send New Code
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
+              )}
             </View>
           </View>
         </Modal>

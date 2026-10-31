@@ -1004,8 +1004,61 @@ export async function depositFundsApi(depositData, token) {
 }
 
 /**
- * Submit a Vault withdrawal request to the user's approved bank account on file.
- * @param {{ amount: number, method?: string, notes?: string, idempotencyKey?: string }} withdrawData
+ * Request a single-use 6-digit email verification code for a Vault withdrawal
+ * AFTER the user confirms their masked approved bank account details ("Are these your bank details?").
+ * @param {{ amount: number, confirmedBankDetails: boolean, attemptId?: string, idempotencyKey?: string }} payload
+ * @param {string} token
+ */
+export async function requestWithdrawalChallengeApi(payload, token) {
+  return apiRequest(
+    "/user/withdraw/challenge",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+/**
+ * Cancel an active withdrawal verification challenge (or record bank details confirmation cancellation).
+ * @param {{ challengeId?: string, reason?: string }} payload
+ * @param {string} token
+ */
+export async function cancelWithdrawalChallengeApi(payload = {}, token) {
+  const endpoint = payload?.challengeId
+    ? `/user/withdraw/challenge/${encodeURIComponent(payload.challengeId)}/cancel`
+    : "/user/withdraw/challenge/cancel";
+  return apiRequest(
+    endpoint,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+/**
+ * Verify the single-use 6-digit email OTP code and submit the withdrawal to the admin treasury queue.
+ * @param {{ challengeId: string, code: string, amount?: number, notes?: string, idempotencyKey?: string }} withdrawData
+ * @param {string} token
+ */
+export async function verifyWithdrawalChallengeApi(withdrawData, token) {
+  invalidateVaultCache();
+  return apiRequest(
+    "/user/withdraw/verify",
+    {
+      method: "POST",
+      body: JSON.stringify(withdrawData),
+    },
+    token,
+  );
+}
+
+/**
+ * Submit a Vault withdrawal request to the user's approved bank account on file (requires challengeId + code).
+ * @param {{ challengeId: string, code: string, amount: number, method?: string, notes?: string, idempotencyKey?: string }} withdrawData
  */
 export async function withdrawFundsApi(withdrawData, token) {
   invalidateVaultCache();

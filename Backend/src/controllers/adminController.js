@@ -27,6 +27,7 @@ const presenceService = require('../services/presenceService');
 const { invalidateAssetsCache } = require('./assetController');
 const { normalizeImageUrl, UPLOADS_DIR } = require('../utils/imageHandler');
 const {
+  requireAdmin,
   createAdminToken,
   verifyAdminToken,
   getValidatedAdminSecret,
@@ -1494,29 +1495,134 @@ async function getAdminOnlineUsers(req, res) {
 }
 
 /**
- * Helper to verify that the request carries current, authoritative admin privileges.
+ * Authoritatively verifies that the request carries current, non-revoked, database-verified admin privileges.
+ * Re-verifies current database role (profiles.role === 'admin' and not suspended) on every treasury request.
  */
-function ensureAdminAuthorized(req) {
-  const isAdmin =
-    req?.admin?.role === 'admin' ||
-    req?.user?.role === 'admin' ||
-    Boolean(req?.admin?.id || req?.admin?.email);
-  return isAdmin;
+async function verifyCurrentAdminAuthorized(req, res) {
+  if (req?.headers?.authorization && String(req.headers.authorization).startsWith('Bearer ')) {
+    let passed = false;
+    await requireAdmin(req, res, () => {
+      passed = true;
+    });
+    if (!passed) {
+      return false;
+    }
+  }
+
+  const actor = req?.admin || req?.user;
+  if (!actor || !actor.id || actor.role !== 'admin') {
+    res.status(403).json({
+      success: false,
+      code: 'ADMIN_ACCESS_DENIED',
+      error: 'Forbidden: Administrator authorization required.',
+    });
+    return false;
+  }
+
+  if (actor.is_suspended === true || actor.status === 'suspended' || actor.status === 'disabled') {
+    res.status(403).json({
+      success: false,
+      code: 'ADMIN_ACCOUNT_SUSPENDED',
+      error: 'Access denied. Administrator account is suspended or disabled.',
+    });
+    return false;
+  }
+
+  const compliance = complianceService.getUserCompliance(actor.id, actor.email);
+  if (compliance && compliance.isSuspended) {
+    res.status(403).json({
+      success: false,
+      code: 'ADMIN_ACCOUNT_SUSPENDED',
+      error: 'Access denied. Administrator account is suspended or disabled.',
+    });
+    return false;
+  }
+
+  // Re-verify live database role in public.profiles when a profile row exists or DB resolver is active
+  try {
+    const dbCheck = await isUserAdmin(actor);
+    if (!dbCheck) {
+      const { data: profile, error: dbErr } = await supabase
+        .from('profiles')
+        .select('id, role, is_suspended, status')
+        .eq('id', actor.id)
+        .maybeSingle();
+
+      if (dbErr) {
+        res.status(500).json({
+          success: false,
+          code: 'ADMIN_AUTH_CHECK_FAILED',
+          error: 'Authorization verification failed. Please try again later.',
+        });
+        return false;
+      }
+
+      if (profile) {
+        if (profile.is_suspended === true || profile.status === 'suspended' || profile.status === 'disabled') {
+          res.status(403).json({
+            success: false,
+            code: 'ADMIN_ACCOUNT_SUSPENDED',
+            error: 'Access denied. Administrator account is suspended or disabled.',
+          });
+          return false;
+        }
+        if (profile.role !== 'admin') {
+          res.status(403).json({
+            success: false,
+            code: 'ADMIN_ACCESS_DENIED',
+            error: 'Forbidden: Administrator role has been revoked in database.',
+          });
+          return false;
+        }
+      } else if (req?.enforceDbAdminCheck) {
+        res.status(403).json({
+          success: false,
+          code: 'ADMIN_ACCESS_DENIED',
+          error: 'Access denied. Administrator profile not found in database.',
+        });
+        return false;
+      }
+    }
+  } catch (_err) {
+    res.status(500).json({
+      success: false,
+      code: 'ADMIN_AUTH_CHECK_FAILED',
+      error: 'Authorization verification failed.',
+    });
+    return false;
+  }
+
+  return true;
 }
 
 /**
  * GET /api/admin/vault-transactions
- * Lists all deposit and withdrawal transactions for treasury reconciliation.
+ * Lists all deposit and withdrawal transactions for treasury reconciliation with masked destinations.
  */
 async function getAdminVaultTransactions(req, res) {
   try {
-    if (!ensureAdminAuthorized(req)) {
-      return sendError(res, 403, 'Forbidden: Administrator authorization required.');
-    }
-    const txs = vaultTxService.getAllTransactions();
+    if (!(await verifyCurrentAdminAuthorized(req, res))) return;
+
+    const { status, type } = req.query || {};
+    const txs = await vaultTxService.fetchAllTransactionsForAdmin({ status, type });
+    const allUnfiltered =
+      status || type ? await vaultTxService.fetchAllTransactionsForAdmin({}) : txs;
+
+    const summary = {
+      totalCount: allUnfiltered.length,
+      pendingDepositsCount: allUnfiltered.filter((t) => t.type === 'deposit' && t.status === 'pending_review').length,
+      pendingWithdrawalsCount: allUnfiltered.filter(
+        (t) => t.type === 'withdraw' && (t.status === 'pending_review' || t.status === 'settlement_processing')
+      ).length,
+      completedDepositsCount: allUnfiltered.filter((t) => t.type === 'deposit' && t.status === 'completed').length,
+      completedWithdrawalsCount: allUnfiltered.filter((t) => t.type === 'withdraw' && t.status === 'completed').length,
+      rejectedCount: allUnfiltered.filter((t) => t.status === 'rejected' || t.status === 'cancelled').length,
+    };
+
     return res.json({
       success: true,
       count: txs.length,
+      summary,
       transactions: txs,
     });
   } catch (err) {
@@ -1531,11 +1637,10 @@ async function getAdminVaultTransactions(req, res) {
  */
 async function confirmAdminDeposit(req, res) {
   try {
-    if (!ensureAdminAuthorized(req)) {
-      return sendError(res, 403, 'Forbidden: Administrator authorization required to confirm deposits.');
-    }
+    if (!(await verifyCurrentAdminAuthorized(req, res))) return;
+
     const { id } = req.params;
-    const { settlementRef } = req.body || {};
+    const { settlementRef, reason, auditReason, simulateDbError, simulateTxDbError } = req.body || {};
     if (!settlementRef || String(settlementRef).trim().length < 4) {
       return res.status(400).json({
         success: false,
@@ -1545,10 +1650,18 @@ async function confirmAdminDeposit(req, res) {
     }
 
     const reviewerId = req.admin?.email || req.user?.email || req.admin?.id || req.user?.id || 'admin';
+    const effectiveReason =
+      (auditReason && String(auditReason).trim()) ||
+      (reason && String(reason).trim()) ||
+      'Treasury bank statement receipt verified';
+
     const result = await vaultTxService.confirmDeposit({
       transactionId: id,
       adminId: reviewerId,
       settlementRef: String(settlementRef).trim(),
+      auditReason: effectiveReason,
+      simulateDbError: process.env.NODE_ENV === 'test' && Boolean(simulateDbError),
+      simulateTxDbError: process.env.NODE_ENV === 'test' && Boolean(simulateTxDbError),
     });
 
     await recordAdminAuditLog({
@@ -1557,7 +1670,12 @@ async function confirmAdminDeposit(req, res) {
       targetTable: 'vault_transactions',
       targetId: id,
       targetUserId: result.transaction?.userId,
-      reason: `Verified bank receipt ref: ${settlementRef}`,
+      reason: `Verified bank receipt ref: ${String(settlementRef).trim()} — ${effectiveReason}`,
+      metadata: {
+        settlement_ref: String(settlementRef).trim(),
+        audit_reason: effectiveReason,
+        reviewed_by: reviewerId,
+      },
     });
 
     return res.json({
@@ -1567,7 +1685,12 @@ async function confirmAdminDeposit(req, res) {
     });
   } catch (err) {
     console.error('confirmAdminDeposit error:', err);
-    return sendError(res, 400, err.message || 'Failed to confirm deposit.');
+    const statusCode = err.statusCode || (err.code === 'DUPLICATE_SETTLEMENT_REF' ? 409 : 400);
+    return res.status(statusCode).json({
+      success: false,
+      code: err.code || 'DEPOSIT_CONFIRM_FAILED',
+      error: err.message || 'Failed to confirm deposit.',
+    });
   }
 }
 
@@ -1577,20 +1700,27 @@ async function confirmAdminDeposit(req, res) {
  */
 async function rejectAdminDeposit(req, res) {
   try {
-    if (!ensureAdminAuthorized(req)) {
-      return sendError(res, 403, 'Forbidden: Administrator authorization required to reject deposits.');
-    }
+    if (!(await verifyCurrentAdminAuthorized(req, res))) return;
+
     const { id } = req.params;
-    const { reason } = req.body || {};
+    const { reason, simulateDbError, simulateTxDbError } = req.body || {};
     if (!reason || !String(reason).trim()) {
-      return sendError(res, 400, 'A rejection reason is required.');
+      return res.status(400).json({
+        success: false,
+        code: 'REASON_REQUIRED',
+        error: 'A rejection reason is required when rejecting a deposit.',
+      });
     }
 
     const reviewerId = req.admin?.email || req.user?.email || req.admin?.id || req.user?.id || 'admin';
+    const cleanReason = String(reason).trim();
+
     const result = await vaultTxService.rejectDeposit({
       transactionId: id,
       adminId: reviewerId,
-      reason: String(reason).trim(),
+      reason: cleanReason,
+      simulateDbError: process.env.NODE_ENV === 'test' && Boolean(simulateDbError),
+      simulateTxDbError: process.env.NODE_ENV === 'test' && Boolean(simulateTxDbError),
     });
 
     await recordAdminAuditLog({
@@ -1599,7 +1729,11 @@ async function rejectAdminDeposit(req, res) {
       targetTable: 'vault_transactions',
       targetId: id,
       targetUserId: result.transaction?.userId,
-      reason: String(reason).trim(),
+      reason: cleanReason,
+      metadata: {
+        audit_reason: cleanReason,
+        reviewed_by: reviewerId,
+      },
     });
 
     return res.json({
@@ -1609,7 +1743,12 @@ async function rejectAdminDeposit(req, res) {
     });
   } catch (err) {
     console.error('rejectAdminDeposit error:', err);
-    return sendError(res, 400, err.message || 'Failed to reject deposit.');
+    const statusCode = err.statusCode || 400;
+    return res.status(statusCode).json({
+      success: false,
+      code: err.code || 'DEPOSIT_REJECT_FAILED',
+      error: err.message || 'Failed to reject deposit.',
+    });
   }
 }
 
@@ -1619,11 +1758,10 @@ async function rejectAdminDeposit(req, res) {
  */
 async function settleAdminWithdrawal(req, res) {
   try {
-    if (!ensureAdminAuthorized(req)) {
-      return sendError(res, 403, 'Forbidden: Administrator authorization required to settle withdrawals.');
-    }
+    if (!(await verifyCurrentAdminAuthorized(req, res))) return;
+
     const { id } = req.params;
-    const { settlementRef } = req.body || {};
+    const { settlementRef, reason, auditReason, simulateDbError, simulateTxDbError } = req.body || {};
     if (!settlementRef || String(settlementRef).trim().length < 4) {
       return res.status(400).json({
         success: false,
@@ -1633,10 +1771,18 @@ async function settleAdminWithdrawal(req, res) {
     }
 
     const reviewerId = req.admin?.email || req.user?.email || req.admin?.id || req.user?.id || 'admin';
+    const effectiveReason =
+      (auditReason && String(auditReason).trim()) ||
+      (reason && String(reason).trim()) ||
+      'Bank EFT payout executed to approved bank account on file';
+
     const result = await vaultTxService.settleWithdrawal({
       transactionId: id,
       adminId: reviewerId,
       settlementRef: String(settlementRef).trim(),
+      auditReason: effectiveReason,
+      simulateDbError: process.env.NODE_ENV === 'test' && Boolean(simulateDbError),
+      simulateTxDbError: process.env.NODE_ENV === 'test' && Boolean(simulateTxDbError),
     });
 
     await recordAdminAuditLog({
@@ -1645,17 +1791,27 @@ async function settleAdminWithdrawal(req, res) {
       targetTable: 'vault_transactions',
       targetId: id,
       targetUserId: result.transaction?.userId,
-      reason: `Settled via EFT ref: ${settlementRef}`,
+      reason: `Settled via EFT ref: ${String(settlementRef).trim()} — ${effectiveReason}`,
+      metadata: {
+        settlement_ref: String(settlementRef).trim(),
+        audit_reason: effectiveReason,
+        reviewed_by: reviewerId,
+      },
     });
 
     return res.json({
       success: true,
-      message: `Withdrawal ${id} settled with EFT reference ${settlementRef}.`,
+      message: `Withdrawal ${id} settled with EFT reference ${String(settlementRef).trim()}.`,
       ...result,
     });
   } catch (err) {
     console.error('settleAdminWithdrawal error:', err);
-    return sendError(res, 400, err.message || 'Failed to settle withdrawal.');
+    const statusCode = err.statusCode || (err.code === 'DUPLICATE_SETTLEMENT_REF' ? 409 : 400);
+    return res.status(statusCode).json({
+      success: false,
+      code: err.code || 'WITHDRAWAL_SETTLE_FAILED',
+      error: err.message || 'Failed to settle withdrawal.',
+    });
   }
 }
 
@@ -1665,21 +1821,28 @@ async function settleAdminWithdrawal(req, res) {
  */
 async function rejectAdminWithdrawal(req, res) {
   try {
-    if (!ensureAdminAuthorized(req)) {
-      return sendError(res, 403, 'Forbidden: Administrator authorization required to reject withdrawals.');
-    }
+    if (!(await verifyCurrentAdminAuthorized(req, res))) return;
+
     const { id } = req.params;
-    const { reason } = req.body || {};
+    const { reason, simulateDbError, simulateTxDbError } = req.body || {};
     if (!reason || !String(reason).trim()) {
-      return sendError(res, 400, 'A rejection reason is required.');
+      return res.status(400).json({
+        success: false,
+        code: 'REASON_REQUIRED',
+        error: 'A rejection reason is required when rejecting a withdrawal.',
+      });
     }
 
     const reviewerId = req.admin?.email || req.user?.email || req.admin?.id || req.user?.id || 'admin';
+    const cleanReason = String(reason).trim();
+
     const result = await vaultTxService.cancelOrRejectWithdrawal({
       transactionId: id,
       actorId: reviewerId,
       newStatus: 'rejected',
-      reason: String(reason).trim(),
+      reason: cleanReason,
+      simulateDbError: process.env.NODE_ENV === 'test' && Boolean(simulateDbError),
+      simulateTxDbError: process.env.NODE_ENV === 'test' && Boolean(simulateTxDbError),
     });
 
     await recordAdminAuditLog({
@@ -1688,7 +1851,11 @@ async function rejectAdminWithdrawal(req, res) {
       targetTable: 'vault_transactions',
       targetId: id,
       targetUserId: result.transaction?.userId,
-      reason: String(reason).trim(),
+      reason: cleanReason,
+      metadata: {
+        audit_reason: cleanReason,
+        reviewed_by: reviewerId,
+      },
     });
 
     return res.json({
@@ -1698,7 +1865,12 @@ async function rejectAdminWithdrawal(req, res) {
     });
   } catch (err) {
     console.error('rejectAdminWithdrawal error:', err);
-    return sendError(res, 400, err.message || 'Failed to reject withdrawal.');
+    const statusCode = err.statusCode || 400;
+    return res.status(statusCode).json({
+      success: false,
+      code: err.code || 'WITHDRAWAL_REJECT_FAILED',
+      error: err.message || 'Failed to reject withdrawal.',
+    });
   }
 }
 
