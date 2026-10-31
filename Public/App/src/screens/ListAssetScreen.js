@@ -23,7 +23,7 @@ import * as ImagePicker from "expo-image-picker";
 import { SCREENS } from "../constants/navigation";
 import { useAuth } from "../context/AuthContext";
 import KycGatekeeperModal from "../components/KycGatekeeperModal";
-import { createAssetApi, verifyAssetUploadApi, addUserHolding } from "../services/api";
+import { createAssetApi, verifyAssetUploadApi, addUserHolding, generateListingModelApi } from "../services/api";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import storage, { STORAGE_KEYS } from "../utils/storage";
 
@@ -701,7 +701,13 @@ export default function ListAssetScreen({ navigation, route }) {
         })),
       };
 
-      await createAssetApi(payload, token);
+      const createRes = await createAssetApi(payload, token);
+      const createdAssetId = createRes?.asset?.id || createRes?.id;
+      if (createdAssetId && token) {
+        generateListingModelApi(createdAssetId, token).catch((genErr) => {
+          console.log("[ListAsset] Background 3D model generation notice:", genErr?.message);
+        });
+      }
 
       setSaved(true);
       setTimeout(() => {

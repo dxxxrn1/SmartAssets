@@ -102,5 +102,11 @@ services:
         sync: false
       - key: TRIPO_API_KEY
         sync: false
+      - key: CATALOG_MATCH_THRESHOLD
+        value: "0.70"
+      - key: MODEL_MAX_CONCURRENT_JOBS
+        value: "3"
+      - key: MODEL_MAX_ATTEMPTS_PER_LISTING
+        value: "2"
       - key: SERPAPI_KEY
         sync: false

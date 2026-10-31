@@ -452,11 +452,22 @@ function buildThreeHtml() {
       if (data.type === 'ROTATE_BY') {
         var deltaRad = ((Number(data.deltaDeg) || 45) * Math.PI) / 180;
         gestureRotY += deltaRad;
+        if (data.tiltDeg) {
+          var tiltRad = ((Number(data.tiltDeg) || 0) * Math.PI) / 180;
+          gestureRotX = Math.max(-1.22, Math.min(1.22, gestureRotX + tiltRad));
+        }
       }
 
       if (data.type === 'SCALE_BY') {
         var factor = Number(data.factor) || 1.15;
         gestureScale = Math.max(0.35, Math.min(3.5, gestureScale * factor));
+      }
+
+      if (data.type === 'MOVE_BY') {
+        var dxCm = Number(data.deltaXCm) || 0;
+        var dyCm = Number(data.deltaYCm) || 0;
+        gesturePanX = Math.max(-180, Math.min(180, gesturePanX + dxCm));
+        gesturePanY = Math.max(-180, Math.min(180, gesturePanY + dyCm));
       }
 
       if (data.type === 'GESTURE') {
@@ -529,6 +540,9 @@ function buildThreeHtml() {
 /**
  * `<ModelRenderer />` Component
  */
+const SAFE_ZERO_ROTATION = Object.freeze({ x: 0, y: 0, z: 0 });
+const SAFE_ZERO_GESTURE = Object.freeze({ panX: 0, panY: 0, scale: 1, rotation: 0 });
+
 const ModelRenderer = forwardRef(function ModelRenderer({
   glbDataUri,
   widthCm = 60,
@@ -536,8 +550,8 @@ const ModelRenderer = forwardRef(function ModelRenderer({
   depthCm = DEFAULT_DEPTH_CM,
   placement = 'floor',
   pxPerCm = 3.78,
-  gyroRotation = { x: 0, y: 0, z: 0 },
-  gestureTransform = { panX: 0, panY: 0, scale: 1, rotation: 0 },
+  gyroRotation = SAFE_ZERO_ROTATION,
+  gestureTransform = SAFE_ZERO_GESTURE,
   interactMode = 'rotate',
   resetTrigger = 0,
   onLoaded,
@@ -545,26 +559,41 @@ const ModelRenderer = forwardRef(function ModelRenderer({
 }, ref) {
   const webViewRef = useRef(null);
   const isWebViewReady = useRef(false);
+  const pendingCommandsRef = useRef([]);
 
-  // Send message to WebView helper
-  const postToWebView = useCallback((payload) => {
-    if (webViewRef.current && isWebViewReady.current) {
-      const script = `if (window.handleNativeMessage) { window.handleNativeMessage(${JSON.stringify(payload)}); } true;`;
-      webViewRef.current.injectJavaScript(script);
+  // Send message to WebView helper with safe queuing while WebView mounts
+  const postToWebView = useCallback((payload, queueIfNotReady = false) => {
+    if (!payload) return;
+    if (webViewRef.current && isWebViewReady.current && typeof webViewRef.current.injectJavaScript === 'function') {
+      try {
+        const script = `if (window.handleNativeMessage) { window.handleNativeMessage(${JSON.stringify(payload)}); } true;`;
+        webViewRef.current.injectJavaScript(script);
+      } catch (_) {}
+    } else if (queueIfNotReady) {
+      pendingCommandsRef.current.push(payload);
+      if (pendingCommandsRef.current.length > 25) {
+        pendingCommandsRef.current.shift();
+      }
     }
   }, []);
 
   useImperativeHandle(
     ref,
     () => ({
-      rotateBy(deltaDeg = 45) {
-        postToWebView({ type: 'ROTATE_BY', deltaDeg });
+      rotateBy(deltaDeg = 45, tiltDeg = 0) {
+        postToWebView({ type: 'ROTATE_BY', deltaDeg: Number(deltaDeg) || 0, tiltDeg: Number(tiltDeg) || 0 }, true);
       },
       scaleBy(factor = 1.15) {
-        postToWebView({ type: 'SCALE_BY', factor });
+        postToWebView({ type: 'SCALE_BY', factor: Number(factor) || 1 }, true);
+      },
+      moveBy(deltaXCm = 0, deltaYCm = 0) {
+        postToWebView({ type: 'MOVE_BY', deltaXCm: Number(deltaXCm) || 0, deltaYCm: Number(deltaYCm) || 0 }, true);
       },
       resetTransform() {
-        postToWebView({ type: 'RECENTER' });
+        postToWebView({ type: 'RECENTER' }, true);
+      },
+      setInteractMode(mode = 'rotate') {
+        postToWebView({ type: 'SET_INTERACT_MODE', mode }, true);
       },
     }),
     [postToWebView],
@@ -592,13 +621,14 @@ const ModelRenderer = forwardRef(function ModelRenderer({
     });
   }, [pxPerCm, postToWebView]);
 
-  // Stream gyro orientation updates to WebView
+  // Stream gyro orientation updates to WebView with safe defaults
   useEffect(() => {
+    const safeRot = gyroRotation || SAFE_ZERO_ROTATION;
     postToWebView({
       type: 'ORIENTATION',
-      x: gyroRotation.x,
-      y: gyroRotation.y,
-      z: gyroRotation.z,
+      x: Number(safeRot.x) || 0,
+      y: Number(safeRot.y) || 0,
+      z: Number(safeRot.z) || 0,
     });
   }, [gyroRotation, postToWebView]);
 
@@ -606,7 +636,7 @@ const ModelRenderer = forwardRef(function ModelRenderer({
   useEffect(() => {
     postToWebView({
       type: 'SET_INTERACT_MODE',
-      mode: interactMode,
+      mode: interactMode || 'rotate',
     });
   }, [interactMode, postToWebView]);
 
@@ -621,19 +651,22 @@ const ModelRenderer = forwardRef(function ModelRenderer({
 
   // Stream gesture updates to WebView
   useEffect(() => {
+    const safeGesture = gestureTransform || SAFE_ZERO_GESTURE;
     postToWebView({
       type: 'GESTURE',
-      panX: gestureTransform.panX,
-      panY: gestureTransform.panY,
-      scale: gestureTransform.scale,
-      rotation: gestureTransform.rotation,
+      panX: Number(safeGesture.panX) || 0,
+      panY: Number(safeGesture.panY) || 0,
+      scale: safeGesture.scale !== undefined ? Number(safeGesture.scale) : 1,
+      rotation: Number(safeGesture.rotation) || 0,
     });
   }, [gestureTransform, postToWebView]);
 
   // Handle messages sent back from WebView
   const handleMessage = (event) => {
     try {
-      const msg = JSON.parse(event.nativeEvent.data);
+      const rawData = event?.nativeEvent?.data;
+      if (!rawData) return;
+      const msg = JSON.parse(rawData);
       if (msg.type === 'SCENE_READY') {
         isWebViewReady.current = true;
         if (glbDataUri) {
@@ -647,10 +680,15 @@ const ModelRenderer = forwardRef(function ModelRenderer({
             pxPerCm,
           });
         }
+        if (pendingCommandsRef.current.length > 0) {
+          const queued = [...pendingCommandsRef.current];
+          pendingCommandsRef.current = [];
+          queued.forEach((cmd) => postToWebView(cmd, false));
+        }
       } else if (msg.type === 'MODEL_LOADED') {
         onLoaded?.();
       } else if (msg.type === 'ERROR') {
-        onError?.(msg.message);
+        onError?.(msg.message || 'Failed to render 3D model');
       }
     } catch (_) {}
   };

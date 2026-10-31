@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,27 +10,30 @@ import {
   Platform,
   Image,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import ScaleLock from './ScaleLock';
-import DraggableItem from './DraggableItem';
 import ModelRenderer from './ModelRenderer';
 import useGyroPinning from './useGyroPinning';
 import useCachedGlb from './useCachedGlb';
 import { DEFAULT_PX_PER_CM, DEFAULT_DEPTH_CM } from './constants';
-import { resolveImageUrl } from '../../services/api';
+import {
+  resolveImageUrl,
+  getListingModelStatusApi,
+  generateListingModelApi,
+  getCatalogMatchesApi,
+  selectCatalogModelApi,
+} from '../../services/api';
 import { AR_SHOWCASE_ITEMS } from '../../constants/arShowcase';
+import { useAuth } from '../../context/AuthContext';
+import { SCREENS } from '../../constants/navigation';
 
 /**
- * Pure helper that resolves the authoritative Room Preview configuration from
- * route params or props.
- *
- * IMPORTANT:
- * - Never substitutes a generic sample 3D furniture model onto a marketplace
- *   listing that lacks its own explicit 3D model URL.
- * - Sample 3D models are strictly confined to `isDemoShowcase: true`.
+ * Pure helper that resolves initial Room Preview metadata from route params.
+ * Strictly guarantees that marketplace listings never get assigned sample demo models.
  */
 export function resolveRoomPreviewConfig(params = {}) {
   const hasExplicitListingContext = Boolean(
@@ -102,76 +105,53 @@ export function resolveRoomPreviewConfig(params = {}) {
     (asset.category || '').toLowerCase().includes('paint');
   const placement = params.placement || asset.placement || (isWallItem ? 'wall' : 'floor');
 
-  if (explicitGlbUrl) {
-    return {
-      mode: 'listing_3d',
-      isDemoShowcase: false,
-      hasExplicit3dModel: true,
-      showcaseId: null,
-      listingId,
-      title,
-      glbUrl: explicitGlbUrl,
-      imageUri,
-      placement,
-      widthCm,
-      heightCm,
-      depthCm,
-      source: params.source || asset.model?.source || 'verified_3d',
-      statusBadge: '3D MODEL OVERLAY',
-      statusBanner: null,
-    };
-  }
-
-  if (imageUri) {
-    return {
-      mode: 'listing_2d',
-      isDemoShowcase: false,
-      hasExplicit3dModel: false,
-      showcaseId: null,
-      listingId,
-      title,
-      glbUrl: null,
-      imageUri,
-      placement,
-      widthCm,
-      heightCm,
-      depthCm,
-      source: 'listing_photo',
-      statusBadge: '2D PHOTO OVERLAY',
-      statusBanner:
-        '2D Photo Overlay • No 3D model attached to this listing. Showing the real listing photo over your camera feed.',
-    };
-  }
+  const source =
+    params.source || asset.model?.source || (explicitGlbUrl ? 'ai_generated' : 'ai_generated');
+  const isCatalog = source === 'category_catalog';
+  const statusBadge = isCatalog
+    ? 'CATEGORY PREVIEW'
+    : explicitGlbUrl
+      ? 'AI 3D APPROXIMATION'
+      : '3D LISTING PREVIEW';
 
   return {
-    mode: 'no_media',
+    mode: 'marketplace_3d',
     isDemoShowcase: false,
-    hasExplicit3dModel: false,
+    hasExplicit3dModel: Boolean(explicitGlbUrl),
     showcaseId: null,
     listingId,
     title,
-    glbUrl: null,
-    imageUri: null,
+    glbUrl: explicitGlbUrl,
+    imageUri,
     placement,
     widthCm,
     heightCm,
     depthCm,
-    source: 'none',
-    statusBadge: 'NO PREVIEW MEDIA',
-    statusBanner: 'No 3D model or listing photo is attached to this item.',
+    source,
+    attribution: params.attribution || asset.model?.attribution || null,
+    license: params.license || asset.model?.license || null,
+    statusBadge,
+    statusBanner: isCatalog
+      ? 'Category Preview · Approximate 3D model from Smart Assets licensed catalog. Not an exact physical scan.'
+      : null,
   };
 }
 
 /**
  * LiveRoomPreview Component
- * Honest, accessible room-preview experience over a live camera feed (or studio backdrop):
- * - Renders a WebView 3D GLB overlay ONLY when an asset has an explicit 3D model URL or in Demo Showcase mode.
- * - Renders the real 2D listing photo (`DraggableItem`) with a clear no-model notice when a listing has no 3D model.
- * - Provides accessible 48×48 non-gesture controls (Rotate Left/Right, Scale −/+, Reset, Tilt Assist, A4 Calibration).
+ * High-fidelity, accessible 3D room preview experience:
+ * - Marketplace listings render strictly their own generated or attached 3D GLB model.
+ * - If model is missing or processing, connects to backend 3D pipeline (`/api/models/generate` and `/api/models/status/:id`).
+ * - Displays luxury obsidian/cyan status HUDs: queued, generating with progress, ready, failed with retry.
+ * - Never shows a 2D photo as the 3D room object and never substitutes unrelated demo models onto listings.
+ * - Handles navigation safely with serializable params (no function-valued route params).
+ * - Full 48dp accessible non-gesture controls for rotate, move, scale, reset, tilt assist, and A4 calibration.
  */
 export default function LiveRoomPreview(props) {
+  const { token, isAuthenticated, user } = useAuth();
   const routeParams = props.route?.params || {};
   const mergedParams = { ...props, ...routeParams };
+  const navigation = props.navigation;
 
   const [demoOverrideId, setDemoOverrideId] = useState(null);
   const effectiveParams = useMemo(() => {
@@ -185,15 +165,28 @@ export default function LiveRoomPreview(props) {
     return mergedParams;
   }, [mergedParams, demoOverrideId]);
 
+  const isSellerOrAdmin = useMemo(() => {
+    if (!isAuthenticated || !user) return false;
+    const userRole = String(user.role || '').toLowerCase();
+    const userEmail = String(user.email || '').toLowerCase();
+    if (userRole === 'admin' || userEmail.includes('admin')) return true;
+    const sellerId =
+      effectiveParams.asset?.user_id ||
+      effectiveParams.asset?.seller_id ||
+      effectiveParams.asset?.seller?.id ||
+      effectiveParams.sellerId ||
+      effectiveParams.userId;
+    return Boolean(sellerId && String(sellerId) === String(user.id));
+  }, [isAuthenticated, user, effectiveParams]);
+
   const config = useMemo(() => resolveRoomPreviewConfig(effectiveParams), [effectiveParams]);
 
   const {
     isDemoShowcase,
-    hasExplicit3dModel,
     showcaseId,
     listingId,
     title,
-    glbUrl,
+    glbUrl: initialGlbUrl,
     imageUri,
     placement,
     widthCm,
@@ -203,10 +196,23 @@ export default function LiveRoomPreview(props) {
     statusBanner,
   } = config;
 
-  const onBid = mergedParams.onBid;
-  const onBack = mergedParams.onBack || (() => props.navigation?.goBack?.());
+  const onBack = mergedParams.onBack || (() => navigation?.goBack?.());
 
-  const { width: screenW, height: screenH } = useWindowDimensions();
+  // Per-listing 3D pipeline state
+  const [modelStatus, setModelStatus] = useState(initialGlbUrl ? 'ready' : 'initial'); // 'initial' | 'processing' | 'ready' | 'failed' | 'none'
+  const [modelProgress, setModelProgress] = useState(initialGlbUrl ? 100 : 0);
+  const [activeGlbUrl, setActiveGlbUrl] = useState(initialGlbUrl);
+  const [modelError, setModelError] = useState(null);
+  const [canRetry, setCanRetry] = useState(true);
+  const [isRequestingGeneration, setIsRequestingGeneration] = useState(false);
+  const [modelSource, setModelSource] = useState(config.source || 'ai_generated');
+  const [modelAttribution, setModelAttribution] = useState(config.attribution || null);
+  const [modelLicense, setModelLicense] = useState(config.license || null);
+  const [candidateMatches, setCandidateMatches] = useState([]);
+  const [showCatalogModal, setShowCatalogModal] = useState(false);
+  const [isSelectingCatalog, setIsSelectingCatalog] = useState(false);
+
+  // Sensor, camera & layout state
   const [permission, requestPermission] = useCameraPermissions();
   const [useStudioBackdrop, setUseStudioBackdrop] = useState(Platform.OS === 'web');
   const [cameraReady, setCameraReady] = useState(Platform.OS === 'web');
@@ -219,117 +225,304 @@ export default function LiveRoomPreview(props) {
   const [interactMode, setInteractMode] = useState('rotate');
   const [modelLoaded, setModelLoaded] = useState(false);
   const [rendererError, setRendererError] = useState(null);
-  const [force2dFallback, setForce2dFallback] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
 
   const modelRendererRef = useRef(null);
-  const draggableItemRef = useRef(null);
+  const hasTriggeredInitialGen = useRef(false);
 
-  const { offset: gyroOffset, rotation: gyroRotation, resetReference } = useGyroPinning(pinned);
+  // Gyroscope Hook with safe API alignment & defaults
+  const {
+    offset: gyroOffset,
+    rotation: gyroRotation,
+    rotation3D,
+    resetReference,
+    recenter,
+  } = useGyroPinning(pinned);
 
-  const cacheKeyUrl = glbUrl ? `${glbUrl}${retryNonce ? `?retry=${retryNonce}` : ''}` : null;
+  // Safe reset helper that guards against missing methods
+  const safeResetOrientation = useCallback(() => {
+    if (typeof resetReference === 'function') {
+      resetReference();
+    } else if (typeof recenter === 'function') {
+      recenter();
+    }
+  }, [resetReference, recenter]);
+
+  // Model download & caching hook
+  const effectiveGlbUrl = isDemoShowcase ? initialGlbUrl : activeGlbUrl;
+  const cacheKeyUrl = effectiveGlbUrl
+    ? `${effectiveGlbUrl}${retryNonce ? `?retry=${retryNonce}` : ''}`
+    : null;
   const {
     localUri,
     dataUri: glbDataUri,
     loading: glbDownloading,
     progress: glbProgress,
     error: glbDownloadError,
+    reload: reloadCachedGlb,
   } = useCachedGlb(cacheKeyUrl);
 
-  useEffect(() => {
-    setModelLoaded(false);
-    setRendererError(null);
-    setForce2dFallback(false);
-  }, [glbUrl, showcaseId, listingId]);
-
+  // Request camera permission on native if not yet decided
   useEffect(() => {
     if (Platform.OS !== 'web' && !permission) {
       requestPermission?.().catch(() => {});
     }
   }, [permission, requestPermission]);
 
-  const shouldRender3D = Boolean(
-    hasExplicit3dModel &&
-      glbUrl &&
-      !force2dFallback &&
-      !glbDownloadError &&
-      !rendererError,
+  // Reset state when listingId changes
+  useEffect(() => {
+    if (initialGlbUrl) {
+      setActiveGlbUrl(initialGlbUrl);
+      setModelStatus('ready');
+      setModelProgress(100);
+      setModelError(null);
+    } else if (!isDemoShowcase) {
+      setActiveGlbUrl(null);
+      setModelStatus('initial');
+      setModelProgress(0);
+      setModelError(null);
+      hasTriggeredInitialGen.current = false;
+    }
+    setModelLoaded(false);
+    setRendererError(null);
+  }, [initialGlbUrl, isDemoShowcase, listingId]);
+
+  // ── Backend Per-Listing 3D Model Status & Generation Pipeline ───────────────
+  const pollStatus = useCallback(async () => {
+    if (isDemoShowcase || !listingId || listingId.startsWith('showcase-')) return;
+    try {
+      const res = await getListingModelStatusApi(listingId, token);
+      if (res?.status === 'ready' && res?.model?.glb_url) {
+        setActiveGlbUrl(res.model.glb_url);
+        setModelStatus('ready');
+        setModelProgress(100);
+        setModelError(null);
+        setCanRetry(false);
+        const src = res.source || res.model?.source || 'ai_generated';
+        setModelSource(src);
+        setModelAttribution(res.attribution || res.model?.attribution || null);
+        setModelLicense(res.license || res.model?.license || null);
+      } else if (res?.status === 'processing') {
+        setModelStatus('processing');
+        setModelProgress(Math.max(10, Math.min(95, Number(res.progress) || 25)));
+        setModelError(null);
+        setCanRetry(Boolean(res.canRetry));
+      } else if (res?.status === 'failed') {
+        setModelStatus('failed');
+        setModelError(
+          res.error || '3D model is being prepared / try again later. Please check back shortly.',
+        );
+        if (Array.isArray(res.candidateMatches) && res.candidateMatches.length > 0) {
+          setCandidateMatches(res.candidateMatches);
+        }
+        setCanRetry(Boolean(res.canRetry));
+      } else if (res?.status === 'none') {
+        // No 3D model generated yet for listing. Never trigger paid generation automatically on AR view.
+        setModelStatus('none');
+        setCanRetry(true);
+      }
+    } catch (err) {
+      console.warn('[LiveRoomPreview] Error querying model status:', err.message);
+      if (modelStatus === 'initial') {
+        setModelStatus('none');
+        setCanRetry(true);
+      }
+    }
+  }, [isDemoShowcase, listingId, token, modelStatus]);
+
+  const startGeneration = useCallback(
+    async (force = false) => {
+      if (isDemoShowcase || !listingId || isRequestingGeneration) return;
+      setIsRequestingGeneration(true);
+      setModelStatus('processing');
+      setModelProgress(15);
+      setModelError(null);
+
+      try {
+        const res = await generateListingModelApi(listingId, token, force);
+        if (res?.status === 'ready' && res?.model?.glb_url) {
+          setActiveGlbUrl(res.model.glb_url);
+          setModelStatus('ready');
+          setModelProgress(100);
+          setModelError(null);
+          const src = res.source || res.model?.source || 'ai_generated';
+          setModelSource(src);
+          setModelAttribution(res.attribution || res.model?.attribution || null);
+          setModelLicense(res.license || res.model?.license || null);
+        } else if (res?.candidateMatches && res.candidateMatches.length > 0) {
+          setModelStatus('failed');
+          setModelError(res.message || 'AI 3D generation is unavailable. Suggested catalog models available.');
+          setCandidateMatches(res.candidateMatches);
+          setCanRetry(true);
+        } else if (res?.status === 'processing' || res?.success) {
+          setModelStatus('processing');
+          setModelProgress(25);
+          setModelError(null);
+        } else {
+          setModelStatus('failed');
+          setModelError(res?.error || '3D model generation could not be started.');
+          if (Array.isArray(res?.candidateMatches) && res.candidateMatches.length > 0) {
+            setCandidateMatches(res.candidateMatches);
+          }
+          setCanRetry(Boolean(res?.canRetry));
+        }
+      } catch (err) {
+        console.warn('[LiveRoomPreview] Generation dispatch error:', err.message);
+        setModelStatus('failed');
+        setModelError(
+          err?.message || '3D model is being prepared / try again later. Please check back shortly.',
+        );
+        setCanRetry(true);
+      } finally {
+        setIsRequestingGeneration(false);
+      }
+    },
+    [isDemoShowcase, listingId, isRequestingGeneration, token],
   );
 
-  const active3dError = glbDownloadError || rendererError;
-
-  // Compute 2D photo display dimensions constrained safely to the center viewport
-  const maxViewportW = Math.max(200, screenW * 0.72);
-  const maxViewportH = Math.max(200, screenH * 0.44);
-  const rawW = Math.max(96, widthCm * pxPerCm);
-  const rawH = Math.max(96, heightCm * pxPerCm);
-  const fitRatio = Math.min(1, maxViewportW / rawW, maxViewportH / rawH);
-  const itemWidth = Math.round(rawW * fitRatio);
-  const itemHeight = Math.round(rawH * fitRatio);
-
-  // Unified imperative control handlers for both 3D ModelRenderer and 2D DraggableItem
-  const handleRotateLeft = () => {
-    if (shouldRender3D) {
-      modelRendererRef.current?.rotateBy(-45);
-    } else {
-      draggableItemRef.current?.rotateBy(-45);
+  const handleSelectCatalogModel = async (catalogModelId) => {
+    if (!token || !listingId || isSelectingCatalog) return;
+    setIsSelectingCatalog(true);
+    try {
+      const res = await selectCatalogModelApi(listingId, catalogModelId, token);
+      if (res?.success && res?.model?.glb_url) {
+        setActiveGlbUrl(res.model.glb_url);
+        setModelStatus('ready');
+        setModelProgress(100);
+        setModelError(null);
+        setModelSource('category_catalog');
+        setModelAttribution(res.attribution || res.catalogModel?.attribution || null);
+        setModelLicense(res.license || res.catalogModel?.license || null);
+        setShowCatalogModal(false);
+      }
+    } catch (err) {
+      console.warn('[LiveRoomPreview] Error selecting catalog model:', err.message);
+    } finally {
+      setIsSelectingCatalog(false);
     }
+  };
+
+  const handlePreviewCatalogModel = (model) => {
+    if (!model?.glb_url) return;
+    setActiveGlbUrl(model.glb_url);
+    setModelStatus('ready');
+    setModelProgress(100);
+    setModelError(null);
+    setModelSource('category_catalog');
+    setModelAttribution(model.attribution || null);
+    setModelLicense(model.license || null);
+    setShowCatalogModal(false);
+  };
+
+  const loadCatalogMatches = async () => {
+    try {
+      const res = await getCatalogMatchesApi(listingId, token);
+      if (res?.success && Array.isArray(res.matches) && res.matches.length > 0) {
+        setCandidateMatches(res.matches);
+        setShowCatalogModal(true);
+      } else {
+        setModelError('No compatible category catalog models found for this listing.');
+      }
+    } catch (err) {
+      console.warn('[LiveRoomPreview] Error loading catalog matches:', err.message);
+    }
+  };
+
+  // Initial check on mount for marketplace listings
+  useEffect(() => {
+    if (!isDemoShowcase && !initialGlbUrl) {
+      pollStatus();
+    }
+  }, [isDemoShowcase, initialGlbUrl, pollStatus]);
+
+  // Polling timer while model is actively processing
+  useEffect(() => {
+    if (isDemoShowcase || modelStatus !== 'processing') return undefined;
+
+    const interval = setInterval(() => {
+      pollStatus();
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, [isDemoShowcase, modelStatus, pollStatus]);
+
+  // Determine whether 3D model is ready to display
+  const is3dModelReady = Boolean(
+    (isDemoShowcase && initialGlbUrl) ||
+      (!isDemoShowcase && modelStatus === 'ready' && activeGlbUrl && !rendererError),
+  );
+
+  // Non-gesture accessible button controls
+  const handleRotateLeft = () => {
+    modelRendererRef.current?.rotateBy?.(-45, 0);
   };
 
   const handleRotateRight = () => {
-    if (shouldRender3D) {
-      modelRendererRef.current?.rotateBy(45);
-    } else {
-      draggableItemRef.current?.rotateBy(45);
-    }
+    modelRendererRef.current?.rotateBy?.(45, 0);
   };
 
   const handleScaleDown = () => {
-    if (shouldRender3D) {
-      modelRendererRef.current?.scaleBy(0.86);
-    } else {
-      draggableItemRef.current?.scaleBy(0.86);
-    }
+    modelRendererRef.current?.scaleBy?.(0.86);
   };
 
   const handleScaleUp = () => {
-    if (shouldRender3D) {
-      modelRendererRef.current?.scaleBy(1.16);
-    } else {
-      draggableItemRef.current?.scaleBy(1.16);
-    }
+    modelRendererRef.current?.scaleBy?.(1.16);
+  };
+
+  const handleMoveLeft = () => {
+    modelRendererRef.current?.moveBy?.(-10, 0);
+  };
+
+  const handleMoveRight = () => {
+    modelRendererRef.current?.moveBy?.(10, 0);
   };
 
   const handleResetView = () => {
-    resetReference();
-    if (shouldRender3D) {
-      modelRendererRef.current?.resetTransform();
-    } else {
-      draggableItemRef.current?.resetTransform();
+    safeResetOrientation();
+    modelRendererRef.current?.resetTransform?.();
+  };
+
+  const handleRetry3d = () => {
+    setRendererError(null);
+    setModelLoaded(false);
+    setRetryNonce((n) => n + 1);
+    if (typeof reloadCachedGlb === 'function') {
+      reloadCachedGlb();
+    }
+    if (!isDemoShowcase) {
+      startGeneration(true);
     }
   };
 
-  const handleRetry3dModel = () => {
-    setRendererError(null);
-    setForce2dFallback(false);
-    setModelLoaded(false);
-    setRetryNonce((n) => n + 1);
+  // Safe serializable navigation to Checkout / Buy
+  const handleProceedToCheckout = () => {
+    if (navigation && typeof navigation.navigate === 'function') {
+      navigation.navigate(SCREENS.CHECKOUT, {
+        listingId,
+        asset: mergedParams.asset || {
+          id: listingId,
+          name: title,
+          title,
+          image: imageUri,
+        },
+      });
+    }
   };
 
-  // Camera permission prompt state (unless user opted into Studio Backdrop)
+  // Camera permission prompt state (unless user chose Studio Backdrop)
   if (Platform.OS !== 'web' && !useStudioBackdrop && (!permission || !permission.granted)) {
     return (
       <SafeAreaView style={styles.permissionScreen} edges={['top', 'bottom']}>
         <StatusBar barStyle="light-content" />
         <View style={styles.permissionCard}>
           <View style={styles.permissionIconCircle}>
-            <Ionicons name="camera-outline" size={32} color="#22D3EE" />
+            <Ionicons name="cube-outline" size={32} color="#22D3EE" />
           </View>
           <Text style={styles.permissionTitle} maxFontSizeMultiplier={1.3}>
-            Camera Access for Room Preview
+            Camera Access for 3D Room Preview
           </Text>
           <Text style={styles.permissionBody} maxFontSizeMultiplier={1.3}>
-            Room Preview overlays {hasExplicit3dModel ? 'this 3D model' : 'this listing photo'} over your live camera feed so you can inspect how it fits in your space.
+            Room Preview projects this 3D model over your live camera feed so you can inspect its real-world scale and materials in your space.
           </Text>
 
           <Pressable
@@ -337,9 +530,9 @@ export default function LiveRoomPreview(props) {
             onPress={() => requestPermission?.()}
             accessibilityRole="button"
             accessibilityLabel="Allow camera access"
-            accessibilityHint="Requests camera permission from Android to show the live room background"
+            accessibilityHint="Requests camera permission from Android to project the 3D model over your room"
           >
-            <Ionicons name="camera" size={18} color="#FFFFFF" />
+            <Ionicons name="camera" size={18} color="#041019" />
             <Text style={styles.permissionPrimaryText} maxFontSizeMultiplier={1.2}>
               Allow Camera Access
             </Text>
@@ -353,7 +546,7 @@ export default function LiveRoomPreview(props) {
             }}
             accessibilityRole="button"
             accessibilityLabel="Continue with Studio Backdrop"
-            accessibilityHint="Previews the item on a dark studio background without turning on the camera"
+            accessibilityHint="Previews the 3D model on a dark studio floor without turning on the camera"
           >
             <Text style={styles.permissionSecondaryText} maxFontSizeMultiplier={1.2}>
               Continue with Studio Backdrop
@@ -399,116 +592,144 @@ export default function LiveRoomPreview(props) {
         </View>
       )}
 
-      {/* 2. Center Item Stage (Unobscured Viewport) */}
+      {/* 2. Center 3D Stage (Unobscured Central Viewport) */}
       <View style={styles.stage} pointerEvents="box-none">
-        {/* Web 3D Preview via <model-viewer> when running in browser */}
-        {Platform.OS === 'web' && shouldRender3D && glbUrl ? (
-          <View style={styles.webModelContainer}>
-            {React.createElement('model-viewer', {
-              src: glbUrl,
-              poster: imageUri || undefined,
-              alt: title,
-              'camera-controls': 'true',
-              'auto-rotate': 'true',
-              'shadow-intensity': '1.1',
-              style: { width: '100%', height: '100%', backgroundColor: 'transparent' },
-            })}
-          </View>
-        ) : shouldRender3D && (glbDataUri || localUri) ? (
-          <ModelRenderer
-            ref={modelRendererRef}
-            glbDataUri={glbDataUri || localUri}
-            widthCm={widthCm}
-            heightCm={heightCm}
-            depthCm={depthCm}
-            placement={placement}
-            pxPerCm={pxPerCm}
-            gyroRotation={gyroRotation}
-            interactMode={interactMode}
-            onLoaded={() => setModelLoaded(true)}
-            onError={(msg) => setRendererError(msg || 'Failed to render 3D model')}
-          />
-        ) : imageUri ? (
-          <View style={styles.photoStageCenter} pointerEvents="box-none">
-            <DraggableItem
-              ref={draggableItemRef}
-              imageUri={imageUri}
-              width={itemWidth}
-              height={itemHeight}
-              gyroOffset={gyroOffset}
-            />
-          </View>
-        ) : (
-          <View style={styles.emptyStateCard} accessibilityRole="alert">
-            <Ionicons name="image-outline" size={32} color="#94A3B8" />
-            <Text style={styles.emptyStateTitle} maxFontSizeMultiplier={1.3}>
-              No Preview Media Attached
-            </Text>
-            <Text style={styles.emptyStateSub} maxFontSizeMultiplier={1.3}>
-              This listing does not have an attached 3D model or photo to overlay.
-            </Text>
-          </View>
-        )}
-
-        {/* Loading HUD for Camera or 3D GLB Download */}
-        {((!cameraReady && !useStudioBackdrop) ||
-          (shouldRender3D && (glbDownloading || (!modelLoaded && Platform.OS !== 'web')))) && (
-          <View style={styles.loadingBadge} accessibilityLiveRegion="polite">
-            <ActivityIndicator size="small" color="#22D3EE" />
-            <Text style={styles.loadingText} maxFontSizeMultiplier={1.2}>
-              {!cameraReady && !useStudioBackdrop
-                ? 'Starting live camera…'
-                : glbDownloading
-                  ? `Loading 3D model… ${Math.round((glbProgress || 0) * 100)}%`
-                  : 'Preparing 3D scene…'}
-            </Text>
-          </View>
-        )}
-
-        {/* Error State if 3D Model Failed to Download or Render */}
-        {hasExplicit3dModel && active3dError && !force2dFallback && (
-          <View style={styles.errorStateCard} accessibilityRole="alert">
-            <View style={styles.errorHeaderRow}>
-              <Ionicons name="warning-outline" size={18} color="#FCA5A5" />
-              <Text style={styles.errorStateTitle} maxFontSizeMultiplier={1.2}>
-                3D Model Unavailable
-              </Text>
+        {/* Active 3D Model Renderer */}
+        {is3dModelReady && (glbDataUri || localUri || effectiveGlbUrl) ? (
+          Platform.OS === 'web' ? (
+            <View style={styles.webModelContainer}>
+              {React.createElement('model-viewer', {
+                src: effectiveGlbUrl,
+                poster: imageUri || undefined,
+                alt: title,
+                'camera-controls': 'true',
+                'auto-rotate': 'true',
+                'shadow-intensity': '1.2',
+                style: { width: '100%', height: '100%', backgroundColor: 'transparent' },
+              })}
             </View>
-            <Text style={styles.errorStateBody} maxFontSizeMultiplier={1.2}>
-              {imageUri
-                ? 'Could not load the 3D model. Showing the 2D listing photo overlay instead.'
-                : 'Could not load the 3D model over your network connection.'}
+          ) : (
+            <ModelRenderer
+              ref={modelRendererRef}
+              glbDataUri={glbDataUri || localUri || effectiveGlbUrl}
+              widthCm={widthCm}
+              heightCm={heightCm}
+              depthCm={depthCm}
+              placement={placement}
+              pxPerCm={pxPerCm}
+              gyroRotation={gyroRotation || rotation3D}
+              interactMode={interactMode}
+              onLoaded={() => setModelLoaded(true)}
+              onError={(msg) => setRendererError(msg || 'Failed to render 3D model')}
+            />
+          )
+        ) : null}
+
+        {/* State A: Model is Generating / Queued / Downloading */}
+        {((!isDemoShowcase && (modelStatus === 'processing' || modelStatus === 'queued')) ||
+          (is3dModelReady && (glbDownloading || (!modelLoaded && Platform.OS !== 'web')))) && (
+          <View style={styles.reconstructionCard} accessibilityLiveRegion="polite">
+            <View style={styles.pulseBadge}>
+              <ActivityIndicator size="small" color="#22D3EE" />
+            </View>
+            <Text style={styles.reconstructionTitle} maxFontSizeMultiplier={1.3}>
+              {modelStatus === 'processing'
+                ? `Reconstructing 3D Model with AI… ${modelProgress}%`
+                : glbDownloading
+                  ? `Downloading 3D Mesh… ${Math.round((glbProgress || 0) * 100)}%`
+                  : 'Preparing 3D Spatial Scene…'}
             </Text>
-            <View style={styles.errorActionsRow}>
-              <Pressable
-                style={styles.errorRetryBtn}
-                onPress={handleRetry3dModel}
-                accessibilityRole="button"
-                accessibilityLabel="Retry loading 3D model"
-              >
-                <Ionicons name="refresh" size={14} color="#FFFFFF" />
-                <Text style={styles.errorRetryText} maxFontSizeMultiplier={1.2}>
-                  Retry 3D
-                </Text>
-              </Pressable>
-              {imageUri && (
+            <Text style={styles.reconstructionSub} maxFontSizeMultiplier={1.2}>
+              {modelStatus === 'processing'
+                ? 'Synthesizing watertight 3D geometry and PBR materials from the verified listing photograph.'
+                : 'Rendering true-scale 3D geometry calibrated for your room.'}
+            </Text>
+            {modelStatus === 'processing' && (
+              <View style={styles.progressBarTrack}>
+                <View style={[styles.progressBarFill, { width: `${Math.max(12, modelProgress)}%` }]} />
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* State B: Model Failed or Being Prepared (Never displays 2D photo or unrelated chair) */}
+        {!isDemoShowcase &&
+          (modelStatus === 'failed' || (modelStatus === 'none' && !is3dModelReady) || rendererError) && (
+            <View style={styles.fallbackCard} accessibilityRole="alert">
+              <View style={styles.fallbackIconWrap}>
+                <Ionicons name="cube-outline" size={28} color="#38BDF8" />
+              </View>
+              <Text style={styles.fallbackTitle} maxFontSizeMultiplier={1.3}>
+                {candidateMatches.length > 0 ? 'Category 3D Models Available' : '3D Model Unavailable'}
+              </Text>
+              <Text style={styles.fallbackBody} maxFontSizeMultiplier={1.25}>
+                {modelError ||
+                  'Photogrammetric AI 3D reconstruction is not currently ready for this listing photograph.'}
+              </Text>
+
+              {candidateMatches.length > 0 ? (
                 <Pressable
-                  style={styles.errorFallbackBtn}
-                  onPress={() => setForce2dFallback(true)}
+                  style={styles.browseCatalogBtn}
+                  onPress={() => setShowCatalogModal(true)}
                   accessibilityRole="button"
-                  accessibilityLabel="Keep 2D photo overlay"
+                  accessibilityLabel="Browse suggested category 3D models"
                 >
-                  <Text style={styles.errorFallbackText} maxFontSizeMultiplier={1.2}>
-                    Keep 2D Photo
+                  <Ionicons name="albums-outline" size={18} color="#041019" />
+                  <Text style={styles.browseCatalogText} maxFontSizeMultiplier={1.2}>
+                    Browse Suggested Models ({candidateMatches.length})
+                  </Text>
+                </Pressable>
+              ) : (
+                <Pressable
+                  style={styles.browseCatalogBtn}
+                  onPress={loadCatalogMatches}
+                  accessibilityRole="button"
+                  accessibilityLabel="Check Smart Assets catalog for category 3D models"
+                >
+                  <Ionicons name="albums-outline" size={18} color="#041019" />
+                  <Text style={styles.browseCatalogText} maxFontSizeMultiplier={1.2}>
+                    Check Catalog Alternatives
                   </Text>
                 </Pressable>
               )}
+
+              {canRetry && isSellerOrAdmin && (
+                <Pressable
+                  style={styles.retryActionBtn}
+                  onPress={handleRetry3d}
+                  disabled={isRequestingGeneration}
+                  accessibilityRole="button"
+                  accessibilityLabel="Request 3D model reconstruction"
+                  accessibilityHint="Dispatches a 3D generation request to the server"
+                >
+                  {isRequestingGeneration ? (
+                    <ActivityIndicator size="small" color="#041019" />
+                  ) : (
+                    <>
+                      <Ionicons name="sparkles" size={16} color="#041019" />
+                      <Text style={styles.retryActionText} maxFontSizeMultiplier={1.2}>
+                        {modelStatus === 'none' ? 'Generate 3D Model with AI' : 'Retry AI Generation'}
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              )}
+
+              <Pressable
+                style={styles.returnBtn}
+                onPress={onBack}
+                accessibilityRole="button"
+                accessibilityLabel="Back to listing detail"
+              >
+                <Text style={styles.returnBtnText} maxFontSizeMultiplier={1.15}>
+                  Back to Listing
+                </Text>
+              </Pressable>
             </View>
-          </View>
-        )}
+          )}
       </View>
 
-      {/* 3. Compact Accessible Safe-Area Top Header */}
+      {/* 3. Safe-Area Top Header Bar */}
       <SafeAreaView edges={['top']} style={styles.topSafe} pointerEvents="box-none">
         <View style={styles.headerBar}>
           <Pressable
@@ -516,7 +737,7 @@ export default function LiveRoomPreview(props) {
             onPress={onBack}
             accessibilityRole="button"
             accessibilityLabel="Go back"
-            accessibilityHint="Closes Room Preview and returns to the previous screen"
+            accessibilityHint="Closes 3D Room Preview and returns to previous screen"
           >
             <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </Pressable>
@@ -528,13 +749,19 @@ export default function LiveRoomPreview(props) {
                   styles.modePill,
                   isDemoShowcase
                     ? styles.modePillDemo
-                    : shouldRender3D
-                      ? styles.modePill3d
-                      : styles.modePill2d,
+                    : modelSource === 'category_catalog'
+                      ? styles.modePillCatalog
+                      : styles.modePill3d,
                 ]}
               >
                 <Text style={styles.modePillText} maxFontSizeMultiplier={1.15}>
-                  {statusBadge}
+                  {isDemoShowcase
+                    ? 'DEMO 3D SHOWCASE'
+                    : modelSource === 'category_catalog'
+                      ? 'CATEGORY PREVIEW'
+                      : modelStatus === 'ready'
+                        ? 'AI 3D APPROXIMATION'
+                        : '3D LISTING PREVIEW'}
                 </Text>
               </View>
               <Text style={styles.placementLabel} maxFontSizeMultiplier={1.15}>
@@ -556,7 +783,7 @@ export default function LiveRoomPreview(props) {
             onPress={() => setCalibrating(true)}
             accessibilityRole="button"
             accessibilityLabel="Calibrate A4 scale"
-            accessibilityHint="Opens the A4 paper reference guide to calibrate real-world centimetres"
+            accessibilityHint="Opens the A4 paper calibration reference"
           >
             <Ionicons name="resize-outline" size={16} color="#22D3EE" />
             <Text style={styles.calibrateBtnText} maxFontSizeMultiplier={1.15}>
@@ -565,42 +792,33 @@ export default function LiveRoomPreview(props) {
           </Pressable>
         </View>
 
-        {/* Clear Status Notice Banner (No-3D-Model Notice or Demo Showcase Notice) */}
-        {statusBanner && (
+        {/* Demo Showcase Notice Banner */}
+        {isDemoShowcase && statusBanner && (
           <View style={styles.noticeBanner} accessibilityRole="summary">
-            <Ionicons
-              name={isDemoShowcase ? 'sparkles-outline' : 'information-circle-outline'}
-              size={16}
-              color={isDemoShowcase ? '#C084FC' : '#38BDF8'}
-            />
+            <Ionicons name="sparkles-outline" size={16} color="#C084FC" />
             <Text style={styles.noticeBannerText} maxFontSizeMultiplier={1.25}>
               {statusBanner}
             </Text>
-            {!isDemoShowcase && (
-              <Pressable
-                style={styles.tryDemoBtn}
-                onPress={() => setDemoOverrideId(AR_SHOWCASE_ITEMS[0].id)}
-                accessibilityRole="button"
-                accessibilityLabel="Open Demo 3D Showcase"
-                accessibilityHint="Switches to the labeled sample 3D model showcase"
-              >
-                <Text style={styles.tryDemoBtnText} maxFontSizeMultiplier={1.15}>
-                  3D Demo
-                </Text>
-              </Pressable>
-            )}
-            {isDemoShowcase && demoOverrideId && mergedParams.isDemoShowcase === false && (
-              <Pressable
-                style={styles.tryDemoBtn}
-                onPress={() => setDemoOverrideId(null)}
-                accessibilityRole="button"
-                accessibilityLabel="Return to listing photo preview"
-              >
-                <Text style={styles.tryDemoBtnText} maxFontSizeMultiplier={1.15}>
-                  Back to Listing
-                </Text>
-              </Pressable>
-            )}
+          </View>
+        )}
+
+        {/* Category Catalog Approximation Notice Banner */}
+        {!isDemoShowcase && modelSource === 'category_catalog' && (
+          <View style={styles.catalogNoticeBanner} accessibilityRole="summary">
+            <Ionicons name="information-circle-outline" size={16} color="#FBBF24" />
+            <Text style={styles.catalogNoticeText} maxFontSizeMultiplier={1.2}>
+              Category Preview · Approximate 3D model from Smart Assets licensed catalog. Not an exact physical scan.
+            </Text>
+          </View>
+        )}
+
+        {/* Attribution Row */}
+        {!isDemoShowcase && modelAttribution && (
+          <View style={styles.attributionRow}>
+            <Ionicons name="shield-checkmark-outline" size={13} color="#94A3B8" />
+            <Text style={styles.attributionText} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+              {`${modelAttribution}${modelLicense ? ` · ${modelLicense}` : ''}`}
+            </Text>
           </View>
         )}
       </SafeAreaView>
@@ -608,7 +826,7 @@ export default function LiveRoomPreview(props) {
       {/* 4. Accessible Bottom Control Dock */}
       <SafeAreaView edges={['bottom']} style={styles.bottomSafe} pointerEvents="box-none">
         <View style={styles.bottomDock}>
-          {/* Demo Showcase Model Switcher (only shown in Demo Showcase mode) */}
+          {/* Demo Showcase Model Switcher (Strictly for Demo Showcase mode) */}
           {isDemoShowcase && (
             <ScrollView
               horizontal
@@ -640,8 +858,8 @@ export default function LiveRoomPreview(props) {
             </ScrollView>
           )}
 
-          {/* Touch Gesture Mode Selector (for 3D models) */}
-          {shouldRender3D && Platform.OS !== 'web' && (
+          {/* Touch Gesture Mode Selector for 3D Model */}
+          {is3dModelReady && Platform.OS !== 'web' && (
             <View style={styles.gestureModeRow}>
               <Pressable
                 style={[
@@ -651,8 +869,8 @@ export default function LiveRoomPreview(props) {
                 onPress={() => setInteractMode('rotate')}
                 accessibilityRole="button"
                 accessibilityState={{ selected: interactMode === 'rotate' }}
-                accessibilityLabel="Touch drag mode: Rotate 360 degrees"
-                accessibilityHint="Dragging on the model rotates it in 3D"
+                accessibilityLabel="Touch gesture mode: Rotate 360 degrees"
+                accessibilityHint="Dragging on the model rotates it"
               >
                 <Ionicons
                   name="sync-outline"
@@ -678,7 +896,7 @@ export default function LiveRoomPreview(props) {
                 onPress={() => setInteractMode('move')}
                 accessibilityRole="button"
                 accessibilityState={{ selected: interactMode === 'move' }}
-                accessibilityLabel={`Touch drag mode: Move on ${placement}`}
+                accessibilityLabel={`Touch gesture mode: Move on ${placement}`}
                 accessibilityHint={`Dragging on the model repositions it along the ${placement}`}
               >
                 <Ionicons
@@ -699,16 +917,21 @@ export default function LiveRoomPreview(props) {
             </View>
           )}
 
-          {/* Non-Gesture Accessible Control Buttons (48x48 minimum touch targets) */}
+          {/* Non-Gesture Accessible 48dp Controls */}
           <View style={styles.controlGrid} accessibilityRole="toolbar">
             <Pressable
               style={styles.controlBtn}
               onPress={handleRotateLeft}
               accessibilityRole="button"
-              accessibilityLabel="Rotate left 45 degrees"
-              accessibilityHint="Rotates the preview item counter-clockwise without needing a two-finger gesture"
+              accessibilityLabel="Rotate 3D model left 45 degrees"
+              accessibilityHint="Rotates the 3D model counter-clockwise"
             >
-              <Ionicons name="refresh-outline" size={18} color="#FFFFFF" style={{ transform: [{ scaleX: -1 }] }} />
+              <Ionicons
+                name="refresh-outline"
+                size={18}
+                color="#FFFFFF"
+                style={{ transform: [{ scaleX: -1 }] }}
+              />
               <Text style={styles.controlBtnLabel} maxFontSizeMultiplier={1.15}>
                 Rotate L
               </Text>
@@ -718,8 +941,8 @@ export default function LiveRoomPreview(props) {
               style={styles.controlBtn}
               onPress={handleRotateRight}
               accessibilityRole="button"
-              accessibilityLabel="Rotate right 45 degrees"
-              accessibilityHint="Rotates the preview item clockwise without needing a two-finger gesture"
+              accessibilityLabel="Rotate 3D model right 45 degrees"
+              accessibilityHint="Rotates the 3D model clockwise"
             >
               <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
               <Text style={styles.controlBtnLabel} maxFontSizeMultiplier={1.15}>
@@ -731,8 +954,8 @@ export default function LiveRoomPreview(props) {
               style={styles.controlBtn}
               onPress={handleScaleDown}
               accessibilityRole="button"
-              accessibilityLabel="Scale item smaller"
-              accessibilityHint="Reduces the preview size without needing a pinch gesture"
+              accessibilityLabel="Scale 3D model smaller"
+              accessibilityHint="Reduces 3D model scale by 14%"
             >
               <Ionicons name="remove-circle-outline" size={18} color="#FFFFFF" />
               <Text style={styles.controlBtnLabel} maxFontSizeMultiplier={1.15}>
@@ -744,8 +967,8 @@ export default function LiveRoomPreview(props) {
               style={styles.controlBtn}
               onPress={handleScaleUp}
               accessibilityRole="button"
-              accessibilityLabel="Scale item larger"
-              accessibilityHint="Increases the preview size without needing a pinch gesture"
+              accessibilityLabel="Scale 3D model larger"
+              accessibilityHint="Increases 3D model scale by 16%"
             >
               <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
               <Text style={styles.controlBtnLabel} maxFontSizeMultiplier={1.15}>
@@ -758,7 +981,7 @@ export default function LiveRoomPreview(props) {
               onPress={handleResetView}
               accessibilityRole="button"
               accessibilityLabel="Reset position and scale"
-              accessibilityHint="Centers the item and restores its default orientation and scale"
+              accessibilityHint="Restores default position, scale, and sensor orientation"
             >
               <Ionicons name="locate-outline" size={18} color="#22D3EE" />
               <Text style={[styles.controlBtnLabel, { color: '#22D3EE' }]} maxFontSizeMultiplier={1.15}>
@@ -769,13 +992,15 @@ export default function LiveRoomPreview(props) {
             <Pressable
               style={[styles.controlBtn, pinned && styles.controlBtnActive]}
               onPress={() => {
-                if (!pinned) resetReference();
+                if (!pinned) safeResetOrientation();
                 setPinned((p) => !p);
               }}
               accessibilityRole="button"
               accessibilityState={{ selected: pinned }}
-              accessibilityLabel={pinned ? 'Gyroscope tilt assist enabled' : 'Gyroscope tilt assist disabled'}
-              accessibilityHint="Toggles gyroscope orientation compensation when tilting your phone"
+              accessibilityLabel={
+                pinned ? 'Gyroscope tilt assist active' : 'Gyroscope tilt assist disabled'
+              }
+              accessibilityHint="Toggles sensor-assisted room orientation"
             >
               <Ionicons
                 name={pinned ? 'compass' : 'compass-outline'}
@@ -791,25 +1016,25 @@ export default function LiveRoomPreview(props) {
             </Pressable>
           </View>
 
-          {/* Dimensions + Scale Status + Primary Action Row */}
+          {/* Spatial Dimensions & Checkout Action Row */}
           <View style={styles.footerMetaRow}>
             <View style={styles.dimensionsCol}>
               <Text style={styles.dimensionsText} maxFontSizeMultiplier={1.25}>
                 {`${widthCm} × ${heightCm} × ${depthCm} cm`}
               </Text>
               <Text style={styles.scaleStatusText} maxFontSizeMultiplier={1.2}>
-                {isScaleCalibrated ? 'A4 calibrated scale' : 'Approximate scale'}
-                {useStudioBackdrop ? ' · Studio backdrop' : ' · Live camera'}
+                {isScaleCalibrated ? 'A4 calibrated metric scale' : 'Approximate 1:1 scale'}
+                {useStudioBackdrop ? ' · Studio floor' : ' · Live camera'}
               </Text>
             </View>
 
-            {!isDemoShowcase && typeof onBid === 'function' ? (
+            {!isDemoShowcase ? (
               <Pressable
                 style={styles.primaryCtaBtn}
-                onPress={() => onBid(listingId)}
+                onPress={handleProceedToCheckout}
                 accessibilityRole="button"
-                accessibilityLabel="Proceed to checkout for this listing"
-                accessibilityHint="Opens checkout for this marketplace asset"
+                accessibilityLabel="Proceed to checkout for this asset"
+                accessibilityHint="Opens the checkout screen"
               >
                 <Text style={styles.primaryCtaText} maxFontSizeMultiplier={1.2}>
                   Buy / Invest
@@ -822,7 +1047,7 @@ export default function LiveRoomPreview(props) {
                 onPress={() => setUseStudioBackdrop((v) => !v)}
                 accessibilityRole="button"
                 accessibilityLabel={
-                  useStudioBackdrop ? 'Switch to live camera background' : 'Switch to studio backdrop'
+                  useStudioBackdrop ? 'Switch to live camera view' : 'Switch to studio floor view'
                 }
               >
                 <Ionicons
@@ -839,7 +1064,7 @@ export default function LiveRoomPreview(props) {
         </View>
       </SafeAreaView>
 
-      {/* 5. Optional A4 Scale Calibration Modal */}
+      {/* 5. A4 Calibration Guide */}
       {calibrating && (
         <ScaleLock
           onLock={(measuredPxPerCm) => {
@@ -850,6 +1075,97 @@ export default function LiveRoomPreview(props) {
           onSkip={() => setCalibrating(false)}
         />
       )}
+
+      {/* 6. Catalog Selection Modal */}
+      <Modal
+        visible={showCatalogModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCatalogModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Category 3D Models</Text>
+              <Pressable
+                onPress={() => setShowCatalogModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close category models catalog"
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={22} color="#FFFFFF" />
+              </Pressable>
+            </View>
+            <Text style={styles.modalSub}>
+              Select a commercially licensed, category-matched 3D model from the Smart Assets catalog as a spatial approximation.
+            </Text>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
+              {candidateMatches.map((item, idx) => {
+                const model = item.model || item;
+                const matchPct = Math.round((item.score || 0.8) * 100);
+                return (
+                  <View key={model.id || idx} style={styles.catalogItemCard}>
+                    <View style={styles.catalogItemRow}>
+                      {model.thumbnail_url ? (
+                        <Image source={{ uri: model.thumbnail_url }} style={styles.catalogThumb} />
+                      ) : (
+                        <View style={styles.catalogThumb}>
+                          <Ionicons name="cube-outline" size={24} color="#38BDF8" />
+                        </View>
+                      )}
+                      <View style={styles.catalogItemInfo}>
+                        <Text style={styles.catalogItemName} numberOfLines={1}>
+                          {model.name}
+                        </Text>
+                        <Text style={styles.catalogItemCategory}>
+                          {`${model.category} · ${model.placement === 'wall' ? 'Wall' : 'Floor'}`}
+                        </Text>
+                        <View style={styles.catalogScoreBadge}>
+                          <Text style={styles.catalogScoreText}>{`${matchPct}% Match`}</Text>
+                        </View>
+                      </View>
+                    </View>
+                    <Text style={styles.catalogAttributionText} numberOfLines={2}>
+                      {`${model.attribution || ''} (${model.license || ''})`}
+                    </Text>
+                    <Pressable
+                      style={styles.selectCatalogBtn}
+                      disabled={isSelectingCatalog}
+                      onPress={() =>
+                        isSellerOrAdmin
+                          ? handleSelectCatalogModel(model.id)
+                          : handlePreviewCatalogModel(model)
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        isSellerOrAdmin
+                          ? `Select ${model.name} for listing`
+                          : `Preview ${model.name} in room`
+                      }
+                    >
+                      {isSelectingCatalog ? (
+                        <ActivityIndicator size="small" color="#041019" />
+                      ) : (
+                        <>
+                          <Ionicons
+                            name={isSellerOrAdmin ? "checkmark-circle-outline" : "eye-outline"}
+                            size={16}
+                            color="#041019"
+                          />
+                          <Text style={styles.selectCatalogBtnText}>
+                            {isSellerOrAdmin ? "Use This 3D Model" : "Preview In Room"}
+                          </Text>
+                        </>
+                      )}
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -865,25 +1181,19 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   studioFloorGrid: {
-    height: '42%',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    height: '44%',
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
     borderTopWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.22)',
+    borderColor: 'rgba(34, 211, 238, 0.25)',
   },
   stage: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  photoStageCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 130,
-  },
   webModelContainer: {
     width: '100%',
-    height: '68%',
+    height: '70%',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -899,21 +1209,21 @@ const styles = StyleSheet.create({
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(6, 12, 26, 0.82)',
+    backgroundColor: 'rgba(6, 12, 26, 0.85)',
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: 'rgba(255,255,255,0.16)',
     gap: 10,
   },
   headerIconBtn: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(30, 41, 59, 0.85)',
+    backgroundColor: 'rgba(30, 41, 59, 0.88)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -937,10 +1247,6 @@ const styles = StyleSheet.create({
   modePill3d: {
     backgroundColor: 'rgba(34, 211, 238, 0.16)',
     borderColor: 'rgba(34, 211, 238, 0.45)',
-  },
-  modePill2d: {
-    backgroundColor: 'rgba(56, 189, 248, 0.16)',
-    borderColor: 'rgba(56, 189, 248, 0.45)',
   },
   modePillDemo: {
     backgroundColor: 'rgba(192, 132, 252, 0.18)',
@@ -981,137 +1287,119 @@ const styles = StyleSheet.create({
   },
   noticeBanner: {
     marginTop: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.86)',
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
+    borderColor: 'rgba(192, 132, 252, 0.35)',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   noticeBannerText: {
     flex: 1,
-    color: '#E2E8F0',
+    color: '#E9D5FF',
     fontSize: 11.5,
     lineHeight: 16,
     fontWeight: '600',
   },
-  tryDemoBtn: {
-    minHeight: 44,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: 'rgba(192, 132, 252, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(192, 132, 252, 0.45)',
+  reconstructionCard: {
+    marginHorizontal: 24,
+    backgroundColor: 'rgba(10, 16, 36, 0.92)',
+    borderRadius: 22,
+    padding: 20,
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tryDemoBtnText: {
-    color: '#E9D5FF',
-    fontSize: 11.5,
-    fontWeight: '800',
-  },
-  loadingBadge: {
-    position: 'absolute',
-    top: '46%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(6, 12, 26, 0.85)',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(34, 211, 238, 0.35)',
+    gap: 8,
+    maxWidth: 380,
   },
-  loadingText: {
-    color: '#F1F5F9',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  errorStateCard: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    top: '38%',
-    backgroundColor: 'rgba(15, 23, 42, 0.92)',
-    borderRadius: 18,
-    padding: 16,
+  pulseBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(34, 211, 238, 0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.45)',
-    gap: 8,
-  },
-  errorHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  errorStateTitle: {
-    color: '#FCA5A5',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  errorStateBody: {
-    color: '#E2E8F0',
-    fontSize: 12.5,
-    lineHeight: 18,
-  },
-  errorActionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  errorRetryBtn: {
-    minHeight: 44,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: '#0891B2',
-    flexDirection: 'row',
+    borderColor: 'rgba(34, 211, 238, 0.4)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    marginBottom: 4,
   },
-  errorRetryText: {
+  reconstructionTitle: {
     color: '#FFFFFF',
-    fontSize: 12.5,
+    fontSize: 15,
     fontWeight: '800',
+    textAlign: 'center',
   },
-  errorFallbackBtn: {
-    minHeight: 44,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: 'rgba(51, 65, 85, 0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  errorFallbackText: {
-    color: '#E2E8F0',
+  reconstructionSub: {
+    color: '#94A3B8',
     fontSize: 12.5,
-    fontWeight: '700',
+    lineHeight: 17,
+    textAlign: 'center',
   },
-  emptyStateCard: {
-    marginHorizontal: 28,
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
-    borderRadius: 20,
-    padding: 24,
+  progressBarTrack: {
+    width: '100%',
+    height: 6,
+    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginTop: 6,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#22D3EE',
+    borderRadius: 3,
+  },
+  fallbackCard: {
+    marginHorizontal: 24,
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    borderRadius: 22,
+    padding: 22,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-    gap: 8,
+    borderColor: 'rgba(56, 189, 248, 0.35)',
+    gap: 10,
+    maxWidth: 380,
   },
-  emptyStateTitle: {
+  fallbackIconWrap: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  fallbackTitle: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '800',
     textAlign: 'center',
   },
-  emptyStateSub: {
+  fallbackBody: {
     color: '#94A3B8',
-    fontSize: 13,
+    fontSize: 12.5,
+    lineHeight: 18,
     textAlign: 'center',
-    lineHeight: 19,
+  },
+  retryActionBtn: {
+    minHeight: 48,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    backgroundColor: '#22D3EE',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  retryActionText: {
+    color: '#041019',
+    fontSize: 13.5,
+    fontWeight: '900',
   },
   bottomSafe: {
     position: 'absolute',
@@ -1123,11 +1411,11 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   bottomDock: {
-    backgroundColor: 'rgba(6, 12, 26, 0.86)',
+    backgroundColor: 'rgba(6, 12, 26, 0.88)',
     borderRadius: 22,
     padding: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: 'rgba(255,255,255,0.16)',
     gap: 10,
   },
   demoSelectorRow: {
@@ -1289,7 +1577,7 @@ const styles = StyleSheet.create({
   permissionCard: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
     borderRadius: 24,
     padding: 24,
     alignItems: 'center',
@@ -1325,16 +1613,16 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 48,
     borderRadius: 16,
-    backgroundColor: '#0891B2',
+    backgroundColor: '#22D3EE',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
   permissionPrimaryText: {
-    color: '#FFFFFF',
+    color: '#041019',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '900',
   },
   permissionSecondaryBtn: {
     width: '100%',
@@ -1361,5 +1649,184 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 13,
     fontWeight: '600',
+  },
+  modePillCatalog: {
+    backgroundColor: 'rgba(245, 158, 11, 0.22)',
+    borderColor: 'rgba(245, 158, 11, 0.55)',
+  },
+  catalogNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.45)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 8,
+    gap: 8,
+  },
+  catalogNoticeText: {
+    flex: 1,
+    color: '#FDE68A',
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 16,
+  },
+  attributionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 4,
+    gap: 6,
+  },
+  attributionText: {
+    flex: 1,
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '400',
+  },
+  browseCatalogBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    minHeight: 48,
+    borderRadius: 24,
+    gap: 8,
+    marginBottom: 8,
+    width: '100%',
+  },
+  browseCatalogText: {
+    color: '#041019',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  returnBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingVertical: 8,
+    width: '100%',
+  },
+  returnBtnText: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.85)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#0A0F1D',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  modalCloseBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalSub: {
+    color: '#94A3B8',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  catalogItemCard: {
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  catalogItemRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  catalogThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  catalogItemInfo: {
+    flex: 1,
+  },
+  catalogItemName: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  catalogItemCategory: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  catalogScoreBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(34, 211, 238, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.4)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  catalogScoreText: {
+    color: '#22D3EE',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  catalogAttributionText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginBottom: 10,
+    fontStyle: 'italic',
+  },
+  selectCatalogBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#22D3EE',
+    borderRadius: 10,
+    minHeight: 48,
+    gap: 6,
+  },
+  selectCatalogBtnText: {
+    color: '#041019',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

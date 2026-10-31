@@ -658,6 +658,58 @@ export async function scanAndKnowApi(payload, token) {
 }
 
 /**
+ * Initiate 3D model generation for a listing (Tripo primary + Meshy fallback).
+ * @param {string} listingId
+ * @param {string} token
+ * @param {boolean} [forceRetry]
+ */
+export async function generateListingModelApi(listingId, token, forceRetry = false) {
+  return apiRequest(
+    "/models/generate",
+    {
+      method: "POST",
+      body: JSON.stringify({ listingId, forceRetry }),
+    },
+    token,
+  );
+}
+
+/**
+ * Poll current 3D model status and retrieve optimized GLB for a listing.
+ * @param {string} listingId
+ * @param {string} [token]
+ */
+export async function getListingModelStatusApi(listingId, token = null) {
+  return apiRequest(`/models/status/${encodeURIComponent(listingId)}`, { method: "GET" }, token);
+}
+
+/**
+ * Retrieve ranked curated catalog matches for a listing.
+ * @param {string} listingId
+ * @param {string} [token]
+ */
+export async function getCatalogMatchesApi(listingId, token = null) {
+  return apiRequest(`/models/catalog/matches/${encodeURIComponent(listingId)}`, { method: "GET" }, token);
+}
+
+/**
+ * Assign a specific curated catalog model to a listing (seller or admin).
+ * @param {string} listingId
+ * @param {string} catalogModelId
+ * @param {string} token
+ */
+export async function selectCatalogModelApi(listingId, catalogModelId, token) {
+  return apiRequest(
+    "/models/catalog/select",
+    {
+      method: "POST",
+      body: JSON.stringify({ listingId, catalogModelId }),
+    },
+    token,
+  );
+}
+
+/**
  * Request a delist & investor redemption quote for an asset.
  * @param {string} assetId
  * @param {string} token

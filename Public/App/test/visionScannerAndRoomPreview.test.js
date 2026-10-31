@@ -201,15 +201,17 @@ async function runVisionScannerAndRoomPreviewTests() {
       listingId: xboxListing.id,
       isDemoShowcase: false,
     });
-    assert.strictEqual(xboxPreviewConfig.mode, 'listing_2d');
+    assert.strictEqual(xboxPreviewConfig.mode, 'marketplace_3d');
     assert.strictEqual(xboxPreviewConfig.hasExplicit3dModel, false);
     assert.strictEqual(xboxPreviewConfig.glbUrl, null);
     assert.strictEqual(xboxPreviewConfig.imageUri, xboxListing.image);
     assert.strictEqual(xboxPreviewConfig.title, xboxListing.name);
-    assert.strictEqual(xboxPreviewConfig.statusBadge, '2D PHOTO OVERLAY');
+    assert.strictEqual(xboxPreviewConfig.statusBadge, '3D LISTING PREVIEW');
+
+    // Marketplace listings must NEVER render 2D photo overlays in room preview
     assert.ok(
-      xboxPreviewConfig.statusBanner.includes('No 3D model attached to this listing'),
-      'Xbox controller listing without a 3D model must show the clear no-3D-model status banner',
+      !livePreviewSource.includes('<DraggableItem'),
+      'LiveRoomPreview must never render 2D photo overlays for marketplace listings',
     );
 
     // Also verify explicit 3D model on a listing IS preserved
@@ -230,10 +232,23 @@ async function runVisionScannerAndRoomPreviewTests() {
       asset: custom3dListing,
       isDemoShowcase: false,
     });
-    assert.strictEqual(watch3dConfig.mode, 'listing_3d');
+    assert.strictEqual(watch3dConfig.mode, 'marketplace_3d');
     assert.strictEqual(watch3dConfig.hasExplicit3dModel, true);
     assert.strictEqual(watch3dConfig.glbUrl, custom3dListing.glbUrl);
-    assert.strictEqual(watch3dConfig.statusBadge, '3D MODEL OVERLAY');
+    assert.strictEqual(watch3dConfig.statusBadge, 'AI 3D APPROXIMATION');
+
+    // Verify Curated Category Catalog Fallback mode is explicitly labeled
+    const catalogConfig = resolveRoomPreviewConfig({
+      asset: { id: 'listing-vintage-chair', name: 'Vintage Armchair', category: 'Furniture' },
+      source: 'category_catalog',
+      attribution: 'Sheen Chair by Khronos Group & Wayfair (CC0-1.0)',
+      license: 'CC0-1.0',
+    });
+    assert.strictEqual(catalogConfig.statusBadge, 'CATEGORY PREVIEW');
+    assert.ok(
+      catalogConfig.statusBanner.includes('Smart Assets licensed catalog'),
+      'Category preview must include disclaimer stating it is an approximation from licensed catalog',
+    );
 
     // Verify Demo Showcase mode is explicitly labeled
     const demoConfig = resolveRoomPreviewConfig({
@@ -269,8 +284,9 @@ async function runVisionScannerAndRoomPreviewTests() {
       'ARScreen.js must reconcile directly to LiveRoomPreview',
     );
     assert.ok(
-      livePreviewSource.includes('2D Photo Overlay • No 3D model attached to this listing'),
-      'LiveRoomPreview must clearly state when a listing uses a 2D photo overlay with no 3D model attached',
+      livePreviewSource.includes('3D Model is being prepared') ||
+        livePreviewSource.includes('Reconstructing 3D Model'),
+      'LiveRoomPreview must show clear 3D reconstruction / preparation status cards for listings',
     );
     assert.ok(
       livePreviewSource.includes('Camera overlay ·'),
@@ -291,10 +307,10 @@ async function runVisionScannerAndRoomPreviewTests() {
     const requiredLabels = [
       'accessibilityLabel="Go back"',
       'accessibilityLabel="Calibrate A4 scale"',
-      'accessibilityLabel="Rotate left 45 degrees"',
-      'accessibilityLabel="Rotate right 45 degrees"',
-      'accessibilityLabel="Scale item smaller"',
-      'accessibilityLabel="Scale item larger"',
+      'accessibilityLabel="Rotate 3D model left 45 degrees"',
+      'accessibilityLabel="Rotate 3D model right 45 degrees"',
+      'accessibilityLabel="Scale 3D model smaller"',
+      'accessibilityLabel="Scale 3D model larger"',
       'accessibilityLabel="Reset position and scale"',
     ];
     for (const label of requiredLabels) {
@@ -336,8 +352,91 @@ async function runVisionScannerAndRoomPreviewTests() {
     console.log('   ✅ Room preview hierarchy, >=48px touch targets, and non-gesture controls verified.');
   }
 
+  // ── TEST 7: AR Preview Stabilization, Inactivity UX, & Serializability ──
+  console.log('\n🧪 [TEST 7] Verifying AR crash prevention, serializable params, gyro API, and login session UX...');
+  {
+    const gyroSource = readAppFile('src/components/liveRoomPreview/useGyroPinning.js');
+    const modelRendererSource = readAppFile('src/components/liveRoomPreview/ModelRenderer.js');
+    const assetDetailSource = readAppFile('src/screens/AssetDetailScreen.js');
+    const loginSource = readAppFile('src/screens/LoginScreen.js');
+    const listAssetSource = readAppFile('src/screens/ListAssetScreen.js');
+    const apiSource = readAppFile('src/services/api.js');
+
+    // 1. useGyroPinning returns both rotation & rotation3D, and recenter & resetReference
+    assert.ok(
+      gyroSource.includes('rotation: safeRotation') && gyroSource.includes('rotation3D: safeRotation'),
+      'useGyroPinning must provide both rotation and rotation3D aliases',
+    );
+    assert.ok(
+      gyroSource.includes('recenter') && gyroSource.includes('resetReference: recenter'),
+      'useGyroPinning must provide both recenter and resetReference aliases',
+    );
+
+    // 2. AssetDetailScreen must not pass onBid function in navigation params
+    const navCall = assetDetailSource.slice(
+      assetDetailSource.indexOf('SCREENS.LIVE_ROOM_PREVIEW'),
+      assetDetailSource.indexOf('SCREENS.LIVE_ROOM_PREVIEW') + 400,
+    );
+    assert.ok(
+      !navCall.includes('onBid:'),
+      'AssetDetailScreen must not pass onBid callback function across screen boundaries',
+    );
+
+    // 3. ModelRenderer guards ref and queues calls
+    assert.ok(
+      modelRendererSource.includes('commandQueueRef') || modelRendererSource.includes('postToWebView'),
+      'ModelRenderer must safely queue or post imperative commands',
+    );
+
+    // 4. LoginScreen displays session expiry notice
+    assert.ok(
+      loginSource.includes('sessionNotice') && loginSource.includes('sessionExpiredMessage'),
+      'LoginScreen must render clear session expired notices',
+    );
+
+    // 5. ListAssetScreen triggers 3D model generation
+    assert.ok(
+      listAssetSource.includes('generateListingModelApi'),
+      'ListAssetScreen must trigger generateListingModelApi upon creation',
+    );
+
+    // 6. api.js exports model generation, status, and catalog APIs
+    assert.ok(
+      apiSource.includes('function generateListingModelApi') &&
+        apiSource.includes('function getListingModelStatusApi') &&
+        apiSource.includes('function getCatalogMatchesApi') &&
+        apiSource.includes('function selectCatalogModelApi'),
+      'api.js must export generateListingModelApi, getListingModelStatusApi, getCatalogMatchesApi, and selectCatalogModelApi',
+    );
+
+    // 7. LiveRoomPreview supports catalog selection modal, honest category disclaimers, and zero silent spend
+    const livePreviewSrc = readAppFile('src/components/liveRoomPreview/LiveRoomPreview.js');
+    assert.ok(
+      livePreviewSrc.includes('handleSelectCatalogModel') &&
+        livePreviewSrc.includes('loadCatalogMatches') &&
+        livePreviewSrc.includes('CATEGORY PREVIEW') &&
+        livePreviewSrc.includes('AI 3D APPROXIMATION') &&
+        livePreviewSrc.includes('Smart Assets licensed catalog'),
+      'LiveRoomPreview must provide catalog selection and honest category approximation disclaimers',
+    );
+
+    // 8. LiveRoomPreview never triggers silent generation on room view
+    assert.ok(
+      !livePreviewSrc.includes("res?.status === 'none' && !hasTriggeredInitialGen.current && token") &&
+        !livePreviewSrc.includes("startGeneration(false)"),
+      'Opening AR room preview must never silently trigger paid Tripo generation',
+    );
+    assert.ok(
+      livePreviewSrc.includes('isSellerOrAdmin') &&
+        livePreviewSrc.includes('handlePreviewCatalogModel'),
+      'LiveRoomPreview must distinguish seller/admin controls from ordinary viewer previews',
+    );
+
+    console.log('   ✅ Gyro API aliases, serializable params, ModelRenderer safety, and login notices verified.');
+  }
+
   console.log('\n==============================================================');
-  console.log('   ✅ ALL 6 VISION SCANNER & ROOM PREVIEW TESTS PASSED!       ');
+  console.log('   ✅ ALL 7 VISION SCANNER & ROOM PREVIEW TESTS PASSED!       ');
   console.log('==============================================================\n');
 }
 

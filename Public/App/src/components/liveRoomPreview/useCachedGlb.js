@@ -1,8 +1,9 @@
 // ─── useCachedGlb Hook ──────────────────────────────────────────────────────────
 // Downloads and caches GLB 3D model files locally using expo-file-system.
-// Converts cached models to base64 data URIs for immediate, CORS-safe WebView injection.
+// Converts cached models to base64 data URIs for immediate, CORS-safe WebView injection
+// on both Expo Go and standalone Android APKs.
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 let FileSystem = null;
 try {
@@ -24,31 +25,39 @@ const MODELS_CACHE_DIR = cacheDir ? `${cacheDir}models/` : '';
  */
 function getLocalFilename(url) {
   if (!url) return 'model.glb';
-  const clean = url.replace(/[^a-zA-Z0-9]/g, '_');
-  const hash = clean.slice(-24);
+  const withoutQuery = String(url).split('?')[0];
+  const clean = withoutQuery.replace(/[^a-zA-Z0-9]/g, '_');
+  const hash = clean.slice(-32);
   return `cached_${hash}.glb`;
 }
 
 /**
  * Hook to download, cache, and provide a 3D model file for rendering.
  * @param {string|null} glbUrl - Remote HTTPS URL of the GLB model
- * @returns {{ glbDataUri: string|null, loading: boolean, progress: number, error: string|null }}
+ * @returns {{ glbDataUri: string|null, dataUri: string|null, localUri: string|null, loading: boolean, progress: number, error: string|null, reload: () => void }}
  */
 export default function useCachedGlb(glbUrl) {
   const [glbDataUri, setGlbDataUri] = useState(null);
+  const [localUri, setLocalUri] = useState(null);
   const [loading, setLoading] = useState(Boolean(glbUrl));
   const [progress, setProgress] = useState(0); // 0 to 1
   const [error, setError] = useState(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const activeUrlRef = useRef(glbUrl);
+
+  const reload = useCallback(() => {
+    setReloadNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     activeUrlRef.current = glbUrl;
     if (!glbUrl) {
       setGlbDataUri(null);
+      setLocalUri(null);
       setLoading(false);
       setProgress(0);
       setError(null);
-      return;
+      return undefined;
     }
 
     let isMounted = true;
@@ -60,9 +69,20 @@ export default function useCachedGlb(glbUrl) {
       setError(null);
 
       try {
-        if (!FileSystem || !MODELS_CACHE_DIR) {
+        if (String(glbUrl).startsWith('data:')) {
           if (isMounted && activeUrlRef.current === glbUrl) {
             setGlbDataUri(glbUrl);
+            setLocalUri(glbUrl);
+            setProgress(1.0);
+            setLoading(false);
+          }
+          return;
+        }
+
+        if (!FileSystem || !MODELS_CACHE_DIR || typeof FileSystem.getInfoAsync !== 'function') {
+          if (isMounted && activeUrlRef.current === glbUrl) {
+            setGlbDataUri(glbUrl);
+            setLocalUri(glbUrl);
             setProgress(1.0);
             setLoading(false);
           }
@@ -76,18 +96,19 @@ export default function useCachedGlb(glbUrl) {
         }
 
         const fileName = getLocalFilename(glbUrl);
-        const localUri = `${MODELS_CACHE_DIR}${fileName}`;
-        const fileInfo = await FileSystem.getInfoAsync(localUri);
+        const targetLocalUri = `${MODELS_CACHE_DIR}${fileName}`;
+        const fileInfo = await FileSystem.getInfoAsync(targetLocalUri);
 
-        if (fileInfo.exists && fileInfo.size > 0) {
-          // Model is already cached
+        if (fileInfo.exists && fileInfo.size > 0 && reloadNonce === 0) {
           setProgress(0.9);
-          const base64Data = await FileSystem.readAsStringAsync(localUri, {
-            encoding: FileSystem.EncodingType.Base64,
+          const base64Data = await FileSystem.readAsStringAsync(targetLocalUri, {
+            encoding: FileSystem.EncodingType?.Base64 || 'base64',
           });
 
           if (isMounted && activeUrlRef.current === glbUrl) {
-            setGlbDataUri(`data:model/gltf-binary;base64,${base64Data}`);
+            const dataUriVal = `data:model/gltf-binary;base64,${base64Data}`;
+            setGlbDataUri(dataUriVal);
+            setLocalUri(targetLocalUri);
             setProgress(1.0);
             setLoading(false);
           }
@@ -97,7 +118,7 @@ export default function useCachedGlb(glbUrl) {
         // Model not cached, start resumable download with progress tracking
         const callback = (downloadProgress) => {
           if (!isMounted) return;
-          const { totalBytesWritten, totalBytesExpectedToWrite } = downloadProgress;
+          const { totalBytesWritten, totalBytesExpectedToWrite } = downloadProgress || {};
           if (totalBytesExpectedToWrite > 0) {
             const pct = Math.min(0.95, totalBytesWritten / totalBytesExpectedToWrite);
             setProgress(pct);
@@ -106,32 +127,36 @@ export default function useCachedGlb(glbUrl) {
 
         downloadResumable = FileSystem.createDownloadResumable(
           glbUrl,
-          localUri,
+          targetLocalUri,
           {},
-          callback
+          callback,
         );
 
         const downloadResult = await downloadResumable.downloadAsync();
-        if (!downloadResult || !downloadResult.uri) {
-          throw new Error('Download failed to complete');
+        if (!downloadResult || !downloadResult.uri || (downloadResult.status && downloadResult.status >= 400)) {
+          throw new Error(`3D model download failed${downloadResult?.status ? ` (HTTP ${downloadResult.status})` : ''}`);
         }
 
         setProgress(0.96);
         const base64Data = await FileSystem.readAsStringAsync(downloadResult.uri, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: FileSystem.EncodingType?.Base64 || 'base64',
         });
 
         if (isMounted && activeUrlRef.current === glbUrl) {
-          setGlbDataUri(`data:model/gltf-binary;base64,${base64Data}`);
+          const dataUriVal = `data:model/gltf-binary;base64,${base64Data}`;
+          setGlbDataUri(dataUriVal);
+          setLocalUri(downloadResult.uri);
           setProgress(1.0);
           setLoading(false);
         }
       } catch (err) {
-        console.warn('[useCachedGlb] Download/cache error:', err.message);
+        console.warn('[useCachedGlb] Download/cache warning:', err?.message || err);
         if (isMounted && activeUrlRef.current === glbUrl) {
-          // If local download fails, fallback to passing remote URL directly
+          // Pass remote URL directly so WebView GLTFLoader can still attempt HTTPS fetch if CORS permits,
+          // while exposing the error state if WebView also cannot load it.
           setGlbDataUri(glbUrl);
-          setError(err.message);
+          setLocalUri(glbUrl);
+          setError(err?.message || 'Could not download 3D model');
           setLoading(false);
         }
       }
@@ -145,7 +170,15 @@ export default function useCachedGlb(glbUrl) {
         downloadResumable.cancelAsync().catch(() => {});
       }
     };
-  }, [glbUrl]);
+  }, [glbUrl, reloadNonce]);
 
-  return { glbDataUri, loading, progress, error };
+  return {
+    glbDataUri,
+    dataUri: glbDataUri,
+    localUri,
+    loading,
+    progress,
+    error,
+    reload,
+  };
 }

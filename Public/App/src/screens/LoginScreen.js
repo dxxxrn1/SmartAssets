@@ -38,7 +38,7 @@ const DEFAULT_DEMO_WALLET =
 export default function LoginScreen({ navigation, isDark: propIsDark }) {
   const { isDark, toggleTheme } = useTheme();
   const c = useColors(isDark);
-  const { login, loginWithWallet } = useAuth();
+  const { login, loginWithWallet, sessionExpiredMessage, sessionNotice, clearSessionNotice } = useAuth();
   const { isConnected, isOffline, checkConnection } = useNetwork();
 
   // Network check helper before auth actions
@@ -441,6 +441,50 @@ export default function LoginScreen({ navigation, isDark: propIsDark }) {
             message="You are currently offline. Please connect to the internet to sign in."
             style={{ maxWidth: 480, alignSelf: 'center', width: '100%', marginBottom: 16 }}
           />
+
+          {/* FINANCIAL SECURITY INACTIVITY / TIMEOUT NOTICE */}
+          {(sessionNotice || sessionExpiredMessage) && (
+            <View
+              style={{
+                maxWidth: 480,
+                alignSelf: 'center',
+                width: '100%',
+                marginBottom: 16,
+                backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                borderWidth: 1.5,
+                borderColor: '#F59E0B',
+                borderRadius: 16,
+                padding: 14,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}
+              accessibilityRole="alert"
+            >
+              <Ionicons name="shield-checkmark-outline" size={20} color="#F59E0B" />
+              <Text
+                style={{
+                  flex: 1,
+                  color: isDark ? '#FDE68A' : '#92400E',
+                  fontSize: 12.5,
+                  fontWeight: '600',
+                  lineHeight: 18,
+                }}
+              >
+                {sessionNotice || sessionExpiredMessage}
+              </Text>
+              {typeof clearSessionNotice === 'function' && (
+                <TouchableOpacity
+                  onPress={clearSessionNotice}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss session notice"
+                >
+                  <Ionicons name="close" size={16} color={isDark ? '#FDE68A' : '#92400E'} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           {/* LOGIN CARD */}
           <View

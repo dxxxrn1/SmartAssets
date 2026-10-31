@@ -369,7 +369,6 @@ export default function AssetDetailScreen({ navigation, route }) {
       depthCm,
       isDemoShowcase: false,
       asset,
-      onBid: (id) => navigation.navigate(SCREENS.CHECKOUT, { listingId: id, asset }),
     });
   };
 
