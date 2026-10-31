@@ -86,6 +86,9 @@ if (typeof helmet === 'function') {
             "'unsafe-inline'", // Required for inline scripts in admin console and public verification page
             'https://cdn.jsdelivr.net',
           ],
+          scriptSrcAttr: [
+            "'unsafe-inline'", // Required for inline event handlers (onclick, oninput, onchange) in admin console and verification portal
+          ],
           styleSrc: [
             "'self'",
             "'unsafe-inline'", // Required for styled admin console and verification cards
@@ -142,6 +145,16 @@ const publicOrigin = (() => {
 })();
 if (publicOrigin && !configuredOrigins.includes(publicOrigin)) {
   configuredOrigins.push(publicOrigin);
+}
+const renderExternalOrigin = (() => {
+  try {
+    return process.env.RENDER_EXTERNAL_URL ? new URL(process.env.RENDER_EXTERNAL_URL).origin : '';
+  } catch (_) {
+    return '';
+  }
+})();
+if (renderExternalOrigin && !configuredOrigins.includes(renderExternalOrigin)) {
+  configuredOrigins.push(renderExternalOrigin);
 }
 if (!configuredOrigins.includes('https://smartassets.onrender.com')) {
   configuredOrigins.push('https://smartassets.onrender.com');

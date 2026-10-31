@@ -458,6 +458,8 @@ async function runTests() {
 
       const csp = res.headers['content-security-policy'] || '';
       assert.ok(csp.includes("'unsafe-inline'"), "CSP must permit 'unsafe-inline' for admin UI script/style blocks");
+      assert.ok(csp.includes("script-src-attr 'unsafe-inline'"), "CSP must permit script-src-attr 'unsafe-inline' for admin UI onclick/oninput handlers");
+      assert.ok(!csp.includes("script-src-attr 'none'"), "CSP must NOT block inline attributes with script-src-attr 'none'");
       assert.ok(csp.includes('fonts.googleapis.com'), 'CSP must permit fonts.googleapis.com');
       assert.ok(csp.includes('fonts.gstatic.com'), 'CSP must permit fonts.gstatic.com');
       assert.ok(csp.includes("frame-ancestors 'none'"), "CSP must enforce frame-ancestors 'none'");

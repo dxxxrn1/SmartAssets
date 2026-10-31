@@ -458,9 +458,11 @@ async function runTestSuite() {
     assert.strictEqual(adminRes.headers['x-content-type-options'], 'nosniff');
     assert.strictEqual(adminRes.headers['x-frame-options'], 'DENY');
 
-    // Verify CSP policy: Must NOT contain 'unsafe-eval'
+    // Verify CSP policy: Must NOT contain 'unsafe-eval' and MUST permit inline event handlers (script-src-attr 'unsafe-inline')
     const csp = adminRes.headers['content-security-policy'] || '';
     assert(csp.includes("script-src 'self'"), 'CSP must include script-src self');
+    assert(csp.includes("script-src-attr 'unsafe-inline'"), "CSP must include script-src-attr 'unsafe-inline' so admin onclick/oninput handlers execute");
+    assert(!csp.includes("script-src-attr 'none'"), "CSP must NOT include script-src-attr 'none'");
     assert(!csp.includes("'unsafe-eval'"), "CSP must NOT include 'unsafe-eval'");
 
     // Check Public Verification page
