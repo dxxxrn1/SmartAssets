@@ -71,8 +71,7 @@ export function resolveRoomPreviewConfig(params = {}) {
       depthCm: Number(showcaseItem.dimensions?.depthCm) || 80,
       source: 'demo_showcase',
       statusBadge: 'DEMO 3D SHOWCASE',
-      statusBanner:
-        'Sample 3D model rendered over your live camera feed. This is a demo showcase item, not a marketplace listing.',
+      statusBanner: null,
     };
   }
 
@@ -220,6 +219,7 @@ export default function LiveRoomPreview(props) {
   const [modelLicense, setModelLicense] = useState(config.license || null);
   const [candidateMatches, setCandidateMatches] = useState(BUILTIN_CATALOG_FALLBACKS);
   const [showCatalogModal, setShowCatalogModal] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const [isSelectingCatalog, setIsSelectingCatalog] = useState(false);
   const [isSearchingCatalog, setIsSearchingCatalog] = useState(false);
 
@@ -232,7 +232,7 @@ export default function LiveRoomPreview(props) {
   const [pxPerCm, setPxPerCm] = useState(DEFAULT_PX_PER_CM);
   const [isScaleCalibrated, setIsScaleCalibrated] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
-  const [pinned, setPinned] = useState(true);
+  const [pinned, setPinned] = useState(false);
   const [interactMode, setInteractMode] = useState('rotate');
   const [modelLoaded, setModelLoaded] = useState(false);
   const [rendererError, setRendererError] = useState(null);
@@ -240,6 +240,7 @@ export default function LiveRoomPreview(props) {
 
   const modelRendererRef = useRef(null);
   const hasTriggeredInitialGen = useRef(false);
+  const isCatalogPreviewActiveRef = useRef(false);
 
   // Gyroscope Hook with safe API alignment & defaults
   const {
@@ -301,8 +302,10 @@ export default function LiveRoomPreview(props) {
   // ── Backend Per-Listing 3D Model Status & Generation Pipeline ───────────────
   const pollStatus = useCallback(async () => {
     if (isDemoShowcase || !listingId || listingId.startsWith('showcase-')) return;
+    if (isCatalogPreviewActiveRef.current) return;
     try {
       const res = await getListingModelStatusApi(listingId, token);
+      if (isCatalogPreviewActiveRef.current) return;
       if (res?.status === 'ready' && res?.model?.glb_url) {
         setActiveGlbUrl(res.model.glb_url);
         setModelStatus('ready');
@@ -395,6 +398,9 @@ export default function LiveRoomPreview(props) {
   const handleSelectCatalogModel = async (catalogModelId) => {
     if (isSelectingCatalog) return;
     setIsSelectingCatalog(true);
+    isCatalogPreviewActiveRef.current = true;
+    setRendererError(null);
+    setModelLoaded(false);
     try {
       if (token && listingId) {
         const res = await selectCatalogModelApi(listingId, catalogModelId, token).catch(() => null);
@@ -424,6 +430,9 @@ export default function LiveRoomPreview(props) {
 
   const handlePreviewCatalogModel = (model) => {
     if (!model?.glb_url) return;
+    isCatalogPreviewActiveRef.current = true;
+    setRendererError(null);
+    setModelLoaded(false);
     setActiveGlbUrl(model.glb_url);
     setModelStatus('ready');
     setModelProgress(100);
@@ -684,6 +693,7 @@ export default function LiveRoomPreview(props) {
 
         {/* State B: Model Failed or Being Prepared (Never displays 2D photo or unrelated chair) */}
         {!isDemoShowcase &&
+          !activeGlbUrl &&
           (modelStatus === 'failed' || (modelStatus === 'none' && !is3dModelReady) || rendererError) && (
             <View style={styles.fallbackCard} accessibilityRole="alert">
               <View style={styles.fallbackIconWrap}>
@@ -770,7 +780,8 @@ export default function LiveRoomPreview(props) {
       </View>
 
       {/* 3. Safe-Area Top Header Bar */}
-      <SafeAreaView edges={['top']} style={styles.topSafe} pointerEvents="box-none">
+      {!calibrating && (
+        <SafeAreaView edges={['top']} style={styles.topSafe} pointerEvents="box-none">
         <View style={styles.headerBar}>
           <Pressable
             style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.8 }]}
@@ -834,39 +845,15 @@ export default function LiveRoomPreview(props) {
           </Pressable>
         </View>
 
-        {/* Demo Showcase Notice Banner */}
-        {isDemoShowcase && statusBanner && (
-          <View style={styles.noticeBanner} accessibilityRole="summary">
-            <Ionicons name="sparkles-outline" size={16} color="#C084FC" />
-            <Text style={styles.noticeBannerText} maxFontSizeMultiplier={1.25}>
-              {statusBanner}
-            </Text>
-          </View>
-        )}
+        
 
-        {/* Category Catalog Approximation Notice Banner */}
-        {!isDemoShowcase && modelSource === 'category_catalog' && (
-          <View style={styles.catalogNoticeBanner} accessibilityRole="summary">
-            <Ionicons name="information-circle-outline" size={16} color="#FBBF24" />
-            <Text style={styles.catalogNoticeText} maxFontSizeMultiplier={1.2}>
-              Category Preview · Approximate 3D model from Smart Assets licensed catalog. Not an exact physical scan.
-            </Text>
-          </View>
-        )}
-
-        {/* Attribution Row */}
-        {!isDemoShowcase && modelAttribution && (
-          <View style={styles.attributionRow}>
-            <Ionicons name="shield-checkmark-outline" size={13} color="#94A3B8" />
-            <Text style={styles.attributionText} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {`${modelAttribution}${modelLicense ? ` · ${modelLicense}` : ''}`}
-            </Text>
-          </View>
-        )}
+        
       </SafeAreaView>
+      )}
 
       {/* 4. Accessible Bottom Control Dock */}
-      <SafeAreaView edges={['bottom']} style={styles.bottomSafe} pointerEvents="box-none">
+      {!calibrating && (
+        <SafeAreaView edges={['bottom']} style={styles.bottomSafe} pointerEvents="box-none">
         <View style={styles.bottomDock}>
           {/* Demo Showcase Model Switcher (Strictly for Demo Showcase mode) */}
           {isDemoShowcase && (
@@ -1099,6 +1086,7 @@ export default function LiveRoomPreview(props) {
           </View>
         </View>
       </SafeAreaView>
+      )}
 
       {/* 5. A4 Calibration Guide */}
       {calibrating && (
@@ -1199,6 +1187,72 @@ export default function LiveRoomPreview(props) {
                 );
               })}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      {/* 7. Model Information & License Modal Popup */}
+      <Modal
+        visible={showInfoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowInfoModal(false)}
+        statusBarTranslucent
+      >
+        <View style={styles.infoModalBackdrop}>
+          <View style={styles.infoModalCard} accessibilityViewIsModal>
+            <View style={styles.infoModalHeader}>
+              <View style={styles.infoModalBadge}>
+                <Ionicons name="information-circle" size={15} color="#FBBF24" />
+                <Text style={styles.infoModalBadgeText} maxFontSizeMultiplier={1.2}>
+                  3D MODEL INFO
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setShowInfoModal(false)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={({ pressed }) => [styles.infoModalCloseBtn, pressed && { opacity: 0.7 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Close 3D model information"
+              >
+                <Ionicons name="close" size={20} color="#94A3B8" />
+              </Pressable>
+            </View>
+
+            <Text style={styles.infoModalTitle} maxFontSizeMultiplier={1.3}>
+              Category 3D Approximation
+            </Text>
+
+            <View style={styles.infoModalNoticeBox}>
+              <Ionicons name="information-circle-outline" size={18} color="#FBBF24" style={{ marginTop: 1 }} />
+              <Text style={styles.infoModalNoticeText} maxFontSizeMultiplier={1.2}>
+                Category Preview · Approximate 3D model from Smart Assets licensed catalog. Not an exact physical scan of this specific seller's item.
+              </Text>
+            </View>
+
+            {modelAttribution && (
+              <View style={styles.infoModalAttributionBox}>
+                <View style={styles.infoModalAttributionHeader}>
+                  <Ionicons name="shield-checkmark-outline" size={14} color="#38BDF8" />
+                  <Text style={styles.infoModalAttributionTitle} maxFontSizeMultiplier={1.2}>
+                    Attribution & License
+                  </Text>
+                </View>
+                <Text style={styles.infoModalAttributionText} maxFontSizeMultiplier={1.2}>
+                  {`${modelAttribution}${modelLicense ? ` (${modelLicense})` : ''}`}
+                </Text>
+              </View>
+            )}
+
+            <Pressable
+              style={({ pressed }) => [styles.infoModalGotItBtn, pressed && { opacity: 0.85 }]}
+              onPress={() => setShowInfoModal(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss 3D model information"
+            >
+              <Text style={styles.infoModalGotItText} maxFontSizeMultiplier={1.2}>
+                Got It
+              </Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -1882,5 +1936,135 @@ const styles = StyleSheet.create({
     color: '#041019',
     fontSize: 13,
     fontWeight: '700',
+  },
+  headerRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  infoIconBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 14,
+    backgroundColor: 'rgba(251, 191, 36, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.4)',
+  },
+  infoIconBtnText: {
+    color: '#FBBF24',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  infoModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+  },
+  infoModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#0A0F1D',
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    borderWidth: 1.5,
+    borderColor: 'rgba(251, 191, 36, 0.45)',
+    gap: 12,
+    elevation: 25,
+    shadowColor: '#FBBF24',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+  },
+  infoModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  infoModalBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(251, 191, 36, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.35)',
+  },
+  infoModalBadgeText: {
+    color: '#FBBF24',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  infoModalCloseBtn: {
+    padding: 4,
+    borderRadius: 999,
+  },
+  infoModalTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  infoModalNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: 'rgba(251, 191, 36, 0.08)',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.25)',
+  },
+  infoModalNoticeText: {
+    flex: 1,
+    color: '#FDE68A',
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  infoModalAttributionBox: {
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    gap: 6,
+  },
+  infoModalAttributionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  infoModalAttributionTitle: {
+    color: '#38BDF8',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  infoModalAttributionText: {
+    color: '#CBD5E1',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  infoModalGotItBtn: {
+    minHeight: 46,
+    backgroundColor: '#FBBF24',
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  infoModalGotItText: {
+    color: '#041019',
+    fontSize: 14,
+    fontWeight: '800',
   },
 });
