@@ -653,7 +653,7 @@ export default function HomeScreen({ navigation }) {
 
             <TouchableOpacity
               style={styles.activityPillBtn}
-              onPress={() => navigation.navigate(SCREENS.VAULT)}
+              onPress={() => navigation.navigate(SCREENS.NOTIFICATIONS)}
               activeOpacity={0.8}
             >
               <Ionicons
@@ -662,7 +662,7 @@ export default function HomeScreen({ navigation }) {
                 color="#0F172A"
                 style={{ marginRight: 6 }}
               />
-              <Text style={styles.activityPillText}>Activity</Text>
+              <Text style={styles.activityPillText}>Notifications</Text>
             </TouchableOpacity>
           </View>
 

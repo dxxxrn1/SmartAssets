@@ -57,7 +57,7 @@ hydrateTicketsFromSupabase();
 /**
  * Creates and logs a new support ticket into Supabase support_tickets.
  */
-function createTicket({ userId, userEmail, userName, category, subject, message, priority = 'normal' }) {
+async function createTicket({ userId, userEmail, userName, category, subject, message, priority = 'normal' }) {
   const ticketId = 'TKT-' + Math.floor(100000 + Math.random() * 900000);
   const now = new Date().toISOString();
 
@@ -82,26 +82,22 @@ function createTicket({ userId, userEmail, userName, category, subject, message,
         : 'Luxury Concierge Team',
   };
 
+  const isAuthUserId = typeof userId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId);
+  const { error } = await supabase.from('support_tickets').insert({
+    id: ticketId,
+    user_id: isAuthUserId ? userId : null,
+    user_email: ticket.userEmail,
+    user_name: ticket.userName,
+    category: ticket.category,
+    subject: ticket.subject,
+    message: ticket.message,
+    priority: ticket.priority,
+    status: ticket.status,
+    created_at: now,
+    updated_at: now,
+  });
+  if (error) throw error;
   ticketsMap.set(ticketId, ticket);
-
-  // Sync to Supabase support_tickets table
-  try {
-    Promise.resolve(
-      supabase.from('support_tickets').insert({
-        id: ticketId,
-        user_id: userId && userId.includes('-') ? userId : null,
-        user_email: ticket.userEmail,
-        user_name: ticket.userName,
-        category: ticket.category,
-        subject: ticket.subject,
-        message: ticket.message,
-        priority: ticket.priority,
-        status: ticket.status,
-        created_at: now,
-        updated_at: now,
-      })
-    ).catch(() => {});
-  } catch (_e) {}
 
   console.log(`🎫 [SupportService] Lodged ticket ${ticketId} [${category}] for user ${userId}`);
   return ticket;
@@ -142,24 +138,22 @@ async function updateTicketStatus(ticketId, status, resolutionNote = null) {
   if (!ticket) return null;
 
   const now = new Date().toISOString();
-  ticket.status = status;
-  ticket.updatedAt = now;
-  if (resolutionNote) {
-    ticket.resolutionNote = resolutionNote;
-    ticket.adminNotes = resolutionNote;
-    ticket.adminResponse = resolutionNote;
-  }
-  ticketsMap.set(ticketId, ticket);
+  const { data, error } = await supabase.from('support_tickets').update({
+    status,
+    admin_notes: resolutionNote,
+    updated_at: now,
+  }).eq('id', ticketId).select('id').maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
 
-  try {
-    await supabase.from('support_tickets').update({
-      status,
-      admin_notes: resolutionNote,
-      updated_at: now,
-    }).eq('id', ticketId);
-  } catch (_e) {}
-
-  return ticket;
+  const updated = {
+    ...ticket,
+    status,
+    updatedAt: now,
+    ...(resolutionNote ? { resolutionNote, adminNotes: resolutionNote, adminResponse: resolutionNote } : {}),
+  };
+  ticketsMap.set(ticketId, updated);
+  return updated;
 }
 
 /**

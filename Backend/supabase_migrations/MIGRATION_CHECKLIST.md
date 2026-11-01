@@ -28,6 +28,7 @@ Apply migrations in the exact chronological order below.
 | **14** | `20261029_escrow_seller_updates.sql` | *Optional* | Supplementary seller escrow notification flags. |
 | **15** | `20261031_atomic_investment_and_share_sales.sql` | **REQUIRED** | Atomic share purchases, anti-whale cap, `reserved_shares`, `share_redemption_requests`, `payment_idempotency`, and PostgreSQL RPCs. |
 | **16** | `20261031_vault_deposit_and_withdrawal_atomic.sql` | **REQUIRED** | Atomic Vault deposits, pending bank review, `reserved_balance` on `profiles`, approved-bank-only withdrawals, RLS hardening, and settlement RPCs. |
+| **17** | `20261101_user_notifications.sql` | **REQUIRED** | Durable, user-scoped in-app notifications; database triggers for deposit/withdrawal lifecycle changes and admin ticket responses; service-role-only database access. |
 
 ---
 
@@ -58,7 +59,8 @@ FROM (
         ('escrow_orders'),
         ('revoked_tokens'),
         ('share_redemption_requests'),
-        ('payment_idempotency')
+        ('payment_idempotency'),
+        ('notifications')
 ) AS t(table_name)
 LEFT JOIN information_schema.tables c 
     ON c.table_schema = 'public' AND c.table_name = t.table_name

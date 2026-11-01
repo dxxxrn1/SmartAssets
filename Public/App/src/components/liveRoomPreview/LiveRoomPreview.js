@@ -27,7 +27,7 @@ import {
   getCatalogMatchesApi,
   selectCatalogModelApi,
 } from '../../services/api';
-import { AR_SHOWCASE_ITEMS } from '../../constants/arShowcase';
+import { AR_SHOWCASE_ITEMS, BUILTIN_CATALOG_FALLBACKS } from '../../constants/arShowcase';
 import { useAuth } from '../../context/AuthContext';
 import { SCREENS } from '../../constants/navigation';
 
@@ -196,7 +196,17 @@ export default function LiveRoomPreview(props) {
     statusBanner,
   } = config;
 
-  const onBack = mergedParams.onBack || (() => navigation?.goBack?.());
+  const onBack = useCallback(() => {
+    if (typeof mergedParams.onBack === 'function') {
+      mergedParams.onBack();
+      return;
+    }
+    if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+    } else if (navigation?.navigate) {
+      navigation.navigate(SCREENS.MAIN_TABS);
+    }
+  }, [mergedParams.onBack, navigation]);
 
   // Per-listing 3D pipeline state
   const [modelStatus, setModelStatus] = useState(initialGlbUrl ? 'ready' : 'initial'); // 'initial' | 'processing' | 'ready' | 'failed' | 'none'
@@ -208,9 +218,10 @@ export default function LiveRoomPreview(props) {
   const [modelSource, setModelSource] = useState(config.source || 'ai_generated');
   const [modelAttribution, setModelAttribution] = useState(config.attribution || null);
   const [modelLicense, setModelLicense] = useState(config.license || null);
-  const [candidateMatches, setCandidateMatches] = useState([]);
+  const [candidateMatches, setCandidateMatches] = useState(BUILTIN_CATALOG_FALLBACKS);
   const [showCatalogModal, setShowCatalogModal] = useState(false);
   const [isSelectingCatalog, setIsSelectingCatalog] = useState(false);
+  const [isSearchingCatalog, setIsSearchingCatalog] = useState(false);
 
   // Sensor, camera & layout state
   const [permission, requestPermission] = useCameraPermissions();
@@ -322,7 +333,8 @@ export default function LiveRoomPreview(props) {
         setCanRetry(true);
       }
     } catch (err) {
-      console.warn('[LiveRoomPreview] Error querying model status:', err.message);
+      // Graceful fallback to none status without LogBox warning
+      if (candidateMatches.length === 0) setCandidateMatches(BUILTIN_CATALOG_FALLBACKS);
       if (modelStatus === 'initial') {
         setModelStatus('none');
         setCanRetry(true);
@@ -381,24 +393,32 @@ export default function LiveRoomPreview(props) {
   );
 
   const handleSelectCatalogModel = async (catalogModelId) => {
-    if (!token || !listingId || isSelectingCatalog) return;
+    if (isSelectingCatalog) return;
     setIsSelectingCatalog(true);
     try {
-      const res = await selectCatalogModelApi(listingId, catalogModelId, token);
-      if (res?.success && res?.model?.glb_url) {
-        setActiveGlbUrl(res.model.glb_url);
-        setModelStatus('ready');
-        setModelProgress(100);
-        setModelError(null);
-        setModelSource('category_catalog');
-        setModelAttribution(res.attribution || res.catalogModel?.attribution || null);
-        setModelLicense(res.license || res.catalogModel?.license || null);
-        setShowCatalogModal(false);
+      if (token && listingId) {
+        const res = await selectCatalogModelApi(listingId, catalogModelId, token).catch(() => null);
+        if (res?.success && res?.model?.glb_url) {
+          setActiveGlbUrl(res.model.glb_url);
+          setModelStatus('ready');
+          setModelProgress(100);
+          setModelError(null);
+          setModelSource('category_catalog');
+          setModelAttribution(res.attribution || res.catalogModel?.attribution || null);
+          setModelLicense(res.license || res.catalogModel?.license || null);
+          setShowCatalogModal(false);
+          return;
+        }
       }
-    } catch (err) {
-      console.warn('[LiveRoomPreview] Error selecting catalog model:', err.message);
     } finally {
       setIsSelectingCatalog(false);
+    }
+
+    // Client-side fallback: immediately preview chosen catalog model in room
+    const match = candidateMatches.find((m) => (m.model?.id || m.id) === catalogModelId);
+    const chosenModel = match?.model || match;
+    if (chosenModel?.glb_url) {
+      handlePreviewCatalogModel(chosenModel);
     }
   };
 
@@ -414,19 +434,28 @@ export default function LiveRoomPreview(props) {
     setShowCatalogModal(false);
   };
 
-  const loadCatalogMatches = async () => {
+  const loadCatalogMatches = useCallback(async () => {
+    if (isSearchingCatalog) return;
+    setIsSearchingCatalog(true);
     try {
-      const res = await getCatalogMatchesApi(listingId, token);
+      const res = await getCatalogMatchesApi(listingId, token, {
+        category: mergedParams.category || mergedParams.asset?.category,
+        title,
+        tags: mergedParams.tags || mergedParams.asset?.tags,
+      });
       if (res?.success && Array.isArray(res.matches) && res.matches.length > 0) {
         setCandidateMatches(res.matches);
-        setShowCatalogModal(true);
       } else {
-        setModelError('No compatible category catalog models found for this listing.');
+        setCandidateMatches(BUILTIN_CATALOG_FALLBACKS);
       }
-    } catch (err) {
-      console.warn('[LiveRoomPreview] Error loading catalog matches:', err.message);
+      setShowCatalogModal(true);
+    } catch (_) {
+      setCandidateMatches(BUILTIN_CATALOG_FALLBACKS);
+      setShowCatalogModal(true);
+    } finally {
+      setIsSearchingCatalog(false);
     }
-  };
+  }, [isSearchingCatalog, listingId, token, mergedParams, title]);
 
   // Initial check on mount for marketplace listings
   useEffect(() => {
@@ -578,6 +607,7 @@ export default function LiveRoomPreview(props) {
       {!useStudioBackdrop && Platform.OS !== 'web' && !cameraMountError ? (
         <CameraView
           style={StyleSheet.absoluteFill}
+          pointerEvents="none"
           facing="back"
           onCameraReady={() => setCameraReady(true)}
           onMountError={(e) => {
@@ -587,7 +617,7 @@ export default function LiveRoomPreview(props) {
           }}
         />
       ) : (
-        <View style={styles.studioBackdrop}>
+        <View style={styles.studioBackdrop} pointerEvents="none">
           <View style={styles.studioFloorGrid} />
         </View>
       )}
@@ -595,7 +625,7 @@ export default function LiveRoomPreview(props) {
       {/* 2. Center 3D Stage (Unobscured Central Viewport) */}
       <View style={styles.stage} pointerEvents="box-none">
         {/* Active 3D Model Renderer */}
-        {is3dModelReady && (glbDataUri || localUri || effectiveGlbUrl) ? (
+        {is3dModelReady && (effectiveGlbUrl || localUri || glbDataUri) ? (
           Platform.OS === 'web' ? (
             <View style={styles.webModelContainer}>
               {React.createElement('model-viewer', {
@@ -611,7 +641,7 @@ export default function LiveRoomPreview(props) {
           ) : (
             <ModelRenderer
               ref={modelRendererRef}
-              glbDataUri={glbDataUri || localUri || effectiveGlbUrl}
+              glbDataUri={effectiveGlbUrl || localUri || glbDataUri}
               widthCm={widthCm}
               heightCm={heightCm}
               depthCm={depthCm}
@@ -669,8 +699,9 @@ export default function LiveRoomPreview(props) {
 
               {candidateMatches.length > 0 ? (
                 <Pressable
-                  style={styles.browseCatalogBtn}
+                  style={({ pressed }) => [styles.browseCatalogBtn, pressed && { opacity: 0.85 }]}
                   onPress={() => setShowCatalogModal(true)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   accessibilityRole="button"
                   accessibilityLabel="Browse suggested category 3D models"
                 >
@@ -681,15 +712,23 @@ export default function LiveRoomPreview(props) {
                 </Pressable>
               ) : (
                 <Pressable
-                  style={styles.browseCatalogBtn}
+                  style={({ pressed }) => [styles.browseCatalogBtn, pressed && { opacity: 0.85 }]}
                   onPress={loadCatalogMatches}
+                  disabled={isSearchingCatalog}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   accessibilityRole="button"
                   accessibilityLabel="Check Smart Assets catalog for category 3D models"
                 >
-                  <Ionicons name="albums-outline" size={18} color="#041019" />
-                  <Text style={styles.browseCatalogText} maxFontSizeMultiplier={1.2}>
-                    Check Catalog Alternatives
-                  </Text>
+                  {isSearchingCatalog ? (
+                    <ActivityIndicator size="small" color="#041019" />
+                  ) : (
+                    <>
+                      <Ionicons name="albums-outline" size={18} color="#041019" />
+                      <Text style={styles.browseCatalogText} maxFontSizeMultiplier={1.2}>
+                        Check Catalog Alternatives
+                      </Text>
+                    </>
+                  )}
                 </Pressable>
               )}
 
@@ -716,8 +755,9 @@ export default function LiveRoomPreview(props) {
               )}
 
               <Pressable
-                style={styles.returnBtn}
+                style={({ pressed }) => [styles.returnBtn, pressed && { opacity: 0.7 }]}
                 onPress={onBack}
+                hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
                 accessibilityRole="button"
                 accessibilityLabel="Back to listing detail"
               >
@@ -733,8 +773,9 @@ export default function LiveRoomPreview(props) {
       <SafeAreaView edges={['top']} style={styles.topSafe} pointerEvents="box-none">
         <View style={styles.headerBar}>
           <Pressable
-            style={styles.headerIconBtn}
+            style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.8 }]}
             onPress={onBack}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
             accessibilityLabel="Go back"
             accessibilityHint="Closes 3D Room Preview and returns to previous screen"
@@ -779,8 +820,9 @@ export default function LiveRoomPreview(props) {
           </View>
 
           <Pressable
-            style={styles.calibrateBtn}
+            style={({ pressed }) => [styles.calibrateBtn, pressed && { opacity: 0.8 }]}
             onPress={() => setCalibrating(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
             accessibilityLabel="Calibrate A4 scale"
             accessibilityHint="Opens the A4 paper calibration reference"
@@ -862,10 +904,7 @@ export default function LiveRoomPreview(props) {
           {is3dModelReady && Platform.OS !== 'web' && (
             <View style={styles.gestureModeRow}>
               <Pressable
-                style={[
-                  styles.gestureModeBtn,
-                  interactMode === 'rotate' && styles.gestureModeBtnActive,
-                ]}
+                style={({ pressed }) => [styles.gestureModeBtn, interactMode === "rotate" && styles.gestureModeBtnActive, pressed && { opacity: 0.8 }]} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 onPress={() => setInteractMode('rotate')}
                 accessibilityRole="button"
                 accessibilityState={{ selected: interactMode === 'rotate' }}
@@ -889,10 +928,7 @@ export default function LiveRoomPreview(props) {
               </Pressable>
 
               <Pressable
-                style={[
-                  styles.gestureModeBtn,
-                  interactMode === 'move' && styles.gestureModeBtnActive,
-                ]}
+                style={({ pressed }) => [styles.gestureModeBtn, interactMode === "move" && styles.gestureModeBtnActive, pressed && { opacity: 0.8 }]} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 onPress={() => setInteractMode('move')}
                 accessibilityRole="button"
                 accessibilityState={{ selected: interactMode === 'move' }}
@@ -920,7 +956,7 @@ export default function LiveRoomPreview(props) {
           {/* Non-Gesture Accessible 48dp Controls */}
           <View style={styles.controlGrid} accessibilityRole="toolbar">
             <Pressable
-              style={styles.controlBtn}
+              style={({ pressed }) => [styles.controlBtn, pressed && styles.controlBtnPressed]} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
               onPress={handleRotateLeft}
               accessibilityRole="button"
               accessibilityLabel="Rotate 3D model left 45 degrees"
@@ -938,7 +974,7 @@ export default function LiveRoomPreview(props) {
             </Pressable>
 
             <Pressable
-              style={styles.controlBtn}
+              style={({ pressed }) => [styles.controlBtn, pressed && styles.controlBtnPressed]} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
               onPress={handleRotateRight}
               accessibilityRole="button"
               accessibilityLabel="Rotate 3D model right 45 degrees"
@@ -951,7 +987,7 @@ export default function LiveRoomPreview(props) {
             </Pressable>
 
             <Pressable
-              style={styles.controlBtn}
+              style={({ pressed }) => [styles.controlBtn, pressed && styles.controlBtnPressed]} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
               onPress={handleScaleDown}
               accessibilityRole="button"
               accessibilityLabel="Scale 3D model smaller"
@@ -964,7 +1000,7 @@ export default function LiveRoomPreview(props) {
             </Pressable>
 
             <Pressable
-              style={styles.controlBtn}
+              style={({ pressed }) => [styles.controlBtn, pressed && styles.controlBtnPressed]} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
               onPress={handleScaleUp}
               accessibilityRole="button"
               accessibilityLabel="Scale 3D model larger"
@@ -977,7 +1013,7 @@ export default function LiveRoomPreview(props) {
             </Pressable>
 
             <Pressable
-              style={styles.controlBtn}
+              style={({ pressed }) => [styles.controlBtn, pressed && styles.controlBtnPressed]} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
               onPress={handleResetView}
               accessibilityRole="button"
               accessibilityLabel="Reset position and scale"
@@ -990,7 +1026,7 @@ export default function LiveRoomPreview(props) {
             </Pressable>
 
             <Pressable
-              style={[styles.controlBtn, pinned && styles.controlBtnActive]}
+              style={({ pressed }) => [styles.controlBtn, pinned && styles.controlBtnActive, pressed && styles.controlBtnPressed]} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
               onPress={() => {
                 if (!pinned) safeResetOrientation();
                 setPinned((p) => !p);
@@ -1030,7 +1066,7 @@ export default function LiveRoomPreview(props) {
 
             {!isDemoShowcase ? (
               <Pressable
-                style={styles.primaryCtaBtn}
+                style={({ pressed }) => [styles.primaryCtaBtn, pressed && { opacity: 0.85 }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 onPress={handleProceedToCheckout}
                 accessibilityRole="button"
                 accessibilityLabel="Proceed to checkout for this asset"
@@ -1043,7 +1079,7 @@ export default function LiveRoomPreview(props) {
               </Pressable>
             ) : (
               <Pressable
-                style={styles.secondaryCtaBtn}
+                style={({ pressed }) => [styles.secondaryCtaBtn, pressed && { opacity: 0.85 }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 onPress={() => setUseStudioBackdrop((v) => !v)}
                 accessibilityRole="button"
                 accessibilityLabel={
@@ -1190,6 +1226,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingTop: 190,
+    paddingBottom: 290,
   },
   webModelContainer: {
     width: '100%',
@@ -1202,14 +1240,16 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 10,
+    zIndex: 999,
+    elevation: 25,
     paddingHorizontal: 12,
     paddingTop: 6,
   },
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(6, 12, 26, 0.85)',
+    backgroundColor: 'rgba(6, 12, 26, 0.92)',
+    elevation: 26,
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -1306,7 +1346,9 @@ const styles = StyleSheet.create({
   },
   reconstructionCard: {
     marginHorizontal: 24,
-    backgroundColor: 'rgba(10, 16, 36, 0.92)',
+    backgroundColor: 'rgba(10, 16, 36, 0.95)',
+    zIndex: 998,
+    elevation: 25,
     borderRadius: 22,
     padding: 20,
     alignItems: 'center',
@@ -1353,7 +1395,9 @@ const styles = StyleSheet.create({
   },
   fallbackCard: {
     marginHorizontal: 24,
-    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    zIndex: 998,
+    elevation: 25,
     borderRadius: 22,
     padding: 22,
     alignItems: 'center',
@@ -1406,12 +1450,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 10,
+    zIndex: 999,
+    elevation: 25,
     paddingHorizontal: 12,
     paddingBottom: 8,
   },
   bottomDock: {
-    backgroundColor: 'rgba(6, 12, 26, 0.88)',
+    backgroundColor: 'rgba(6, 12, 26, 0.92)',
+    elevation: 26,
     borderRadius: 22,
     padding: 12,
     borderWidth: 1,
@@ -1500,6 +1546,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 4,
     gap: 3,
+  },
+  controlBtnPressed: {
+    opacity: 0.75,
+    transform: [{ scale: 0.95 }],
+  },
+  controlBtnPressed: {
+    opacity: 0.75,
+    transform: [{ scale: 0.95 }],
   },
   controlBtnActive: {
     backgroundColor: '#22D3EE',

@@ -36,6 +36,7 @@ export const SCREENS = {
   ESCROW_ORDERS: 'EscrowOrders',
   PROFILE: 'Profile',
   PROFILE_ANALYTICS: 'ProfileAnalytics',
+  NOTIFICATIONS: 'Notifications',
   ANALYTICS: 'ProfileAnalytics',
   AR_VIEWER: 'ARViewer',
   LIVE_ROOM_PREVIEW: 'LiveRoomPreview',

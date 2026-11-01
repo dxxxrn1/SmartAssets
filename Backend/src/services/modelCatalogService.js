@@ -224,6 +224,20 @@ async function matchCatalogModels({
     }
   }
 
+  // If no specific keyword/category match reached 0.30 threshold,
+  // return all active catalog models with a neutral base score (0.30)
+  // so the seller or user can still review and select from the catalog.
+  if (scoredMatches.length === 0) {
+    for (const model of catalogList) {
+      scoredMatches.push({
+        model,
+        score: 0.3,
+        reasons: { categoryExact: false, fallbackGeneralCatalog: true },
+        isAutoEligible: false,
+      });
+    }
+  }
+
   // Sort descending by score
   scoredMatches.sort((a, b) => b.score - a.score);
 

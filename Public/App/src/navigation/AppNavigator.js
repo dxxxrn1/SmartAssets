@@ -39,6 +39,7 @@ import EscrowTrackerScreen from '../screens/EscrowTrackerScreen';
 import EscrowOrdersScreen from '../screens/EscrowOrdersScreen';
 import ProfileScreen     from '../screens/ProfileScreen';
 import ProfileAnalyticsScreen from '../screens/ProfileAnalyticsScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 import LiveRoomPreview from '../components/liveRoomPreview/LiveRoomPreview';
 import ScanAndKnowScreen from '../screens/ScanAndKnowScreen';
 
@@ -497,6 +498,10 @@ export default function Navigation() {
 
             <Stack.Screen name={SCREENS.PROFILE}>
               {(props) => <ProfileScreen {...props} isDark={isDark} toggleTheme={toggleTheme} />}
+            </Stack.Screen>
+
+            <Stack.Screen name={SCREENS.NOTIFICATIONS}>
+              {(props) => <NotificationsScreen {...props} />}
             </Stack.Screen>
 
             <Stack.Screen name={SCREENS.PROFILE_ANALYTICS}>

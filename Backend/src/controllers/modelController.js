@@ -606,14 +606,29 @@ async function getCatalogMatches(req, res) {
       return sendError(res, 400, 'listingId parameter is required.');
     }
 
-    const { data: listing, error: listingErr } = await supabase
-      .from('assets')
-      .select('id, name, title, category, tags, brand, maker')
-      .eq('id', listingId)
-      .maybeSingle();
+    let listing = null;
+    try {
+      const { data, error: listingErr } = await supabase
+        .from('assets')
+        .select('id, name, title, category, tags, brand, maker')
+        .eq('id', listingId)
+        .maybeSingle();
+      if (!listingErr && data) {
+        listing = data;
+      }
+    } catch (_) {}
 
-    if (listingErr || !listing) {
-      return sendError(res, 404, `Listing not found with ID ${listingId}`);
+    // If listing record is not yet synced in DB, fall back to query metadata or active catalog
+    if (!listing) {
+      const { category, title, name, tags, brand } = req.query || {};
+      listing = {
+        id: listingId,
+        category: category || '',
+        title: title || name || '',
+        name: name || title || '',
+        tags: tags ? (Array.isArray(tags) ? tags : String(tags).split(',').map((s) => s.trim())) : [],
+        brand: brand || '',
+      };
     }
 
     const matches = await modelCatalogService.matchCatalogModels({

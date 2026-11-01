@@ -92,31 +92,55 @@ async function seedCuratedCatalog(options = {}) {
 
     // 3. Remote Source Verification Mode (--check-remote)
     if (isCheckRemote) {
-      if (!entry.source_glb_url) {
+      const candidateUrls = [entry.source_glb_url, ...(entry.fallback_source_urls || [])].filter(Boolean);
+      if (candidateUrls.length === 0) {
         const err = `Model "${entry.name}" lacks source_glb_url for remote check.`;
         failureList.push({ name: entry.name, error: err });
         continue;
       }
-      try {
-        console.log(`  📥 Checking source GLB from ${entry.source_glb_url}...`);
-        const buffer = await downloadAndVerifyGlb(entry.source_glb_url);
-        console.log(`  ✅ Verified glTF binary: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
-        successCount++;
-      } catch (checkErr) {
-        console.error(`  ❌ Remote check failed for ${entry.name}: ${checkErr.message}`);
-        failureList.push({ name: entry.name, error: checkErr.message });
+      let checkOk = false;
+      for (const url of candidateUrls) {
+        try {
+          console.log(`  📥 Checking source GLB from ${url}...`);
+          const buffer = await downloadAndVerifyGlb(url);
+          console.log(`  ✅ Verified glTF binary: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
+          successCount++;
+          checkOk = true;
+          break;
+        } catch (checkErr) {
+          console.warn(`  ⚠️ Candidate URL failed for ${entry.name}: ${checkErr.message}`);
+        }
+      }
+      if (!checkOk) {
+        const err = `All candidate URLs failed for ${entry.name}`;
+        console.error(`  ❌ Remote check failed for ${entry.name}: ${err}`);
+        failureList.push({ name: entry.name, error: err });
       }
       continue;
     }
 
     // 4. Live Synchronization Pipeline (Fail-Closed)
     try {
-      if (!entry.source_glb_url) {
+      const candidateUrls = [entry.source_glb_url, ...(entry.fallback_source_urls || [])].filter(Boolean);
+      if (candidateUrls.length === 0) {
         throw new Error(`Model "${entry.name}" is missing source_glb_url.`);
       }
 
-      console.log(`  📥 Fetching source GLB from ${entry.source_glb_url}...`);
-      const rawBuffer = await downloadAndVerifyGlb(entry.source_glb_url);
+      let rawBuffer = null;
+      let lastDownloadErr = null;
+      for (const url of candidateUrls) {
+        try {
+          console.log(`  📥 Fetching source GLB from ${url}...`);
+          rawBuffer = await downloadAndVerifyGlb(url);
+          break;
+        } catch (dlErr) {
+          lastDownloadErr = dlErr;
+          console.warn(`  ⚠️ Candidate URL failed for ${entry.name}: ${dlErr.message}`);
+        }
+      }
+      if (!rawBuffer) {
+        throw new Error(lastDownloadErr ? lastDownloadErr.message : `No candidate GLB URL could be fetched for "${entry.name}".`);
+      }
 
       console.log(`  ⚡ Optimizing GLB with @gltf-transform (${(rawBuffer.length / 1024 / 1024).toFixed(2)} MB)...`);
       const optimized = await optimizeGlbBuffer(rawBuffer, false);
