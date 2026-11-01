@@ -448,13 +448,15 @@ async function pollListingModelTask({ listingId, modelRow, listing = null }) {
     };
   }
 
-  if (taskInfo.status === 'success' && taskInfo.glbUrl) {
-    await releaseGenerationSlot(key, 'ready', { glbUrl: taskInfo.glbUrl, taskId: rawTaskId });
+  if (taskInfo.status === 'success' && (taskInfo.glbUrl || taskInfo.modelUrl)) {
+    const finalGlbUrl = taskInfo.glbUrl || taskInfo.modelUrl;
+    await releaseGenerationSlot(key, 'ready', { glbUrl: finalGlbUrl, taskId: rawTaskId });
     return {
       status: 'ready',
       provider: 'tripo',
       source: 'ai_generated',
-      glbUrl: taskInfo.glbUrl,
+      glbUrl: finalGlbUrl,
+      modelUrl: finalGlbUrl,
       pbrModel: taskInfo.pbrModel,
       attemptCount: modelRow?.attempt_count || 1,
       maxAttempts,

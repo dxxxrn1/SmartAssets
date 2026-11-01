@@ -357,7 +357,7 @@ async function getModelStatus(req, res) {
     }
 
     // If already ready, return immediately
-    if (model.status === 'ready') {
+    if (model.status === 'ready' && model.glb_url) {
       return res.json({
         success: true,
         status: 'ready',
@@ -528,12 +528,13 @@ async function getModelStatus(req, res) {
         }
 
         // 4. Task succeeded! Run glTF optimization & store in Cloudinary / Supabase
-        if (pollResult.status === 'success' && pollResult.modelUrl) {
+        const succeededGlbUrl = pollResult.modelUrl || pollResult.glbUrl;
+        if ((pollResult.status === 'success' || pollResult.status === 'ready') && succeededGlbUrl) {
           console.log(
             `[ModelController] Tripo task succeeded! Optimizing model for listing ${listingId}...`,
           );
 
-          const optResult = await processAndSaveGlb(pollResult.modelUrl, listingId);
+          const optResult = await processAndSaveGlb(succeededGlbUrl, listingId);
 
           const updateRecord = {
             status: 'ready',

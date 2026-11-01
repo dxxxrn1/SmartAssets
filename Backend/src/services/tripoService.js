@@ -167,8 +167,22 @@ async function getTaskStatus(taskId) {
   }
 }
 
+async function pollTaskUntilComplete(taskId) {
+  const result = await getTaskStatus(taskId);
+  return {
+    status: result.status,
+    progress: result.progress,
+    glbUrl: result.modelUrl,
+    modelUrl: result.modelUrl,
+    renderedImageUrl: result.renderedImageUrl,
+    pbrModel: Boolean(result.modelUrl),
+    error: result.error,
+  };
+}
+
 module.exports = {
   checkCreditBalance,
   createImageToModelTask,
   getTaskStatus,
+  pollTaskUntilComplete,
 };
