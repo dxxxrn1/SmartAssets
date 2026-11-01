@@ -300,14 +300,44 @@ async function generateQrDataUriAsync(payload) {
   if (!payload || typeof payload !== "string") {
     throw new Error("Payload is required for QR generation.");
   }
-  if (typeof QRCode.toDataURL !== "function") {
-    throw new Error("QR encoder is unavailable in this app runtime.");
+
+  // 1. Try standard QRCode.toDataURL (succeeds in Node.js test environment with pngjs)
+  try {
+    if (typeof QRCode.toDataURL === "function") {
+      const uri = await QRCode.toDataURL(payload, {
+        width: 280,
+        margin: 1,
+        errorCorrectionLevel: "M",
+      });
+      if (uri && typeof uri === "string" && uri.startsWith("data:")) {
+        return uri;
+      }
+    }
+  } catch (_) {
+    // In React Native mobile environments, document.createElement('canvas') is undefined.
   }
-  return await QRCode.toDataURL(payload, {
-    width: 280,
-    margin: 1,
-    errorCorrectionLevel: "M",
-  });
+
+  // 2. Pure-JS SVG vector fallback (works natively in React Native with zero canvas/DOM dependencies)
+  try {
+    if (typeof QRCode.toString === "function") {
+      const svg = await new Promise((resolve, reject) => {
+        QRCode.toString(
+          payload,
+          { type: "svg", margin: 1, width: 280, errorCorrectionLevel: "M" },
+          (err, str) => {
+            if (err) reject(err);
+            else resolve(str);
+          }
+        );
+      });
+      if (svg && typeof svg === "string") {
+        return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+      }
+    }
+  } catch (_) {}
+
+  // 3. Fallback to public QR generator service
+  return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(payload)}`;
 }
 
 /**

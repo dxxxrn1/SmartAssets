@@ -440,6 +440,49 @@ async function processPayment(req, res) {
       initialEscrowStatus = 'pending_payment';
       paymentRailName = 'Bank Wire (Awaiting Settlement Verification)';
       verifiedPaymentIntentId = `bank_${bankRef}`;
+    } else if (paymentMethod === 'vault') {
+      const vaultTxService = require('../services/vaultTransactionService');
+      const balDetails = await vaultTxService.getUserBalanceDetails(userId);
+      if (balDetails.availableBalanceNum < actualPriceZar) {
+        await unlockAssetIfLocked();
+        return sendError(
+          res,
+          400,
+          `Insufficient vault balance. Required: R${actualPriceZar.toLocaleString('en-ZA')}, Available: ${balDetails.availableBalanceFormatted}`,
+          'INSUFFICIENT_FUNDS'
+        );
+      }
+
+      // Deduct balance from user profile in Supabase
+      const newTotal = Math.max(0, balDetails.totalBalanceNum - actualPriceZar);
+      const { error: balErr } = await supabase
+        .from('profiles')
+        .update({ balance: newTotal, updated_at: new Date().toISOString() })
+        .eq('id', userId);
+
+      if (balErr) {
+        console.warn('⚠️ [Payment] Profile balance update warning:', balErr.message);
+      }
+
+      const vaultTxId = 'TXN-INV-' + Math.floor(100000 + Math.random() * 900000);
+      try {
+        await supabase.from('vault_transactions').insert({
+          id: vaultTxId,
+          user_id: userId,
+          type: 'withdraw',
+          amount: actualPriceZar,
+          amount_formatted: `-R${actualPriceZar.toLocaleString('en-ZA')}`,
+          method: 'Vault Balance',
+          reference: `INV-${assetName.slice(0, 10).toUpperCase()}`,
+          notes: `Investment Purchase: ${sharesToBuy || 1} shares in "${assetName}"`,
+          status: 'completed',
+        });
+      } catch (_) {}
+
+      verifiedPaymentIntentId = vaultTxId;
+      paymentRailName = 'SmartAssets Vault Cash';
+      isSettled = true;
+      initialEscrowStatus = 'payment_secured';
     } else {
       await unlockAssetIfLocked();
       return sendError(res, 400, `Unsupported payment method: ${paymentMethod}`);

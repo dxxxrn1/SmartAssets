@@ -117,6 +117,11 @@ export default function InvestScreen({ navigation }) {
             Number(a.sharePrice) ||
             Math.round((Number(a.price_num) || 1000) / totalShares);
 
+          const calculatedFundedPct =
+            totalShares > 0
+              ? Math.min(100, Math.max(0, Math.round((sharesSold / totalShares) * 100)))
+              : 0;
+
           return {
             ...a,
             allow_investment: true,
@@ -131,7 +136,7 @@ export default function InvestScreen({ navigation }) {
             share_price: formatZAR(sharePriceNum),
             sharePrice: sharePriceNum,
             sharePriceNum,
-            funded_pct: Math.min(100, Math.round((sharesSold / totalShares) * 100)),
+            funded_pct: typeof a.funded_pct === "number" ? a.funded_pct : calculatedFundedPct,
           };
         });
         setOfferings(mapped);
@@ -163,10 +168,32 @@ export default function InvestScreen({ navigation }) {
         const vaultRes = await getUserVault(token);
         if (vaultRes?.holdings && Array.isArray(vaultRes.holdings)) {
           setUserHoldings(vaultRes.holdings);
+          const fractionalHoldings = vaultRes.holdings.filter(
+            (h) => h.asset_type === "fractional"
+          );
+          const liveInvested = fractionalHoldings.reduce(
+            (sum, h) =>
+              sum +
+              (Number(h.effectiveHoldingValue || h.myStake || h.price_num) ||
+                0),
+            0
+          );
+          const cachedFractions =
+            (await storage.getJSON(STORAGE_KEYS.CO_OWNED_ASSETS)) || [];
+          const stakesSum = Array.isArray(cachedFractions)
+            ? cachedFractions.reduce(
+                (sum, f) => sum + (Number(f.myStake) || 0),
+                0
+              )
+            : 0;
+          setTotalInvested(Math.max(liveInvested, stakesSum));
         }
         if (vaultRes?.summary) {
           setVaultSummary(vaultRes.summary);
-          if (vaultRes.summary.availableBalanceNum && typeof vaultRes.summary.availableBalanceNum === "number") {
+          if (
+            vaultRes.summary.availableBalanceNum &&
+            typeof vaultRes.summary.availableBalanceNum === "number"
+          ) {
             setAvailableCash(vaultRes.summary.availableBalanceNum);
           }
         }
@@ -179,9 +206,48 @@ export default function InvestScreen({ navigation }) {
   // Immediately hydrate from AsyncStorage cache so user sees offerings while offline
   useEffect(() => {
     getMarketAssetsCache().then((cached) => {
-      if (cached && cached.length > 0 && offerings.length === 0) {
-        setOfferings(cached);
-        setLoading(false);
+      if (Array.isArray(cached) && cached.length > 0 && offerings.length === 0) {
+        const investable = cached.filter((a) => {
+          const isEnabled = Boolean(a.allow_investment || a.allowInvestment);
+          const isAvailable = a.status !== "sold";
+          const hasShares = Number(a.shares) > 0;
+          return isEnabled && isAvailable && hasShares;
+        });
+        if (investable.length > 0) {
+          const mapped = investable.map((a) => {
+            const totalShares = Number(a.shares || a.total_shares || a.totalShares || 100);
+            const sharesSold = Number(a.shares_sold ?? a.sharesSold ?? 0);
+            const remainingShares = Math.max(0, totalShares - sharesSold);
+            const sharePriceNum =
+              Number(a.share_price) ||
+              Number(a.sharePrice) ||
+              Math.round((Number(a.price_num) || 1000) / totalShares);
+
+            const calculatedFundedPct =
+              totalShares > 0
+                ? Math.min(100, Math.max(0, Math.round((sharesSold / totalShares) * 100)))
+                : 0;
+
+            return {
+              ...a,
+              allow_investment: true,
+              allowInvestment: true,
+              shares: totalShares,
+              total_shares: totalShares,
+              totalShares: totalShares,
+              shares_sold: sharesSold,
+              sharesSold: sharesSold,
+              remaining_shares: remainingShares,
+              remainingShares: remainingShares,
+              share_price: formatZAR(sharePriceNum),
+              sharePrice: sharePriceNum,
+              sharePriceNum,
+              funded_pct: typeof a.funded_pct === "number" ? a.funded_pct : calculatedFundedPct,
+            };
+          });
+          setOfferings(mapped);
+          setLoading(false);
+        }
       }
     });
   }, []);
@@ -341,7 +407,13 @@ export default function InvestScreen({ navigation }) {
           10000;
     const sharePriceVal = item.share_price || item.sharePrice || "R100";
     const totalSharesVal =
-      item.total_shares || item.shares || Math.max(10, Math.round(priceNum / 100));
+      Number(item.total_shares || item.totalShares || item.shares || Math.max(10, Math.round(priceNum / 100)));
+    const sharesSoldVal =
+      Number(item.shares_sold ?? item.sharesSold ?? 0);
+    const fundedPctVal =
+      typeof item.funded_pct === "number"
+        ? item.funded_pct
+        : (totalSharesVal > 0 ? Math.min(100, Math.max(0, Math.round((sharesSoldVal / totalSharesVal) * 100))) : 0);
 
     navigation.navigate(SCREENS.ASSET_DETAIL, {
       asset: {
@@ -355,9 +427,12 @@ export default function InvestScreen({ navigation }) {
         share_price: sharePriceVal,
         sharePrice: sharePriceVal,
         total_shares: totalSharesVal,
+        totalShares: totalSharesVal,
         shares: totalSharesVal,
-        shares_sold: item.shares_sold || Math.round(totalSharesVal * 0.75),
-        funded_pct: item.funded_pct || 75,
+        shares_sold: sharesSoldVal,
+        sharesSold: sharesSoldVal,
+        funded_pct: fundedPctVal,
+        funding_pct: fundedPctVal,
         image: item.image,
         description:
           item.description ||
@@ -611,7 +686,12 @@ export default function InvestScreen({ navigation }) {
               offerings.map((offering) => {
                 const formattedPrice = formatZAR(offering.price);
                 const sharePrice = formatZAR(offering.share_price, "R100");
-                const pct = offering.funded_pct || 75;
+                const totalSharesCount = Number(offering.total_shares || offering.totalShares || offering.shares || 100);
+                const soldCount = Number(offering.shares_sold ?? offering.sharesSold ?? 0);
+                const pct =
+                  typeof offering.funded_pct === "number"
+                    ? offering.funded_pct
+                    : (totalSharesCount > 0 ? Math.min(100, Math.max(0, Math.round((soldCount / totalSharesCount) * 100))) : 0);
                 const isWishlisted = wishlistIds.includes(offering.id);
 
                 return (
@@ -895,6 +975,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 18,
     paddingTop: 12,
+    paddingBottom: Platform.OS === "ios" ? 120 : 100,
   },
 
   // ── Brand Header ────────────────────────────────────────────────────────────

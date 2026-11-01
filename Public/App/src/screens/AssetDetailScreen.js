@@ -1271,26 +1271,33 @@ export default function AssetDetailScreen({ navigation, route }) {
           >
             <Ionicons
               name={explicitAssetGlbUrl ? "cube-outline" : "camera-outline"}
-              size={18}
-              color="#00C2FF"
+              size={17}
+              color="#0099D6"
             />
+            <Text style={styles.bottomArSubText} numberOfLines={1}>
+              {explicitAssetGlbUrl ? "3D VIEW" : "3D ROOM"}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.healthReportBtn}
             onPress={() => navigation.navigate(SCREENS.HEALTH_REPORT, { asset })}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Asset Health Report"
+            accessibilityHint="Opens AI Vision Authenticity & Condition Health Report"
           >
             <Feather
               name="activity"
-              size={16}
-              color="#0F172A"
-              style={{ marginRight: 6 }}
+              size={17}
+              color="#7C3AED"
             />
-            <Text style={styles.healthReportText}>Health Report</Text>
+            <Text style={styles.healthReportSubText} numberOfLines={1}>
+              HEALTH
+            </Text>
           </TouchableOpacity>
 
-          {isInvestmentEnabled && (
+          {isInvestmentEnabled && !isOwner && !isSeller && (
             <TouchableOpacity
               style={styles.bottomSharesBtn}
               onPress={() => {
@@ -1303,11 +1310,13 @@ export default function AssetDetailScreen({ navigation, route }) {
             >
               <Ionicons
                 name="pie-chart"
-                size={13}
+                size={14}
                 color="#6C47FF"
-                style={{ marginRight: 4 }}
+                style={{ marginRight: 5 }}
               />
-              <Text style={styles.bottomSharesBtnText}>Shares</Text>
+              <Text style={styles.bottomSharesBtnText} numberOfLines={1}>
+                Shares
+              </Text>
             </TouchableOpacity>
           )}
 
@@ -1321,17 +1330,19 @@ export default function AssetDetailScreen({ navigation, route }) {
                 name="slash"
                 size={14}
                 color="#DC2626"
-                style={{ marginRight: 6 }}
+                style={{ marginRight: 5 }}
               />
-              <Text style={styles.bottomDelistBtnText}>Delist</Text>
+              <Text style={styles.bottomDelistBtnText} numberOfLines={1}>
+                Delist
+              </Text>
             </TouchableOpacity>
           )}
 
           <TouchableOpacity
             style={[
               styles.bottomOfferBtn,
-              !isInvestmentEnabled && { flex: 1 },
-              (isSold || isDelisted || (isInEscrow && !isOwner && !isSeller) || (isOwner && !isSold && !isInEscrow)) && { opacity: 0.65 },
+              (!isInvestmentEnabled || isOwner || isSeller) && { flex: 1 },
+              (isSold || isDelisted || (isInEscrow && !isOwner && !isSeller) || (isOwner && !isSold && !isInEscrow)) && styles.bottomOfferBtnDisabled,
             ]}
             disabled={isSold || isDelisted || (isInEscrow && !isOwner && !isSeller) || (isOwner && !isSold && !isInEscrow)}
             onPress={() => {
@@ -1349,23 +1360,25 @@ export default function AssetDetailScreen({ navigation, route }) {
             activeOpacity={0.85}
           >
             <View style={styles.bottomOfferGradient}>
-              <Text style={styles.bottomOfferText}>
+              <Text style={styles.bottomOfferText} numberOfLines={1}>
                 {isSold
                   ? "Sold Out"
                   : isDelisted
                   ? "Delisted"
                   : isInEscrow
-                  ? (isOwner || isSeller ? "Track Active Escrow" : "In Escrow")
+                  ? (isOwner || isSeller ? "Track Escrow" : "In Escrow")
                   : isOwner
                   ? "Your Listing"
+                  : isInvestmentEnabled
+                  ? "Buy Entire"
                   : "Buy Entire Item"}
               </Text>
               {!isSold && !isDelisted && !(isInEscrow && !isOwner && !isSeller) && !isOwner && (
                 <Feather
                   name="arrow-right"
-                  size={15}
+                  size={14}
                   color="#FFFFFF"
-                  style={{ marginLeft: 6 }}
+                  style={{ marginLeft: 4 }}
                 />
               )}
             </View>
@@ -2610,49 +2623,64 @@ const styles = StyleSheet.create({
   // Bottom Floating Bar
   bottomBar: {
     flexDirection: "row",
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: Platform.OS === "ios" ? 24 : 16,
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === "ios" ? 26 : 14,
+    backgroundColor: "rgba(255, 255, 255, 0.98)",
     borderTopWidth: 1,
     borderTopColor: "rgba(226, 232, 240, 0.9)",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 8,
   },
   healthReportBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 16,
-    backgroundColor: "#F8FAFC",
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: "#FAF5FF",
     borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-    flexDirection: "row",
+    borderColor: "rgba(124, 58, 237, 0.4)",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  healthReportText: {
-    fontSize: 14,
+  healthReportSubText: {
+    fontSize: 8,
     fontWeight: "800",
-    color: "#0F172A",
+    color: "#7C3AED",
+    letterSpacing: 0.4,
+    marginTop: 2,
   },
   bottomSharesBtn: {
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 16,
+    flex: 1,
+    height: 48,
+    borderRadius: 15,
     backgroundColor: "#F3EEFF",
     borderWidth: 1.5,
     borderColor: "#D8C7FF",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 8,
   },
   bottomSharesBtnText: {
     fontSize: 13,
     fontWeight: "800",
     color: "#6C47FF",
+    letterSpacing: 0.2,
   },
   bottomOfferBtn: {
-    flex: 1.4,
-    borderRadius: 16,
+    flex: 1.35,
+    height: 48,
+    borderRadius: 15,
     overflow: "hidden",
     backgroundColor: "#6C47FF",
     shadowColor: "#6C47FF",
@@ -2660,22 +2688,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 4,
+    justifyContent: "center",
   },
   bottomOfferBtnDisabled: {
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#CBD5E1",
     shadowOpacity: 0,
     elevation: 0,
   },
   bottomOfferGradient: {
-    paddingVertical: 14,
+    height: "100%",
+    paddingHorizontal: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
   bottomOfferText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: "900",
     color: "#FFFFFF",
+    letterSpacing: 0.2,
   },
 
   // Fullscreen Modal
@@ -3188,10 +3219,10 @@ const styles = StyleSheet.create({
   bottomArBtn: {
     width: 48,
     height: 48,
-    borderRadius: 16,
-    backgroundColor: "#F8FAFC",
+    borderRadius: 15,
+    backgroundColor: "#F0FBFF",
     borderWidth: 1.5,
-    borderColor: "rgba(0, 194, 255, 0.4)",
+    borderColor: "rgba(0, 194, 255, 0.45)",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#00C2FF",
@@ -3199,6 +3230,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 2,
+  },
+  bottomArSubText: {
+    fontSize: 8,
+    fontWeight: "800",
+    color: "#0099D6",
+    letterSpacing: 0.4,
+    marginTop: 2,
   },
   wholeItemBadgeWrap: {
     alignItems: "flex-end",
@@ -3227,16 +3265,16 @@ const styles = StyleSheet.create({
     color: "#15803D",
   },
   bottomDelistBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 16,
+    flex: 1,
+    height: 48,
+    paddingHorizontal: 10,
+    borderRadius: 15,
     backgroundColor: "#FEE2E2",
     borderWidth: 1.5,
     borderColor: "#FCA5A5",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
   },
   bottomDelistBtnText: {
     fontSize: 13,

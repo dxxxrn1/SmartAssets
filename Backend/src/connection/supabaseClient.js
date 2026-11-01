@@ -28,6 +28,16 @@ if (!supabaseUrl || !supabaseServiceKey) {
   process.exit(1);
 }
 
+// Startup sanity check: the shared client MUST be service_role for backend writes.
+try {
+  const payload = JSON.parse(Buffer.from(supabaseServiceKey.split('.')[1], 'base64').toString());
+  if (payload.role === 'service_role') {
+    console.log('🔑 [SupabaseClient] Shared backend client initialized with role: "service_role"');
+  } else {
+    console.error(`🚨 [SupabaseClient] SUPABASE_SERVICE_ROLE_KEY has role "${payload.role}", expected "service_role". Escrow/vault writes will fail.`);
+  }
+} catch (_) {}
+
 const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {
     autoRefreshToken: false,
@@ -53,5 +63,22 @@ const supabaseAnon = supabaseAnonKey
   : supabase;
 
 supabase.supabaseAnon = supabaseAnon;
+
+/**
+ * Returns a brand-new, disposable client for user-facing auth calls
+ * (signInWithPassword, verifyOtp, ...). supabase-js keeps the signed-in user's session
+ * in memory on the client that made the call, so running these on the shared
+ * service_role client would silently downgrade ALL later backend queries to the
+ * 'authenticated' role (-> "permission denied for table escrow_orders").
+ */
+supabase.createAuthClient = function createAuthClient() {
+  return createClient(supabaseUrl, supabaseAnonKey || supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  });
+};
 
 module.exports = supabase;

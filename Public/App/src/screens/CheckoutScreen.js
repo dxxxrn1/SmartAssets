@@ -34,6 +34,7 @@ import {
   createStripePaymentMethod,
   confirmStripePayment,
   resolveImageUrl,
+  getUserVault,
 } from '../services/api';
 import { SCREENS } from '../constants/navigation';
 import storage, { STORAGE_KEYS } from '../utils/storage';
@@ -47,6 +48,7 @@ const CANVAS_MESH = [
 ];
 
 const PAYMENT_METHODS = [
+  { id: 'vault', label: 'Vault Balance', type: 'feather', icon: 'shield', tag: 'Available Cash' },
   { id: 'wallet', label: 'MetaMask Web3', type: 'ionicons', icon: 'wallet-outline', tag: 'Sepolia ETH' },
   { id: 'card', label: 'Credit / Debit Card', type: 'feather', icon: 'credit-card', tag: 'Stripe' },
   { id: 'bank', label: 'Bank Transfer', type: 'ionicons', icon: 'business-outline', tag: 'UK Wire / FPS' },
@@ -90,10 +92,26 @@ export default function CheckoutScreen({ navigation, route }) {
   const [sharesCount, setSharesCount] = useState(1);
   const [riskAcknowledged, setRiskAcknowledged] = useState(false);
 
-  const [selectedPayment, setSelectedPayment] = useState('wallet');
+  const [selectedPayment, setSelectedPayment] = useState('vault');
   const [confirmed, setConfirmed] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
+  const [availableBalance, setAvailableBalance] = useState(0);
+
+  useEffect(() => {
+    storage.getJSON(STORAGE_KEYS.ESCROW_CASH).then((cash) => {
+      if (typeof cash === 'number') setAvailableBalance(cash);
+    });
+    if (token) {
+      getUserVault(token)
+        .then((res) => {
+          if (typeof res?.summary?.availableBalanceNum === 'number') {
+            setAvailableBalance(res.summary.availableBalanceNum);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [token]);
 
   // Exchange rates, escrow details, and Stripe config
   const [rates, setRates] = useState({
@@ -373,6 +391,18 @@ export default function CheckoutScreen({ navigation, route }) {
             reference: bankRef,
             accountName: 'SmartAssets Custody Ltd',
           };
+        } else if (selectedPayment === 'vault') {
+          if (availableBalance < total) {
+            Alert.alert(
+              'Insufficient Vault Balance',
+              `Your available spendable balance is R${availableBalance.toLocaleString('en-ZA')}, but this purchase requires R${total.toLocaleString('en-ZA')}.\n\nPlease deposit funds or choose another payment rail.`
+            );
+            setPurchasing(false);
+            return;
+          }
+          paymentDetails = {
+            rail: 'vault_balance',
+          };
         }
 
         const res = await processPaymentApi(
@@ -391,6 +421,11 @@ export default function CheckoutScreen({ navigation, route }) {
         );
 
         if (res?.success) {
+          if (selectedPayment === 'vault') {
+            const nextBal = Math.max(0, availableBalance - total);
+            setAvailableBalance(nextBal);
+            await storage.setJSON(STORAGE_KEYS.ESCROW_CASH, nextBal);
+          }
           if (res.receipt?.isSettled) {
             await recordFractionalHolding();
           }
@@ -909,6 +944,47 @@ export default function CheckoutScreen({ navigation, route }) {
               );
             })}
           </View>
+
+          {/* ── 5A. Vault Balance Tab ── */}
+          {selectedPayment === 'vault' && (
+            <View style={styles.paymentDetailCard}>
+              <View style={styles.paymentDetailHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Feather name="shield" size={20} color="#10B981" />
+                  <Text style={styles.detailTitle}>Vault Balance Payment</Text>
+                </View>
+                <View style={[styles.sepoliaBadge, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                  <Text style={[styles.sepoliaBadgeText, { color: '#10B981' }]}>Instant Settlement</Text>
+                </View>
+              </View>
+
+              <View style={styles.ethAmountBox}>
+                <Text style={styles.ethBoxLabel}>AVAILABLE SPENDABLE CASH</Text>
+                <Text style={[styles.ethBoxValue, { color: availableBalance >= total ? '#10B981' : '#EF4444' }]}>
+                  R{availableBalance.toLocaleString('en-ZA')}
+                </Text>
+                <Text style={styles.ethBoxRate}>
+                  Purchase total: R{total.toLocaleString('en-ZA')}
+                </Text>
+              </View>
+
+              {availableBalance >= total ? (
+                <View style={styles.connectedRow}>
+                  <Feather name="check-circle" size={14} color="#10B981" style={{ marginRight: 4 }} />
+                  <Text style={[styles.connectedLabel, { color: '#10B981' }]}>
+                    Sufficient spendable balance. Instant settlement into your Vault.
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.35)', borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Feather name="alert-circle" size={16} color="#EF4444" />
+                  <Text style={{ flex: 1, fontSize: 12, color: '#EF4444', fontWeight: '600' }}>
+                    Insufficient spendable balance. Please deposit funds or choose another payment method.
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* ── 5. MetaMask Web3 Tab ── */}
           {selectedPayment === 'wallet' && (

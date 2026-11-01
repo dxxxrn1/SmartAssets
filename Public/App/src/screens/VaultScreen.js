@@ -70,7 +70,6 @@ const DEFAULT_PERSONAL_ITEMS = [];
 const DEFAULT_FRACTIONAL_ITEMS = [];
 const DEFAULT_ACTIVITY_LOG = [];
 
-
 export default function VaultScreen({ navigation, route }) {
   const { width: screenWidth } = useWindowDimensions();
   const isDesktop = screenWidth >= 860;
@@ -80,8 +79,10 @@ export default function VaultScreen({ navigation, route }) {
 
   const { user, token, logout } = useAuth();
   const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
-  const [gatekeeperRequireBankOnly, setGatekeeperRequireBankOnly] = useState(false);
-  const [gatekeeperActionTitle, setGatekeeperActionTitle] = useState("Transact");
+  const [gatekeeperRequireBankOnly, setGatekeeperRequireBankOnly] =
+    useState(false);
+  const [gatekeeperActionTitle, setGatekeeperActionTitle] =
+    useState("Transact");
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -112,16 +113,18 @@ export default function VaultScreen({ navigation, route }) {
 
   // Dynamic Financial Math for Headline
   const personalTotal = personalItems.reduce(
-    (sum, it) => sum + (Number(it.liveMarketValue) || Number(it.initialValue) || 0),
-    0
+    (sum, it) =>
+      sum + (Number(it.liveMarketValue) || Number(it.initialValue) || 0),
+    0,
   );
   const fractionalTotal = fractionalItems.reduce(
     (sum, it) => sum + (Number(it.myStake) || 0),
-    0
+    0,
   );
   const totalAssetsValueNum = personalTotal + fractionalTotal;
   const totalAssetsValueFormatted = formatGBP(totalAssetsValueNum);
-  const totalCollectionValueNum = totalAssetsValueNum + escrowCash + escrowLockedCash;
+  const totalCollectionValueNum =
+    totalAssetsValueNum + escrowCash + escrowLockedCash;
   const totalCollectionValueFormatted = formatGBP(totalCollectionValueNum);
 
   // Modals
@@ -145,7 +148,8 @@ export default function VaultScreen({ navigation, route }) {
   const [withdrawMaskedEmail, setWithdrawMaskedEmail] = useState("");
   const [withdrawOtpCode, setWithdrawOtpCode] = useState("");
   const [withdrawCountdownSec, setWithdrawCountdownSec] = useState(0);
-  const [withdrawChallengeStatus, setWithdrawChallengeStatus] = useState("idle"); // 'idle' | 'pending' | 'expired' | 'cancelled' | 'error'
+  const [withdrawChallengeStatus, setWithdrawChallengeStatus] =
+    useState("idle"); // 'idle' | 'pending' | 'expired' | 'cancelled' | 'error'
   const [withdrawStatusMessage, setWithdrawStatusMessage] = useState("");
   const [sendingWithdrawOtp, setSendingWithdrawOtp] = useState(false);
 
@@ -164,7 +168,7 @@ export default function VaultScreen({ navigation, route }) {
         if (prev <= 1) {
           setWithdrawChallengeStatus("expired");
           setWithdrawStatusMessage(
-            "Verification code expired after 2 minutes. This withdrawal attempt was cancelled and no funds were reserved."
+            "Verification code expired after 2 minutes. This withdrawal attempt was cancelled and no funds were reserved.",
           );
           return 0;
         }
@@ -172,7 +176,12 @@ export default function VaultScreen({ navigation, route }) {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [withdrawModalVisible, withdrawStep, withdrawChallengeStatus, withdrawCountdownSec]);
+  }, [
+    withdrawModalVisible,
+    withdrawStep,
+    withdrawChallengeStatus,
+    withdrawCountdownSec,
+  ]);
 
   // Share Redemption State & Modal
   const [sellModalVisible, setSellModalVisible] = useState(false);
@@ -181,10 +190,13 @@ export default function VaultScreen({ navigation, route }) {
   const [sellQuote, setSellQuote] = useState(null);
   const [loadingSellQuote, setLoadingSellQuote] = useState(false);
   const [submittingSell, setSubmittingSell] = useState(false);
-  const [sellDestinationMethod, setSellDestinationMethod] = useState("escrow_wallet");
+  const [sellDestinationMethod, setSellDestinationMethod] =
+    useState("escrow_wallet");
   const [sellBankName, setSellBankName] = useState("Standard Bank");
   const [sellAccountNumber, setSellAccountNumber] = useState("");
-  const [sellAccountHolder, setSellAccountHolder] = useState(user?.fullName || "");
+  const [sellAccountHolder, setSellAccountHolder] = useState(
+    user?.fullName || "",
+  );
   const [redemptionRequests, setRedemptionRequests] = useState([]);
   const [cancellingRequestId, setCancellingRequestId] = useState(null);
 
@@ -209,11 +221,34 @@ export default function VaultScreen({ navigation, route }) {
               String(f.id) === String(h.id) ||
               (f.name &&
                 h.name &&
-                f.name.toLowerCase() === h.name.toLowerCase())
+                f.name.toLowerCase() === h.name.toLowerCase()),
           );
-          const sOwned = Number(h.sharesOwned ?? h.shares_count ?? h.shares ?? 1);
+          const sOwned = Number(
+            h.sharesOwned ?? h.shares_count ?? h.shares ?? 1,
+          );
           const sReserved = Number(h.reserved_shares ?? h.reservedShares ?? 0);
           const sAvailable = Math.max(0, sOwned - sReserved);
+          const totalSharesCount = Number(
+            h.total_shares || h.totalShares || h.shares || 100,
+          );
+          const sharesSoldCount = Number(
+            h.shares_sold ?? h.sharesSold ?? sOwned ?? 0,
+          );
+          const dynamicFundingPct =
+            typeof h.fundingPct === "number"
+              ? h.fundingPct
+              : typeof h.funded_pct === "number"
+                ? h.funded_pct
+                : totalSharesCount > 0
+                  ? Math.min(
+                      100,
+                      Math.max(
+                        0,
+                        Math.round((sharesSoldCount / totalSharesCount) * 100),
+                      ),
+                    )
+                  : 0;
+
           const mapped = {
             id: h.id || `fraction-${Math.random()}`,
             asset_id: h.asset_id || h.assetId || h.id,
@@ -225,15 +260,19 @@ export default function VaultScreen({ navigation, route }) {
             availableShares: sAvailable,
             sharePrice: Number(h.price_num) || 100,
             sharePriceFormatted: formatGBP(h.price_num || 100) + "/sh",
-            myStake: Number(h.myStake) || (sOwned * (Number(h.price_num) || 100)),
-            myStakeFormatted: formatGBP(Number(h.myStake) || (sOwned * (Number(h.price_num) || 100))),
+            myStake: Number(h.myStake) || sOwned * (Number(h.price_num) || 100),
+            myStakeFormatted: formatGBP(
+              Number(h.myStake) || sOwned * (Number(h.price_num) || 100),
+            ),
             returnPct:
               h.badgeText ||
               (h.gain ? h.gain.split("<!--")[0].trim() : "+0.0% Return"),
             returnType: h.badgeType || (h.positive ? "positive" : "negative"),
-            poolValuation: formatGBP((Number(h.price_num) || 100) * 100),
-            totalShares: 100,
-            fundingPct: 80,
+            poolValuation: formatGBP(
+              (Number(h.price_num) || 100) * totalSharesCount,
+            ),
+            totalShares: totalSharesCount,
+            fundingPct: dynamicFundingPct,
           };
           if (foundIdx >= 0) {
             mergedFractional[foundIdx] = {
@@ -249,25 +288,32 @@ export default function VaultScreen({ navigation, route }) {
               String(p.id) === String(h.id) ||
               (p.name &&
                 h.name &&
-                p.name.toLowerCase() === h.name.toLowerCase())
+                p.name.toLowerCase() === h.name.toLowerCase()),
           );
           const initVal = Number(h.initialValue || h.price_num || 120);
           const liveVal = Number(h.liveMarketValue || h.price_num || 120);
           const diff = liveVal - initVal;
-          const pct =
-            initVal > 0 ? ((diff / initVal) * 100).toFixed(1) : "0.0";
+          const pct = initVal > 0 ? ((diff / initVal) * 100).toFixed(1) : "0.0";
           const isDeprec = diff < 0;
-          const rawBadge = h.badgeText ? String(h.badgeText).replace(/Tech Depreciation/gi, "Market Depreciation") : null;
+          const rawBadge = h.badgeText
+            ? String(h.badgeText).replace(
+                /Tech Depreciation/gi,
+                "Market Depreciation",
+              )
+            : null;
           const badgeText =
             rawBadge ||
-            (isDeprec
-              ? `${pct}% Market Depreciation`
-              : `+${pct}% Market Gain`);
-          const badgeType =
-            h.badgeType || (isDeprec ? "negative" : "positive");
+            (isDeprec ? `${pct}% Market Depreciation` : `+${pct}% Market Gain`);
+          const badgeType = h.badgeType || (isDeprec ? "negative" : "positive");
 
           const mapped = {
-            id: h.id || `personal-${Math.random()}`,
+            id: h.asset_id || h.assetId || h.id || `personal-${Math.random()}`,
+            holding_id: h.id,
+            asset_id: h.asset_id || h.assetId || null,
+            user_id: h.user_id || user?.id,
+            current_owner_id: h.user_id || user?.id,
+            seller_id: h.user_id || user?.id,
+            owner: user?.fullName || user?.name || "You",
             name: h.name,
             category: h.category || "Luxury Item",
             image: resolveImageUrl(h.image),
@@ -281,6 +327,8 @@ export default function VaultScreen({ navigation, route }) {
             certId:
               h.certId || `ERC-721 #${String(h.id || "").slice(-4) || "5001"}`,
             condition: h.condition || "Mint Condition",
+            is_vault_item: true,
+            status: h.status || "active",
           };
           if (foundIdx >= 0) {
             mergedPersonal[foundIdx] = {
@@ -295,7 +343,7 @@ export default function VaultScreen({ navigation, route }) {
 
       return { personal: mergedPersonal, fractional: mergedFractional };
     },
-    []
+    [],
   );
 
   // 1. Initial cached state restoration (runs only once on mount)
@@ -324,7 +372,10 @@ export default function VaultScreen({ navigation, route }) {
           const cleaned = cachedPersonal.map((item) => ({
             ...item,
             badgeText: item.badgeText
-              ? String(item.badgeText).replace(/Tech Depreciation/gi, "Market Depreciation")
+              ? String(item.badgeText).replace(
+                  /Tech Depreciation/gi,
+                  "Market Depreciation",
+                )
               : item.badgeText,
           }));
           setPersonalItems(cleaned);
@@ -344,12 +395,14 @@ export default function VaultScreen({ navigation, route }) {
         }
         if (cachedLogs && Array.isArray(cachedLogs) && cachedLogs.length > 0) {
           const cleaned = cachedLogs.filter(
-            (log) => log.type !== "ai_sync" && log.title !== "AI Market Valuation Sync"
+            (log) =>
+              log.type !== "ai_sync" &&
+              log.title !== "AI Market Valuation Sync",
           );
           setActivityLog(cleaned);
           storage.setJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG, cleaned);
         }
-      }
+      },
     );
     return () => {
       isMounted = false;
@@ -366,7 +419,10 @@ export default function VaultScreen({ navigation, route }) {
           const cleaned = res.map((item) => ({
             ...item,
             badgeText: item.badgeText
-              ? String(item.badgeText).replace(/Tech Depreciation/gi, "Market Depreciation")
+              ? String(item.badgeText).replace(
+                  /Tech Depreciation/gi,
+                  "Market Depreciation",
+                )
               : item.badgeText,
           }));
           setPersonalItems(cleaned);
@@ -382,7 +438,9 @@ export default function VaultScreen({ navigation, route }) {
       storage.getJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG).then((res) => {
         if (isMounted && res && Array.isArray(res) && res.length > 0) {
           const cleaned = res.filter(
-            (log) => log.type !== "ai_sync" && log.title !== "AI Market Valuation Sync"
+            (log) =>
+              log.type !== "ai_sync" &&
+              log.title !== "AI Market Valuation Sync",
           );
           setActivityLog(cleaned);
           storage.setJSON(STORAGE_KEYS.VAULT_ACTIVITY_LOG, cleaned);
@@ -416,9 +474,16 @@ export default function VaultScreen({ navigation, route }) {
             storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, mergedP);
             storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, mergedF);
 
-            const cashVal = typeof s.availableBalanceNum === 'number' ? s.availableBalanceNum : 0;
-            const escVal = typeof s.escrowBalanceNum === 'number' ? s.escrowBalanceNum : 0;
-            const sellVal = typeof s.sellerPendingEscrowNum === 'number' ? s.sellerPendingEscrowNum : 0;
+            const cashVal =
+              typeof s.availableBalanceNum === "number"
+                ? s.availableBalanceNum
+                : 0;
+            const escVal =
+              typeof s.escrowBalanceNum === "number" ? s.escrowBalanceNum : 0;
+            const sellVal =
+              typeof s.sellerPendingEscrowNum === "number"
+                ? s.sellerPendingEscrowNum
+                : 0;
             setEscrowCash(cashVal);
             setEscrowLockedCash(escVal);
             setSellerPendingCash(sellVal);
@@ -487,10 +552,21 @@ export default function VaultScreen({ navigation, route }) {
         })
         .catch(() => {});
 
+      getBankAccountApi(token)
+        .then((bRes) => {
+          if (isMounted && bRes?.success && bRes.bank_account && updateUser) {
+            updateUser({
+              bankAccount: bRes.bank_account,
+              bankStatus: bRes.bank_account.status,
+            });
+          }
+        })
+        .catch(() => {});
+
       return () => {
         isMounted = false;
       };
-    }, [token, processHoldingsIntoTabs])
+    }, [token, processHoldingsIntoTabs]),
   );
 
   // ── Handle incoming route navigation parameters (e.g. from InvestScreen) ────
@@ -515,13 +591,23 @@ export default function VaultScreen({ navigation, route }) {
             const initialVal =
               Number(item.initialValue) ||
               Number(item.price_num) ||
-              parseFloat(String(item.initialValue || item.price || "").replace(/[^0-9.]/g, "")) ||
+              parseFloat(
+                String(item.initialValue || item.price || "").replace(
+                  /[^0-9.]/g,
+                  "",
+                ),
+              ) ||
               120;
 
             const currentLiveVal =
               Number(item.liveMarketValue) ||
               Number(item.price_num) ||
-              parseFloat(String(item.liveMarketValue || item.price || "").replace(/[^0-9.]/g, "")) ||
+              parseFloat(
+                String(item.liveMarketValue || item.price || "").replace(
+                  /[^0-9.]/g,
+                  "",
+                ),
+              ) ||
               initialVal;
 
             let newLiveVal = currentLiveVal;
@@ -534,21 +620,29 @@ export default function VaultScreen({ navigation, route }) {
                     category: item.category || "Collectibles",
                     condition: item.condition || "mint",
                   },
-                  token
+                  token,
                 );
 
-                const oracleVal = Number(res?.fairMarketValue || res?.fairValue || res?.market?.fairValue);
+                const oracleVal = Number(
+                  res?.fairMarketValue ||
+                    res?.fairValue ||
+                    res?.market?.fairValue,
+                );
                 if (oracleVal && !isNaN(oracleVal) && oracleVal > 0) {
                   newLiveVal = Math.round(oracleVal);
                 }
               }
             } catch (err) {
-              console.warn(`[Vault] Market Oracle query error for "${item.name}":`, err.message);
+              console.warn(
+                `[Vault] Market Oracle query error for "${item.name}":`,
+                err.message,
+              );
               // Preserve existing liveMarketValue if Oracle query is offline or fails
             }
 
             const diff = newLiveVal - initialVal;
-            const pct = initialVal > 0 ? ((diff / initialVal) * 100).toFixed(1) : "0.0";
+            const pct =
+              initialVal > 0 ? ((diff / initialVal) * 100).toFixed(1) : "0.0";
             const isDeprec = diff < 0;
             const badgeText = isDeprec
               ? `${pct}% Market Depreciation`
@@ -568,7 +662,7 @@ export default function VaultScreen({ navigation, route }) {
               price: formatZAR(newLiveVal),
               price_num: newLiveVal,
             };
-          })
+          }),
         );
 
         setPersonalItems(updated);
@@ -577,7 +671,7 @@ export default function VaultScreen({ navigation, route }) {
         if (!silent) {
           Alert.alert(
             "Live Market Oracle Updated",
-            "Real-time market valuations synchronized from South African retail comps & SerpApi."
+            "Real-time market valuations synchronized from South African retail comps & SerpApi.",
           );
         }
       } catch (err) {
@@ -588,7 +682,7 @@ export default function VaultScreen({ navigation, route }) {
         setSyncingPrices(false);
       }
     },
-    [personalItems, token]
+    [personalItems, token],
   );
 
   const onRefresh = useCallback(async () => {
@@ -607,9 +701,16 @@ export default function VaultScreen({ navigation, route }) {
           setFractionalItems(mergedF);
           await storage.setJSON(STORAGE_KEYS.PERSONAL_COLLECTION, mergedP);
           await storage.setJSON(STORAGE_KEYS.CO_OWNED_ASSETS, mergedF);
-          const cashVal = typeof s.availableBalanceNum === 'number' ? s.availableBalanceNum : 0;
-          const escVal = typeof s.escrowBalanceNum === 'number' ? s.escrowBalanceNum : 0;
-          const sellVal = typeof s.sellerPendingEscrowNum === 'number' ? s.sellerPendingEscrowNum : 0;
+          const cashVal =
+            typeof s.availableBalanceNum === "number"
+              ? s.availableBalanceNum
+              : 0;
+          const escVal =
+            typeof s.escrowBalanceNum === "number" ? s.escrowBalanceNum : 0;
+          const sellVal =
+            typeof s.sellerPendingEscrowNum === "number"
+              ? s.sellerPendingEscrowNum
+              : 0;
           setEscrowCash(cashVal);
           setEscrowLockedCash(escVal);
           setSellerPendingCash(sellVal);
@@ -633,8 +734,12 @@ export default function VaultScreen({ navigation, route }) {
   }, [token, personalItems, fractionalItems, processHoldingsIntoTabs]);
 
   const handleDeposit = async () => {
-    const isVerified = user?.verification_status === "verified" || user?.kycStatus === "verified";
-    const hasApprovedBank = user?.bankStatus === "approved" || user?.bankAccount?.status === "approved";
+    const isVerified =
+      user?.verification_status === "verified" ||
+      user?.kycStatus === "verified";
+    const hasApprovedBank =
+      user?.bankStatus === "approved" ||
+      user?.bankAccount?.status === "approved";
     if (user && (!isVerified || !hasApprovedBank || user.isSuspended)) {
       setGatekeeperRequireBankOnly(!hasApprovedBank && isVerified);
       setGatekeeperActionTitle("Deposit Funds");
@@ -688,7 +793,9 @@ export default function VaultScreen({ navigation, route }) {
         (res.credited
           ? `Verified deposit of R${amt.toLocaleString("en-ZA")} credited to your Vault.`
           : `Deposit request of R${amt.toLocaleString("en-ZA")} submitted (Pending Verification). Your spendable balance will update once treasury confirms receipt of funds.`);
-      const alertTitle = res.credited ? "Deposit Credited" : "Deposit Pending Review";
+      const alertTitle = res.credited
+        ? "Deposit Credited"
+        : "Deposit Pending Review";
       Platform.OS === "web" ? alert(msg) : Alert.alert(alertTitle, msg);
     } catch (err) {
       const msg = err.message || "Failed to submit deposit request.";
@@ -713,8 +820,12 @@ export default function VaultScreen({ navigation, route }) {
 
   // Step 1: Validate amount & load masked approved bank details for confirmation prompt
   const handleProceedToBankConfirmation = async () => {
-    const isVerified = user?.verification_status === "verified" || user?.kycStatus === "verified";
-    const hasApprovedBank = user?.bankStatus === "approved" || user?.bankAccount?.status === "approved";
+    const isVerified =
+      user?.verification_status === "verified" ||
+      user?.kycStatus === "verified";
+    const hasApprovedBank =
+      user?.bankStatus === "approved" ||
+      user?.bankAccount?.status === "approved";
     if (user && (!isVerified || user.isSuspended)) {
       setGatekeeperRequireBankOnly(false);
       setGatekeeperActionTitle("Withdraw Funds");
@@ -729,7 +840,9 @@ export default function VaultScreen({ navigation, route }) {
       return;
     }
 
-    const amt = parseFloat(String(withdrawAmount || "").replace(/[^0-9.]/g, ""));
+    const amt = parseFloat(
+      String(withdrawAmount || "").replace(/[^0-9.]/g, ""),
+    );
     const available = escrowCash;
 
     if (isNaN(amt) || amt <= 0) {
@@ -740,7 +853,9 @@ export default function VaultScreen({ navigation, route }) {
 
     if (amt > available) {
       const msg = `Insufficient available balance. You requested R${amt.toLocaleString("en-ZA")} but available spendable cash is R${available.toLocaleString("en-ZA")}.`;
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Insufficient Balance", msg);
+      Platform.OS === "web"
+        ? alert(msg)
+        : Alert.alert("Insufficient Balance", msg);
       return;
     }
 
@@ -760,29 +875,36 @@ export default function VaultScreen({ navigation, route }) {
           bankInfo?.accountNumberMasked ||
           bankInfo?.account_number ||
           bankInfo?.accountNumber ||
-          ""
+          "",
       ).replace(/\s+/g, "");
       const maskedAcc = rawAcc.startsWith("****")
         ? rawAcc
         : rawAcc.length >= 4
-        ? `****${rawAcc.slice(-4)}`
-        : "****";
+          ? `****${rawAcc.slice(-4)}`
+          : "****";
 
       setWithdrawBankDetails({
         id: bankInfo?.id || null,
         bankName: bankInfo?.bank_name || bankInfo?.bankName || "Approved Bank",
         accountHolder:
-          bankInfo?.account_holder || bankInfo?.accountHolder || user?.fullName || "Account Holder",
+          bankInfo?.account_holder ||
+          bankInfo?.accountHolder ||
+          user?.fullName ||
+          "Account Holder",
         accountNumberMasked: maskedAcc,
         branchCode: bankInfo?.branch_code || bankInfo?.branchCode || "—",
-        accountType: bankInfo?.account_type || bankInfo?.accountType || "Cheque / Current",
+        accountType:
+          bankInfo?.account_type || bankInfo?.accountType || "Cheque / Current",
         status: bankInfo?.status || "approved",
       });
       setWithdrawStatusMessage("");
       setWithdrawStep("confirm_bank");
     } catch (err) {
-      const msg = err.message || "Could not load your approved bank account details.";
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Bank Details Error", msg);
+      const msg =
+        err.message || "Could not load your approved bank account details.";
+      Platform.OS === "web"
+        ? alert(msg)
+        : Alert.alert("Bank Details Error", msg);
     } finally {
       setSendingWithdrawOtp(false);
     }
@@ -790,7 +912,9 @@ export default function VaultScreen({ navigation, route }) {
 
   // Step 2 -> Step 3: Only after user taps Confirm on "Are these your bank details?", send 6-digit email OTP
   const handleConfirmBankAndSendOtp = async () => {
-    const amt = parseFloat(String(withdrawAmount || "").replace(/[^0-9.]/g, ""));
+    const amt = parseFloat(
+      String(withdrawAmount || "").replace(/[^0-9.]/g, ""),
+    );
     if (isNaN(amt) || amt <= 0) return;
 
     try {
@@ -803,18 +927,21 @@ export default function VaultScreen({ navigation, route }) {
           amount: amt,
           confirmedBankDetails: true,
         },
-        token
+        token,
       );
 
       if (!res?.success || !res?.challengeId) {
-        throw new Error(res?.error || "Failed to send verification code to your email.");
+        throw new Error(
+          res?.error || "Failed to send verification code to your email.",
+        );
       }
 
       if (res.bankAccount) {
         setWithdrawBankDetails({
           id: res.bankAccount.id,
           bankName: res.bankAccount.bankName || "Approved Bank",
-          accountHolder: res.bankAccount.accountHolder || user?.fullName || "Account Holder",
+          accountHolder:
+            res.bankAccount.accountHolder || user?.fullName || "Account Holder",
           accountNumberMasked: res.bankAccount.accountNumberMasked || "****",
           branchCode: res.bankAccount.branchCode || "—",
           accountType: res.bankAccount.accountType || "Cheque / Current",
@@ -824,15 +951,20 @@ export default function VaultScreen({ navigation, route }) {
 
       setWithdrawChallengeId(res.challengeId);
       setWithdrawAttemptId(res.attemptId || null);
-      setWithdrawMaskedEmail(res.maskedEmail || user?.email || "your verified email");
+      setWithdrawMaskedEmail(
+        res.maskedEmail || user?.email || "your verified email",
+      );
       setWithdrawCountdownSec(Number(res.expiresInSeconds) || 120);
       setWithdrawChallengeStatus("pending");
       setWithdrawStep("otp_entry");
     } catch (err) {
-      const msg = err.message || "Unable to send verification code. Please try again.";
+      const msg =
+        err.message || "Unable to send verification code. Please try again.";
       setWithdrawChallengeStatus("error");
       setWithdrawStatusMessage(msg);
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Verification Code Error", msg);
+      Platform.OS === "web"
+        ? alert(msg)
+        : Alert.alert("Verification Code Error", msg);
     } finally {
       setSendingWithdrawOtp(false);
     }
@@ -850,7 +982,7 @@ export default function VaultScreen({ navigation, route }) {
           challengeId: activeChallengeId || undefined,
           reason,
         },
-        token
+        token,
       ).catch(() => {});
     }
   };
@@ -859,23 +991,30 @@ export default function VaultScreen({ navigation, route }) {
   const handleVerifyOtpAndSubmitWithdrawal = async () => {
     const cleanCode = String(withdrawOtpCode || "").trim();
     if (!/^\d{6}$/.test(cleanCode)) {
-      const msg = "Please enter the 6-digit verification code sent to your email.";
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Invalid Code Format", msg);
+      const msg =
+        "Please enter the 6-digit verification code sent to your email.";
+      Platform.OS === "web"
+        ? alert(msg)
+        : Alert.alert("Invalid Code Format", msg);
       return;
     }
 
     if (withdrawChallengeStatus !== "pending" || withdrawCountdownSec <= 0) {
       const msg =
         "This verification challenge has expired or been cancelled. Please request a new code.";
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Challenge Inactive", msg);
+      Platform.OS === "web"
+        ? alert(msg)
+        : Alert.alert("Challenge Inactive", msg);
       return;
     }
 
-    const amt = parseFloat(String(withdrawAmount || "").replace(/[^0-9.]/g, ""));
+    const amt = parseFloat(
+      String(withdrawAmount || "").replace(/[^0-9.]/g, ""),
+    );
 
     try {
       setWithdrawing(true);
-      const idempotencyKey = `wth_${ withdrawChallengeId || Date.now() }`;
+      const idempotencyKey = `wth_${withdrawChallengeId || Date.now()}`;
       const res = await verifyWithdrawalChallengeApi(
         {
           challengeId: withdrawChallengeId,
@@ -883,7 +1022,7 @@ export default function VaultScreen({ navigation, route }) {
           amount: amt,
           idempotencyKey,
         },
-        token
+        token,
       );
 
       if (!res?.success) {
@@ -909,7 +1048,9 @@ export default function VaultScreen({ navigation, route }) {
       const msg =
         res.message ||
         `Email verified. Withdrawal request of R${amt.toLocaleString("en-ZA")} submitted (Pending Review in Admin Treasury Queue). Funds are reserved for payout to your approved bank account (${res.destination || "on file"}).`;
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Withdrawal Submitted for Review", msg);
+      Platform.OS === "web"
+        ? alert(msg)
+        : Alert.alert("Withdrawal Submitted for Review", msg);
     } catch (err) {
       const msg = err.message || "Failed to verify withdrawal code.";
       // A wrong first code or expired challenge immediately invalidates the challenge on the server
@@ -940,7 +1081,7 @@ export default function VaultScreen({ navigation, route }) {
         setLoadingSellQuote(false);
       }
     },
-    [token]
+    [token],
   );
 
   const openSellModal = useCallback(
@@ -950,14 +1091,16 @@ export default function VaultScreen({ navigation, route }) {
           ? item.availableShares
           : Math.max(
               0,
-              (Number(item.sharesOwned ?? item.shares_count ?? item.shares) || 1) -
-                (Number(item.reservedShares ?? item.reserved_shares) || 0)
+              (Number(item.sharesOwned ?? item.shares_count ?? item.shares) ||
+                1) - (Number(item.reservedShares ?? item.reserved_shares) || 0),
             );
 
       if (avail <= 0) {
         const msg =
           "All of your shares in this offering are currently reserved in pending redemption requests. You can manage or cancel pending requests below.";
-        Platform.OS === "web" ? alert(msg) : Alert.alert("No Shares Available", msg);
+        Platform.OS === "web"
+          ? alert(msg)
+          : Alert.alert("No Shares Available", msg);
         return;
       }
 
@@ -966,7 +1109,7 @@ export default function VaultScreen({ navigation, route }) {
       setSellModalVisible(true);
       fetchQuote(item.asset_id || item.id, 1);
     },
-    [fetchQuote]
+    [fetchQuote],
   );
 
   const handleConfirmSell = async () => {
@@ -977,19 +1120,31 @@ export default function VaultScreen({ navigation, route }) {
         ? selectedSellItem.availableShares
         : Math.max(
             0,
-            (Number(selectedSellItem.sharesOwned ?? selectedSellItem.shares_count ?? selectedSellItem.shares) || 1) -
-              (Number(selectedSellItem.reservedShares ?? selectedSellItem.reserved_shares) || 0)
+            (Number(
+              selectedSellItem.sharesOwned ??
+                selectedSellItem.shares_count ??
+                selectedSellItem.shares,
+            ) || 1) -
+              (Number(
+                selectedSellItem.reservedShares ??
+                  selectedSellItem.reserved_shares,
+              ) || 0),
           );
 
     if (isNaN(count) || count < 1 || count > maxAvailable) {
       const msg = `Please enter between 1 and ${maxAvailable} shares to redeem.`;
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Invalid Share Quantity", msg);
+      Platform.OS === "web"
+        ? alert(msg)
+        : Alert.alert("Invalid Share Quantity", msg);
       return;
     }
 
     if (sellDestinationMethod === "bank_account" && !sellAccountNumber.trim()) {
-      const msg = "Please enter your bank account number for the settlement payout.";
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Bank Account Required", msg);
+      const msg =
+        "Please enter your bank account number for the settlement payout.";
+      Platform.OS === "web"
+        ? alert(msg)
+        : Alert.alert("Bank Account Required", msg);
       return;
     }
 
@@ -1008,9 +1163,12 @@ export default function VaultScreen({ navigation, route }) {
                   accountNumber: sellAccountNumber.trim(),
                   accountHolder: sellAccountHolder,
                 }
-              : { walletAddress: user?.walletAddress || "SmartAssets Escrow Cash Wallet" },
+              : {
+                  walletAddress:
+                    user?.walletAddress || "SmartAssets Escrow Cash Wallet",
+                },
         },
-        token
+        token,
       );
 
       if (res?.success) {
@@ -1018,11 +1176,15 @@ export default function VaultScreen({ navigation, route }) {
         const grossFmt = res.redemption?.grossValuationFormatted || "";
         const netFmt = res.redemption?.netPayoutFormatted || "";
         const msg = `Redemption Request Placed!\n\nYour request to redeem ${count} share${count > 1 ? "s" : ""} (${grossFmt}) for an estimated net payout of ${netFmt} has been placed into custodial review.\n\nShares have been reserved from your active trading pool. Payout will settle once approved.`;
-        Platform.OS === "web" ? alert(msg) : Alert.alert("Redemption Request Submitted", msg);
+        Platform.OS === "web"
+          ? alert(msg)
+          : Alert.alert("Redemption Request Submitted", msg);
         onRefresh();
       } else {
         const msg = res?.error || "Failed to submit share redemption request.";
-        Platform.OS === "web" ? alert(msg) : Alert.alert("Redemption Notice", msg);
+        Platform.OS === "web"
+          ? alert(msg)
+          : Alert.alert("Redemption Notice", msg);
       }
     } catch (err) {
       const msg = err.message || "Failed to submit redemption request.";
@@ -1036,7 +1198,9 @@ export default function VaultScreen({ navigation, route }) {
     if (request.status === "settlement_processing") {
       const msg =
         "This redemption request is currently processing settlement with the custodial bank and cannot be cancelled.";
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Settlement in Progress", msg);
+      Platform.OS === "web"
+        ? alert(msg)
+        : Alert.alert("Settlement in Progress", msg);
       return;
     }
 
@@ -1047,11 +1211,15 @@ export default function VaultScreen({ navigation, route }) {
         if (res?.success) {
           const msg =
             "Your redemption request has been cancelled and your reserved shares have been restored to your active vault portfolio.";
-          Platform.OS === "web" ? alert(msg) : Alert.alert("Request Cancelled", msg);
+          Platform.OS === "web"
+            ? alert(msg)
+            : Alert.alert("Request Cancelled", msg);
           onRefresh();
         } else {
           const msg = res?.error || "Could not cancel request.";
-          Platform.OS === "web" ? alert(msg) : Alert.alert("Cancellation Notice", msg);
+          Platform.OS === "web"
+            ? alert(msg)
+            : Alert.alert("Cancellation Notice", msg);
         }
       } catch (err) {
         const msg = err.message || "Could not cancel request.";
@@ -1064,7 +1232,7 @@ export default function VaultScreen({ navigation, route }) {
     if (Platform.OS === "web") {
       if (
         window.confirm(
-          `Cancel redemption request for ${request.shares_to_redeem} shares? Your shares will be unreserved immediately.`
+          `Cancel redemption request for ${request.shares_to_redeem} shares? Your shares will be unreserved immediately.`,
         )
       ) {
         proceedCancel();
@@ -1075,8 +1243,12 @@ export default function VaultScreen({ navigation, route }) {
         `Are you sure you want to cancel your redemption request for ${request.shares_to_redeem} shares? Your shares will be restored to your active portfolio.`,
         [
           { text: "Keep Request", style: "cancel" },
-          { text: "Yes, Cancel Request", style: "destructive", onPress: proceedCancel },
-        ]
+          {
+            text: "Yes, Cancel Request",
+            style: "destructive",
+            onPress: proceedCancel,
+          },
+        ],
       );
     }
   };
@@ -1124,388 +1296,642 @@ export default function VaultScreen({ navigation, route }) {
       </View>
 
       <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#976af0"
-            colors={["#976af0", "#00fbff"]}
-          />
-        }
-      >
-        {/* ── TOP APP BAR / BRAND HEADER (Matches Home) ─────────────────────────── */}
-        <View style={styles.appBar}>
-          <TouchableOpacity
-            style={styles.brandGroup}
-            onPress={() => navigation.navigate(SCREENS.HOME)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.logoBadge}>
-              <Image
-                source={require("../../assets/logo-mark.png")}
-                style={{ width: 32, height: 32 }}
-                resizeMode="contain"
-              />
-            </View>
-            <Text style={styles.brandTitle}>SmartAssets</Text>
-          </TouchableOpacity>
-
-          <View style={styles.appBarRight}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#976af0"
+              colors={["#976af0", "#00fbff"]}
+            />
+          }
+        >
+          {/* ── TOP APP BAR / BRAND HEADER (Matches Home) ─────────────────────────── */}
+          <View style={styles.appBar}>
             <TouchableOpacity
-              style={styles.profileAvatarBtn}
-              onPress={() => navigation.navigate(SCREENS.PROFILE)}
+              style={styles.brandGroup}
+              onPress={() => navigation.navigate(SCREENS.HOME)}
               activeOpacity={0.8}
             >
-              {userPhoto ? (
+              <View style={styles.logoBadge}>
                 <Image
-                  source={{ uri: resolveImageUrl(userPhoto) }}
-                  style={styles.profileAvatarImg}
-                  resizeMode="cover"
+                  source={require("../../assets/logo-mark.png")}
+                  style={{ width: 32, height: 32 }}
+                  resizeMode="contain"
                 />
-              ) : (
-                <View style={styles.profileAvatarFallback}>
-                  <Text style={styles.profileInitialsText}>{userInitials}</Text>
-                </View>
-              )}
+              </View>
+              <Text style={styles.brandTitle}>SmartAssets</Text>
             </TouchableOpacity>
-          </View>
-        </View>
 
-        {/* ══════════════════════════════════════════════════════════════════════
-            VAULT HERO CARD: ASSET-FIRST TOTAL COLLECTION VALUE
-        ══════════════════════════════════════════════════════════════════════ */}
-        <View style={styles.heroContainer}>
-          <LinearGradient
-            colors={["#7C3AED", "#5B36F5", "#2563EB", "#00C2FF"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0.85 }}
-            style={styles.heroGradient}
-          >
-            {/* Header: Tag + Lock Icon */}
-            <View style={styles.heroHeader}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Ionicons
-                  name="shield-checkmark"
-                  size={14}
-                  color="#FFFFFF"
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={styles.heroTagText}>SECURE VAULT LEDGER</Text>
-              </View>
-
-              <View style={styles.vaultIdBadge}>
-                <Text style={styles.vaultIdText}>
-                  {user?.accountNumber || "SA-8525-9632"}
-                </Text>
-              </View>
-            </View>
-
-            {/* Main Headline: Asset Portfolio Value */}
-            <Text style={styles.heroHeadlineLabel}>PORTFOLIO ASSETS VALUE</Text>
-            <Text style={styles.totalBalanceNum}>
-              {totalAssetsValueFormatted}
-            </Text>
-
-            {/* Subtitle Pill: Available Cash + Escrow Status + Gain */}
-            <View style={styles.heroSubtitleRow}>
-              <View style={styles.escrowWalletPill}>
-                <Ionicons
-                  name="wallet-outline"
-                  size={13}
-                  color="#00C2FF"
-                  style={{ marginRight: 5 }}
-                />
-                <Text style={styles.escrowWalletPillText}>
-                  Cash: R{escrowCash.toLocaleString()}
-                </Text>
-              </View>
-
-              {escrowLockedCash > 0 && (
-                <View style={[styles.escrowWalletPill, { backgroundColor: 'rgba(16, 185, 129, 0.25)' }]}>
-                  <Ionicons
-                    name="shield-checkmark"
-                    size={13}
-                    color="#10B981"
-                    style={{ marginRight: 5 }}
-                  />
-                  <Text style={[styles.escrowWalletPillText, { color: '#E2E8F0' }]}>
-                    In Escrow: R{escrowLockedCash.toLocaleString()}
-                  </Text>
-                </View>
-              )}
-
-              {sellerPendingCash > 0 && (
-                <View style={[styles.escrowWalletPill, { backgroundColor: 'rgba(245, 158, 11, 0.25)' }]}>
-                  <Ionicons
-                    name="time-outline"
-                    size={13}
-                    color="#F59E0B"
-                    style={{ marginRight: 5 }}
-                  />
-                  <Text style={[styles.escrowWalletPillText, { color: '#E2E8F0' }]}>
-                    Pending Sales: R{sellerPendingCash.toLocaleString()}
-                  </Text>
-                </View>
-              )}
-
+            <View style={styles.appBarRight}>
               <TouchableOpacity
-                style={styles.gainPill}
-                onPress={() => navigation.navigate(SCREENS.PROFILE_ANALYTICS)}
+                style={styles.profileAvatarBtn}
+                onPress={() => navigation.navigate(SCREENS.PROFILE)}
                 activeOpacity={0.8}
               >
-                <Feather
-                  name="bar-chart-2"
-                  size={12}
-                  color="#FFFFFF"
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={styles.gainPillText}>
-                  {summary.gainText || "+0.0% YTD"}
-                </Text>
-                <Feather
-                  name="chevron-right"
-                  size={11}
-                  color="#FFFFFF"
-                  style={{ marginLeft: 3 }}
-                />
+                {userPhoto ? (
+                  <Image
+                    source={{ uri: resolveImageUrl(userPhoto) }}
+                    style={styles.profileAvatarImg}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.profileAvatarFallback}>
+                    <Text style={styles.profileInitialsText}>
+                      {userInitials}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
+          </View>
 
-            {/* Quick Actions (Deposit, Withdraw & Analytics Buttons) */}
-            <View style={styles.heroActionRow}>
-              <TouchableOpacity
-                style={styles.depositActionBtn}
-                onPress={() => {
-                  const isVerified = user?.verification_status === "verified" || user?.kycStatus === "verified";
-                  const hasApprovedBank = user?.bankStatus === "approved" || user?.bankAccount?.status === "approved";
-                  if (!isVerified || user?.isSuspended) {
-                    setGatekeeperRequireBankOnly(false);
-                    setGatekeeperActionTitle("Deposit Funds");
-                    setKycGatekeeperVisible(true);
-                    return;
-                  }
-                  if (!hasApprovedBank) {
-                    setGatekeeperRequireBankOnly(true);
-                    setGatekeeperActionTitle("Deposit Funds");
-                    setKycGatekeeperVisible(true);
-                    return;
-                  }
-                  setDepositModalVisible(true);
-                }}
-                activeOpacity={0.85}
-              >
-                <Feather
-                  name="plus"
-                  size={15}
-                  color="#5835F5"
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={styles.depositActionBtnText}>Deposit</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.withdrawActionBtn}
-                onPress={() => {
-                  const isVerified = user?.verification_status === "verified" || user?.kycStatus === "verified";
-                  const hasApprovedBank = user?.bankStatus === "approved" || user?.bankAccount?.status === "approved";
-                  if (!isVerified || user?.isSuspended) {
-                    setGatekeeperRequireBankOnly(false);
-                    setGatekeeperActionTitle("Withdraw Funds");
-                    setKycGatekeeperVisible(true);
-                    return;
-                  }
-                  if (!hasApprovedBank) {
-                    setGatekeeperRequireBankOnly(true);
-                    setGatekeeperActionTitle("Withdraw Funds");
-                    setKycGatekeeperVisible(true);
-                    return;
-                  }
-                  resetWithdrawFlowState();
-                  setWithdrawModalVisible(true);
-                }}
-                activeOpacity={0.85}
-              >
-                <Feather
-                  name="arrow-up-right"
-                  size={15}
-                  color="#FFFFFF"
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={styles.withdrawActionBtnText}>Withdraw</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.analyticsActionBtn}
-                onPress={() => navigation.navigate(SCREENS.PROFILE_ANALYTICS)}
-                activeOpacity={0.85}
-              >
-                <Feather
-                  name="pie-chart"
-                  size={15}
-                  color="#FFFFFF"
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={styles.analyticsActionBtnText}>Analytics</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.escrowOrdersActionBtn}
-              onPress={() => navigation.navigate(SCREENS.ESCROW_ORDERS)}
-              activeOpacity={0.85}
-            >
-              <Feather name="package" size={15} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={styles.escrowOrdersActionText}>Track escrow orders</Text>
-              <Feather name="chevron-right" size={15} color="#FFFFFF" style={{ marginLeft: "auto" }} />
-            </TouchableOpacity>
-          </LinearGradient>
-        </View>
-
-        {/* ══════════════════════════════════════════════════════════════════════
-            3 FRONTEND TABS: PERSONAL | FRACTIONS | CERTIFICATES & ESCROW LOG
+          {/* ══════════════════════════════════════════════════════════════════════
+            VAULT HERO CARD: ASSET-FIRST TOTAL COLLECTION VALUE
         ══════════════════════════════════════════════════════════════════════ */}
-        <View style={styles.sectionWrap}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-            style={{ marginHorizontal: -18, marginBottom: 16 }}
-          >
-            {/* Tab 1: Personal (3) */}
-            <TouchableOpacity
-              style={[
-                styles.tabPill,
-                activeTab === "personal"
-                  ? styles.tabPillActive
-                  : styles.tabPillInactive,
-              ]}
-              onPress={() => setActiveTab("personal")}
-              activeOpacity={0.8}
+          <View style={styles.heroContainer}>
+            <LinearGradient
+              colors={["#7C3AED", "#5B36F5", "#2563EB", "#00C2FF"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0.85 }}
+              style={styles.heroGradient}
             >
-              <Text
-                style={[
-                  styles.tabPillText,
-                  activeTab === "personal"
-                    ? styles.tabPillTextActive
-                    : styles.tabPillTextInactive,
-                ]}
-              >
-                Personal ({personalItems.length})
-              </Text>
-            </TouchableOpacity>
+              {/* Header: Tag + Lock Icon */}
+              <View style={styles.heroHeader}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Ionicons
+                    name="shield-checkmark"
+                    size={14}
+                    color="#FFFFFF"
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={styles.heroTagText}>SECURE VAULT LEDGER</Text>
+                </View>
 
-            {/* Tab 2: Co-Owned (2) */}
-            <TouchableOpacity
-              style={[
-                styles.tabPill,
-                activeTab === "fractions"
-                  ? styles.tabPillActive
-                  : styles.tabPillInactive,
-              ]}
-              onPress={() => setActiveTab("fractions")}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.tabPillText,
-                  activeTab === "fractions"
-                    ? styles.tabPillTextActive
-                    : styles.tabPillTextInactive,
-                ]}
-              >
-                Co-Owned ({fractionalItems.length})
-              </Text>
-            </TouchableOpacity>
-
-            {/* Tab 3: Ledger & Certs */}
-            <TouchableOpacity
-              style={[
-                styles.tabPill,
-                activeTab === "log"
-                  ? styles.tabPillActive
-                  : styles.tabPillInactive,
-              ]}
-              onPress={() => setActiveTab("log")}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.tabPillText,
-                  activeTab === "log"
-                    ? styles.tabPillTextActive
-                    : styles.tabPillTextInactive,
-                ]}
-              >
-                Ledger & Digital Certificates
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-
-          {/* ──────────────────────────────────────────────────────────────────
-              TAB 1: MY COLLECTION (PERSONAL - 100% OWNED)
-          ────────────────────────────────────────────────────────────────── */}
-          {activeTab === "personal" && (
-            <View>
-              {/* Top Row: Section Subheading & Sync Live Market Prices Button */}
-              <View style={styles.syncOracleRow}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.collectionSectionTitle}>
-                    Cost Basis vs. Live Market Value
+                <View style={styles.vaultIdBadge}>
+                  <Text style={styles.vaultIdText}>
+                    {user?.accountNumber || "SA-8525-9632"}
                   </Text>
-                  <Text style={styles.collectionSectionSub}>
-                    AI Oracle comps refreshed in real-time
+                </View>
+              </View>
+
+              {/* Main Headline: Asset Portfolio Value */}
+              <Text style={styles.heroHeadlineLabel}>
+                PORTFOLIO ASSETS VALUE
+              </Text>
+              <Text style={styles.totalBalanceNum}>
+                {totalAssetsValueFormatted}
+              </Text>
+
+              {/* Subtitle Pill: Available Cash + Escrow Status + Gain */}
+              <View style={styles.heroSubtitleRow}>
+                <View style={styles.escrowWalletPill}>
+                  <Ionicons
+                    name="wallet-outline"
+                    size={13}
+                    color="#00C2FF"
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={styles.escrowWalletPillText}>
+                    Cash: R{escrowCash.toLocaleString()}
                   </Text>
                 </View>
 
+                {escrowLockedCash > 0 && (
+                  <View
+                    style={[
+                      styles.escrowWalletPill,
+                      { backgroundColor: "rgba(16, 185, 129, 0.25)" },
+                    ]}
+                  >
+                    <Ionicons
+                      name="shield-checkmark"
+                      size={13}
+                      color="#10B981"
+                      style={{ marginRight: 5 }}
+                    />
+                    <Text
+                      style={[
+                        styles.escrowWalletPillText,
+                        { color: "#E2E8F0" },
+                      ]}
+                    >
+                      In Escrow: R{escrowLockedCash.toLocaleString()}
+                    </Text>
+                  </View>
+                )}
+
+                {sellerPendingCash > 0 && (
+                  <View
+                    style={[
+                      styles.escrowWalletPill,
+                      { backgroundColor: "rgba(245, 158, 11, 0.25)" },
+                    ]}
+                  >
+                    <Ionicons
+                      name="time-outline"
+                      size={13}
+                      color="#F59E0B"
+                      style={{ marginRight: 5 }}
+                    />
+                    <Text
+                      style={[
+                        styles.escrowWalletPillText,
+                        { color: "#E2E8F0" },
+                      ]}
+                    >
+                      Pending Sales: R{sellerPendingCash.toLocaleString()}
+                    </Text>
+                  </View>
+                )}
+
                 <TouchableOpacity
-                  style={styles.syncOracleBtn}
-                  onPress={() => handleSyncLiveMarket(false)}
-                  disabled={syncingPrices}
+                  style={styles.gainPill}
+                  onPress={() => navigation.navigate(SCREENS.PROFILE_ANALYTICS)}
                   activeOpacity={0.8}
                 >
-                  {syncingPrices ? (
-                    <ActivityIndicator size="small" color="#7C3AED" />
-                  ) : (
-                    <>
-                      <Feather
-                        name="refresh-cw"
-                        size={12}
-                        color="#7C3AED"
-                        style={{ marginRight: 5 }}
-                      />
-                      <Text style={styles.syncOracleBtnText}>
-                        Sync Live Prices
-                      </Text>
-                    </>
-                  )}
+                  <Feather
+                    name="bar-chart-2"
+                    size={12}
+                    color="#FFFFFF"
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={styles.gainPillText}>
+                    {summary.gainText || "+0.0% YTD"}
+                  </Text>
+                  <Feather
+                    name="chevron-right"
+                    size={11}
+                    color="#FFFFFF"
+                    style={{ marginLeft: 3 }}
+                  />
                 </TouchableOpacity>
               </View>
 
-              {personalItems.length === 0 ? (
-                <View style={styles.emptyCard}>
-                  <Ionicons name="folder-open-outline" size={40} color="#94A3B8" />
-                  <Text style={styles.emptyTitle}>Personal Collection is empty</Text>
-                  <Text style={styles.emptySub}>
-                    Items uploaded with "Save to Personal Vault" appear here.
-                  </Text>
+              {/* Quick Actions (Deposit, Withdraw & Analytics Buttons) */}
+              <View style={styles.heroActionRow}>
+                <TouchableOpacity
+                  style={styles.depositActionBtn}
+                  onPress={async () => {
+                    const isVerified =
+                      user?.verification_status === "verified" ||
+                      user?.kycStatus === "verified";
+                    if (!isVerified || user?.isSuspended) {
+                      setGatekeeperRequireBankOnly(false);
+                      setGatekeeperActionTitle("Deposit Funds");
+                      setKycGatekeeperVisible(true);
+                      return;
+                    }
+
+                    let hasApprovedBank =
+                      user?.bankStatus === "approved" ||
+                      user?.bankAccount?.status === "approved" ||
+                      user?.bankingDetails?.status === "approved";
+
+                    // Re-verify with backend if local state is not yet marked approved
+                    if (!hasApprovedBank && token) {
+                      try {
+                        const bankRes = await getBankAccountApi(token);
+                        if (
+                          bankRes?.success &&
+                          bankRes?.bank_account?.status === "approved"
+                        ) {
+                          hasApprovedBank = true;
+                          if (updateUser) {
+                            updateUser({
+                              bankAccount: bankRes.bank_account,
+                              bankStatus: "approved",
+                            });
+                          }
+                        }
+                      } catch (_) {}
+                    }
+
+                    if (!hasApprovedBank) {
+                      setGatekeeperRequireBankOnly(true);
+                      setGatekeeperActionTitle("Deposit Funds");
+                      setKycGatekeeperVisible(true);
+                      return;
+                    }
+                    setDepositModalVisible(true);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Feather
+                    name="plus"
+                    size={15}
+                    color="#5835F5"
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={styles.depositActionBtnText}>Deposit</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.withdrawActionBtn}
+                  onPress={async () => {
+                    const isVerified =
+                      user?.verification_status === "verified" ||
+                      user?.kycStatus === "verified";
+                    if (!isVerified || user?.isSuspended) {
+                      setGatekeeperRequireBankOnly(false);
+                      setGatekeeperActionTitle("Withdraw Funds");
+                      setKycGatekeeperVisible(true);
+                      return;
+                    }
+
+                    let hasApprovedBank =
+                      user?.bankStatus === "approved" ||
+                      user?.bankAccount?.status === "approved" ||
+                      user?.bankingDetails?.status === "approved";
+
+                    // Re-verify with backend if local state is not yet marked approved
+                    if (!hasApprovedBank && token) {
+                      try {
+                        const bankRes = await getBankAccountApi(token);
+                        if (
+                          bankRes?.success &&
+                          bankRes?.bank_account?.status === "approved"
+                        ) {
+                          hasApprovedBank = true;
+                          if (updateUser) {
+                            updateUser({
+                              bankAccount: bankRes.bank_account,
+                              bankStatus: "approved",
+                            });
+                          }
+                        }
+                      } catch (_) {}
+                    }
+
+                    if (!hasApprovedBank) {
+                      setGatekeeperRequireBankOnly(true);
+                      setGatekeeperActionTitle("Withdraw Funds");
+                      setKycGatekeeperVisible(true);
+                      return;
+                    }
+                    resetWithdrawFlowState();
+                    setWithdrawModalVisible(true);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Feather
+                    name="arrow-up-right"
+                    size={15}
+                    color="#FFFFFF"
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={styles.withdrawActionBtnText}>Withdraw</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.analyticsActionBtn}
+                  onPress={() => navigation.navigate(SCREENS.PROFILE_ANALYTICS)}
+                  activeOpacity={0.85}
+                >
+                  <Feather
+                    name="pie-chart"
+                    size={15}
+                    color="#FFFFFF"
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={styles.analyticsActionBtnText}>Analytics</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.escrowOrdersActionBtn}
+                onPress={() => navigation.navigate(SCREENS.ESCROW_ORDERS)}
+                activeOpacity={0.85}
+              >
+                <Feather
+                  name="package"
+                  size={15}
+                  color="#FFFFFF"
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={styles.escrowOrdersActionText}>
+                  Track escrow orders
+                </Text>
+                <Feather
+                  name="chevron-right"
+                  size={15}
+                  color="#FFFFFF"
+                  style={{ marginLeft: "auto" }}
+                />
+              </TouchableOpacity>
+            </LinearGradient>
+          </View>
+
+          {/* ══════════════════════════════════════════════════════════════════════
+            3 FRONTEND TABS: PERSONAL | FRACTIONS | CERTIFICATES & ESCROW LOG
+        ══════════════════════════════════════════════════════════════════════ */}
+          <View style={styles.sectionWrap}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+              style={{ marginHorizontal: -18, marginBottom: 16 }}
+            >
+              {/* Tab 1: Personal (3) */}
+              <TouchableOpacity
+                style={[
+                  styles.tabPill,
+                  activeTab === "personal"
+                    ? styles.tabPillActive
+                    : styles.tabPillInactive,
+                ]}
+                onPress={() => setActiveTab("personal")}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.tabPillText,
+                    activeTab === "personal"
+                      ? styles.tabPillTextActive
+                      : styles.tabPillTextInactive,
+                  ]}
+                >
+                  Personal ({personalItems.length})
+                </Text>
+              </TouchableOpacity>
+
+              {/* Tab 2: Co-Owned (2) */}
+              <TouchableOpacity
+                style={[
+                  styles.tabPill,
+                  activeTab === "fractions"
+                    ? styles.tabPillActive
+                    : styles.tabPillInactive,
+                ]}
+                onPress={() => setActiveTab("fractions")}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.tabPillText,
+                    activeTab === "fractions"
+                      ? styles.tabPillTextActive
+                      : styles.tabPillTextInactive,
+                  ]}
+                >
+                  Co-Owned ({fractionalItems.length})
+                </Text>
+              </TouchableOpacity>
+
+              {/* Tab 3: Ledger & Certs */}
+              <TouchableOpacity
+                style={[
+                  styles.tabPill,
+                  activeTab === "log"
+                    ? styles.tabPillActive
+                    : styles.tabPillInactive,
+                ]}
+                onPress={() => setActiveTab("log")}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.tabPillText,
+                    activeTab === "log"
+                      ? styles.tabPillTextActive
+                      : styles.tabPillTextInactive,
+                  ]}
+                >
+                  Ledger & Digital Certificates
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            {/* ──────────────────────────────────────────────────────────────────
+              TAB 1: MY COLLECTION (PERSONAL - 100% OWNED)
+          ────────────────────────────────────────────────────────────────── */}
+            {activeTab === "personal" && (
+              <View>
+                {/* Top Row: Section Subheading & Sync Live Market Prices Button */}
+                <View style={styles.syncOracleRow}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.collectionSectionTitle}>
+                      Cost Basis vs. Live Market Value
+                    </Text>
+                    <Text style={styles.collectionSectionSub}>
+                      AI Oracle comps refreshed in real-time
+                    </Text>
+                  </View>
+
                   <TouchableOpacity
-                    style={styles.emptyActionBtn}
-                    onPress={() => navigation.navigate(SCREENS.LIST_ASSET)}
+                    style={styles.syncOracleBtn}
+                    onPress={() => handleSyncLiveMarket(false)}
+                    disabled={syncingPrices}
+                    activeOpacity={0.8}
                   >
-                    <Text style={styles.emptyActionBtnText}>+ Add Personal Asset</Text>
+                    {syncingPrices ? (
+                      <ActivityIndicator size="small" color="#7C3AED" />
+                    ) : (
+                      <>
+                        <Feather
+                          name="refresh-cw"
+                          size={12}
+                          color="#7C3AED"
+                          style={{ marginRight: 5 }}
+                        />
+                        <Text style={styles.syncOracleBtnText}>
+                          Sync Live Prices
+                        </Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 </View>
-              ) : (
-                <View style={styles.gridWrap}>
-                  {personalItems.map((item, idx) => {
-                    const isDeprec =
-                      item.badgeType === "negative" ||
-                      String(item.badgeText || "").startsWith("-");
 
-                    return (
+                {personalItems.length === 0 ? (
+                  <View style={styles.emptyCard}>
+                    <Ionicons
+                      name="folder-open-outline"
+                      size={40}
+                      color="#94A3B8"
+                    />
+                    <Text style={styles.emptyTitle}>
+                      Personal Collection is empty
+                    </Text>
+                    <Text style={styles.emptySub}>
+                      Items uploaded with "Save to Personal Vault" appear here.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.emptyActionBtn}
+                      onPress={() => navigation.navigate(SCREENS.LIST_ASSET)}
+                    >
+                      <Text style={styles.emptyActionBtnText}>
+                        + Add Personal Asset
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.gridWrap}>
+                    {personalItems.map((item, idx) => {
+                      const isDeprec =
+                        item.badgeType === "negative" ||
+                        String(item.badgeText || "").startsWith("-");
+
+                      return (
+                        <TouchableOpacity
+                          key={item.id || idx}
+                          style={[styles.holdingCard, { width: cardWidth }]}
+                          onPress={() =>
+                            navigation.navigate(SCREENS.ASSET_DETAIL, {
+                              asset: item,
+                            })
+                          }
+                          activeOpacity={0.88}
+                        >
+                          {/* Image + 100% Owned Badge */}
+                          <View style={styles.cardImgWrap}>
+                            <Image
+                              source={{ uri: resolveImageUrl(item.image) }}
+                              style={styles.cardImg}
+                              resizeMode="cover"
+                            />
+                            <View style={styles.personalBadge}>
+                              <Ionicons
+                                name="lock-closed"
+                                size={10}
+                                color="#FFFFFF"
+                                style={{ marginRight: 3 }}
+                              />
+                              <Text style={styles.personalBadgeText}>
+                                100% OWNED
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Content */}
+                          <View style={styles.cardBody}>
+                            <Text style={styles.cardCat}>
+                              {String(item.category || "ASSET").toUpperCase()}
+                            </Text>
+                            <Text style={styles.cardTitle} numberOfLines={2}>
+                              {item.name}
+                            </Text>
+
+                            {/* Initial Value vs Live Market Value */}
+                            <View style={styles.personalValueComparisonRow}>
+                              <View style={styles.personalValCol}>
+                                <Text style={styles.personalValLabel}>
+                                  Initial Value
+                                </Text>
+                                <Text
+                                  style={styles.personalInitialVal}
+                                  numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                >
+                                  {item.initialValueFormatted ||
+                                    formatZAR(item.initialValue)}
+                                </Text>
+                              </View>
+
+                              <View style={styles.personalValArrow}>
+                                <Feather
+                                  name="arrow-right"
+                                  size={12}
+                                  color="#94A3B8"
+                                />
+                              </View>
+
+                              <View
+                                style={[
+                                  styles.personalValCol,
+                                  { alignItems: "flex-end" },
+                                ]}
+                              >
+                                <Text style={styles.personalValLabel}>
+                                  Live Market Value
+                                </Text>
+                                <Text
+                                  style={styles.personalLiveVal}
+                                  numberOfLines={1}
+                                  adjustsFontSizeToFit
+                                >
+                                  {item.liveMarketValueFormatted ||
+                                    formatZAR(item.liveMarketValue)}
+                                </Text>
+                              </View>
+                            </View>
+
+                            {/* Green / Red Appreciation or Depreciation % Badge */}
+                            <View
+                              style={[
+                                styles.pnlBadge,
+                                isDeprec
+                                  ? styles.pnlBadgeDeprec
+                                  : styles.pnlBadgeGain,
+                              ]}
+                            >
+                              <Feather
+                                name={
+                                  isDeprec ? "trending-down" : "trending-up"
+                                }
+                                size={12}
+                                color={isDeprec ? "#DC2626" : "#15803D"}
+                                style={{ marginRight: 4 }}
+                              />
+                              <Text
+                                style={[
+                                  styles.pnlBadgeText,
+                                  isDeprec
+                                    ? styles.pnlBadgeTextDeprec
+                                    : styles.pnlBadgeTextGain,
+                                ]}
+                              >
+                                {item.badgeText
+                                  ? String(item.badgeText).replace(
+                                      /Tech Depreciation/gi,
+                                      "Market Depreciation",
+                                    )
+                                  : isDeprec
+                                    ? "-12% Market Depreciation"
+                                    : "+14% Market Gain"}
+                              </Text>
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* ──────────────────────────────────────────────────────────────────
+              TAB 2: CO-OWNED ASSETS (FRACTIONS)
+          ────────────────────────────────────────────────────────────────── */}
+            {activeTab === "fractions" && (
+              <View>
+                {fractionalItems.length === 0 ? (
+                  <View style={styles.emptyCard}>
+                    <Ionicons
+                      name="pie-chart-outline"
+                      size={40}
+                      color="#94A3B8"
+                    />
+                    <Text style={styles.emptyTitle}>
+                      No Fractional Shares Held
+                    </Text>
+                    <Text style={styles.emptySub}>
+                      Invest in fractional rounds on the Invest screen to co-own
+                      luxury assets.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.emptyActionBtn}
+                      onPress={() => navigation.navigate(SCREENS.INVEST)}
+                    >
+                      <Text style={styles.emptyActionBtnText}>
+                        Explore Share Trading
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.gridWrap}>
+                    {fractionalItems.map((item, idx) => (
                       <TouchableOpacity
                         key={item.id || idx}
                         style={[styles.holdingCard, { width: cardWidth }]}
@@ -1516,1026 +1942,960 @@ export default function VaultScreen({ navigation, route }) {
                         }
                         activeOpacity={0.88}
                       >
-                        {/* Image + 100% Owned Badge */}
+                        {/* Image + Co-Owned Badge */}
                         <View style={styles.cardImgWrap}>
                           <Image
                             source={{ uri: resolveImageUrl(item.image) }}
                             style={styles.cardImg}
                             resizeMode="cover"
                           />
-                          <View style={styles.personalBadge}>
+                          <View style={styles.fractionalTagBadge}>
                             <Ionicons
-                              name="lock-closed"
+                              name="pie-chart"
                               size={10}
                               color="#FFFFFF"
                               style={{ marginRight: 3 }}
                             />
-                            <Text style={styles.personalBadgeText}>100% OWNED</Text>
+                            <Text style={styles.fractionalTagText}>
+                              FRACTIONAL POOL
+                            </Text>
                           </View>
                         </View>
 
-                        {/* Content */}
+                        {/* Content: Shares Owned: 2, My Stake: R200, +12.4% Return */}
                         <View style={styles.cardBody}>
                           <Text style={styles.cardCat}>
-                            {String(item.category || "ASSET").toUpperCase()}
+                            {String(item.category || "WATCHES").toUpperCase()}
                           </Text>
                           <Text style={styles.cardTitle} numberOfLines={2}>
                             {item.name}
                           </Text>
 
-                          {/* Initial Value vs Live Market Value */}
-                          <View style={styles.personalValueComparisonRow}>
-                            <View style={styles.personalValCol}>
-                              <Text style={styles.personalValLabel}>Initial Value</Text>
-                              <Text
-                                style={styles.personalInitialVal}
-                                numberOfLines={1}
-                                adjustsFontSizeToFit
-                              >
-                                {item.initialValueFormatted || formatZAR(item.initialValue)}
+                          {/* Shares Owned & My Stake Row */}
+                          <View style={styles.fractionalMetricsRow}>
+                            <View style={styles.fractionalMetricBox}>
+                              <Text style={styles.fractionalMetricLabel}>
+                                Shares Owned
+                              </Text>
+                              <Text style={styles.fractionalMetricValue}>
+                                {item.sharesOwned ?? 2}
+                                {item.reservedShares > 0 ? (
+                                  <Text
+                                    style={{ fontSize: 10, color: "#94A3B8" }}
+                                  >
+                                    {" "}
+                                    ({item.availableShares} free)
+                                  </Text>
+                                ) : null}
                               </Text>
                             </View>
-
-                            <View style={styles.personalValArrow}>
-                              <Feather name="arrow-right" size={12} color="#94A3B8" />
-                            </View>
-
-                            <View style={[styles.personalValCol, { alignItems: "flex-end" }]}>
-                              <Text style={styles.personalValLabel}>Live Market Value</Text>
-                              <Text
-                                style={styles.personalLiveVal}
-                                numberOfLines={1}
-                                adjustsFontSizeToFit
-                              >
-                                {item.liveMarketValueFormatted || formatZAR(item.liveMarketValue)}
+                            <View style={styles.fractionalMetricBox}>
+                              <Text style={styles.fractionalMetricLabel}>
+                                My Stake
+                              </Text>
+                              <Text style={styles.fractionalMetricValue}>
+                                {item.myStakeFormatted ||
+                                  formatZAR(item.myStake, "R200")}
                               </Text>
                             </View>
                           </View>
 
-                          {/* Green / Red Appreciation or Depreciation % Badge */}
+                          {/* Return % Badge */}
                           <View
                             style={[
-                              styles.pnlBadge,
-                              isDeprec ? styles.pnlBadgeDeprec : styles.pnlBadgeGain,
+                              styles.pnlBadgeGain,
+                              {
+                                alignSelf: "flex-start",
+                                marginTop: 2,
+                                marginBottom: 8,
+                              },
                             ]}
                           >
                             <Feather
-                              name={isDeprec ? "trending-down" : "trending-up"}
+                              name="trending-up"
                               size={12}
-                              color={isDeprec ? "#DC2626" : "#15803D"}
+                              color="#15803D"
                               style={{ marginRight: 4 }}
                             />
-                            <Text
-                              style={[
-                                styles.pnlBadgeText,
-                                isDeprec ? styles.pnlBadgeTextDeprec : styles.pnlBadgeTextGain,
-                              ]}
+                            <Text style={styles.pnlBadgeTextGain}>
+                              {item.returnPct || "+0.0% Return"}
+                            </Text>
+                          </View>
+
+                          {/* Dual Action Buttons: Sell Shares / Buy More */}
+                          <View style={styles.fractionalActionsRow}>
+                            <TouchableOpacity
+                              style={styles.fractionalSellBtn}
+                              onPress={() => openSellModal(item)}
+                              activeOpacity={0.8}
                             >
-                              {(item.badgeText
-                                ? String(item.badgeText).replace(/Tech Depreciation/gi, "Market Depreciation")
-                                : (isDeprec ? "-12% Market Depreciation" : "+14% Market Gain"))}
-                            </Text>
+                              <Feather
+                                name="arrow-up-right"
+                                size={12}
+                                color="#4F46E5"
+                                style={{ marginRight: 4 }}
+                              />
+                              <Text style={styles.fractionalSellBtnText}>
+                                Sell Shares
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={styles.fractionalBuyBtn}
+                              onPress={() =>
+                                navigation.navigate(SCREENS.INVEST)
+                              }
+                              activeOpacity={0.8}
+                            >
+                              <Feather
+                                name="plus"
+                                size={12}
+                                color="#FFFFFF"
+                                style={{ marginRight: 4 }}
+                              />
+                              <Text style={styles.fractionalBuyBtnText}>
+                                Buy More
+                              </Text>
+                            </TouchableOpacity>
                           </View>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          )}
 
-          {/* ──────────────────────────────────────────────────────────────────
-              TAB 2: CO-OWNED ASSETS (FRACTIONS)
-          ────────────────────────────────────────────────────────────────── */}
-          {activeTab === "fractions" && (
-            <View>
-              {fractionalItems.length === 0 ? (
-                <View style={styles.emptyCard}>
-                  <Ionicons name="pie-chart-outline" size={40} color="#94A3B8" />
-                  <Text style={styles.emptyTitle}>No Fractional Shares Held</Text>
-                  <Text style={styles.emptySub}>
-                    Invest in fractional rounds on the Invest screen to co-own luxury assets.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.emptyActionBtn}
-                    onPress={() => navigation.navigate(SCREENS.INVEST)}
-                  >
-                    <Text style={styles.emptyActionBtnText}>Explore Share Trading</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.gridWrap}>
-                  {fractionalItems.map((item, idx) => (
-                    <TouchableOpacity
-                      key={item.id || idx}
-                      style={[styles.holdingCard, { width: cardWidth }]}
-                      onPress={() =>
-                        navigation.navigate(SCREENS.ASSET_DETAIL, {
-                          asset: item,
-                        })
-                      }
-                      activeOpacity={0.88}
-                    >
-                      {/* Image + Co-Owned Badge */}
-                      <View style={styles.cardImgWrap}>
-                        <Image
-                          source={{ uri: resolveImageUrl(item.image) }}
-                          style={styles.cardImg}
-                          resizeMode="cover"
-                        />
-                        <View style={styles.fractionalTagBadge}>
-                          <Ionicons
-                            name="pie-chart"
-                            size={10}
-                            color="#FFFFFF"
-                            style={{ marginRight: 3 }}
-                          />
-                          <Text style={styles.fractionalTagText}>FRACTIONAL POOL</Text>
-                        </View>
-                      </View>
-
-                      {/* Content: Shares Owned: 2, My Stake: R200, +12.4% Return */}
-                      <View style={styles.cardBody}>
-                        <Text style={styles.cardCat}>
-                          {String(item.category || "WATCHES").toUpperCase()}
-                        </Text>
-                        <Text style={styles.cardTitle} numberOfLines={2}>
-                          {item.name}
-                        </Text>
-
-                        {/* Shares Owned & My Stake Row */}
-                        <View style={styles.fractionalMetricsRow}>
-                          <View style={styles.fractionalMetricBox}>
-                            <Text style={styles.fractionalMetricLabel}>Shares Owned</Text>
-                            <Text style={styles.fractionalMetricValue}>
-                              {item.sharesOwned ?? 2}
-                              {item.reservedShares > 0 ? (
-                                <Text style={{ fontSize: 10, color: "#94A3B8" }}>
-                                  {" "}({item.availableShares} free)
-                                </Text>
-                              ) : null}
-                            </Text>
-                          </View>
-                          <View style={styles.fractionalMetricBox}>
-                            <Text style={styles.fractionalMetricLabel}>My Stake</Text>
-                            <Text style={styles.fractionalMetricValue}>
-                              {item.myStakeFormatted || formatZAR(item.myStake, "R200")}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* Return % Badge */}
-                        <View style={[styles.pnlBadgeGain, { alignSelf: "flex-start", marginTop: 2, marginBottom: 8 }]}>
-                          <Feather
-                            name="trending-up"
-                            size={12}
-                            color="#15803D"
-                            style={{ marginRight: 4 }}
-                          />
-                          <Text style={styles.pnlBadgeTextGain}>
-                            {item.returnPct || "+0.0% Return"}
+                          <Text style={styles.fractionalPoolMeta}>
+                            Pool: {item.poolValuation || "R18,500"} •{" "}
+                            {typeof item.fundingPct === "number"
+                              ? item.fundingPct
+                              : 0}
+                            % funded
                           </Text>
                         </View>
-
-                        {/* Dual Action Buttons: Sell Shares / Buy More */}
-                        <View style={styles.fractionalActionsRow}>
-                          <TouchableOpacity
-                            style={styles.fractionalSellBtn}
-                            onPress={() => openSellModal(item)}
-                            activeOpacity={0.8}
-                          >
-                            <Feather name="arrow-up-right" size={12} color="#4F46E5" style={{ marginRight: 4 }} />
-                            <Text style={styles.fractionalSellBtnText}>Sell Shares</Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={styles.fractionalBuyBtn}
-                            onPress={() => navigation.navigate(SCREENS.INVEST)}
-                            activeOpacity={0.8}
-                          >
-                            <Feather name="plus" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
-                            <Text style={styles.fractionalBuyBtnText}>Buy More</Text>
-                          </TouchableOpacity>
-                        </View>
-
-                        <Text style={styles.fractionalPoolMeta}>
-                          Pool: {item.poolValuation || "R18,500"} • {item.fundingPct || 77}% funded
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-
-              {/* ── Share Redemption Requests Section ── */}
-              <View style={styles.redemptionSectionWrap}>
-                <View style={styles.redemptionHeaderSection}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.collectionSectionTitle}>Share Redemption Requests</Text>
-                    <Text style={styles.collectionSectionSub}>
-                      Custodial reviews and pending bank/escrow settlements
-                    </Text>
-                  </View>
-                  <View style={styles.redemptionCounterBadge}>
-                    <Text style={styles.redemptionCounterText}>{redemptionRequests.length}</Text>
-                  </View>
-                </View>
-
-                {redemptionRequests.length === 0 ? (
-                  <View style={styles.emptyRedemptionCard}>
-                    <Feather name="shield" size={24} color="#6366F1" />
-                    <Text style={styles.emptyRedemptionTitle}>No active redemption requests</Text>
-                    <Text style={styles.emptyRedemptionSub}>
-                      When you submit a request to redeem shares, the compliance review and payout status will appear here.
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={{ gap: 10 }}>
-                    {redemptionRequests.map((req) => {
-                      const isSettling = req.status === "settlement_processing";
-                      const isReviewOrApproved = req.status === "pending_review" || req.status === "approved";
-
-                      return (
-                        <View key={req.id} style={styles.redemptionCard}>
-                          <View style={styles.redemptionHeaderRow}>
-                            <View style={{ flex: 1, marginRight: 8 }}>
-                              <Text style={styles.redemptionAssetName} numberOfLines={1}>
-                                {req.assets?.name || req.asset_name || "Asset Shares"}
-                              </Text>
-                              <Text style={styles.redemptionMeta}>
-                                {req.shares_to_redeem} share{req.shares_to_redeem > 1 ? "s" : ""} • {req.payout_destination === "bank_account" ? "Bank EFT" : "Escrow Cash"}
-                              </Text>
-                            </View>
-                            <View
-                              style={[
-                                styles.redemptionStatusBadge,
-                                req.status === "pending_review" && styles.statusBadgeReview,
-                                req.status === "approved" && styles.statusBadgeApproved,
-                                req.status === "settlement_processing" && styles.statusBadgeSettling,
-                                req.status === "completed" && styles.statusBadgeCompleted,
-                                req.status === "cancelled" && styles.statusBadgeCancelled,
-                                req.status === "rejected" && styles.statusBadgeRejected,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.redemptionStatusText,
-                                  req.status === "pending_review" && styles.statusTextReview,
-                                  req.status === "approved" && styles.statusTextApproved,
-                                  req.status === "settlement_processing" && styles.statusTextSettling,
-                                  req.status === "completed" && styles.statusTextCompleted,
-                                  req.status === "cancelled" && styles.statusTextCancelled,
-                                  req.status === "rejected" && styles.statusTextRejected,
-                                ]}
-                              >
-                                {req.status === "pending_review"
-                                  ? "Pending Review"
-                                  : req.status === "approved"
-                                  ? "Approved"
-                                  : req.status === "settlement_processing"
-                                  ? "Settling Payout"
-                                  : req.status === "completed"
-                                  ? "Settled & Paid"
-                                  : req.status === "cancelled"
-                                  ? "Cancelled"
-                                  : "Rejected"}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={styles.redemptionBodyRow}>
-                            <View>
-                              <Text style={styles.redemptionLabel}>Estimated Net Payout</Text>
-                              <Text style={styles.redemptionValue}>
-                                {formatZAR(req.net_payout || 0)}
-                              </Text>
-                            </View>
-                            {isReviewOrApproved && (
-                              <TouchableOpacity
-                                style={styles.cancelRedemptionBtn}
-                                onPress={() => handleCancelRedemption(req)}
-                                disabled={cancellingRequestId === req.id}
-                                activeOpacity={0.8}
-                              >
-                                {cancellingRequestId === req.id ? (
-                                  <ActivityIndicator size="small" color="#DC2626" />
-                                ) : (
-                                  <>
-                                    <Feather name="x-circle" size={13} color="#DC2626" style={{ marginRight: 4 }} />
-                                    <Text style={styles.cancelRedemptionBtnText}>Cancel Request</Text>
-                                  </>
-                                )}
-                              </TouchableOpacity>
-                            )}
-                            {isSettling && (
-                              <View style={styles.settlementLockedBadge}>
-                                <Feather name="lock" size={12} color="#7C3AED" style={{ marginRight: 4 }} />
-                                <Text style={styles.settlementLockedText}>Settlement Locked</Text>
-                              </View>
-                            )}
-                          </View>
-                        </View>
-                      );
-                    })}
+                      </TouchableOpacity>
+                    ))}
                   </View>
                 )}
-              </View>
-            </View>
-          )}
 
-          {/* ──────────────────────────────────────────────────────────────────
-              TAB 3: CERTIFICATES & ESCROW LOG (NEVER BLANK)
-          ────────────────────────────────────────────────────────────────── */}
-          {activeTab === "log" && (
-            <View style={{ gap: 12 }}>
-              {(() => {
-                const combinedLogs = [];
-
-                // 1. Real Transactions from Supabase vault_transactions
-                (transactions || []).forEach((tx) => {
-                  const isDep = tx.type === "deposit" || tx.type === "sale";
-                  const isPurchase = tx.type === "purchase";
-                  const rawStatus = String(tx.status || "").toLowerCase();
-                  const statusLabel =
-                    rawStatus === "completed"
-                      ? "Settled"
-                      : rawStatus === "settlement_processing"
-                      ? "Payout Processing"
-                      : rawStatus === "cancelled"
-                      ? "Cancelled"
-                      : rawStatus === "rejected" || rawStatus === "failed"
-                      ? "Rejected"
-                      : "Pending Review";
-                  combinedLogs.push({
-                    id: tx.id || `tx-${Math.random()}`,
-                    type: isPurchase ? "purchase" : isDep ? "deposit" : "withdrawal",
-                    title:
-                      tx.title ||
-                      (isPurchase
-                        ? "Marketplace Purchase"
-                        : tx.type === "sale"
-                        ? "Marketplace Sale Proceeds"
-                        : isDep
-                        ? rawStatus === "completed"
-                          ? "Vault Cash Deposit"
-                          : "Vault Deposit Request"
-                        : rawStatus === "completed"
-                        ? "Vault Withdrawal Settled"
-                        : "Vault Withdrawal Request"),
-                    status: statusLabel,
-                    assetName: tx.notes || tx.reference || "Vault Transaction",
-                    detail: `${tx.method || "Direct Transfer"}${
-                      tx.destinationSummary ? ` • To: ${tx.destinationSummary}` : ""
-                    }${
-                      tx.settlementRef
-                        ? ` • Settled Ref: ${tx.settlementRef}`
-                        : tx.reference
-                        ? ` • Ref: ${tx.reference}`
-                        : ""
-                    }`,
-                    hash: tx.settlementRef || tx.reference || tx.id,
-                    hashDisplay: tx.settlementRef || tx.reference
-                      ? (tx.settlementRef || tx.reference).length > 16
-                        ? (tx.settlementRef || tx.reference).slice(0, 14) + "..."
-                        : tx.settlementRef || tx.reference
-                      : String(tx.id || "").slice(-8),
-                    amount:
-                      tx.amountFormatted ||
-                      (isDep
-                        ? `+${formatGBP(tx.amount)}`
-                        : `-${formatGBP(tx.amount)}`),
-                    badgeColor:
-                      rawStatus === "rejected" || rawStatus === "failed" || rawStatus === "cancelled"
-                        ? "#EF4444"
-                        : isPurchase
-                        ? "#8B5CF6"
-                        : isDep
-                        ? rawStatus === "completed"
-                          ? "#10B981"
-                          : "#F59E0B"
-                        : "#F59E0B",
-                    timestamp: tx.createdAt
-                      ? new Date(tx.createdAt).toLocaleDateString("en-ZA", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "Recent",
-                    rawTime: tx.createdAt ? new Date(tx.createdAt).getTime() : 0,
-                  });
-                });
-
-                // 2. Real Authenticity Certificates from Supabase holdings
-                (holdings || []).forEach((h) => {
-                  const rawTx = h.txHash || h.tx_hash;
-                  const hasTx = typeof rawTx === "string" && /^0x[0-9a-fA-F]{64}$/.test(rawTx.trim());
-                  const certId =
-                    h.certId ||
-                    (hasTx ? `ERC-721 #${String(h.id || "").slice(-4)}` : "Authenticity Record");
-                  const hash = hasTx ? rawTx.trim() : null;
-                  const hashDisplay = hasTx ? `${hash.slice(0, 6)}...${hash.slice(-4)}` : null;
-                  combinedLogs.push({
-                    id: `cert-${h.id}`,
-                    type: "certificate",
-                    title: "Authenticity Certificate",
-                    status: hasTx ? "ERC-721 Verified" : "Off-Chain Sealed",
-                    assetName: h.name || "Verified Collectible",
-                    detail: hasTx
-                      ? `${certId} • Smart Contract Cryptographically Verified`
-                      : `${certId} • SmartAssets Custody Certified`,
-                    hash: hash,
-                    hashDisplay: hashDisplay,
-                    amount: formatGBP(h.price_num || h.price || 0),
-                    badgeColor: hasTx ? "#7C3AED" : "#64748B",
-                    timestamp: h.created_at
-                      ? new Date(h.created_at).toLocaleDateString("en-ZA", {
-                          month: "short",
-                          day: "numeric",
-                        })
-                      : "Permanent",
-                    rawTime: h.created_at
-                      ? new Date(h.created_at).getTime()
-                      : 0,
-                  });
-                });
-
-                // 3. Any additional cached activity logs
-                (activityLog || [])
-                  .filter(
-                    (log) =>
-                      log.type !== "ai_sync" &&
-                      log.title !== "AI Market Valuation Sync"
-                  )
-                  .forEach((log) => {
-                    if (
-                      !combinedLogs.some(
-                        (cl) =>
-                          cl.id === log.id ||
-                          (cl.assetName === log.assetName &&
-                            cl.title === log.title)
-                      )
-                    ) {
-                      combinedLogs.push(log);
-                    }
-                  });
-
-                combinedLogs.sort((a, b) => (b.rawTime || 0) - (a.rawTime || 0));
-
-                if (combinedLogs.length === 0) {
-                  return (
-                    <View style={styles.emptyCard}>
-                      <Ionicons
-                        name="ribbon-outline"
-                        size={40}
-                        color="#94A3B8"
-                      />
-                      <Text style={styles.emptyTitle}>
-                        No Certificates or Transactions Yet
+                {/* ── Share Redemption Requests Section ── */}
+                <View style={styles.redemptionSectionWrap}>
+                  <View style={styles.redemptionHeaderSection}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.collectionSectionTitle}>
+                        Share Redemption Requests
                       </Text>
-                      <Text style={styles.emptySub}>
-                        ERC-721 authenticity certificates and escrow transactions will appear here.
+                      <Text style={styles.collectionSectionSub}>
+                        Custodial reviews and pending bank/escrow settlements
                       </Text>
                     </View>
+                    <View style={styles.redemptionCounterBadge}>
+                      <Text style={styles.redemptionCounterText}>
+                        {redemptionRequests.length}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {redemptionRequests.length === 0 ? (
+                    <View style={styles.emptyRedemptionCard}>
+                      <Feather name="shield" size={24} color="#6366F1" />
+                      <Text style={styles.emptyRedemptionTitle}>
+                        No active redemption requests
+                      </Text>
+                      <Text style={styles.emptyRedemptionSub}>
+                        When you submit a request to redeem shares, the
+                        compliance review and payout status will appear here.
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={{ gap: 10 }}>
+                      {redemptionRequests.map((req) => {
+                        const isSettling =
+                          req.status === "settlement_processing";
+                        const isReviewOrApproved =
+                          req.status === "pending_review" ||
+                          req.status === "approved";
+
+                        return (
+                          <View key={req.id} style={styles.redemptionCard}>
+                            <View style={styles.redemptionHeaderRow}>
+                              <View style={{ flex: 1, marginRight: 8 }}>
+                                <Text
+                                  style={styles.redemptionAssetName}
+                                  numberOfLines={1}
+                                >
+                                  {req.assets?.name ||
+                                    req.asset_name ||
+                                    "Asset Shares"}
+                                </Text>
+                                <Text style={styles.redemptionMeta}>
+                                  {req.shares_to_redeem} share
+                                  {req.shares_to_redeem > 1 ? "s" : ""} •{" "}
+                                  {req.payout_destination === "bank_account"
+                                    ? "Bank EFT"
+                                    : "Escrow Cash"}
+                                </Text>
+                              </View>
+                              <View
+                                style={[
+                                  styles.redemptionStatusBadge,
+                                  req.status === "pending_review" &&
+                                    styles.statusBadgeReview,
+                                  req.status === "approved" &&
+                                    styles.statusBadgeApproved,
+                                  req.status === "settlement_processing" &&
+                                    styles.statusBadgeSettling,
+                                  req.status === "completed" &&
+                                    styles.statusBadgeCompleted,
+                                  req.status === "cancelled" &&
+                                    styles.statusBadgeCancelled,
+                                  req.status === "rejected" &&
+                                    styles.statusBadgeRejected,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.redemptionStatusText,
+                                    req.status === "pending_review" &&
+                                      styles.statusTextReview,
+                                    req.status === "approved" &&
+                                      styles.statusTextApproved,
+                                    req.status === "settlement_processing" &&
+                                      styles.statusTextSettling,
+                                    req.status === "completed" &&
+                                      styles.statusTextCompleted,
+                                    req.status === "cancelled" &&
+                                      styles.statusTextCancelled,
+                                    req.status === "rejected" &&
+                                      styles.statusTextRejected,
+                                  ]}
+                                >
+                                  {req.status === "pending_review"
+                                    ? "Pending Review"
+                                    : req.status === "approved"
+                                      ? "Approved"
+                                      : req.status === "settlement_processing"
+                                        ? "Settling Payout"
+                                        : req.status === "completed"
+                                          ? "Settled & Paid"
+                                          : req.status === "cancelled"
+                                            ? "Cancelled"
+                                            : "Rejected"}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View style={styles.redemptionBodyRow}>
+                              <View>
+                                <Text style={styles.redemptionLabel}>
+                                  Estimated Net Payout
+                                </Text>
+                                <Text style={styles.redemptionValue}>
+                                  {formatZAR(req.net_payout || 0)}
+                                </Text>
+                              </View>
+                              {isReviewOrApproved && (
+                                <TouchableOpacity
+                                  style={styles.cancelRedemptionBtn}
+                                  onPress={() => handleCancelRedemption(req)}
+                                  disabled={cancellingRequestId === req.id}
+                                  activeOpacity={0.8}
+                                >
+                                  {cancellingRequestId === req.id ? (
+                                    <ActivityIndicator
+                                      size="small"
+                                      color="#DC2626"
+                                    />
+                                  ) : (
+                                    <>
+                                      <Feather
+                                        name="x-circle"
+                                        size={13}
+                                        color="#DC2626"
+                                        style={{ marginRight: 4 }}
+                                      />
+                                      <Text
+                                        style={styles.cancelRedemptionBtnText}
+                                      >
+                                        Cancel Request
+                                      </Text>
+                                    </>
+                                  )}
+                                </TouchableOpacity>
+                              )}
+                              {isSettling && (
+                                <View style={styles.settlementLockedBadge}>
+                                  <Feather
+                                    name="lock"
+                                    size={12}
+                                    color="#7C3AED"
+                                    style={{ marginRight: 4 }}
+                                  />
+                                  <Text style={styles.settlementLockedText}>
+                                    Settlement Locked
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* ──────────────────────────────────────────────────────────────────
+              TAB 3: CERTIFICATES & ESCROW LOG (NEVER BLANK)
+          ────────────────────────────────────────────────────────────────── */}
+            {activeTab === "log" && (
+              <View style={{ gap: 12 }}>
+                {(() => {
+                  const combinedLogs = [];
+
+                  // 1. Real Transactions from Supabase vault_transactions
+                  (transactions || []).forEach((tx) => {
+                    const isDep = tx.type === "deposit" || tx.type === "sale";
+                    const isPurchase = tx.type === "purchase";
+                    const rawStatus = String(tx.status || "").toLowerCase();
+                    const statusLabel =
+                      rawStatus === "completed"
+                        ? "Settled"
+                        : rawStatus === "settlement_processing"
+                          ? "Payout Processing"
+                          : rawStatus === "cancelled"
+                            ? "Cancelled"
+                            : rawStatus === "rejected" || rawStatus === "failed"
+                              ? "Rejected"
+                              : "Pending Review";
+                    combinedLogs.push({
+                      id: tx.id || `tx-${Math.random()}`,
+                      type: isPurchase
+                        ? "purchase"
+                        : isDep
+                          ? "deposit"
+                          : "withdrawal",
+                      title:
+                        tx.title ||
+                        (isPurchase
+                          ? "Marketplace Purchase"
+                          : tx.type === "sale"
+                            ? "Marketplace Sale Proceeds"
+                            : isDep
+                              ? rawStatus === "completed"
+                                ? "Vault Cash Deposit"
+                                : "Vault Deposit Request"
+                              : rawStatus === "completed"
+                                ? "Vault Withdrawal Settled"
+                                : "Vault Withdrawal Request"),
+                      status: statusLabel,
+                      assetName:
+                        tx.notes || tx.reference || "Vault Transaction",
+                      detail: `${tx.method || "Direct Transfer"}${
+                        tx.destinationSummary
+                          ? ` • To: ${tx.destinationSummary}`
+                          : ""
+                      }${
+                        tx.settlementRef
+                          ? ` • Settled Ref: ${tx.settlementRef}`
+                          : tx.reference
+                            ? ` • Ref: ${tx.reference}`
+                            : ""
+                      }`,
+                      hash: tx.settlementRef || tx.reference || tx.id,
+                      hashDisplay:
+                        tx.settlementRef || tx.reference
+                          ? (tx.settlementRef || tx.reference).length > 16
+                            ? (tx.settlementRef || tx.reference).slice(0, 14) +
+                              "..."
+                            : tx.settlementRef || tx.reference
+                          : String(tx.id || "").slice(-8),
+                      amount:
+                        tx.amountFormatted ||
+                        (isDep
+                          ? `+${formatGBP(tx.amount)}`
+                          : `-${formatGBP(tx.amount)}`),
+                      badgeColor:
+                        rawStatus === "rejected" ||
+                        rawStatus === "failed" ||
+                        rawStatus === "cancelled"
+                          ? "#EF4444"
+                          : isPurchase
+                            ? "#8B5CF6"
+                            : isDep
+                              ? rawStatus === "completed"
+                                ? "#10B981"
+                                : "#F59E0B"
+                              : "#F59E0B",
+                      timestamp: tx.createdAt
+                        ? new Date(tx.createdAt).toLocaleDateString("en-ZA", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "Recent",
+                      rawTime: tx.createdAt
+                        ? new Date(tx.createdAt).getTime()
+                        : 0,
+                    });
+                  });
+
+                  // 2. Real Authenticity Certificates from Supabase holdings
+                  (holdings || []).forEach((h) => {
+                    const rawTx = h.txHash || h.tx_hash;
+                    const hasTx =
+                      typeof rawTx === "string" &&
+                      /^0x[0-9a-fA-F]{64}$/.test(rawTx.trim());
+                    const certId =
+                      h.certId ||
+                      (hasTx
+                        ? `ERC-721 #${String(h.id || "").slice(-4)}`
+                        : "Authenticity Record");
+                    const hash = hasTx ? rawTx.trim() : null;
+                    const hashDisplay = hasTx
+                      ? `${hash.slice(0, 6)}...${hash.slice(-4)}`
+                      : null;
+                    combinedLogs.push({
+                      id: `cert-${h.id}`,
+                      type: "certificate",
+                      title: "Authenticity Certificate",
+                      status: hasTx ? "ERC-721 Verified" : "Off-Chain Sealed",
+                      assetName: h.name || "Verified Collectible",
+                      detail: hasTx
+                        ? `${certId} • Smart Contract Cryptographically Verified`
+                        : `${certId} • SmartAssets Custody Certified`,
+                      hash: hash,
+                      hashDisplay: hashDisplay,
+                      amount: formatGBP(h.price_num || h.price || 0),
+                      badgeColor: hasTx ? "#7C3AED" : "#64748B",
+                      timestamp: h.created_at
+                        ? new Date(h.created_at).toLocaleDateString("en-ZA", {
+                            month: "short",
+                            day: "numeric",
+                          })
+                        : "Permanent",
+                      rawTime: h.created_at
+                        ? new Date(h.created_at).getTime()
+                        : 0,
+                    });
+                  });
+
+                  // 3. Any additional cached activity logs
+                  (activityLog || [])
+                    .filter(
+                      (log) =>
+                        log.type !== "ai_sync" &&
+                        log.title !== "AI Market Valuation Sync",
+                    )
+                    .forEach((log) => {
+                      if (
+                        !combinedLogs.some(
+                          (cl) =>
+                            cl.id === log.id ||
+                            (cl.assetName === log.assetName &&
+                              cl.title === log.title),
+                        )
+                      ) {
+                        combinedLogs.push(log);
+                      }
+                    });
+
+                  combinedLogs.sort(
+                    (a, b) => (b.rawTime || 0) - (a.rawTime || 0),
                   );
-                }
-                return combinedLogs.map((log, idx) => (
-                  <View key={log.id || idx} style={styles.activityCard}>
-                    <View style={styles.activityHeaderRow}>
-                      <View
-                        style={[
-                          styles.activityIconBox,
-                          {
-                            backgroundColor:
-                              log.type === "certificate"
-                                ? "#F3E8FF"
-                                : log.type === "purchase"
-                                ? "#EDE9FE"
-                                : log.type === "deposit"
-                                ? "#ECFDF5"
-                                : "#EFF6FF",
-                          },
-                        ]}
-                      >
+
+                  if (combinedLogs.length === 0) {
+                    return (
+                      <View style={styles.emptyCard}>
                         <Ionicons
-                          name={
-                            log.type === "certificate"
-                              ? "diamond"
-                              : log.type === "purchase"
-                              ? "bag-check-outline"
-                              : log.type === "deposit"
-                              ? "arrow-down-circle"
-                              : "shield-checkmark"
-                          }
-                          size={18}
-                          color={log.badgeColor || "#7C3AED"}
+                          name="ribbon-outline"
+                          size={40}
+                          color="#94A3B8"
                         />
+                        <Text style={styles.emptyTitle}>
+                          No Certificates or Transactions Yet
+                        </Text>
+                        <Text style={styles.emptySub}>
+                          ERC-721 authenticity certificates and escrow
+                          transactions will appear here.
+                        </Text>
+                      </View>
+                    );
+                  }
+                  return combinedLogs.map((log, idx) => (
+                    <View key={log.id || idx} style={styles.activityCard}>
+                      <View style={styles.activityHeaderRow}>
+                        <View
+                          style={[
+                            styles.activityIconBox,
+                            {
+                              backgroundColor:
+                                log.type === "certificate"
+                                  ? "#F3E8FF"
+                                  : log.type === "purchase"
+                                    ? "#EDE9FE"
+                                    : log.type === "deposit"
+                                      ? "#ECFDF5"
+                                      : "#EFF6FF",
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name={
+                              log.type === "certificate"
+                                ? "diamond"
+                                : log.type === "purchase"
+                                  ? "bag-check-outline"
+                                  : log.type === "deposit"
+                                    ? "arrow-down-circle"
+                                    : "shield-checkmark"
+                            }
+                            size={18}
+                            color={log.badgeColor || "#7C3AED"}
+                          />
+                        </View>
+
+                        <View style={{ flex: 1 }}>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                            }}
+                          >
+                            <Text style={styles.activityTitle}>
+                              {log.title}
+                            </Text>
+                            <View style={styles.activityStatusPill}>
+                              <Text style={styles.activityStatusPillText}>
+                                {log.status}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={styles.activityAssetName}>
+                            {log.assetName}
+                          </Text>
+                        </View>
                       </View>
 
-                      <View style={{ flex: 1 }}>
+                      {log.detail ? (
+                        <Text style={styles.activityDetailText}>
+                          {log.detail}
+                        </Text>
+                      ) : null}
+
+                      {/* Hash and Meta Row */}
+                      <View style={styles.activityFooterRow}>
+                        {log.hashDisplay ? (
+                          <TouchableOpacity
+                            style={styles.hashPill}
+                            onPress={() => {
+                              const msg = `Transaction Reference / Hash: ${log.hash || log.hashDisplay}`;
+                              Platform.OS === "web"
+                                ? alert(msg)
+                                : Alert.alert("Transaction Reference", msg);
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Feather
+                              name="hash"
+                              size={11}
+                              color="#6366F1"
+                              style={{ marginRight: 4 }}
+                            />
+                            <Text style={styles.hashPillText}>
+                              {log.hashDisplay}
+                            </Text>
+                          </TouchableOpacity>
+                        ) : null}
+
                         <View
                           style={{
                             flexDirection: "row",
                             alignItems: "center",
-                            justifyContent: "space-between",
+                            gap: 6,
                           }}
                         >
-                          <Text style={styles.activityTitle}>{log.title}</Text>
-                          <View style={styles.activityStatusPill}>
-                            <Text style={styles.activityStatusPillText}>
-                              {log.status}
+                          {log.amount ? (
+                            <Text style={styles.activityAmountText}>
+                              {log.amount}
                             </Text>
-                          </View>
-                        </View>
-                        <Text style={styles.activityAssetName}>
-                          {log.assetName}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {log.detail ? (
-                      <Text style={styles.activityDetailText}>
-                        {log.detail}
-                      </Text>
-                    ) : null}
-
-                    {/* Hash and Meta Row */}
-                    <View style={styles.activityFooterRow}>
-                    {log.hashDisplay ? (
-                      <TouchableOpacity
-                        style={styles.hashPill}
-                        onPress={() => {
-                          const msg = `Transaction Reference / Hash: ${log.hash || log.hashDisplay}`;
-                          Platform.OS === "web"
-                            ? alert(msg)
-                            : Alert.alert("Transaction Reference", msg);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Feather
-                          name="hash"
-                          size={11}
-                          color="#6366F1"
-                          style={{ marginRight: 4 }}
-                        />
-                        <Text style={styles.hashPillText}>
-                          {log.hashDisplay}
-                        </Text>
-                      </TouchableOpacity>
-                    ) : null}
-
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 6,
-                        }}
-                      >
-                        {log.amount ? (
-                          <Text style={styles.activityAmountText}>
-                            {log.amount}
+                          ) : null}
+                          <Text style={styles.activityTimeText}>
+                            {log.timestamp}
                           </Text>
-                        ) : null}
-                        <Text style={styles.activityTimeText}>
-                          {log.timestamp}
-                        </Text>
+                        </View>
                       </View>
                     </View>
-                  </View>
-                ));
-              })()}
-            </View>
-          )}
-        </View>
-
-        {/* ── DEPOSIT MODAL ────────────────────────────────────────────────────── */}
-        <Modal
-          visible={depositModalVisible}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setDepositModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Deposit to Vault</Text>
-                <TouchableOpacity onPress={() => setDepositModalVisible(false)}>
-                  <Feather name="x" size={20} color="#0F172A" />
-                </TouchableOpacity>
+                  ));
+                })()}
               </View>
-
-              <View
-                style={{
-                  backgroundColor: "#FFFBEB",
-                  borderRadius: 10,
-                  padding: 10,
-                  marginBottom: 12,
-                  borderWidth: 1,
-                  borderColor: "#FDE68A",
-                }}
-              >
-                <Text style={{ fontSize: 12, fontWeight: "700", color: "#92400E" }}>
-                  Manual Bank EFT — Pending Treasury Verification
-                </Text>
-                <Text style={{ fontSize: 11, color: "#B45309", marginTop: 2 }}>
-                  Submitting a deposit request records it as Pending Review. Your spendable balance increases only after settlement is independently verified.
-                </Text>
-              </View>
-
-              <Text style={styles.modalLabel}>Deposit Amount (R)</Text>
-              <TextInput
-                value={depositAmount}
-                onChangeText={setDepositAmount}
-                placeholder="e.g. 5000"
-                keyboardType="numeric"
-                style={styles.modalInput}
-                placeholderTextColor="#94A3B8"
-              />
-
-              {/* Amount Quick Presets */}
-              <View style={styles.presetsRow}>
-                {[500, 1000, 5000, 10000].map((amt) => (
-                  <TouchableOpacity
-                    key={amt}
-                    style={styles.presetChip}
-                    onPress={() => setDepositAmount(String(amt))}
-                  >
-                    <Text style={styles.presetChipText}>+R{amt}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.modalLabel}>Bank EFT Reference (Optional)</Text>
-              <TextInput
-                value={depositReference}
-                onChangeText={setDepositReference}
-                placeholder="e.g. EFT-2026-88412"
-                style={styles.modalInput}
-                placeholderTextColor="#94A3B8"
-              />
-
-              <TouchableOpacity
-                style={styles.modalSubmitBtn}
-                onPress={handleDeposit}
-                disabled={depositing}
-              >
-                {depositing ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalSubmitBtnText}>Submit Deposit Request</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            )}
           </View>
-        </Modal>
 
-        {/* ── WITHDRAW MODAL (3-STAGE: AMOUNT -> BANK CONFIRMATION -> 6-DIGIT EMAIL OTP) ── */}
-        <Modal
-          visible={withdrawModalVisible}
-          animationType="slide"
-          transparent
-          onRequestClose={() => handleCancelWithdrawalFlow("modal_dismissed")}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>
-                  {withdrawStep === "confirm_bank"
-                    ? "Confirm Bank Details"
-                    : withdrawStep === "otp_entry"
-                    ? "Email Code Verification"
-                    : "Request Withdrawal"}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => handleCancelWithdrawalFlow("user_closed_modal")}
+          {/* ── DEPOSIT MODAL ────────────────────────────────────────────────────── */}
+          <Modal
+            visible={depositModalVisible}
+            animationType="slide"
+            transparent
+            onRequestClose={() => setDepositModalVisible(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Deposit to Vault</Text>
+                  <TouchableOpacity
+                    onPress={() => setDepositModalVisible(false)}
+                  >
+                    <Feather name="x" size={20} color="#0F172A" />
+                  </TouchableOpacity>
+                </View>
+
+                <View
+                  style={{
+                    backgroundColor: "#FFFBEB",
+                    borderRadius: 10,
+                    padding: 10,
+                    marginBottom: 12,
+                    borderWidth: 1,
+                    borderColor: "#FDE68A",
+                  }}
                 >
-                  <Feather name="x" size={20} color="#0F172A" />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "700",
+                      color: "#92400E",
+                    }}
+                  >
+                    Manual Bank EFT — Pending Treasury Verification
+                  </Text>
+                  <Text
+                    style={{ fontSize: 11, color: "#B45309", marginTop: 2 }}
+                  >
+                    Submitting a deposit request records it as Pending Review.
+                    Your spendable balance increases only after settlement is
+                    independently verified.
+                  </Text>
+                </View>
+
+                <Text style={styles.modalLabel}>Deposit Amount (R)</Text>
+                <TextInput
+                  value={depositAmount}
+                  onChangeText={setDepositAmount}
+                  placeholder="e.g. 5000"
+                  keyboardType="numeric"
+                  style={styles.modalInput}
+                  placeholderTextColor="#94A3B8"
+                />
+
+                {/* Amount Quick Presets */}
+                <View style={styles.presetsRow}>
+                  {[500, 1000, 5000, 10000].map((amt) => (
+                    <TouchableOpacity
+                      key={amt}
+                      style={styles.presetChip}
+                      onPress={() => setDepositAmount(String(amt))}
+                    >
+                      <Text style={styles.presetChipText}>+R{amt}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.modalLabel}>
+                  Bank EFT Reference (Optional)
+                </Text>
+                <TextInput
+                  value={depositReference}
+                  onChangeText={setDepositReference}
+                  placeholder="e.g. EFT-2026-88412"
+                  style={styles.modalInput}
+                  placeholderTextColor="#94A3B8"
+                />
+
+                <TouchableOpacity
+                  style={styles.modalSubmitBtn}
+                  onPress={handleDeposit}
+                  disabled={depositing}
+                >
+                  {depositing ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.modalSubmitBtnText}>
+                      Submit Deposit Request
+                    </Text>
+                  )}
                 </TouchableOpacity>
               </View>
+            </View>
+          </Modal>
 
-              {/* STAGE 1: ENTER AMOUNT */}
-              {withdrawStep === "amount" && (
-                <>
-                  <View
-                    style={{
-                      backgroundColor: "#EFF6FF",
-                      borderRadius: 10,
-                      padding: 10,
-                      marginBottom: 12,
-                      borderWidth: 1,
-                      borderColor: "#BFDBFE",
-                    }}
-                  >
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#1E40AF" }}>
-                      Destination: Approved Bank Account on File
-                    </Text>
-                    <Text style={{ fontSize: 11, color: "#1D4ED8", marginTop: 2 }}>
-                      Payouts are sent exclusively to your KYC-verified, admin-approved bank account after you confirm your bank details and verify a single-use 6-digit email code.
-                    </Text>
-                  </View>
-
-                  <Text style={styles.modalLabel}>Withdrawal Amount (R)</Text>
-                  <TextInput
-                    value={withdrawAmount}
-                    onChangeText={setWithdrawAmount}
-                    placeholder="e.g. 1000"
-                    keyboardType="numeric"
-                    style={styles.modalInput}
-                    placeholderTextColor="#94A3B8"
-                  />
-
+          {/* ── WITHDRAW MODAL (3-STAGE: AMOUNT -> BANK CONFIRMATION -> 6-DIGIT EMAIL OTP) ── */}
+          <Modal
+            visible={withdrawModalVisible}
+            animationType="slide"
+            transparent
+            onRequestClose={() => handleCancelWithdrawalFlow("modal_dismissed")}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>
+                    {withdrawStep === "confirm_bank"
+                      ? "Confirm Bank Details"
+                      : withdrawStep === "otp_entry"
+                        ? "Email Code Verification"
+                        : "Request Withdrawal"}
+                  </Text>
                   <TouchableOpacity
-                    style={styles.modalSubmitBtn}
-                    onPress={handleProceedToBankConfirmation}
-                    disabled={sendingWithdrawOtp}
+                    onPress={() =>
+                      handleCancelWithdrawalFlow("user_closed_modal")
+                    }
                   >
-                    {sendingWithdrawOtp ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.modalSubmitBtnText}>Continue</Text>
-                    )}
+                    <Feather name="x" size={20} color="#0F172A" />
                   </TouchableOpacity>
-                </>
-              )}
+                </View>
 
-              {/* STAGE 2: BANK DETAILS CONFIRMATION ("Are these your bank details?") */}
-              {withdrawStep === "confirm_bank" && (
-                <>
-                  <View
-                    style={{
-                      backgroundColor: "#F8FAFC",
-                      borderRadius: 12,
-                      padding: 14,
-                      marginBottom: 14,
-                      borderWidth: 1,
-                      borderColor: "#CBD5E1",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 15,
-                        fontWeight: "800",
-                        color: "#0F172A",
-                        marginBottom: 6,
-                      }}
-                    >
-                      Are these your bank details?
-                    </Text>
-                    <Text style={{ fontSize: 12, color: "#475569", marginBottom: 12 }}>
-                      Please verify your approved payout destination below. Destination bank details cannot be replaced during a withdrawal.
-                    </Text>
-
-                    <View style={{ gap: 6 }}>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
-                          Withdrawal Amount:
-                        </Text>
-                        <Text style={{ fontSize: 13, color: "#0F172A", fontWeight: "800" }}>
-                          {formatZAR(withdrawAmount)}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
-                          Bank Name:
-                        </Text>
-                        <Text style={{ fontSize: 12, color: "#0F172A", fontWeight: "700" }}>
-                          {withdrawBankDetails?.bankName || "Approved Bank"}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
-                          Account Holder:
-                        </Text>
-                        <Text style={{ fontSize: 12, color: "#0F172A", fontWeight: "700" }}>
-                          {withdrawBankDetails?.accountHolder || user?.fullName || "Verified Holder"}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
-                          Account Number (Masked):
-                        </Text>
-                        <Text style={{ fontSize: 13, color: "#4F46E5", fontWeight: "800" }}>
-                          {withdrawBankDetails?.accountNumberMasked || "****"}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
-                          Branch Code:
-                        </Text>
-                        <Text style={{ fontSize: 12, color: "#0F172A", fontWeight: "700" }}>
-                          {withdrawBankDetails?.branchCode || "—"}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {withdrawStatusMessage ? (
+                {/* STAGE 1: ENTER AMOUNT */}
+                {withdrawStep === "amount" && (
+                  <>
                     <View
                       style={{
-                        backgroundColor: "#FEF2F2",
-                        borderRadius: 8,
+                        backgroundColor: "#EFF6FF",
+                        borderRadius: 10,
                         padding: 10,
                         marginBottom: 12,
                         borderWidth: 1,
-                        borderColor: "#FECACA",
+                        borderColor: "#BFDBFE",
                       }}
                     >
-                      <Text style={{ fontSize: 12, color: "#B91C1C", fontWeight: "600" }}>
-                        {withdrawStatusMessage}
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "700",
+                          color: "#1E40AF",
+                        }}
+                      >
+                        Destination: Approved Bank Account on File
+                      </Text>
+                      <Text
+                        style={{ fontSize: 11, color: "#1D4ED8", marginTop: 2 }}
+                      >
+                        Payouts are sent exclusively to your KYC-verified,
+                        admin-approved bank account after you confirm your bank
+                        details and verify a single-use 6-digit email code.
                       </Text>
                     </View>
-                  ) : null}
 
-                  <View style={{ flexDirection: "row", gap: 10 }}>
-                    <TouchableOpacity
-                      style={[
-                        styles.modalSubmitBtn,
-                        {
-                          flex: 1,
-                          backgroundColor: "#F1F5F9",
-                          borderWidth: 1,
-                          borderColor: "#CBD5E1",
-                        },
-                      ]}
-                      onPress={() => handleCancelWithdrawalFlow("user_declined_bank_details")}
-                      disabled={sendingWithdrawOtp}
-                    >
-                      <Text style={[styles.modalSubmitBtnText, { color: "#334155" }]}>
-                        Cancel
-                      </Text>
-                    </TouchableOpacity>
+                    <Text style={styles.modalLabel}>Withdrawal Amount (R)</Text>
+                    <TextInput
+                      value={withdrawAmount}
+                      onChangeText={setWithdrawAmount}
+                      placeholder="e.g. 1000"
+                      keyboardType="numeric"
+                      style={styles.modalInput}
+                      placeholderTextColor="#94A3B8"
+                    />
 
                     <TouchableOpacity
-                      style={[styles.modalSubmitBtn, { flex: 1 }]}
-                      onPress={handleConfirmBankAndSendOtp}
+                      style={styles.modalSubmitBtn}
+                      onPress={handleProceedToBankConfirmation}
                       disabled={sendingWithdrawOtp}
                     >
                       {sendingWithdrawOtp ? (
                         <ActivityIndicator color="#FFFFFF" />
                       ) : (
-                        <Text style={styles.modalSubmitBtnText}>Confirm</Text>
+                        <Text style={styles.modalSubmitBtnText}>Continue</Text>
                       )}
                     </TouchableOpacity>
-                  </View>
-                </>
-              )}
+                  </>
+                )}
 
-              {/* STAGE 3: 6-DIGIT EMAIL CODE POPUP WITH 2-MINUTE COUNTDOWN */}
-              {withdrawStep === "otp_entry" && (
-                <>
-                  <View
-                    style={{
-                      backgroundColor: "#EEF2FF",
-                      borderRadius: 10,
-                      padding: 12,
-                      marginBottom: 12,
-                      borderWidth: 1,
-                      borderColor: "#C7D2FE",
-                    }}
-                  >
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#3730A3" }}>
-                      6-Digit Verification Code Sent to {withdrawMaskedEmail}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: "#4338CA", marginTop: 3 }}>
-                      Amount: {formatZAR(withdrawAmount)} • Destination:{" "}
-                      {withdrawBankDetails?.bankName || "Bank"} (
-                      {withdrawBankDetails?.accountNumberMasked || "****"})
-                    </Text>
-                    <Text style={{ fontSize: 11, color: "#6366F1", marginTop: 3, fontWeight: "600" }}>
-                      Single attempt only: Entering a wrong code or letting the 2-minute timer expire immediately cancels this withdrawal attempt.
-                    </Text>
-                  </View>
-
-                  {/* Visible 2-Minute Countdown Pill */}
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      backgroundColor:
-                        withdrawChallengeStatus === "pending" && withdrawCountdownSec > 0
-                          ? "#F0FDF4"
-                          : "#FEF2F2",
-                      borderRadius: 10,
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      marginBottom: 12,
-                      borderWidth: 1,
-                      borderColor:
-                        withdrawChallengeStatus === "pending" && withdrawCountdownSec > 0
-                          ? "#BBF7D0"
-                          : "#FECACA",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "700",
-                        color:
-                          withdrawChallengeStatus === "pending" && withdrawCountdownSec > 0
-                            ? "#166534"
-                            : "#991B1B",
-                      }}
-                    >
-                      {withdrawChallengeStatus === "pending" && withdrawCountdownSec > 0
-                        ? "Code Expires In:"
-                        : withdrawChallengeStatus === "expired"
-                        ? "Challenge Expired"
-                        : "Challenge Cancelled"}
-                    </Text>
-                    <Text
-                      style={{
-                        fontSize: 15,
-                        fontWeight: "800",
-                        fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-                        color:
-                          withdrawChallengeStatus === "pending" && withdrawCountdownSec > 30
-                            ? "#15803D"
-                            : "#DC2626",
-                      }}
-                    >
-                      {`${String(Math.floor(withdrawCountdownSec / 60)).padStart(2, "0")}:${String(
-                        withdrawCountdownSec % 60
-                      ).padStart(2, "0")}`}
-                    </Text>
-                  </View>
-
-                  {withdrawStatusMessage ? (
+                {/* STAGE 2: BANK DETAILS CONFIRMATION ("Are these your bank details?") */}
+                {withdrawStep === "confirm_bank" && (
+                  <>
                     <View
                       style={{
-                        backgroundColor: "#FEF2F2",
-                        borderRadius: 8,
-                        padding: 10,
-                        marginBottom: 12,
+                        backgroundColor: "#F8FAFC",
+                        borderRadius: 12,
+                        padding: 14,
+                        marginBottom: 14,
                         borderWidth: 1,
-                        borderColor: "#FECACA",
+                        borderColor: "#CBD5E1",
                       }}
                     >
-                      <Text style={{ fontSize: 12, color: "#B91C1C", fontWeight: "600" }}>
-                        {withdrawStatusMessage}
+                      <Text
+                        style={{
+                          fontSize: 15,
+                          fontWeight: "800",
+                          color: "#0F172A",
+                          marginBottom: 6,
+                        }}
+                      >
+                        Are these your bank details?
                       </Text>
-                    </View>
-                  ) : null}
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: "#475569",
+                          marginBottom: 12,
+                        }}
+                      >
+                        Please verify your approved payout destination below.
+                        Destination bank details cannot be replaced during a
+                        withdrawal.
+                      </Text>
 
-                  {withdrawChallengeStatus === "pending" && withdrawCountdownSec > 0 ? (
-                    <>
-                      <Text style={styles.modalLabel}>Enter 6-Digit Email Code</Text>
-                      <TextInput
-                        value={withdrawOtpCode}
-                        onChangeText={(val) =>
-                          setWithdrawOtpCode(String(val || "").replace(/[^0-9]/g, "").slice(0, 6))
-                        }
-                        placeholder="6-digit code"
-                        keyboardType="number-pad"
-                        maxLength={6}
-                        style={[
-                          styles.modalInput,
-                          {
-                            letterSpacing: 6,
-                            fontSize: 18,
-                            fontWeight: "800",
-                            textAlign: "center",
-                          },
-                        ]}
-                        placeholderTextColor="#94A3B8"
-                      />
-
-                      <View style={{ flexDirection: "row", gap: 10 }}>
-                        <TouchableOpacity
-                          style={[
-                            styles.modalSubmitBtn,
-                            {
-                              flex: 1,
-                              backgroundColor: "#F1F5F9",
-                              borderWidth: 1,
-                              borderColor: "#CBD5E1",
-                            },
-                          ]}
-                          onPress={() => handleCancelWithdrawalFlow("user_cancelled_otp_popup")}
-                          disabled={withdrawing}
+                      <View style={{ gap: 6 }}>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                          }}
                         >
-                          <Text style={[styles.modalSubmitBtnText, { color: "#334155" }]}>
-                            Cancel
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: "#64748B",
+                              fontWeight: "600",
+                            }}
+                          >
+                            Withdrawal Amount:
                           </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.modalSubmitBtn, { flex: 1.5 }]}
-                          onPress={handleVerifyOtpAndSubmitWithdrawal}
-                          disabled={withdrawing || withdrawOtpCode.length !== 6}
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              color: "#0F172A",
+                              fontWeight: "800",
+                            }}
+                          >
+                            {formatZAR(withdrawAmount)}
+                          </Text>
+                        </View>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                          }}
                         >
-                          {withdrawing ? (
-                            <ActivityIndicator color="#FFFFFF" />
-                          ) : (
-                            <Text style={styles.modalSubmitBtnText}>
-                              Verify & Submit
-                            </Text>
-                          )}
-                        </TouchableOpacity>
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: "#64748B",
+                              fontWeight: "600",
+                            }}
+                          >
+                            Bank Name:
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: "#0F172A",
+                              fontWeight: "700",
+                            }}
+                          >
+                            {withdrawBankDetails?.bankName || "Approved Bank"}
+                          </Text>
+                        </View>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: "#64748B",
+                              fontWeight: "600",
+                            }}
+                          >
+                            Account Holder:
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: "#0F172A",
+                              fontWeight: "700",
+                            }}
+                          >
+                            {withdrawBankDetails?.accountHolder ||
+                              user?.fullName ||
+                              "Verified Holder"}
+                          </Text>
+                        </View>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: "#64748B",
+                              fontWeight: "600",
+                            }}
+                          >
+                            Account Number (Masked):
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              color: "#4F46E5",
+                              fontWeight: "800",
+                            }}
+                          >
+                            {withdrawBankDetails?.accountNumberMasked || "****"}
+                          </Text>
+                        </View>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: "#64748B",
+                              fontWeight: "600",
+                            }}
+                          >
+                            Branch Code:
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: "#0F172A",
+                              fontWeight: "700",
+                            }}
+                          >
+                            {withdrawBankDetails?.branchCode || "—"}
+                          </Text>
+                        </View>
                       </View>
-                    </>
-                  ) : (
+                    </View>
+
+                    {withdrawStatusMessage ? (
+                      <View
+                        style={{
+                          backgroundColor: "#FEF2F2",
+                          borderRadius: 8,
+                          padding: 10,
+                          marginBottom: 12,
+                          borderWidth: 1,
+                          borderColor: "#FECACA",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            color: "#B91C1C",
+                            fontWeight: "600",
+                          }}
+                        >
+                          {withdrawStatusMessage}
+                        </Text>
+                      </View>
+                    ) : null}
+
                     <View style={{ flexDirection: "row", gap: 10 }}>
                       <TouchableOpacity
                         style={[
@@ -2547,265 +2907,585 @@ export default function VaultScreen({ navigation, route }) {
                             borderColor: "#CBD5E1",
                           },
                         ]}
-                        onPress={() => handleCancelWithdrawalFlow("closed_after_invalidation")}
+                        onPress={() =>
+                          handleCancelWithdrawalFlow(
+                            "user_declined_bank_details",
+                          )
+                        }
                         disabled={sendingWithdrawOtp}
                       >
-                        <Text style={[styles.modalSubmitBtnText, { color: "#334155" }]}>
-                          Close
+                        <Text
+                          style={[
+                            styles.modalSubmitBtnText,
+                            { color: "#334155" },
+                          ]}
+                        >
+                          Cancel
                         </Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={[styles.modalSubmitBtn, { flex: 1.5 }]}
+                        style={[styles.modalSubmitBtn, { flex: 1 }]}
                         onPress={handleConfirmBankAndSendOtp}
                         disabled={sendingWithdrawOtp}
                       >
                         {sendingWithdrawOtp ? (
                           <ActivityIndicator color="#FFFFFF" />
                         ) : (
-                          <Text style={styles.modalSubmitBtnText}>
-                            Send New Code
-                          </Text>
+                          <Text style={styles.modalSubmitBtnText}>Confirm</Text>
                         )}
                       </TouchableOpacity>
                     </View>
-                  )}
-                </>
-              )}
-            </View>
-          </View>
-        </Modal>
-
-        {/* ── SHARE REDEMPTION MODAL ────────────────────────────────────────────── */}
-        <Modal
-          visible={sellModalVisible}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setSellModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { maxHeight: "90%" }]}>
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <View style={styles.modalHeader}>
-                  <View style={{ flex: 1, marginRight: 10 }}>
-                    <Text style={styles.modalTitle}>Redeem Asset Shares</Text>
-                    <Text style={styles.modalSubTitle} numberOfLines={1}>
-                      {selectedSellItem?.name || "Asset Offering"}
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={() => setSellModalVisible(false)}>
-                    <Feather name="x" size={20} color="#0F172A" />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Informational Regulatory Notice */}
-                <View style={styles.redemptionNoticeBox}>
-                  <Feather name="info" size={15} color="#4F46E5" style={{ marginRight: 8, marginTop: 2 }} />
-                  <Text style={styles.redemptionNoticeText}>
-                    Share redemptions are processed as formal exit requests pending custodial verification. Once payout settlement begins, requests are locked. Your shares are reserved immediately upon submission to prevent double-trading.
-                  </Text>
-                </View>
-
-                {/* Shares Selection */}
-                <Text style={styles.modalLabel}>
-                  Shares to Redeem (Available: {selectedSellItem?.availableShares ?? selectedSellItem?.sharesOwned ?? 1})
-                </Text>
-                <View style={styles.sharesStepperRow}>
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => {
-                      const cur = parseInt(sellSharesCount, 10) || 1;
-                      if (cur > 1) {
-                        const next = cur - 1;
-                        setSellSharesCount(String(next));
-                        fetchQuote(selectedSellItem?.asset_id || selectedSellItem?.id, next);
-                      }
-                    }}
-                  >
-                    <Feather name="minus" size={16} color="#0F172A" />
-                  </TouchableOpacity>
-                  <TextInput
-                    value={sellSharesCount}
-                    onChangeText={(txt) => {
-                      const cleaned = txt.replace(/[^0-9]/g, "");
-                      setSellSharesCount(cleaned);
-                      const num = parseInt(cleaned, 10);
-                      if (num > 0) {
-                        fetchQuote(selectedSellItem?.asset_id || selectedSellItem?.id, num);
-                      }
-                    }}
-                    keyboardType="numeric"
-                    style={styles.stepperInput}
-                  />
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => {
-                      const cur = parseInt(sellSharesCount, 10) || 0;
-                      const max = selectedSellItem?.availableShares ?? selectedSellItem?.sharesOwned ?? 1;
-                      if (cur < max) {
-                        const next = cur + 1;
-                        setSellSharesCount(String(next));
-                        fetchQuote(selectedSellItem?.asset_id || selectedSellItem?.id, next);
-                      }
-                    }}
-                  >
-                    <Feather name="plus" size={16} color="#0F172A" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.maxSharesBtn}
-                    onPress={() => {
-                      const max = selectedSellItem?.availableShares ?? selectedSellItem?.sharesOwned ?? 1;
-                      setSellSharesCount(String(max));
-                      fetchQuote(selectedSellItem?.asset_id || selectedSellItem?.id, max);
-                    }}
-                  >
-                    <Text style={styles.maxSharesBtnText}>MAX</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Live Financial Breakdown Quote */}
-                <View style={styles.quoteSummaryBox}>
-                  {loadingSellQuote ? (
-                    <ActivityIndicator size="small" color="#4F46E5" style={{ paddingVertical: 12 }} />
-                  ) : (
-                    <>
-                      <View style={styles.quoteRow}>
-                        <Text style={styles.quoteLabel}>Authoritative Share Price</Text>
-                        <Text style={styles.quoteVal}>{sellQuote?.sharePriceFormatted || "R0"}</Text>
-                      </View>
-                      <View style={styles.quoteRow}>
-                        <Text style={styles.quoteLabel}>Gross Valuation</Text>
-                        <Text style={styles.quoteVal}>{sellQuote?.grossValuationFormatted || "R0"}</Text>
-                      </View>
-                      <View style={styles.quoteRow}>
-                        <Text style={styles.quoteLabel}>Platform Redemption Fee (2.5%)</Text>
-                        <Text style={[styles.quoteVal, { color: "#DC2626" }]}>
-                          -{sellQuote?.redemptionFeeFormatted || "R0"}
-                        </Text>
-                      </View>
-                      <View style={[styles.quoteRow, styles.quoteTotalRow]}>
-                        <Text style={styles.quoteTotalLabel}>Estimated Net Proceeds</Text>
-                        <Text style={styles.quoteTotalVal}>
-                          {sellQuote?.estimatedNetProceedsFormatted || "R0"}
-                        </Text>
-                      </View>
-                    </>
-                  )}
-                </View>
-
-                {/* Payout Destination Selector */}
-                <Text style={styles.modalLabel}>Payout Destination</Text>
-                <View style={styles.destinationOptionsRow}>
-                  <TouchableOpacity
-                    style={[
-                      styles.destinationOption,
-                      sellDestinationMethod === "escrow_wallet" && styles.destinationOptionActive,
-                    ]}
-                    onPress={() => setSellDestinationMethod("escrow_wallet")}
-                  >
-                    <Feather
-                      name="shield"
-                      size={16}
-                      color={sellDestinationMethod === "escrow_wallet" ? "#4F46E5" : "#64748B"}
-                      style={{ marginBottom: 4 }}
-                    />
-                    <Text
-                      style={[
-                        styles.destinationOptionText,
-                        sellDestinationMethod === "escrow_wallet" && styles.destinationOptionTextActive,
-                      ]}
-                    >
-                      SmartAssets Escrow
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.destinationOption,
-                      sellDestinationMethod === "bank_account" && styles.destinationOptionActive,
-                    ]}
-                    onPress={() => setSellDestinationMethod("bank_account")}
-                  >
-                    <Feather
-                      name="credit-card"
-                      size={16}
-                      color={sellDestinationMethod === "bank_account" ? "#4F46E5" : "#64748B"}
-                      style={{ marginBottom: 4 }}
-                    />
-                    <Text
-                      style={[
-                        styles.destinationOptionText,
-                        sellDestinationMethod === "bank_account" && styles.destinationOptionTextActive,
-                      ]}
-                    >
-                      Bank EFT
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {sellDestinationMethod === "bank_account" && (
-                  <View style={{ marginTop: 10 }}>
-                    <Text style={styles.modalSubLabel}>Bank Name</Text>
-                    <TextInput
-                      value={sellBankName}
-                      onChangeText={setSellBankName}
-                      placeholder="e.g. Standard Bank / FNB / Absa"
-                      style={styles.modalInput}
-                      placeholderTextColor="#94A3B8"
-                    />
-                    <Text style={styles.modalSubLabel}>Account Number</Text>
-                    <TextInput
-                      value={sellAccountNumber}
-                      onChangeText={setSellAccountNumber}
-                      placeholder="Enter your bank account number"
-                      keyboardType="numeric"
-                      style={styles.modalInput}
-                      placeholderTextColor="#94A3B8"
-                    />
-                    <Text style={styles.modalSubLabel}>Account Holder Name</Text>
-                    <TextInput
-                      value={sellAccountHolder}
-                      onChangeText={setSellAccountHolder}
-                      placeholder="Account holder name"
-                      style={styles.modalInput}
-                      placeholderTextColor="#94A3B8"
-                    />
-                  </View>
+                  </>
                 )}
 
-                {/* Submit Button */}
-                <TouchableOpacity
-                  style={[styles.modalSubmitBtn, { marginTop: 20 }]}
-                  onPress={handleConfirmSell}
-                  disabled={submittingSell}
-                >
-                  {submittingSell ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.modalSubmitBtnText}>Submit Redemption Request</Text>
-                  )}
-                </TouchableOpacity>
-              </ScrollView>
+                {/* STAGE 3: 6-DIGIT EMAIL CODE POPUP WITH 2-MINUTE COUNTDOWN */}
+                {withdrawStep === "otp_entry" && (
+                  <>
+                    <View
+                      style={{
+                        backgroundColor: "#EEF2FF",
+                        borderRadius: 10,
+                        padding: 12,
+                        marginBottom: 12,
+                        borderWidth: 1,
+                        borderColor: "#C7D2FE",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "700",
+                          color: "#3730A3",
+                        }}
+                      >
+                        6-Digit Verification Code Sent to {withdrawMaskedEmail}
+                      </Text>
+                      <Text
+                        style={{ fontSize: 11, color: "#4338CA", marginTop: 3 }}
+                      >
+                        Amount: {formatZAR(withdrawAmount)} • Destination:{" "}
+                        {withdrawBankDetails?.bankName || "Bank"} (
+                        {withdrawBankDetails?.accountNumberMasked || "****"})
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: "#6366F1",
+                          marginTop: 3,
+                          fontWeight: "600",
+                        }}
+                      >
+                        Single attempt only: Entering a wrong code or letting
+                        the 2-minute timer expire immediately cancels this
+                        withdrawal attempt.
+                      </Text>
+                    </View>
+
+                    {/* Visible 2-Minute Countdown Pill */}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        backgroundColor:
+                          withdrawChallengeStatus === "pending" &&
+                          withdrawCountdownSec > 0
+                            ? "#F0FDF4"
+                            : "#FEF2F2",
+                        borderRadius: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        marginBottom: 12,
+                        borderWidth: 1,
+                        borderColor:
+                          withdrawChallengeStatus === "pending" &&
+                          withdrawCountdownSec > 0
+                            ? "#BBF7D0"
+                            : "#FECACA",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "700",
+                          color:
+                            withdrawChallengeStatus === "pending" &&
+                            withdrawCountdownSec > 0
+                              ? "#166534"
+                              : "#991B1B",
+                        }}
+                      >
+                        {withdrawChallengeStatus === "pending" &&
+                        withdrawCountdownSec > 0
+                          ? "Code Expires In:"
+                          : withdrawChallengeStatus === "expired"
+                            ? "Challenge Expired"
+                            : "Challenge Cancelled"}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 15,
+                          fontWeight: "800",
+                          fontFamily:
+                            Platform.OS === "ios" ? "Courier" : "monospace",
+                          color:
+                            withdrawChallengeStatus === "pending" &&
+                            withdrawCountdownSec > 30
+                              ? "#15803D"
+                              : "#DC2626",
+                        }}
+                      >
+                        {`${String(Math.floor(withdrawCountdownSec / 60)).padStart(2, "0")}:${String(
+                          withdrawCountdownSec % 60,
+                        ).padStart(2, "0")}`}
+                      </Text>
+                    </View>
+
+                    {withdrawStatusMessage ? (
+                      <View
+                        style={{
+                          backgroundColor: "#FEF2F2",
+                          borderRadius: 8,
+                          padding: 10,
+                          marginBottom: 12,
+                          borderWidth: 1,
+                          borderColor: "#FECACA",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            color: "#B91C1C",
+                            fontWeight: "600",
+                          }}
+                        >
+                          {withdrawStatusMessage}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {withdrawChallengeStatus === "pending" &&
+                    withdrawCountdownSec > 0 ? (
+                      <>
+                        <Text style={styles.modalLabel}>
+                          Enter 6-Digit Email Code
+                        </Text>
+                        <TextInput
+                          value={withdrawOtpCode}
+                          onChangeText={(val) =>
+                            setWithdrawOtpCode(
+                              String(val || "")
+                                .replace(/[^0-9]/g, "")
+                                .slice(0, 6),
+                            )
+                          }
+                          placeholder="6-digit code"
+                          keyboardType="number-pad"
+                          maxLength={6}
+                          style={[
+                            styles.modalInput,
+                            {
+                              letterSpacing: 6,
+                              fontSize: 18,
+                              fontWeight: "800",
+                              textAlign: "center",
+                            },
+                          ]}
+                          placeholderTextColor="#94A3B8"
+                        />
+
+                        <View style={{ flexDirection: "row", gap: 10 }}>
+                          <TouchableOpacity
+                            style={[
+                              styles.modalSubmitBtn,
+                              {
+                                flex: 1,
+                                backgroundColor: "#F1F5F9",
+                                borderWidth: 1,
+                                borderColor: "#CBD5E1",
+                              },
+                            ]}
+                            onPress={() =>
+                              handleCancelWithdrawalFlow(
+                                "user_cancelled_otp_popup",
+                              )
+                            }
+                            disabled={withdrawing}
+                          >
+                            <Text
+                              style={[
+                                styles.modalSubmitBtnText,
+                                { color: "#334155" },
+                              ]}
+                            >
+                              Cancel
+                            </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[styles.modalSubmitBtn, { flex: 1.5 }]}
+                            onPress={handleVerifyOtpAndSubmitWithdrawal}
+                            disabled={
+                              withdrawing || withdrawOtpCode.length !== 6
+                            }
+                          >
+                            {withdrawing ? (
+                              <ActivityIndicator color="#FFFFFF" />
+                            ) : (
+                              <Text style={styles.modalSubmitBtnText}>
+                                Verify & Submit
+                              </Text>
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : (
+                      <View style={{ flexDirection: "row", gap: 10 }}>
+                        <TouchableOpacity
+                          style={[
+                            styles.modalSubmitBtn,
+                            {
+                              flex: 1,
+                              backgroundColor: "#F1F5F9",
+                              borderWidth: 1,
+                              borderColor: "#CBD5E1",
+                            },
+                          ]}
+                          onPress={() =>
+                            handleCancelWithdrawalFlow(
+                              "closed_after_invalidation",
+                            )
+                          }
+                          disabled={sendingWithdrawOtp}
+                        >
+                          <Text
+                            style={[
+                              styles.modalSubmitBtnText,
+                              { color: "#334155" },
+                            ]}
+                          >
+                            Close
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.modalSubmitBtn, { flex: 1.5 }]}
+                          onPress={handleConfirmBankAndSendOtp}
+                          disabled={sendingWithdrawOtp}
+                        >
+                          {sendingWithdrawOtp ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.modalSubmitBtnText}>
+                              Send New Code
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </>
+                )}
+              </View>
             </View>
-          </View>
-        </Modal>
+          </Modal>
 
-        {/* Bottom space */}
-        <View style={{ height: 110 }} />
-      </ScrollView>
+          {/* ── SHARE REDEMPTION MODAL ────────────────────────────────────────────── */}
+          <Modal
+            visible={sellModalVisible}
+            animationType="slide"
+            transparent
+            onRequestClose={() => setSellModalVisible(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { maxHeight: "90%" }]}>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <View style={styles.modalHeader}>
+                    <View style={{ flex: 1, marginRight: 10 }}>
+                      <Text style={styles.modalTitle}>Redeem Asset Shares</Text>
+                      <Text style={styles.modalSubTitle} numberOfLines={1}>
+                        {selectedSellItem?.name || "Asset Offering"}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setSellModalVisible(false)}
+                    >
+                      <Feather name="x" size={20} color="#0F172A" />
+                    </TouchableOpacity>
+                  </View>
 
-      <KycGatekeeperModal
-        visible={kycGatekeeperVisible}
-        onClose={() => setKycGatekeeperVisible(false)}
-        navigation={navigation}
-        isSuspended={Boolean(user?.isSuspended)}
-        kycStatus={user?.verification_status || user?.kycStatus || "unverified"}
-        bankStatus={user?.bankStatus || user?.bankAccount?.status || "not_submitted"}
-        requireBankOnly={gatekeeperRequireBankOnly}
-        actionTitle={gatekeeperActionTitle}
-      />
-    </SafeAreaView>
-  </View>
+                  {/* Informational Regulatory Notice */}
+                  <View style={styles.redemptionNoticeBox}>
+                    <Feather
+                      name="info"
+                      size={15}
+                      color="#4F46E5"
+                      style={{ marginRight: 8, marginTop: 2 }}
+                    />
+                    <Text style={styles.redemptionNoticeText}>
+                      Share redemptions are processed as formal exit requests
+                      pending custodial verification. Once payout settlement
+                      begins, requests are locked. Your shares are reserved
+                      immediately upon submission to prevent double-trading.
+                    </Text>
+                  </View>
+
+                  {/* Shares Selection */}
+                  <Text style={styles.modalLabel}>
+                    Shares to Redeem (Available:{" "}
+                    {selectedSellItem?.availableShares ??
+                      selectedSellItem?.sharesOwned ??
+                      1}
+                    )
+                  </Text>
+                  <View style={styles.sharesStepperRow}>
+                    <TouchableOpacity
+                      style={styles.stepperBtn}
+                      onPress={() => {
+                        const cur = parseInt(sellSharesCount, 10) || 1;
+                        if (cur > 1) {
+                          const next = cur - 1;
+                          setSellSharesCount(String(next));
+                          fetchQuote(
+                            selectedSellItem?.asset_id || selectedSellItem?.id,
+                            next,
+                          );
+                        }
+                      }}
+                    >
+                      <Feather name="minus" size={16} color="#0F172A" />
+                    </TouchableOpacity>
+                    <TextInput
+                      value={sellSharesCount}
+                      onChangeText={(txt) => {
+                        const cleaned = txt.replace(/[^0-9]/g, "");
+                        setSellSharesCount(cleaned);
+                        const num = parseInt(cleaned, 10);
+                        if (num > 0) {
+                          fetchQuote(
+                            selectedSellItem?.asset_id || selectedSellItem?.id,
+                            num,
+                          );
+                        }
+                      }}
+                      keyboardType="numeric"
+                      style={styles.stepperInput}
+                    />
+                    <TouchableOpacity
+                      style={styles.stepperBtn}
+                      onPress={() => {
+                        const cur = parseInt(sellSharesCount, 10) || 0;
+                        const max =
+                          selectedSellItem?.availableShares ??
+                          selectedSellItem?.sharesOwned ??
+                          1;
+                        if (cur < max) {
+                          const next = cur + 1;
+                          setSellSharesCount(String(next));
+                          fetchQuote(
+                            selectedSellItem?.asset_id || selectedSellItem?.id,
+                            next,
+                          );
+                        }
+                      }}
+                    >
+                      <Feather name="plus" size={16} color="#0F172A" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.maxSharesBtn}
+                      onPress={() => {
+                        const max =
+                          selectedSellItem?.availableShares ??
+                          selectedSellItem?.sharesOwned ??
+                          1;
+                        setSellSharesCount(String(max));
+                        fetchQuote(
+                          selectedSellItem?.asset_id || selectedSellItem?.id,
+                          max,
+                        );
+                      }}
+                    >
+                      <Text style={styles.maxSharesBtnText}>MAX</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Live Financial Breakdown Quote */}
+                  <View style={styles.quoteSummaryBox}>
+                    {loadingSellQuote ? (
+                      <ActivityIndicator
+                        size="small"
+                        color="#4F46E5"
+                        style={{ paddingVertical: 12 }}
+                      />
+                    ) : (
+                      <>
+                        <View style={styles.quoteRow}>
+                          <Text style={styles.quoteLabel}>
+                            Authoritative Share Price
+                          </Text>
+                          <Text style={styles.quoteVal}>
+                            {sellQuote?.sharePriceFormatted || "R0"}
+                          </Text>
+                        </View>
+                        <View style={styles.quoteRow}>
+                          <Text style={styles.quoteLabel}>Gross Valuation</Text>
+                          <Text style={styles.quoteVal}>
+                            {sellQuote?.grossValuationFormatted || "R0"}
+                          </Text>
+                        </View>
+                        <View style={styles.quoteRow}>
+                          <Text style={styles.quoteLabel}>
+                            Platform Redemption Fee (2.5%)
+                          </Text>
+                          <Text style={[styles.quoteVal, { color: "#DC2626" }]}>
+                            -{sellQuote?.redemptionFeeFormatted || "R0"}
+                          </Text>
+                        </View>
+                        <View style={[styles.quoteRow, styles.quoteTotalRow]}>
+                          <Text style={styles.quoteTotalLabel}>
+                            Estimated Net Proceeds
+                          </Text>
+                          <Text style={styles.quoteTotalVal}>
+                            {sellQuote?.estimatedNetProceedsFormatted || "R0"}
+                          </Text>
+                        </View>
+                      </>
+                    )}
+                  </View>
+
+                  {/* Payout Destination Selector */}
+                  <Text style={styles.modalLabel}>Payout Destination</Text>
+                  <View style={styles.destinationOptionsRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.destinationOption,
+                        sellDestinationMethod === "escrow_wallet" &&
+                          styles.destinationOptionActive,
+                      ]}
+                      onPress={() => setSellDestinationMethod("escrow_wallet")}
+                    >
+                      <Feather
+                        name="shield"
+                        size={16}
+                        color={
+                          sellDestinationMethod === "escrow_wallet"
+                            ? "#4F46E5"
+                            : "#64748B"
+                        }
+                        style={{ marginBottom: 4 }}
+                      />
+                      <Text
+                        style={[
+                          styles.destinationOptionText,
+                          sellDestinationMethod === "escrow_wallet" &&
+                            styles.destinationOptionTextActive,
+                        ]}
+                      >
+                        SmartAssets Escrow
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.destinationOption,
+                        sellDestinationMethod === "bank_account" &&
+                          styles.destinationOptionActive,
+                      ]}
+                      onPress={() => setSellDestinationMethod("bank_account")}
+                    >
+                      <Feather
+                        name="credit-card"
+                        size={16}
+                        color={
+                          sellDestinationMethod === "bank_account"
+                            ? "#4F46E5"
+                            : "#64748B"
+                        }
+                        style={{ marginBottom: 4 }}
+                      />
+                      <Text
+                        style={[
+                          styles.destinationOptionText,
+                          sellDestinationMethod === "bank_account" &&
+                            styles.destinationOptionTextActive,
+                        ]}
+                      >
+                        Bank EFT
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {sellDestinationMethod === "bank_account" && (
+                    <View style={{ marginTop: 10 }}>
+                      <Text style={styles.modalSubLabel}>Bank Name</Text>
+                      <TextInput
+                        value={sellBankName}
+                        onChangeText={setSellBankName}
+                        placeholder="e.g. Standard Bank / FNB / Absa"
+                        style={styles.modalInput}
+                        placeholderTextColor="#94A3B8"
+                      />
+                      <Text style={styles.modalSubLabel}>Account Number</Text>
+                      <TextInput
+                        value={sellAccountNumber}
+                        onChangeText={setSellAccountNumber}
+                        placeholder="Enter your bank account number"
+                        keyboardType="numeric"
+                        style={styles.modalInput}
+                        placeholderTextColor="#94A3B8"
+                      />
+                      <Text style={styles.modalSubLabel}>
+                        Account Holder Name
+                      </Text>
+                      <TextInput
+                        value={sellAccountHolder}
+                        onChangeText={setSellAccountHolder}
+                        placeholder="Account holder name"
+                        style={styles.modalInput}
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                  )}
+
+                  {/* Submit Button */}
+                  <TouchableOpacity
+                    style={[styles.modalSubmitBtn, { marginTop: 20 }]}
+                    onPress={handleConfirmSell}
+                    disabled={submittingSell}
+                  >
+                    {submittingSell ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.modalSubmitBtnText}>
+                        Submit Redemption Request
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Bottom space */}
+          <View style={{ height: 110 }} />
+        </ScrollView>
+
+        <KycGatekeeperModal
+          visible={kycGatekeeperVisible}
+          onClose={() => setKycGatekeeperVisible(false)}
+          navigation={navigation}
+          isSuspended={Boolean(user?.isSuspended)}
+          kycStatus={
+            user?.verification_status || user?.kycStatus || "unverified"
+          }
+          bankStatus={
+            user?.bankStatus || user?.bankAccount?.status || "not_submitted"
+          }
+          requireBankOnly={gatekeeperRequireBankOnly}
+          actionTitle={gatekeeperActionTitle}
+        />
+      </SafeAreaView>
+    </View>
   );
 }
 

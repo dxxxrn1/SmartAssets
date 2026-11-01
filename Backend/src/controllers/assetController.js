@@ -160,8 +160,17 @@ async function getAssets(req, res) {
         allow_investment: allowInvestment,
         allowInvestment: allowInvestment,
         shares: totalShares,
+        total_shares: totalShares,
+        totalShares: totalShares,
         sharesSold: sharesSold,
+        shares_sold: sharesSold,
+        remaining_shares: allowInvestment && totalShares ? Math.max(0, totalShares - sharesSold) : null,
+        remainingShares: allowInvestment && totalShares ? Math.max(0, totalShares - sharesSold) : null,
+        funded_pct: allowInvestment && totalShares > 0 ? Math.min(100, Math.max(0, Math.round((sharesSold / totalShares) * 100))) : 0,
+        funding_pct: allowInvestment && totalShares > 0 ? Math.min(100, Math.max(0, Math.round((sharesSold / totalShares) * 100))) : 0,
+        fundingPct: allowInvestment && totalShares > 0 ? Math.min(100, Math.max(0, Math.round((sharesSold / totalShares) * 100))) : 0,
         sharePrice: sharePrice,
+        share_price: sharePrice,
         gain: row.gain || '+0.0%',
         // On-chain blockchain fields
         tokenId: row.token_id || null,
@@ -228,21 +237,46 @@ async function getAssetById(req, res) {
         .maybeSingle();
 
       if (holding) {
-        // Try finding if there is a matching marketplace asset by name
-        const cleanName = (holding.name || '').replace(/\s*\(\d+\s+Shares\)/i, '').trim();
-        const { data: matchingAsset } = await supabase
-          .from('assets')
-          .select('*')
-          .ilike('name', `%${cleanName}%`)
-          .limit(1)
-          .maybeSingle();
+        // Try finding if there is a matching marketplace asset by asset_id or by name
+        let matchingAsset = null;
+        if (holding.asset_id) {
+          const { data: byAssetId } = await supabase
+            .from('assets')
+            .select('*')
+            .eq('id', holding.asset_id)
+            .maybeSingle();
+          if (byAssetId) matchingAsset = byAssetId;
+        }
+
+        if (!matchingAsset) {
+          const cleanName = (holding.name || '').replace(/\s*\(\d+\s+Shares\)/i, '').trim();
+          let nameQuery = supabase
+            .from('assets')
+            .select('*')
+            .ilike('name', `%${cleanName}%`);
+
+          // CRITICAL SECURITY & TENANCY RULE:
+          // Personal/whole vault holdings must ONLY match marketplace listings created by the SAME user.
+          // Never link to another user's product simply because the name is similar (e.g. Xbox).
+          if (holding.asset_type !== 'fractional') {
+            nameQuery = nameQuery.eq('user_id', holding.user_id);
+          }
+          const { data: byName } = await nameQuery.limit(1).maybeSingle();
+          if (byName) matchingAsset = byName;
+        }
 
         if (matchingAsset) {
           asset = {
             ...matchingAsset,
-            id: holding.id,
-            // Preserve the original lister's user_id so they remain the creator/seller
+            id: matchingAsset.id,
+            marketplace_asset_id: matchingAsset.id,
+            holding_id: holding.id,
+            status: matchingAsset.status || 'active',
+            is_marketplace_listing: true,
             user_id: matchingAsset.user_id,
+            seller_id: matchingAsset.seller_id || matchingAsset.user_id,
+            current_owner_id: matchingAsset.current_owner_id || matchingAsset.user_id,
+            currentOwnerId: matchingAsset.current_owner_id || matchingAsset.user_id,
             holder_user_id: holding.user_id,
             price: holding.price || matchingAsset.price,
             price_num: holding.price_num || matchingAsset.price_num,
@@ -262,7 +296,8 @@ async function getAssetById(req, res) {
             }
           }
           asset = {
-            id: holding.id,
+            id: holding.asset_id || holding.id,
+            holding_id: holding.id,
             name: holding.name,
             category: holding.category,
             price: holding.price || `R${Number(holding.price_num || 0).toLocaleString('en-ZA')}`,
@@ -275,9 +310,20 @@ async function getAssetById(req, res) {
             cert: metaCertId || ('SA-VLT-' + String(holding.id).substring(0, 8).toUpperCase()),
             tx_hash: metaHash || null,
             shares: holding.asset_type === 'fractional' ? 100 : 1,
-            shares_sold: holding.asset_type === 'fractional' ? 45 : 1,
+            total_shares: holding.asset_type === 'fractional' ? 100 : 1,
+            totalShares: holding.asset_type === 'fractional' ? 100 : 1,
+            shares_sold: holding.asset_type === 'fractional' ? Number(holding.shares_count || holding.shares || 1) : 1,
+            sharesSold: holding.asset_type === 'fractional' ? Number(holding.shares_count || holding.shares || 1) : 1,
+            funded_pct: holding.asset_type === 'fractional' ? Math.min(100, Math.max(0, Math.round((Number(holding.shares_count || holding.shares || 1) / 100) * 100))) : 100,
+            funding_pct: holding.asset_type === 'fractional' ? Math.min(100, Math.max(0, Math.round((Number(holding.shares_count || holding.shares || 1) / 100) * 100))) : 100,
+            fundingPct: holding.asset_type === 'fractional' ? Math.min(100, Math.max(0, Math.round((Number(holding.shares_count || holding.shares || 1) / 100) * 100))) : 100,
             share_price: holding.price_num,
             user_id: holding.user_id,
+            current_owner_id: holding.user_id,
+            currentOwnerId: holding.user_id,
+            seller_id: holding.user_id,
+            status: 'vault_custody',
+            is_marketplace_listing: false,
           };
           historyTargetId = null;
         }
@@ -377,8 +423,17 @@ async function getAssetById(req, res) {
         allow_investment: allowInvestment,
         allowInvestment: allowInvestment,
         shares: totalShares,
+        total_shares: totalShares,
+        totalShares: totalShares,
         sharesSold: sharesSold,
+        shares_sold: sharesSold,
+        remaining_shares: allowInvestment && totalShares ? Math.max(0, totalShares - sharesSold) : null,
+        remainingShares: allowInvestment && totalShares ? Math.max(0, totalShares - sharesSold) : null,
+        funded_pct: allowInvestment && totalShares > 0 ? Math.min(100, Math.max(0, Math.round((sharesSold / totalShares) * 100))) : 0,
+        funding_pct: allowInvestment && totalShares > 0 ? Math.min(100, Math.max(0, Math.round((sharesSold / totalShares) * 100))) : 0,
+        fundingPct: allowInvestment && totalShares > 0 ? Math.min(100, Math.max(0, Math.round((sharesSold / totalShares) * 100))) : 0,
         sharePrice: sharePrice,
+        share_price: sharePrice,
         // Cryptographic identity & on-chain blockchain fields
         metadataDigest: asset.metadata_digest || null,
         registrationStatus,
@@ -559,14 +614,14 @@ async function createAsset(req, res) {
     if (trimmedName.length <= 3) {
       return sendError(res, 400, 'Asset name must be more than 3 characters.');
     }
-    if (trimmedName.length > 20) {
-      return sendError(res, 400, 'Asset name must not be more than 20 characters.');
+    if (trimmedName.length > 80) {
+      return sendError(res, 400, 'Asset name must not be more than 80 characters.');
     }
-    if (description && String(description).length > 150) {
-      return sendError(res, 400, 'Product listing description must not be more than 150 characters.');
+    if (description && String(description).length > 2000) {
+      return sendError(res, 400, 'Product listing description must not be more than 2000 characters.');
     }
-    if (condition && String(condition).trim().length > 10) {
-      return sendError(res, 400, 'Condition must not be more than 10 characters.');
+    if (condition && String(condition).trim().length > 60) {
+      return sendError(res, 400, 'Condition must not be more than 60 characters.');
     }
     if (year && !/^\d{4}$/.test(String(year).trim())) {
       return sendError(res, 400, 'Year must be a 4-digit number.');
@@ -737,8 +792,6 @@ async function createAsset(req, res) {
       shares: totalShares,
       share_price: sharePrice,
       shares_sold: 0,
-      ai_scan_score: 0.02,
-      ai_scan_status: 'passed',
       metadata_digest: metadataDigest,
       registration_status: initialRegistrationStatus,
       registration_error: initialRegistrationError,
@@ -765,19 +818,11 @@ async function createAsset(req, res) {
         newAsset = retry.data;
         insertErr = retry.error;
       }
-
-      // Third retry: if ai_scan columns also not in schema, strip them as well
-      if (insertErr && (insertErr.code === 'PGRST204' || insertErr.message?.includes('column'))) {
-        const { ai_scan_score, ai_scan_status, allow_investment, seller_id, current_owner_id, ...coreRow } = legacyCols;
-        retry = await supabase.from('assets').insert(coreRow).select().single();
-        newAsset = retry.data;
-        insertErr = retry.error;
-      }
     }
 
     if (insertErr || !newAsset) {
       console.error('Asset insert error:', insertErr);
-      return sendError(res, 500, 'Failed to create asset listing.');
+      return sendError(res, 500, insertErr?.message ? `Failed to create asset listing: ${insertErr.message}` : 'Failed to create asset listing.');
     }
 
     // 4. Real Sepolia registration (attempted only AFTER database record is durably saved)
@@ -882,6 +927,7 @@ async function createAsset(req, res) {
     };
     await supabase.from('user_holdings').insert({
       user_id: userId,
+      asset_id: newAsset.id,
       name: canonicalProductName,
       category: effectiveCategory,
       price: `R${priceNum.toLocaleString('en-ZA')}`,

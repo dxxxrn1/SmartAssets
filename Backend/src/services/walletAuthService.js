@@ -166,7 +166,7 @@ async function generateSessionForUser(email) {
     }
 
     // 2. Exchange token hash for full session
-    const { data: sessionData, error: sessionErr } = await supabase.auth.verifyOtp({
+    const { data: sessionData, error: sessionErr } = await supabase.createAuthClient().auth.verifyOtp({
       token_hash: linkData.properties.hashed_token,
       type: 'magiclink',
     });

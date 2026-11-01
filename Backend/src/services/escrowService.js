@@ -324,10 +324,29 @@ async function getEscrowOrder(orderId, req = null, requestingUserId = null, isAd
 
     if (!error && data) {
       const timeline = Array.isArray(data.timeline) ? data.timeline : [];
+      let buyerProfile = null;
+      let sellerProfile = null;
+      try {
+        const uids = [data.buyer_id, data.seller_id].filter(Boolean);
+        if (uids.length > 0) {
+          const { data: profs } = await supabase.from('profiles').select('id, email, full_name').in('id', uids);
+          if (Array.isArray(profs)) {
+            buyerProfile = profs.find((p) => p.id === data.buyer_id);
+            sellerProfile = profs.find((p) => p.id === data.seller_id);
+          }
+        }
+      } catch (_pe) {}
+
       order = {
+        ...data,
+        id: data.order_id || data.id,
         orderId: data.order_id || data.id,
         buyerId: data.buyer_id || (timeline[0]?.buyerId) || ordersMap.get(data.order_id || orderId)?.buyerId || null,
+        buyerName: buyerProfile?.full_name || null,
+        buyerEmail: buyerProfile?.email || null,
         sellerId: data.seller_id || (timeline[0]?.sellerId) || ordersMap.get(data.order_id || orderId)?.sellerId || null,
+        sellerName: sellerProfile?.full_name || null,
+        sellerEmail: sellerProfile?.email || null,
         assetId: data.asset_id || ordersMap.get(data.order_id || orderId)?.assetId || null,
         assetName: data.asset_name,
         assetCategory: data.asset_category,
@@ -398,8 +417,14 @@ async function getUserEscrowOrders(userId, req = null) {
         sellerId: row.seller_id,
         buyerId: row.buyer_id,
         assetId: row.asset_id,
+        assetName: row.asset_name,
+        assetCategory: row.asset_category,
         amountZar: Number(row.amount_zar) || 0,
         priceZar: Number(row.amount_zar) || 0,
+        amountEth: Number(row.amount_eth) || 0,
+        paymentMethod: row.payment_method,
+        paymentRail: row.payment_rail,
+        status: row.status,
         assetImage: normalizeImageUrl(row.asset_image, req),
       }));
     }
@@ -435,8 +460,14 @@ async function getSellerEscrowOrders(sellerId, req = null) {
         sellerId: row.seller_id,
         buyerId: row.buyer_id,
         assetId: row.asset_id,
+        assetName: row.asset_name,
+        assetCategory: row.asset_category,
         amountZar: Number(row.amount_zar) || 0,
         priceZar: Number(row.amount_zar) || 0,
+        amountEth: Number(row.amount_eth) || 0,
+        paymentMethod: row.payment_method,
+        paymentRail: row.payment_rail,
+        status: row.status,
         assetImage: normalizeImageUrl(row.asset_image, req),
       }));
     }
@@ -465,11 +496,67 @@ async function getAllEscrowOrders(req = null) {
       .order('created_at', { ascending: false });
 
     if (!error && Array.isArray(data)) {
-      return data.map((row) => ({
-        ...row,
-        orderId: row.order_id || row.id,
-        assetImage: normalizeImageUrl(row.asset_image, req),
-      }));
+      const userIds = new Set();
+      data.forEach((row) => {
+        if (row.buyer_id) userIds.add(row.buyer_id);
+        if (row.seller_id) userIds.add(row.seller_id);
+      });
+
+      const profilesMap = new Map();
+      if (userIds.size > 0) {
+        try {
+          const { data: profs } = await supabase
+            .from('profiles')
+            .select('id, email, full_name')
+            .in('id', Array.from(userIds));
+          if (Array.isArray(profs)) {
+            profs.forEach((p) => {
+              if (p && p.id) profilesMap.set(p.id, p);
+            });
+          }
+        } catch (_pe) {}
+      }
+
+      return data.map((row) => {
+        const timeline = Array.isArray(row.timeline) ? row.timeline : [];
+        const buyer = profilesMap.get(row.buyer_id) || {};
+        const seller = profilesMap.get(row.seller_id) || {};
+
+        return {
+          ...row,
+          id: row.order_id || row.id,
+          orderId: row.order_id || row.id,
+          buyerId: row.buyer_id || (timeline[0]?.buyerId) || null,
+          buyerName: buyer.full_name || null,
+          buyerEmail: buyer.email || null,
+          sellerId: row.seller_id || (timeline[0]?.sellerId) || null,
+          sellerName: seller.full_name || null,
+          sellerEmail: seller.email || null,
+          assetId: row.asset_id || null,
+          assetName: row.asset_name || null,
+          assetCategory: row.asset_category || null,
+          assetImage: normalizeImageUrl(row.asset_image, req),
+          amountZar: Number(row.amount_zar) || 0,
+          amountGbp: Number(row.amount_gbp || row.amount_zar) || 0,
+          amountEth: Number(row.amount_eth) || 0,
+          paymentMethod: row.payment_method || null,
+          paymentRail: row.payment_rail || (row.payment_method === 'wallet' ? 'Ethereum Sepolia Web3' : row.payment_method === 'bank' ? 'Bank Wire (Awaiting Settlement Verification)' : 'Stripe (test only)'),
+          status: row.status,
+          currentStep: ({ payment_secured: 1, pending_payment: 1, in_transit: 2, in_inspection: 3, delivered: 4, accepted: 4, release_processing: 4, released: 5, disputed: 1, refunded: 5 })[row.status] || 1,
+          totalSteps: 5,
+          depositTxHash: row.tx_hash || null,
+          releaseTxHash: row.release_tx_hash || null,
+          refundTxHash: row.refund_tx_hash || null,
+          refundReason: row.refund_reason || null,
+          carrier: row.tracking_carrier || row.carrier || null,
+          trackingNumber: row.tracking_number || null,
+          productUpdates: timeline.filter((event) => event.type === 'seller_update'),
+          disputeReason: row.dispute_reason || null,
+          timeline,
+          createdAt: row.created_at || null,
+          updatedAt: row.updated_at || null,
+        };
+      });
     }
   } catch (_e) {}
 

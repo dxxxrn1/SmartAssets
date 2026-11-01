@@ -1129,7 +1129,25 @@ async function getVerificationStatusBundle(userId, userEmail = null, req = null)
     documentsList.push(item);
   }
 
-  const rawBank = getUserBankAccount(userId, userEmail);
+  let rawBank = getUserBankAccount(userId, userEmail);
+  if (!rawBank || rawBank.status !== 'approved') {
+    try {
+      const { data: sbBank } = await supabase
+        .from('bank_accounts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (sbBank) {
+        rawBank = {
+          ...sbBank,
+          account_number_masked: maskAccountNumber(sbBank.account_number),
+        };
+        bankAccountsMap.set(String(sbBank.id), rawBank);
+      }
+    } catch (_) {}
+  }
   const bankAccount = rawBank
     ? {
         id: rawBank.id,

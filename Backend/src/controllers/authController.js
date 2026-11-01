@@ -479,7 +479,7 @@ async function login(req, res) {
 
     const cleanEmail = email.trim().toLowerCase();
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.createAuthClient().auth.signInWithPassword({
       email: cleanEmail,
       password,
     });
@@ -809,7 +809,7 @@ async function walletLogin(req, res) {
     } catch (sessionErr) {
       console.warn('generateSessionForUser fallback:', sessionErr.message);
       const tempPass = getDeterministicPassword(cleanAddress);
-      const resAttempt = await supabase.auth.signInWithPassword({
+      const resAttempt = await supabase.createAuthClient().auth.signInWithPassword({
         email: profile.email,
         password: tempPass,
       });

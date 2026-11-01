@@ -20,6 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
 import { SCREENS } from "../constants/navigation";
 import { useAuth } from "../context/AuthContext";
 import KycGatekeeperModal from "../components/KycGatekeeperModal";
@@ -312,8 +313,19 @@ export default function ListAssetScreen({ navigation, route }) {
       });
 
       if (!result.canceled && result.assets?.length) {
-        const newImages = result.assets.map((a) =>
-          a.base64 ? `data:image/jpeg;base64,${a.base64}` : a.uri,
+        const newImages = await Promise.all(
+          result.assets.map(async (a) => {
+            if (a.base64) return `data:image/jpeg;base64,${a.base64}`;
+            if (a.uri && !a.uri.startsWith("data:") && !a.uri.startsWith("http")) {
+              try {
+                const b64 = await FileSystem.readAsStringAsync(a.uri, {
+                  encoding: FileSystem.EncodingType.Base64,
+                });
+                return `data:image/jpeg;base64,${b64}`;
+              } catch (_) {}
+            }
+            return a.uri;
+          })
         );
         const combined = [...form.images, ...newImages].slice(0, 5);
         setForm((prev) => ({
@@ -365,9 +377,17 @@ export default function ListAssetScreen({ navigation, route }) {
 
       if (!result.canceled && result.assets?.[0]) {
         const a = result.assets[0];
-        const imageUri = a.base64
+        let imageUri = a.base64
           ? `data:image/jpeg;base64,${a.base64}`
           : a.uri;
+        if (a.uri && !a.base64 && !a.uri.startsWith("data:") && !a.uri.startsWith("http")) {
+          try {
+            const b64 = await FileSystem.readAsStringAsync(a.uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            imageUri = `data:image/jpeg;base64,${b64}`;
+          } catch (_) {}
+        }
         const combined = [...form.images, imageUri].slice(0, 3);
         setForm((prev) => ({
           ...prev,
@@ -583,8 +603,8 @@ export default function ListAssetScreen({ navigation, route }) {
       setStep(0);
       return;
     }
-    if (trimmedName.length > 20) {
-      showAlert("Invalid Name", "Asset name must not be more than 20 characters.");
+    if (trimmedName.length > 80) {
+      showAlert("Invalid Name", "Asset name must not be more than 80 characters.");
       setStep(0);
       return;
     }
@@ -595,14 +615,14 @@ export default function ListAssetScreen({ navigation, route }) {
       return;
     }
     const trimmedCondition = String(form.condition || "").trim();
-    if (trimmedCondition && trimmedCondition.length > 10) {
-      showAlert("Condition Too Long", "Condition must not be more than 10 characters.");
+    if (trimmedCondition && trimmedCondition.length > 60) {
+      showAlert("Condition Too Long", "Condition must not be more than 60 characters.");
       setStep(0);
       return;
     }
     const trimmedDesc = String(form.description || "").trim();
-    if (trimmedDesc.length > 150) {
-      showAlert("Description Too Long", "Product listing description must not be more than 150 characters.");
+    if (trimmedDesc.length > 2000) {
+      showAlert("Description Too Long", "Product listing description must not be more than 2000 characters.");
       setStep(0);
       return;
     }
@@ -747,8 +767,8 @@ export default function ListAssetScreen({ navigation, route }) {
         showAlert("Invalid Name", "Asset name must be more than 3 characters.");
         return;
       }
-      if (trimmedName.length > 20) {
-        showAlert("Invalid Name", "Asset name must not be more than 20 characters.");
+      if (trimmedName.length > 80) {
+        showAlert("Invalid Name", "Asset name must not be more than 80 characters.");
         return;
       }
       const trimmedYear = String(form.year || "").trim();
@@ -757,13 +777,13 @@ export default function ListAssetScreen({ navigation, route }) {
         return;
       }
       const trimmedCondition = String(form.condition || "").trim();
-      if (trimmedCondition && trimmedCondition.length > 10) {
-        showAlert("Condition Too Long", "Condition must not be more than 10 characters (e.g. Mint).");
+      if (trimmedCondition && trimmedCondition.length > 60) {
+        showAlert("Condition Too Long", "Condition must not be more than 60 characters.");
         return;
       }
       const trimmedDesc = String(form.description || "").trim();
-      if (trimmedDesc.length > 150) {
-        showAlert("Description Too Long", "Product listing description must not be more than 150 characters.");
+      if (trimmedDesc.length > 2000) {
+        showAlert("Description Too Long", "Product listing description must not be more than 2000 characters.");
         return;
       }
     }

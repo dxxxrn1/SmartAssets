@@ -132,7 +132,7 @@ async function adminLogin(req, res) {
     let supabaseAuthError = null;
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.createAuthClient().auth.signInWithPassword({
         email,
         password,
       });

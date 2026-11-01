@@ -44,7 +44,7 @@ async function runTests() {
   // RULE 1: No Automatic Starter Funds (Phantom Balance Removed)
   // ──────────────────────────────────────────────────────────────────────────
   console.log('🧪 [TEST 1] Verifying no automatic starter funds (new user balance is R0)...');
-  const freshUserId = '00000000-0000-4000-a000-' + Date.now().toString(16).padStart(12, '0');
+  const freshUserId = 'test-fresh-user-' + Date.now();
   const initialBal = await vaultTxService.getUserBalance(freshUserId);
 
   assert.strictEqual(

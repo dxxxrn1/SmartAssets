@@ -134,7 +134,7 @@ const isHoldingVerified = (item) => {
 const PortfolioWaveGraph = ({ data = [] }) => {
   const pointsData = Array.isArray(data) ? data : [];
 
-  if (pointsData.length < 2) {
+  if (pointsData.length === 0) {
     return (
       <View style={styles.waveContainer}>
         <View style={styles.waveEmptyTrack}>
@@ -147,13 +147,22 @@ const PortfolioWaveGraph = ({ data = [] }) => {
     );
   }
 
-  const values = pointsData.map((d) => Number(d.value) || 0);
+  // When exactly 1 snapshot exists (e.g. Day 1 user), render a live baseline track with pulse dot
+  const isBaseline = pointsData.length === 1;
+  const activePointsData = isBaseline
+    ? [
+        { date: "Start", value: pointsData[0].value },
+        { date: pointsData[0].date || "Today", value: pointsData[0].value },
+      ]
+    : pointsData;
+
+  const values = activePointsData.map((d) => Number(d.value) || 0);
   const minVal = Math.min(...values);
   const maxVal = Math.max(...values);
   const valRange = maxVal - minVal;
 
-  const points = pointsData.map((d, idx) => {
-    const x = (idx / (pointsData.length - 1)) * 420;
+  const points = activePointsData.map((d, idx) => {
+    const x = (idx / (activePointsData.length - 1)) * 420;
     const y =
       valRange === 0
         ? 26
@@ -201,11 +210,19 @@ const PortfolioWaveGraph = ({ data = [] }) => {
               key={idx}
               cx={pt.x}
               cy={pt.y}
-              r={idx === points.length - 1 ? 4 : 2.5}
-              fill="#FFFFFF"
+              r={idx === points.length - 1 ? 4.5 : 2.5}
+              fill={isBaseline && idx === points.length - 1 ? "#34D399" : "#FFFFFF"}
             />
           ))}
         </svg>
+        {isBaseline && (
+          <View style={styles.waveBaselineRow}>
+            <View style={styles.waveBaselineDot} />
+            <Text style={styles.waveBaselineText}>
+              Day 1 baseline recorded • Live tracking active
+            </Text>
+          </View>
+        )}
       </View>
     );
   }
@@ -223,11 +240,23 @@ const PortfolioWaveGraph = ({ data = [] }) => {
               {
                 left: `${((pt.x / 420) * 100).toFixed(1)}%`,
                 top: Math.max(0, Math.min(48, pt.y - 3)),
+                backgroundColor:
+                  isBaseline && idx === points.length - 1
+                    ? "#34D399"
+                    : "#FFFFFF",
               },
             ]}
           />
         ))}
       </View>
+      {isBaseline && (
+        <View style={styles.waveBaselineRow}>
+          <View style={styles.waveBaselineDot} />
+          <Text style={styles.waveBaselineText}>
+            Day 1 baseline recorded • Live tracking active
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -777,13 +806,21 @@ export default function HomeScreen({ navigation }) {
                 ) : (
                   <View style={{ flexDirection: "row", alignItems: "center" }}>
                     <Feather
-                      name="clock"
+                      name={
+                        Array.isArray(vaultSummary.history) &&
+                        vaultSummary.history.length > 0
+                          ? "activity"
+                          : "clock"
+                      }
                       size={12}
-                      color="rgba(255, 255, 255, 0.75)"
+                      color="rgba(255, 255, 255, 0.85)"
                       style={{ marginRight: 5 }}
                     />
                     <Text style={[styles.yearlyGainText, { marginLeft: 0 }]}>
-                      Performance history unavailable
+                      {Array.isArray(vaultSummary.history) &&
+                      vaultSummary.history.length > 0
+                        ? "Day 1 baseline established"
+                        : "Performance history builds daily"}
                     </Text>
                   </View>
                 )}
@@ -1438,6 +1475,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 2,
     borderRadius: 10,
+  },
+  waveBaselineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+    gap: 6,
+  },
+  waveBaselineDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#34D399",
+  },
+  waveBaselineText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.9)",
+    letterSpacing: 0.2,
   },
   waveTrackNative: {
     height: 40,
