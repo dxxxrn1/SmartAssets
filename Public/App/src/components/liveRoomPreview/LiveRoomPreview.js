@@ -625,7 +625,7 @@ export default function LiveRoomPreview(props) {
       {/* 2. Center 3D Stage (Unobscured Central Viewport) */}
       <View style={styles.stage} pointerEvents="box-none">
         {/* Active 3D Model Renderer */}
-        {is3dModelReady && (glbDataUri || localUri || effectiveGlbUrl) ? (
+        {is3dModelReady && (effectiveGlbUrl || localUri || glbDataUri) ? (
           Platform.OS === 'web' ? (
             <View style={styles.webModelContainer}>
               {React.createElement('model-viewer', {
@@ -641,7 +641,7 @@ export default function LiveRoomPreview(props) {
           ) : (
             <ModelRenderer
               ref={modelRendererRef}
-              glbDataUri={glbDataUri || localUri || effectiveGlbUrl}
+              glbDataUri={effectiveGlbUrl || localUri || glbDataUri}
               widthCm={widthCm}
               heightCm={heightCm}
               depthCm={depthCm}
@@ -1226,6 +1226,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingTop: 190,
+    paddingBottom: 290,
   },
   webModelContainer: {
     width: '100%',
