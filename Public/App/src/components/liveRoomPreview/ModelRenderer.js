@@ -231,6 +231,7 @@ function buildThreeHtml() {
 
     function loadGlb(sourceUri) {
       var loader = new THREE.GLTFLoader();
+      if (typeof loader.setCrossOrigin === 'function') { loader.setCrossOrigin('anonymous'); }
       var indicator = document.getElementById('loadingIndicator');
       if (indicator) indicator.style.opacity = '1';
 
@@ -266,24 +267,20 @@ function buildThreeHtml() {
 
           var realHeight = rawH * scale;
 
+          // Always place inspectGroup at (0, 0, 0) so the 3D model appears in the dead center of the screen
+          inspectGroup.position.set(0, 0, 0);
+          loadedModel.position.set(
+            -center.x * scale,
+            -center.y * scale,
+            currentPlacement === 'wall' ? -box.max.z * scale : -center.z * scale
+          );
+
           if (currentPlacement === 'floor') {
-            // Position inspectGroup pivot at vertical center of model
-            inspectGroup.position.set(0, realHeight / 2, 0);
-            // Center the model inside inspectGroup so pitch/yaw rotate perfectly around object center
-            loadedModel.position.set(
-              -center.x * scale,
-              -center.y * scale,
-              -center.z * scale
-            );
             createFloorShadow(targetWidthCm, targetDepthCm);
-          } else {
-            // Place pivot at center flush to wall (z = 0)
-            inspectGroup.position.set(0, 0, 0);
-            loadedModel.position.set(
-              -center.x * scale,
-              -center.y * scale,
-              -box.max.z * scale
-            );
+            var shadow = panGroup.getObjectByName('contact_shadow');
+            if (shadow) {
+              shadow.position.y = -(realHeight / 2) - 0.2;
+            }
           }
 
           inspectGroup.add(loadedModel);
@@ -703,7 +700,7 @@ const ModelRenderer = forwardRef(function ModelRenderer({
       <WebView
         ref={webViewRef}
         originWhitelist={['*']}
-        source={{ html: buildThreeHtml() }}
+        source={{ html: buildThreeHtml(), baseUrl: 'https://smartassets.onrender.com' }}
         style={styles.webView}
         containerStyle={styles.webViewContainer}
         opaque={false}
