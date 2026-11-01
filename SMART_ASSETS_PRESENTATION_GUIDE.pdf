@@ -1,0 +1,1076 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [7 0 R 9 0 R 11 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 8 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> >>
+endobj
+8 0 obj
+<< /Length 6259 >>
+stream
+
+q 0.050 0.080 0.150 rg 45.00 666.89 505.28 125.00 re f Q
+
+q 0.850 0.550 0.120 rg 45.00 787.89 505.28 4.00 re f Q
+
+BT
+/F2 9 Tf
+0.980 0.750 0.200 rg
+1 0 0 1 63.00 763.89 Tm
+(PRODUCTION CAPSTONE DEFENSE SPECIFICATION) Tj
+ET
+
+BT
+/F2 24 Tf
+1.000 1.000 1.000 rg
+1 0 0 1 63.00 733.89 Tm
+(SMART ASSETS) Tj
+ET
+
+BT
+/F1 10.5 Tf
+0.750 0.820 0.900 rg
+1 0 0 1 63.00 709.89 Tm
+(Institutional Luxury Collectible Tokenization, Custody & Co-Ownership) Tj
+ET
+
+BT
+/F3 8.5 Tf
+0.600 0.700 0.800 rg
+1 0 0 1 63.00 691.89 Tm
+(Ethereum Sepolia \(Solidity 0.8.24\) | Google Gemini Vision | React Native Expo 54 | Supabase RLS) Tj
+ET
+
+q 0.800 0.850 0.900 rg 45.00 632.89 505.28 1.20 re f Q
+
+q 0.850 0.550 0.120 rg 45.00 632.89 30.00 2.50 re f Q
+
+BT
+/F2 14 Tf
+0.060 0.100 0.180 rg
+1 0 0 1 45.00 636.89 Tm
+(1. THE 30-SECOND ELEVATOR PITCH \(YOUR OPENING\)) Tj
+ET
+
+q 0.960 0.970 0.990 rg 45.00 512.89 505.28 114.00 re f Q
+
+q 0.850 0.550 0.120 rg 45.00 512.89 3.50 114.00 re f Q
+
+BT
+/F3 9.5 Tf
+0.150 0.200 0.280 rg
+1 0 0 1 59.00 614.89 Tm
+("SmartAssets is an institutional-grade, decentralized platform designed for physical luxury) Tj
+ET
+
+BT
+/F3 9.5 Tf
+0.150 0.200 0.280 rg
+1 0 0 1 59.00 600.89 Tm
+(collectible tokenization, verifiable Horological custody, multi-tier AI counterfeit detection,) Tj
+ET
+
+BT
+/F3 9.5 Tf
+0.150 0.200 0.280 rg
+1 0 0 1 59.00 586.89 Tm
+(and fractional co-ownership. High-value assets?such as Rolex/Patek Philippe watches, fine art,) Tj
+ET
+
+BT
+/F3 9.5 Tf
+0.150 0.200 0.280 rg
+1 0 0 1 59.00 572.89 Tm
+(and rare diamonds?suffer from counterfeit fraud, illiquid high barriers to entry, and) Tj
+ET
+
+BT
+/F3 9.5 Tf
+0.150 0.200 0.280 rg
+1 0 0 1 59.00 558.89 Tm
+(untrusted settlement. SmartAssets bridges this divide by unifying React Native \(Expo SDK 54\),) Tj
+ET
+
+BT
+/F3 9.5 Tf
+0.150 0.200 0.280 rg
+1 0 0 1 59.00 544.89 Tm
+(Google Gemini Flash multimodal computer vision, Ethereum Sepolia smart contracts, and Supabase) Tj
+ET
+
+BT
+/F3 9.5 Tf
+0.150 0.200 0.280 rg
+1 0 0 1 59.00 530.89 Tm
+(Row-Level Security into an institutional dual-ledger custody network.") Tj
+ET
+
+q 0.800 0.850 0.900 rg 45.00 484.89 505.28 1.20 re f Q
+
+q 0.850 0.550 0.120 rg 45.00 484.89 30.00 2.50 re f Q
+
+BT
+/F2 14 Tf
+0.060 0.100 0.180 rg
+1 0 0 1 45.00 488.89 Tm
+(2. THE ESSENTIAL 'WOW' FEATURES \(HOW THEY WORK & BUILT\)) Tj
+ET
+
+BT
+/F2 11.5 Tf
+0.120 0.220 0.380 rg
+1 0 0 1 45.00 464.89 Tm
+(Feature 1: Passwordless MetaMask Mobile Authentication \(EIP-191 / SIWE\)) Tj
+ET
+
+BT
+/F1 9.5 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 45.00 448.89 Tm
+(Allows users to log in or link a cryptographically verified wallet address with zero passwords and) Tj
+ET
+
+BT
+/F1 9.5 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 45.00 435.39 Tm
+(zero gas fees.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 421.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 418.89 Tm
+(1. Nonce Challenge: App calls GET /api/auth/nonce. Backend generates a 16-byte random hex string) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 405.89 Tm
+(with a strict 5-minute time-to-live \(TTL\).) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 392.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 389.89 Tm
+(2. Deep-Link Bridge: App uses @metamask/sdk with a custom return scheme \(smartassets://\) to trigger) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 376.89 Tm
+(MetaMask personal_sign.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 363.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 360.89 Tm
+(3. Gasless Cryptography: User signs the EIP-191 challenge off-chain. Costs 0 ETH gas and does not) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 347.89 Tm
+(write to the blockchain.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 334.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 331.89 Tm
+(4. Signature Verification: Backend recovers the signer address using ethers.verifyMessage\(\), burns) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 318.89 Tm
+(the nonce to prevent replay attacks, and issues an authentic Supabase JWT session.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 305.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 302.89 Tm
+(Technologies: React Native Expo 54, @metamask/sdk, ethers.js v6, Supabase Auth Admin API.) Tj
+ET
+
+BT
+/F2 11.5 Tf
+0.120 0.220 0.380 rg
+1 0 0 1 45.00 280.89 Tm
+(Feature 2: Multimodal AI Vision Gatekeeper & Anti-Counterfeit Scanner) Tj
+ET
+
+BT
+/F1 9.5 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 45.00 264.89 Tm
+(Acts as an automated real-time gatekeeper, analyzing collectible photos to prevent synthetic fakes) Tj
+ET
+
+BT
+/F1 9.5 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 45.00 251.39 Tm
+(and catalog fraud.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 237.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 234.89 Tm
+(Tier 1: Pre-flight: Validates image resolution \(>300x300px\) and file header byte integrity.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 221.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 218.89 Tm
+(Tier 2: Deepfake Guard: Analyzes synthetic image artifacts. Rejects uploads with AI-generation) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 205.89 Tm
+(probability > 0.82 \(Midjourney/DALL-E\).) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 192.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 189.89 Tm
+(Tier 3: Gemini Flash Vision: Google Gemini Flash analyzes visual hallmarks, logos, serial numbers,) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 176.89 Tm
+(and flags category mismatches.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 163.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 160.89 Tm
+(Tier 4: Market Oracle: Appraises asset into Floor, Median, and Fair Market Value Bands in ZAR/USD,) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 147.89 Tm
+(linking existing ERC-721 records.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 134.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 131.89 Tm
+(Technologies: Google Gemini Flash API, Sharp/Buffer processing, marketOracleService.js.) Tj
+ET
+
+q 0.850 0.850 0.880 rg 45.00 40.00 505.28 0.80 re f Q
+
+BT
+/F1 8 Tf
+0.550 0.600 0.650 rg
+1 0 0 1 45.00 28.00 Tm
+(CONFIDENTIAL & PROPRIETARY ? DSW GROUP PROJECT) Tj
+ET
+
+BT
+/F2 8 Tf
+0.400 0.450 0.500 rg
+1 0 0 1 515.28 28.00 Tm
+(Page 1) Tj
+ET
+
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 10 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> >>
+endobj
+10 0 obj
+<< /Length 7869 >>
+stream
+
+q 0.850 0.850 0.880 rg 45.00 806.89 505.28 1.00 re f Q
+
+BT
+/F2 8 Tf
+0.450 0.500 0.580 rg
+1 0 0 1 45.00 811.89 Tm
+(SMARTASSETS ? CAPSTONE DEFENSE & TECHNICAL SPECIFICATION) Tj
+ET
+
+BT
+/F2 8 Tf
+0.700 0.450 0.100 rg
+1 0 0 1 480.28 811.89 Tm
+(SYSTEM ARCHITECTURE) Tj
+ET
+
+BT
+/F2 11.5 Tf
+0.120 0.220 0.380 rg
+1 0 0 1 45.00 785.89 Tm
+(Feature 3: Dual-Ledger On-Chain Escrow Settlement \(SmartAssetEscrow.sol\)) Tj
+ET
+
+BT
+/F1 9.5 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 45.00 769.89 Tm
+(Eliminates buyer and seller fraud for high-value transactions through a 9-stage sequential state) Tj
+ET
+
+BT
+/F1 9.5 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 45.00 756.39 Tm
+(machine on Ethereum Sepolia.) Tj
+ET
+
+q 0.960 0.970 0.990 rg 45.00 703.89 505.28 44.00 re f Q
+
+q 0.850 0.550 0.120 rg 45.00 703.89 3.50 44.00 re f Q
+
+BT
+/F3 9.5 Tf
+0.150 0.200 0.280 rg
+1 0 0 1 59.00 735.89 Tm
+(Sequential Lifecycle: None -> PaymentLocked -> InTransit -> InInspection -> Delivered ->) Tj
+ET
+
+BT
+/F3 9.5 Tf
+0.150 0.200 0.280 rg
+1 0 0 1 59.00 721.89 Tm
+(Accepted -> ReleasedToSeller) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 692.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 689.89 Tm
+(Payment Locked: Buyer deposits Sepolia ETH into the smart contract; funds are held in trust.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 676.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 673.89 Tm
+(In Transit & Inspection: Seller ships asset via armored courier \(tracking hash logged on-chain\);) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 660.89 Tm
+(physical custody horologists verify authenticity.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 647.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 644.89 Tm
+(Delivery & Payout: Buyer inspects physical asset and accepts; contract releases funds to seller and) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 631.89 Tm
+(creates ownership in user_holdings.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 618.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 615.89 Tm
+(Dispute Resolution: Either party can trigger Disputed status; designated multi-sig arbitrators) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 602.89 Tm
+(decide refund vs payout.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 589.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 586.89 Tm
+(Technologies: Solidity ^0.8.24, OpenZeppelin ReentrancyGuard, Ethereum Sepolia, Hardhat.) Tj
+ET
+
+BT
+/F2 11.5 Tf
+0.120 0.220 0.380 rg
+1 0 0 1 45.00 564.89 Tm
+(Feature 4: Fractional Co-Ownership & Real-Time Portfolio Engine) Tj
+ET
+
+BT
+/F1 9.5 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 45.00 548.89 Tm
+(Splits multi-million Rand collectibles into affordable shares, backed by an atomic time-series) Tj
+ET
+
+BT
+/F1 9.5 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 45.00 535.39 Tm
+(valuation engine.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 521.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 518.89 Tm
+(Fractional Positions: Atomic DB transaction updates asset shares_sold and writes to) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 505.89 Tm
+(public.investment_positions.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 492.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 489.89 Tm
+(Time-Series Analytics: Daily snapshot service aggregates holdings, cash, and escrow balances into) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 476.89 Tm
+(public.portfolio_snapshots.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 463.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 460.89 Tm
+(Yield & Trendlines: Renders interactive ROI yield and portfolio allocation charts over 24h, 7d,) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 447.89 Tm
+(30d, and 1y periods.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 434.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 431.89 Tm
+(Technologies: investmentPositionService.js, portfolioSnapshotService.js, React Native SVG.) Tj
+ET
+
+BT
+/F2 11.5 Tf
+0.120 0.220 0.380 rg
+1 0 0 1 45.00 409.89 Tm
+(Feature 5: 3D glTF Mesh Generation & AR 'Live Room Preview') Tj
+ET
+
+BT
+/F1 9.5 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 45.00 393.89 Tm
+(Converts 2D listing photos into optimized 3D digital twins that users can project into their room) Tj
+ET
+
+BT
+/F1 9.5 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 45.00 380.39 Tm
+(using Augmented Reality.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 366.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 363.89 Tm
+(3D Reconstruction: Tripo AI converts listing photos into raw 3D meshes \(500k polygons, ~45MB\).) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 350.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 347.89 Tm
+(Mesh Decimation: Backend modelOptimizer.js decimates mesh to ~35,000 triangles and WebP textures) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 334.89 Tm
+(\(~2.5MB\) for 60 FPS mobile AR.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 321.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 318.89 Tm
+(AR Projection: Expo Camera and orientation sensors overlay the collectible onto physical surfaces.) Tj
+ET
+
+q 0.800 0.850 0.900 rg 45.00 288.89 505.28 1.20 re f Q
+
+q 0.850 0.550 0.120 rg 45.00 288.89 30.00 2.50 re f Q
+
+BT
+/F2 14 Tf
+0.060 0.100 0.180 rg
+1 0 0 1 45.00 292.89 Tm
+(3. SYSTEM SECURITY ARCHITECTURE \(THE 6 DEFENSIVE RINGS\)) Tj
+ET
+
+BT
+/F1 9.5 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 45.00 274.89 Tm
+(Explain your defensive posture using this 6-ring model to demonstrate institutional rigor:) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 261.39 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 258.39 Tm
+(Ring 1: Network & HTTP: Helmet.js \(CSP, HSTS, X-Frame-Options: DENY\) + express-rate-limit to block) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 245.39 Tm
+(brute-force password/wallet guessing.) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 232.39 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 229.39 Tm
+(Ring 2: Input Sanitization: securityMiddleware.js recursively scans request bodies/params against) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 216.39 Tm
+(SQLi patterns \(Union, tautology, pg_sleep\).) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 203.39 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 200.39 Tm
+(Ring 3: Session Security: JWT token revocation blacklist + InactivityWatcher.js \(passive) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 187.39 Tm
+(PanResponder resets timer on touch; 30s warning at 4m30s; auto-logout at 5m\).) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 174.39 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 171.39 Tm
+(Ring 4: Financial Hardening: Withdrawal email OTP \(crypto.randomInt, strict 120-second TTL,) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 158.39 Tm
+(strictly 1 attempt per challenge to prevent brute force, per-user concurrency mutex locks\).) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 145.39 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 142.39 Tm
+(Ring 5: KYC & Database RLS: Institutional 3-Doc KYC \(ID, Tax, Proof of Residence\) in private) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 129.39 Tm
+(buckets with signed URLs; Supabase PostgreSQL Row-Level Security \(auth.uid\(\) = user_id\).) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 116.39 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 113.39 Tm
+(Ring 6: Smart Contracts: Solidity ^0.8.24 with native overflow checks + OpenZeppelin) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 100.39 Tm
+(ReentrancyGuard \(nonReentrant modifier\) against recursive drain attacks.) Tj
+ET
+
+q 0.850 0.850 0.880 rg 45.00 40.00 505.28 0.80 re f Q
+
+BT
+/F1 8 Tf
+0.550 0.600 0.650 rg
+1 0 0 1 45.00 28.00 Tm
+(CONFIDENTIAL & PROPRIETARY ? DSW GROUP PROJECT) Tj
+ET
+
+BT
+/F2 8 Tf
+0.400 0.450 0.500 rg
+1 0 0 1 515.28 28.00 Tm
+(Page 2) Tj
+ET
+
+endstream
+endobj
+11 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 12 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> >>
+endobj
+12 0 obj
+<< /Length 6959 >>
+stream
+
+q 0.850 0.850 0.880 rg 45.00 806.89 505.28 1.00 re f Q
+
+BT
+/F2 8 Tf
+0.450 0.500 0.580 rg
+1 0 0 1 45.00 811.89 Tm
+(SMARTASSETS ? CAPSTONE DEFENSE & TECHNICAL SPECIFICATION) Tj
+ET
+
+BT
+/F2 8 Tf
+0.700 0.450 0.100 rg
+1 0 0 1 480.28 811.89 Tm
+(SYSTEM ARCHITECTURE) Tj
+ET
+
+q 0.800 0.850 0.900 rg 45.00 777.89 505.28 1.20 re f Q
+
+q 0.850 0.550 0.120 rg 45.00 777.89 30.00 2.50 re f Q
+
+BT
+/F2 14 Tf
+0.060 0.100 0.180 rg
+1 0 0 1 45.00 781.89 Tm
+(4. MASTER TECHNOLOGY STACK SUMMARY) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 766.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 763.89 Tm
+(Mobile Client: React Native \(Expo SDK 54\), React Navigation v7, AsyncStorage, Vector Icons, SVG) Tj
+ET
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 750.89 Tm
+(Charts) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 737.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 734.89 Tm
+(Mobile Web3 Provider: @metamask/sdk, Ethers.js v6, custom deep-linking \(smartassets://\)) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 721.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 718.89 Tm
+(Backend API Gateway: Node.js, Express.js 4.21, Helmet, Rate Limiter Flexible, Multer) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 705.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 702.89 Tm
+(Database & Auth: Supabase PostgreSQL with Row-Level Security \(RLS\), PostgREST, JWT sessions) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 689.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 686.89 Tm
+(Artificial Intelligence: Google Gemini Flash Multimodal Vision API, Sharp buffer inspection) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 673.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 670.89 Tm
+(Decentralized Settlement: Solidity ^0.8.24, OpenZeppelin, Hardhat, Ethereum Sepolia Testnet) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 657.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 654.89 Tm
+(3D & Spatial Computing: Tripo 3D AI, @gltf-transform/core, meshoptimizer, Expo Camera, Sensors) Tj
+ET
+
+q 0.850 0.550 0.120 rg 49.00 641.89 4.00 4.00 re f Q
+
+BT
+/F1 9.2 Tf
+0.200 0.250 0.300 rg
+1 0 0 1 61.00 638.89 Tm
+(Financial & Security: Node crypto, TLS SMTP Email, PanResponder touch interception) Tj
+ET
+
+q 0.800 0.850 0.900 rg 45.00 608.89 505.28 1.20 re f Q
+
+q 0.850 0.550 0.120 rg 45.00 608.89 30.00 2.50 re f Q
+
+BT
+/F2 14 Tf
+0.060 0.100 0.180 rg
+1 0 0 1 45.00 612.89 Tm
+(5. ANTICIPATED JUDGES' QUESTIONS & WINNING ANSWERS) Tj
+ET
+
+q 0.980 0.990 1.000 rg 45.00 501.89 505.28 101.00 re f Q
+
+q 0.150 0.450 0.850 rg 45.00 501.89 3.50 101.00 re f Q
+
+BT
+/F2 9.8 Tf
+0.080 0.220 0.480 rg
+1 0 0 1 59.00 592.89 Tm
+(Q1: Why do you need blockchain and MetaMask instead of just PostgreSQL?) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 576.89 Tm
+(A regular database is centralized and subject to admin manipulation. High-value collectibles) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 563.89 Tm
+(require immutable provenance. An ERC-721 certificate on Ethereum Sepolia permanently engraves) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 550.89 Tm
+(ownership and custody milestones on an open ledger. Furthermore, smart contract escrow ensures the) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 537.89 Tm
+(platform never holds custody of buyer funds?they are locked in verified Solidity code with) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 524.89 Tm
+(ReentrancyGuard and released only upon physical appraisal sign-off.) Tj
+ET
+
+q 0.980 0.990 1.000 rg 45.00 420.89 505.28 75.00 re f Q
+
+q 0.150 0.450 0.850 rg 45.00 420.89 3.50 75.00 re f Q
+
+BT
+/F2 9.8 Tf
+0.080 0.220 0.480 rg
+1 0 0 1 59.00 485.89 Tm
+(Q2: Does MetaMask authentication cost real gas fees?) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 469.89 Tm
+(No! We implemented EIP-191 cryptographic challenge-response authentication. The user signs an) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 456.89 Tm
+(off-chain challenge string with their private key. The backend recovers the public key using) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 443.89 Tm
+(elliptic curve cryptography \(ethers.verifyMessage\). It costs zero gas and executes instantaneously.) Tj
+ET
+
+q 0.980 0.990 1.000 rg 45.00 326.89 505.28 88.00 re f Q
+
+q 0.150 0.450 0.850 rg 45.00 326.89 3.50 88.00 re f Q
+
+BT
+/F2 9.8 Tf
+0.080 0.220 0.480 rg
+1 0 0 1 59.00 404.89 Tm
+(Q3: How do you prevent users from uploading AI-generated fake luxury assets?) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 388.89 Tm
+(Our AI Vision Gatekeeper runs a 4-tier inspection pipeline. Tier 2 examines frequency anomalies and) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 375.89 Tm
+(image metadata; if synthetic probability from Midjourney or DALL-E exceeds 0.82, it is rejected) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 362.89 Tm
+(immediately. Tier 3 uses Google Gemini Flash to inspect hallmarks, engravings, serial number) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 349.89 Tm
+(typography, and category alignments against authentic standards.) Tj
+ET
+
+q 0.980 0.990 1.000 rg 45.00 232.89 505.28 88.00 re f Q
+
+q 0.150 0.450 0.850 rg 45.00 232.89 3.50 88.00 re f Q
+
+BT
+/F2 9.8 Tf
+0.080 0.220 0.480 rg
+1 0 0 1 59.00 310.89 Tm
+(Q4: What happens if a user leaves their mobile app open unattended?) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 294.89 Tm
+(We built an Inactivity Watcher utilizing React Native's PanResponder. It captures passive touch) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 281.89 Tm
+(gestures across the app. After 4 minutes and 30 seconds of inactivity, it displays a 30-second) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 268.89 Tm
+(warning countdown. If no touch occurs, the session tokens are wiped and the user is securely logged) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 255.89 Tm
+(out to prevent session hijacking.) Tj
+ET
+
+q 0.980 0.990 1.000 rg 45.00 151.89 505.28 75.00 re f Q
+
+q 0.150 0.450 0.850 rg 45.00 151.89 3.50 75.00 re f Q
+
+BT
+/F2 9.8 Tf
+0.080 0.220 0.480 rg
+1 0 0 1 59.00 216.89 Tm
+(Q5: How does your withdrawal system prevent unauthorized payouts?) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 200.89 Tm
+(Withdrawals require institutional KYC, an approved bank account, and a single-use 6-digit OTP code) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 187.89 Tm
+(sent over secure TLS to the account holder's email. The OTP has a strict 120-second lifespan and a) Tj
+ET
+
+BT
+/F1 9.0 Tf
+0.200 0.250 0.320 rg
+1 0 0 1 59.00 174.89 Tm
+(single-attempt burn policy?a single incorrect attempt destroys the challenge immediately.) Tj
+ET
+
+q 0.850 0.850 0.880 rg 45.00 40.00 505.28 0.80 re f Q
+
+BT
+/F1 8 Tf
+0.550 0.600 0.650 rg
+1 0 0 1 45.00 28.00 Tm
+(CONFIDENTIAL & PROPRIETARY ? DSW GROUP PROJECT) Tj
+ET
+
+BT
+/F2 8 Tf
+0.400 0.450 0.500 rg
+1 0 0 1 515.28 28.00 Tm
+(Page 3) Tj
+ET
+
+endstream
+endobj
+xref
+0 13
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000134 00000 n 
+0000000204 00000 n 
+0000000279 00000 n 
+0000000357 00000 n 
+0000000425 00000 n 
+0000000587 00000 n 
+0000006898 00000 n 
+0000007061 00000 n 
+0000014983 00000 n 
+0000015147 00000 n 
+trailer
+<< /Size 13 /Root 1 0 R >>
+startxref
+22159
+%%EOF

@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SmartAssets — Presentation Defense & Technical Guide</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    @page {
+      size: A4;
+      margin: 18mm 14mm 18mm 14mm;
+      @bottom-right {
+        content: counter(page);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #1e293b;
+      background: #ffffff;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .page-break {
+      page-break-after: always;
+      break-after: page;
+    }
+
+    .avoid-break {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    /* Cover Page */
+    .cover {
+      min-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 40px 30px;
+      border: 2px solid #e2e8f0;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #090d16 0%, #111827 50%, #1e1b4b 100%);
+      color: #ffffff;
+      position: relative;
+    }
+
+    .cover-badge {
+      display: inline-block;
+      align-self: flex-start;
+      background: rgba(217, 119, 6, 0.2);
+      border: 1px solid #d97706;
+      color: #fbbf24;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      margin-bottom: 24px;
+    }
+
+    .cover h1 {
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      line-height: 1.15;
+      margin-bottom: 14px;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 60%, #fbbf24 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .cover .subtitle {
+      font-size: 17px;
+      color: #94a3b8;
+      max-width: 620px;
+      line-height: 1.5;
+      margin-bottom: 36px;
+    }
+
+    .cover-meta {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+
+    .meta-item .meta-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #94a3b8;
+      letter-spacing: 1px;
+      font-weight: 600;
+    }
+
+    .meta-item .meta-val {
+      font-size: 14px;
+      color: #f8fafc;
+      font-weight: 700;
+      margin-top: 3px;
+    }
+
+    /* Content Typography */
+    h2 {
+      font-size: 20px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.3px;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 8px;
+      margin-top: 28px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h3 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-top: 18px;
+      margin-bottom: 8px;
+    }
+
+    p {
+      margin-bottom: 10px;
+      color: #334155;
+    }
+
+    /* Callout & Quotes */
+    .quote-box {
+      background: #f8fafc;
+      border-left: 4px solid #d97706;
+      border-radius: 0 10px 10px 0;
+      padding: 14px 18px;
+      margin: 16px 0;
+      font-style: italic;
+      color: #1e293b;
+      font-size: 13.5px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+
+    .alert-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin: 14px 0;
+      color: #1e40af;
+      font-size: 12.5px;
+    }
+
+    .alert-box strong {
+      color: #1e3a8a;
+    }
+
+    /* Feature Cards */
+    .feature-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+    }
+
+    .feature-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .feature-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+
+    .tag {
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .tag-gold { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .tag-blue { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+    .tag-emerald { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+    .tag-purple { background: #ede9fe; color: #5b21b6; border: 1px solid #ddd6fe; }
+
+    /* Code Blocks */
+    pre, code {
+      font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+    }
+
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-size: 11px;
+      line-height: 1.45;
+      margin: 8px 0 12px 0;
+      overflow-x: hidden;
+      white-space: pre-wrap;
+    }
+
+    code {
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: 11.5px;
+    }
+
+    /* Steps list */
+    .step-list {
+      list-style: none;
+      counter-reset: step-counter;
+      margin: 10px 0;
+    }
+
+    .step-list li {
+      counter-increment: step-counter;
+      position: relative;
+      padding-left: 32px;
+      margin-bottom: 8px;
+      color: #334155;
+    }
+
+    .step-list li::before {
+      content: counter(step-counter);
+      position: absolute;
+      left: 0;
+      top: 1px;
+      width: 22px;
+      height: 22px;
+      background: #0f172a;
+      color: #ffffff;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 22px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 12px;
+    }
+
+    th, td {
+      border: 1px solid #e2e8f0;
+      padding: 9px 12px;
+      text-align: left;
+    }
+
+    th {
+      background: #f8fafc;
+      color: #0f172a;
+      font-weight: 700;
+    }
+
+    tr:nth-child(even) td {
+      background: #fafbfc;
+    }
+
+    /* Q&A section */
+    .qa-box {
+      background: #ffffff;
+      border-left: 4px solid #3b82f6;
+      border-top: 1px solid #e2e8f0;
+      border-right: 1px solid #e2e8f0;
+      border-bottom: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+
+    .qa-question {
+      font-weight: 800;
+      color: #1e3a8a;
+      font-size: 13.5px;
+      margin-bottom: 6px;
+    }
+
+    .qa-answer {
+      color: #334155;
+      font-size: 12.5px;
+    }
+
+    /* Flow diagram pills */
+    .flow-chain {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin: 12px 0;
+    }
+
+    .flow-pill {
+      background: #0f172a;
+      color: #ffffff;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .flow-arrow {
+      color: #d97706;
+      font-weight: 800;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- COVER PAGE -->
+  <div class="cover page-break">
+    <div class="cover-badge">DSW Capstone Defense • Production Architecture</div>
+    <h1>SMART ASSETS</h1>
+    <div class="subtitle">Institutional Luxury Collectible Tokenization, Horological Custody, Multimodal AI Counterfeit Detection & Fractional Co-Ownership Platform</div>
+    
+    <div class="cover-meta">
+      <div class="meta-item">
+        <div class="meta-label">Presentation Scope</div>
+        <div class="meta-val">Full System Architecture, WOW Features & Security</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Primary Blockchains</div>
+        <div class="meta-val">Ethereum Sepolia (Hardhat, Solidity 0.8.24)</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">AI & Vision Engine</div>
+        <div class="meta-val">Google Gemini Flash Multimodal Vision API</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Mobile Frontend & Core</div>
+        <div class="meta-val">React Native (Expo SDK 54) + Node/Express + Supabase RLS</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 1: ELEVATOR PITCH -->
+  <div class="avoid-break">
+    <h2>🎯 1. The 30-Second Opening Statement (Elevator Pitch)</h2>
+    <div class="quote-box">
+      "SmartAssets is an institutional-grade, decentralized platform designed for physical luxury collectible tokenization, verifiable physical custody, multimodal AI counterfeit detection, and fractional co-ownership.<br><br>
+      High-value physical assets—such as Rolex watches, fine art, and certified gemstones—face rampant counterfeit fraud, illiquid barriers to entry, and untrusted settlement. SmartAssets bridges this divide by uniting a <strong>React Native mobile app</strong>, a <strong>Google Gemini Flash AI vision gatekeeper</strong>, an <strong>Ethereum Sepolia smart-contract escrow</strong>, and <strong>Supabase Row-Level Security</strong> into a trusted dual-ledger custody network."
+    </div>
+  </div>
+
+  <!-- SECTION 2: THE WOW FEATURES -->
+  <div>
+    <h2>✨ 2. The WOW Features — How They Work & Tech Stack</h2>
+
+    <!-- Feature 1: MetaMask -->
+    <div class="feature-card avoid-break">
+      <div class="feature-header">
+        <span class="feature-title">1. Passwordless Web3 MetaMask Authentication (EIP-191 / SIWE)</span>
+        <span class="tag tag-gold">Gasless Web3</span>
+      </div>
+      <p><strong>What it does:</strong> Allows users to authenticate instantaneously with MetaMask on mobile with zero passwords, or link a cryptographically verified wallet address to their profile.</p>
+      <p><strong>How it works behind the scenes:</strong></p>
+      <ol class="step-list">
+        <li>User taps <code>Continue with MetaMask</code> in the Expo mobile app.</li>
+        <li>The app requests a challenge from <code>GET /api/auth/nonce?address=0x...</code>. The backend creates a 16-byte random hex nonce with a strict <strong>5-minute time-to-live</strong>.</li>
+        <li>The mobile app deep-links to MetaMask using <code>@metamask/sdk</code> (with fallback scheme <code>smartassets://</code>).</li>
+        <li>The user signs the challenge message using <strong>EIP-191 personal_sign</strong>. <em>Crucially, this is gasless (costs 0 ETH) and triggers no on-chain transaction.</em></li>
+        <li>The app posts <code>{ walletAddress, signature, nonce }</code> to <code>POST /api/auth/wallet-login</code>.</li>
+        <li>The backend calls <code>ethers.verifyMessage()</code>, recovering the ECDSA public address. If verified, the nonce is burned (preventing replay attacks) and an authentic Supabase JWT session is minted via an admin magiclink OTP exchange.</li>
+      </ol>
+      <p><strong>Technologies:</strong> React Native, Expo SDK 54, <code>@metamask/sdk</code>, <code>ethers.js v6</code>, Supabase Auth Admin API.</p>
+    </div>
+
+    <!-- Feature 2: AI Vision Gatekeeper -->
+    <div class="feature-card avoid-break">
+      <div class="feature-header">
+        <span class="feature-title">2. Multimodal AI Vision Gatekeeper & Anti-Counterfeit Scanner</span>
+        <span class="tag tag-blue">Gemini Multimodal AI</span>
+      </div>
+      <p><strong>What it does:</strong> Acts as an automated marketplace gatekeeper, analyzing collectible photos to prevent synthetic fakes, category fraud, and misvalued listings.</p>
+      <p><strong>The 4-Tier Inspection Pipeline:</strong></p>
+      <ol class="step-list">
+        <li><strong>Tier 1 (Pre-flight & Resolution):</strong> Inspects byte headers and rejects corrupted images or resolutions below 300x300px.</li>
+        <li><strong>Tier 2 (Synthetic Deepfake Detection):</strong> Scans frequency and metadata patterns. If probability of AI-generation (Midjourney/DALL-E) exceeds <strong>0.82</strong>, the upload is blocked.</li>
+        <li><strong>Tier 3 (Google Gemini Flash Inspection):</strong> Gemini Flash analyzes visual hallmarks, logos, serial number typography, and classifies the category (blocking mismatches like shoes listed as watches).</li>
+        <li><strong>Tier 4 (Market Oracle Appraisal Bands):</strong> Queries live ZAR/USD valuation bands (Floor, Median, Fair Market Value) and maps to on-chain ERC-721 token provenance.</li>
+      </ol>
+      <p><strong>Technologies:</strong> Google Gemini Flash Vision API, Sharp/Buffer inspection, <code>aiVisionGatekeeper.js</code>, <code>marketOracleService.js</code>.</p>
+    </div>
+
+    <div class="page-break"></div>
+
+    <!-- Feature 3: Dual Ledger Escrow -->
+    <div class="feature-card avoid-break">
+      <div class="feature-header">
+        <span class="feature-title">3. Dual-Ledger On-Chain Escrow Settlement (SmartAssetEscrow.sol)</span>
+        <span class="tag tag-emerald">Solidity 0.8.24</span>
+      </div>
+      <p><strong>What it does:</strong> Eliminates payment and delivery fraud for luxury collectibles. Buyer funds are held in trust on Ethereum Sepolia and cannot be withdrawn until physical custody inspection succeeds.</p>
+      <p><strong>9-Stage Sequential Lifecycle State Machine:</strong></p>
+      <div class="flow-chain">
+        <div class="flow-pill">None</div><div class="flow-arrow">➔</div>
+        <div class="flow-pill">PaymentLocked</div><div class="flow-arrow">➔</div>
+        <div class="flow-pill">InTransit</div><div class="flow-arrow">➔</div>
+        <div class="flow-pill">InInspection</div><div class="flow-arrow">➔</div>
+        <div class="flow-pill">Delivered</div><div class="flow-arrow">➔</div>
+        <div class="flow-pill">Accepted</div><div class="flow-arrow">➔</div>
+        <div class="flow-pill">ReleasedToSeller</div>
+      </div>
+      <ol class="step-list">
+        <li><strong>PaymentLocked:</strong> Buyer funds are deposited directly into the escrow smart contract.</li>
+        <li><strong>InTransit:</strong> Seller ships asset via armored courier and logs the tracking hash on-chain.</li>
+        <li><strong>InInspection:</strong> Physical item is received at the institutional custody center; horologists verify hallmarks and condition.</li>
+        <li><strong>Delivered & Accepted:</strong> Buyer takes physical delivery and signs off.</li>
+        <li><strong>ReleasedToSeller:</strong> Contract executes payout to seller wallet; backend registers ownership in <code>user_holdings</code>.</li>
+        <li><em>Dispute Protection:</em> Either party can flag <code>Disputed</code>; an arbitrator resolves with <code>RefundedToBuyer</code> or <code>ReleasedToSeller</code>.</li>
+      </ol>
+      <p><strong>Technologies:</strong> Solidity ^0.8.24, OpenZeppelin <code>ReentrancyGuard</code> & <code>Ownable</code>, Ethereum Sepolia, Hardhat.</p>
+    </div>
+
+    <!-- Feature 4: Fractional Co-Ownership -->
+    <div class="feature-card avoid-break">
+      <div class="feature-header">
+        <span class="feature-title">4. Fractional Co-Ownership & Real-Time Portfolio Snapshots</span>
+        <span class="tag tag-purple">High-Liquidity Engine</span>
+      </div>
+      <p><strong>What it does:</strong> Splits multi-million Rand collectibles into fractional co-ownership units (shares), accompanied by a time-series portfolio analytics engine.</p>
+      <p><strong>How it works:</strong></p>
+      <ol class="step-list">
+        <li>Sellers designate whole or fractional listings (total shares, cost per unit).</li>
+        <li>Purchases atomically update <code>assets.shares_sold</code> and log fractional holdings into <code>public.investment_positions</code>.</li>
+        <li>The <code>portfolioSnapshotService.js</code> aggregates whole holdings, fractional positions, available cash, and escrow balance into daily snapshots in <code>public.portfolio_snapshots</code> (with user_id + snapshot_date unique constraint).</li>
+        <li>The mobile app renders interactive yield and trendline charts over 24h, 7d, 30d, and 1y intervals.</li>
+      </ol>
+      <p><strong>Technologies:</strong> <code>investmentPositionService.js</code>, <code>portfolioSnapshotService.js</code>, React Native SVG charts.</p>
+    </div>
+
+    <!-- Feature 5: 3D glTF / AR -->
+    <div class="feature-card avoid-break">
+      <div class="feature-header">
+        <span class="feature-title">5. 3D glTF Mesh Generation & AR "Live Room Preview"</span>
+        <span class="tag tag-blue">Spatial Computing</span>
+      </div>
+      <p><strong>What it does:</strong> Enables buyers to project interactive 3D digital twins of luxury assets directly into their room using Augmented Reality before purchasing.</p>
+      <p><strong>How it works:</strong> 2D photos are turned into 3D meshes using Tripo AI. The raw 500k-polygon mesh is compressed by the backend's <code>modelOptimizer.js</code> (via <code>@gltf-transform/core</code> and <code>meshoptimizer</code>) down to ~35,000 triangles and ~2.5MB WebP textures for smooth 60 FPS mobile rendering with Expo Camera.</p>
+      <p><strong>Technologies:</strong> Tripo 3D AI, <code>@gltf-transform/core</code>, <code>meshoptimizer</code>, Expo Camera, Device Sensors.</p>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- SECTION 3: SECURITY ARCHITECTURE -->
+  <div>
+    <h2>🔒 3. System Security Architecture (The 6 Defensive Rings)</h2>
+    <p>SmartAssets enforces defense-in-depth across six distinct architectural boundaries:</p>
+
+    <div class="feature-card avoid-break">
+      <h3 style="color: #b45309; margin-top: 0;">Ring 1: Network & HTTP Gateway Hardening</h3>
+      <p><strong>Helmet.js:</strong> Enforces Content-Security-Policy (CSP), <code>X-Frame-Options: DENY</code> (anti-clickjacking), HTTP Strict Transport Security (HSTS), and MIME-sniffing prevention.</p>
+      <p><strong>Rate Limiter Middleware:</strong> Protects authentication endpoints against brute-force password and wallet guessing, and limits file upload buffers to mitigate Denial of Service (DoS).</p>
+    </div>
+
+    <div class="feature-card avoid-break">
+      <h3 style="color: #1e40af; margin-top: 0;">Ring 2: Deep SQL Injection & PostgREST Sanitizer</h3>
+      <p>Located in <code>securityMiddleware.js</code>: Recursively inspects every key and value in incoming request bodies, query strings, and headers against comprehensive regex patterns:</p>
+      <ul>
+        <li>Union-based injection: <code>UNION SELECT</code></li>
+        <li>Tautology and boolean bypass: <code>' OR 1=1 --</code></li>
+        <li>Destructive DDL/DML: <code>DROP</code>, <code>TRUNCATE</code>, <code>DELETE FROM</code></li>
+        <li>Time-based blind SQLi: <code>pg_sleep()</code>, <code>WAITFOR DELAY</code></li>
+        <li>System catalog enumeration: <code>information_schema</code>, <code>pg_shadow</code></li>
+      </ul>
+      <p>Offending payloads are immediately rejected with HTTP 400 and logged to the security audit ledger.</p>
+    </div>
+
+    <div class="feature-card avoid-break">
+      <h3 style="color: #065f46; margin-top: 0;">Ring 3: Session Security & Financial Inactivity Watcher</h3>
+      <p><strong>Token Revocation Blacklist:</strong> Invalidated tokens are instantly added to a persisted revocation list upon logout, preventing replay of stolen JWTs.</p>
+      <p><strong>InactivityWatcher.js:</strong> On mobile devices, unattended sessions present a major security hazard. A transparent <code>PanResponder</code> captures passive screen gestures:</p>
+      <ul>
+        <li>If <strong>4 minutes and 30 seconds</strong> elapse without interaction, a <strong>30-second warning countdown</strong> banner appears.</li>
+        <li>If no touch occurs by 0 seconds, session tokens in <code>AsyncStorage</code> are wiped and the user is redirected to the login screen.</li>
+      </ul>
+    </div>
+
+    <div class="feature-card avoid-break">
+      <h3 style="color: #92400e; margin-top: 0;">Ring 4: Bank Withdrawal Email OTP Verification (2-Factor Guard)</h3>
+      <p>Implemented in <code>withdrawalVerificationService.js</code>:</p>
+      <ul>
+        <li>Withdrawals require verified bank accounts and trigger a cryptographically secure 6-digit OTP via TLS SMTP email.</li>
+        <li><strong>Strict 120-Second Lifespan:</strong> Enforces an exact 2-minute server-clock expiry.</li>
+        <li><strong>Single-Attempt Burn:</strong> Entering an incorrect OTP immediately destroys the challenge, completely blocking automated guessing attacks.</li>
+        <li><strong>Concurrency Mutex Locks:</strong> Prevents race-condition double withdrawals per user.</li>
+      </ul>
+    </div>
+
+    <div class="feature-card avoid-break">
+      <h3 style="color: #5b21b6; margin-top: 0;">Ring 5: Institutional 3-Doc KYC & Database Row-Level Security (RLS)</h3>
+      <p><strong>Row-Level Security (RLS):</strong> Supabase PostgreSQL isolates sensitive user portfolios, KYC documents, and bank details at the kernel level (<code>auth.uid() = user_id</code>).</p>
+      <p><strong>3-Document KYC:</strong> High-value transactors must provide Government ID, Tax Certificate, and Proof of Residence, stored in private gated buckets with short-lived signed URLs.</p>
+    </div>
+
+    <div class="feature-card avoid-break">
+      <h3 style="color: #0f172a; margin-top: 0;">Ring 6: Solidity Smart Contract Defense</h3>
+      <p>All smart contracts inherit OpenZeppelin's battle-tested <code>ReentrancyGuard</code> with the <code>nonReentrant</code> modifier to neutralize re-entrancy attacks during ETH withdrawals. Built on Solidity <code>^0.8.24</code> with native overflow protection.</p>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- SECTION 4: MASTER TECH STACK -->
+  <div>
+    <h2>📊 4. Master Technology Stack Matrix</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>System Layer</th>
+          <th>Technologies & Libraries</th>
+          <th>Architectural Role</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Mobile Client</strong></td>
+          <td>React Native, Expo SDK 54, React Navigation v7, AsyncStorage</td>
+          <td>Cross-platform native mobile experience for iOS, Android, and Web</td>
+        </tr>
+        <tr>
+          <td><strong>Web3 Mobile Provider</strong></td>
+          <td><code>@metamask/sdk</code>, Ethers.js v6, Deep-Link schemes</td>
+          <td>Gasless EIP-191 signatures and Sepolia wallet connectivity</td>
+        </tr>
+        <tr>
+          <td><strong>Backend API Gateway</strong></td>
+          <td>Node.js, Express.js 4.21, Helmet, Rate Limiter</td>
+          <td>Secure REST endpoints, SQL injection filtering, business routing</td>
+        </tr>
+        <tr>
+          <td><strong>Database & Identity</strong></td>
+          <td>Supabase PostgreSQL, PostgREST, Row-Level Security</td>
+          <td>Atomic data storage, JWT session issuance, multi-tenant isolation</td>
+        </tr>
+        <tr>
+          <td><strong>Artificial Intelligence</strong></td>
+          <td>Google Gemini Flash Multimodal Vision API</td>
+          <td>Hallmark scanning, synthetic fake detection, visual category verification</td>
+        </tr>
+        <tr>
+          <td><strong>Decentralized Settlement</strong></td>
+          <td>Solidity ^0.8.24, OpenZeppelin, Hardhat, Sepolia Testnet</td>
+          <td><code>SmartAssetEscrow.sol</code> and <code>SmartAssetCertificate.sol</code> (ERC-721)</td>
+        </tr>
+        <tr>
+          <td><strong>3D & Spatial Computing</strong></td>
+          <td>Tripo AI, <code>@gltf-transform/core</code>, <code>meshoptimizer</code>, Expo Camera</td>
+          <td>Single-photo 3D mesh reconstruction, polygon decimation, AR overlay</td>
+        </tr>
+        <tr>
+          <td><strong>Financial Security</strong></td>
+          <td>Node <code>crypto</code>, TLS SMTP Email, PanResponder</td>
+          <td>120s single-attempt OTP, 5-minute inactivity session defense</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- SECTION 5: ANTICIPATED JUDGES QUESTIONS -->
+  <div>
+    <h2>❓ 5. Anticipated Judges' Questions & Winning Answers</h2>
+
+    <div class="qa-box avoid-break">
+      <div class="qa-question">Q1: "Why do you need blockchain and MetaMask instead of just PostgreSQL?"</div>
+      <div class="qa-answer">
+        "A centralized database has a single point of failure and administrator trust issues. Luxury collectibles require <strong>immutable, tamper-proof provenance</strong>. By minting an <strong>ERC-721 certificate</strong> on Ethereum Sepolia, the asset's history and chain-of-custody milestones are permanently verifiable by anyone. Furthermore, with <strong>MetaMask and smart contract escrow</strong>, the platform never holds custody of buyer funds—they are locked in verified Solidity code with <code>ReentrancyGuard</code> and released only upon physical appraisal sign-off."
+      </div>
+    </div>
+
+    <div class="qa-box avoid-break">
+      <div class="qa-question">Q2: "Does MetaMask authentication cost real gas fees?"</div>
+      <div class="qa-answer">
+        "No! We implemented <strong>EIP-191 cryptographic challenge-response authentication</strong>. The user signs an off-chain challenge string with their private key. The backend recovers the public key using elliptic curve cryptography (<code>ethers.verifyMessage</code>). It costs <strong>zero gas</strong> and executes instantaneously."
+      </div>
+    </div>
+
+    <div class="qa-box avoid-break">
+      <div class="qa-question">Q3: "How do you detect AI-generated fake luxury assets?"</div>
+      <div class="qa-answer">
+        "Our AI Vision Gatekeeper runs a 4-tier inspection pipeline. Tier 2 examines frequency anomalies and image metadata; if synthetic probability from Midjourney or DALL-E exceeds 0.82, it is rejected immediately. Tier 3 uses <strong>Google Gemini Flash</strong> to inspect hallmarks, engravings, serial number typography, and category alignments against authentic standards."
+      </div>
+    </div>
+
+    <div class="qa-box avoid-break">
+      <div class="qa-question">Q4: "What happens if a user leaves their mobile app open unattended?"</div>
+      <div class="qa-answer">
+        "We built an <strong>Inactivity Watcher</strong> utilizing React Native's <code>PanResponder</code>. It captures passive touch gestures across the app. After 4 minutes and 30 seconds of inactivity, it displays a 30-second warning countdown. If no touch occurs, the session tokens are wiped and the user is securely logged out to prevent session hijacking."
+      </div>
+    </div>
+
+    <div class="qa-box avoid-break">
+      <div class="qa-question">Q5: "How does your withdrawal system prevent unauthorized payouts?"</div>
+      <div class="qa-answer">
+        "Withdrawals require institutional KYC, an approved bank account, and a <strong>single-use 6-digit OTP code</strong> sent over secure TLS to the account holder's email. The OTP has a <strong>strict 120-second lifespan</strong> and a <strong>single-attempt burn policy</strong>—a single incorrect attempt destroys the challenge immediately."
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>
+
