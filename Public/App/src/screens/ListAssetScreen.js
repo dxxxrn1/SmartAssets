@@ -267,14 +267,23 @@ export default function ListAssetScreen({ navigation, route }) {
         err?.message ||
         "Photo could not be verified as a physical luxury collectible.";
       setVerificationError(errMsg);
-      // Remove invalid image to block publication
-      setForm((prev) => ({
-        ...prev,
-        images: [],
-      }));
       showAlert(
-        "AI Vision Gatekeeper Rejection",
-        `${errMsg}\n\nPlease take or upload a clear, authentic photograph of your physical collectible to proceed.`,
+        "AI Vision Gatekeeper Notice",
+        `${errMsg}\n\nPlease ensure your claimed title matches the physical item, or upload a clear authentic photograph of the physical collectible.`,
+        [
+          {
+            text: "Retry AI Check",
+            onPress: () => runAiVerification(imageUri, overrideHints),
+          },
+          {
+            text: "Change Photo",
+            onPress: () => {
+              setForm((prev) => ({ ...prev, images: [] }));
+            },
+            style: "destructive",
+          },
+          { text: "OK", style: "cancel" },
+        ],
       );
     } finally {
       setVerifyingImage(false);

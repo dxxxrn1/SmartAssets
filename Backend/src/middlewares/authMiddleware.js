@@ -455,6 +455,11 @@ async function requireVerified(req, res, next) {
           // Fail closed: database lookup error must never count as verified
         } else if (profile && profile.verification_status === 'verified') {
           isVerified = true;
+          if (bundle) {
+            bundle.verification_status = 'verified';
+          } else {
+            bundle = { verification_status: 'verified', permissions: { canListAsset: true } };
+          }
         }
       } catch (err) {
         console.warn('⚠️ [requireVerified] Exception checking profile verification_status:', err.message);

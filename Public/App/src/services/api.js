@@ -49,7 +49,7 @@ function isLocalOrLanApiUrl(url) {
   );
 }
 
-/// ── Base URL — defaults to live Render production backend ───────────────────
+// ── Base URL — defaults to live Render production backend ───────────────────
 export const getBaseUrl = () => {
   // 1. Explicit environment variable takes precedence (set via EAS build profile or .env)
   const envUrl = normalizeApiBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
@@ -57,17 +57,22 @@ export const getBaseUrl = () => {
     return envUrl;
   }
 
-  // 2. In browser / web mode or standalone production APK builds, always target Render directly
+  // 2. In standalone production APK builds, always target Render directly
   const isProductionBuild = typeof __DEV__ !== "undefined" && !__DEV__;
-  if (Platform.OS === "web" || isProductionBuild) {
+  if (isProductionBuild) {
     return DEPLOYED_RENDER_API;
   }
 
-  // 3. In local Expo Go development, try Metro LAN if available, otherwise Render
+  // 3. In web development, prefer localhost:5000
+  if (Platform.OS === "web") {
+    return "http://localhost:5000/api";
+  }
+
+  // 4. In local Expo Go development, try Metro LAN if available, otherwise Render
   const metroBase = getMetroLanBaseUrl();
   if (metroBase) return metroBase;
 
-  // 4. Default directly to the deployed Render backend (never default physical Android devices to 10.0.2.2)
+  // 5. Default directly to the deployed Render backend (never default physical Android devices to 10.0.2.2)
   return DEPLOYED_RENDER_API;
 };
 
@@ -78,19 +83,6 @@ export function getFallbackBaseUrls() {
   const envUrl = normalizeApiBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
   const isProductionBuild = typeof __DEV__ !== "undefined" && !__DEV__;
 
-  if (Platform.OS === "web") {
-    return [
-      ...new Set(
-        [
-          envUrl || prodUrl,
-          prodUrl,
-          API_BASE_URL,
-          "http://localhost:5000/api",
-        ].filter(Boolean),
-      ),
-    ];
-  }
-
   if (isProductionBuild) {
     const prodCandidates = [envUrl, prodUrl, API_BASE_URL].filter(
       (u) => Boolean(u) && !isLocalOrLanApiUrl(u),
@@ -98,14 +90,32 @@ export function getFallbackBaseUrls() {
     return [...new Set(prodCandidates.length ? prodCandidates : [prodUrl])];
   }
 
-  const candidates = [
-    API_BASE_URL,
-    envUrl,
-    prodUrl,
-    getMetroLanBaseUrl(),
+  if (Platform.OS === "web") {
+    return [
+      ...new Set(
+        [
+          envUrl,
+          "http://localhost:5000/api",
+          "http://127.0.0.1:5000/api",
+          API_BASE_URL,
+          prodUrl,
+        ].filter(Boolean),
+      ),
+    ];
+  }
+
+  const metroLan = getMetroLanBaseUrl();
+  const androidEmu =
     Platform.OS === "android"
       ? "http://10.0.2.2:5000/api"
-      : "http://localhost:5000/api",
+      : "http://localhost:5000/api";
+
+  const candidates = [
+    envUrl,
+    metroLan,
+    androidEmu,
+    API_BASE_URL,
+    prodUrl,
   ].filter(Boolean);
 
   return [...new Set(candidates)];
@@ -144,9 +154,11 @@ async function apiRequest(endpoint, options = {}, token = null) {
 
   for (const base of candidates) {
     const url = `${base}${endpoint}`;
+    // Allow extended operations (AI Vision Gatekeeper, photo uploads, blockchain minting) full timeout duration
+    const isExtendedOp = timeoutMs > 10000;
     const candidateTimeoutMs =
-      candidates.length > 1 && isLocalOrLanApiUrl(base)
-        ? Math.min(timeoutMs, 3500)
+      !isExtendedOp && candidates.length > 1 && isLocalOrLanApiUrl(base)
+        ? Math.min(timeoutMs, 5000)
         : timeoutMs;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), candidateTimeoutMs);
@@ -183,9 +195,11 @@ async function apiRequest(endpoint, options = {}, token = null) {
         httpErr.code = data.code;
         throw httpErr;
       }
-      // Lock onto the working base URL for subsequent requests
+      // Lock onto the working base URL for subsequent requests (avoid locking to production Render during local dev)
       if (API_BASE_URL !== base) {
-        API_BASE_URL = base;
+        if (isProductionBuild || !base.includes("onrender.com")) {
+          API_BASE_URL = base;
+        }
       }
       return data;
     } catch (error) {

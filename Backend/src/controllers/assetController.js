@@ -597,8 +597,17 @@ async function createAsset(req, res) {
     if (comp && comp.isSuspended) {
       return sendError(res, 403, 'Account Suspended by Compliance. Asset listings blocked.');
     }
-    const bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
-    if (!bundle || bundle.verification_status !== 'verified') {
+    let bundle = req.verificationBundle || (await complianceService.getVerificationStatusBundle(userId, req.user?.email));
+    let isUserVerified = Boolean(bundle && bundle.verification_status === 'verified');
+    if (!isUserVerified) {
+      try {
+        const { data: prof } = await supabase.from('profiles').select('verification_status').eq('id', userId).maybeSingle();
+        if (prof && prof.verification_status === 'verified') {
+          isUserVerified = true;
+        }
+      } catch (_) {}
+    }
+    if (!isUserVerified) {
       return res.status(403).json({
         success: false,
         code: 'KYC_REQUIRED',
@@ -831,61 +840,79 @@ async function createAsset(req, res) {
     let finalRegistrationError = initialRegistrationError;
 
     if (safeListerWallet) {
-      // Confirm Sepolia deployment and contract bytecode
-      const depCheck = await web3Service.checkCertificateDeploymentOnSepolia();
-      if (!depCheck.isDeployed) {
+      try {
+        // Confirm Sepolia deployment and contract bytecode (with 6s timeout so RPC slowness never hangs listing)
+        const depCheck = await Promise.race([
+          web3Service.checkCertificateDeploymentOnSepolia(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Sepolia RPC check timeout')), 6000)),
+        ]);
+        if (!depCheck.isDeployed) {
+          finalRegistrationStatus = 'unregistered';
+          finalRegistrationError = `Sepolia contract not deployed: ${depCheck.reason}. Listing saved off-chain.`;
+          console.warn(`⚠️ [Blockchain] Sepolia registration skipped: ${finalRegistrationError}`);
+          try {
+            await supabase.from('assets').update({
+              registration_status: finalRegistrationStatus,
+              registration_error: finalRegistrationError,
+            }).eq('id', assetId);
+          } catch (_) {}
+        } else {
+          try {
+            console.log(`⛓️ [Blockchain] Minting Certificate for asset ${assetId} on Ethereum Sepolia to recipient ${safeListerWallet}...`);
+            mintRes = await Promise.race([
+              web3Service.mintAssetNFT({
+                recipientAddress: safeListerWallet,
+                assetId,
+                name: canonicalProductName,
+                category: effectiveCategory,
+                priceNum,
+                certNumber,
+                year: parsedYear,
+                condition: effectiveCondition,
+                image: savedImageUrl,
+                metadataDigest,
+              }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Sepolia minting RPC timeout')), 10000)),
+            ]);
+
+            if (mintRes && mintRes.txHash) {
+              finalRegistrationStatus = 'verified_on_chain';
+              finalRegistrationError = null;
+              console.log(`✅ [Blockchain] NFT Minted! Token ID: #${mintRes.tokenId}, Tx: ${mintRes.txHash}`);
+
+              // Update database record with verified on-chain identifiers
+              await supabase.from('assets').update({
+                token_id: String(mintRes.tokenId),
+                tx_hash: mintRes.txHash,
+                contract_address: mintRes.contractAddress,
+                etherscan_url: mintRes.etherscanUrl,
+                registration_status: 'verified_on_chain',
+                registration_error: null,
+                badge: 'Verified On-Chain',
+              }).eq('id', assetId);
+            }
+          } catch (mintErr) {
+            finalRegistrationStatus = 'failed';
+            finalRegistrationError = mintErr.message || 'Minting transaction failed or was reverted.';
+            console.warn(`⚠️ [Blockchain] On-chain minting failed: ${mintErr.message}`);
+            try {
+              await supabase.from('assets').update({
+                registration_status: 'failed',
+                registration_error: finalRegistrationError,
+              }).eq('id', assetId);
+            } catch (_) {}
+          }
+        }
+      } catch (checkErr) {
         finalRegistrationStatus = 'unregistered';
-        finalRegistrationError = `Sepolia contract not deployed: ${depCheck.reason}. Listing saved off-chain.`;
-        console.warn(`⚠️ [Blockchain] Sepolia registration skipped: ${finalRegistrationError}`);
+        finalRegistrationError = `Sepolia RPC unavailable (${checkErr.message}). Off-chain registry preserved.`;
+        console.warn(`⚠️ [Blockchain] Sepolia check skipped: ${checkErr.message}`);
         try {
           await supabase.from('assets').update({
             registration_status: finalRegistrationStatus,
             registration_error: finalRegistrationError,
           }).eq('id', assetId);
         } catch (_) {}
-      } else {
-        try {
-          console.log(`⛓️ [Blockchain] Minting Certificate for asset ${assetId} on Ethereum Sepolia to recipient ${safeListerWallet}...`);
-          mintRes = await web3Service.mintAssetNFT({
-            recipientAddress: safeListerWallet,
-            assetId,
-            name: canonicalProductName,
-            category: effectiveCategory,
-            priceNum,
-            certNumber,
-            year: parsedYear,
-            condition: effectiveCondition,
-            image: savedImageUrl,
-            metadataDigest,
-          });
-
-          if (mintRes && mintRes.txHash) {
-            finalRegistrationStatus = 'verified_on_chain';
-            finalRegistrationError = null;
-            console.log(`✅ [Blockchain] NFT Minted! Token ID: #${mintRes.tokenId}, Tx: ${mintRes.txHash}`);
-
-            // Update database record with verified on-chain identifiers
-            await supabase.from('assets').update({
-              token_id: String(mintRes.tokenId),
-              tx_hash: mintRes.txHash,
-              contract_address: mintRes.contractAddress,
-              etherscan_url: mintRes.etherscanUrl,
-              registration_status: 'verified_on_chain',
-              registration_error: null,
-              badge: 'Verified On-Chain',
-            }).eq('id', assetId);
-          }
-        } catch (mintErr) {
-          finalRegistrationStatus = 'failed';
-          finalRegistrationError = mintErr.message || 'Minting transaction failed or was reverted.';
-          console.warn(`⚠️ [Blockchain] On-chain minting failed: ${mintErr.message}`);
-          try {
-            await supabase.from('assets').update({
-              registration_status: 'failed',
-              registration_error: finalRegistrationError,
-            }).eq('id', assetId);
-          } catch (_) {}
-        }
       }
     }
 

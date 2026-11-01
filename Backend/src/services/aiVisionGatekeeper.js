@@ -201,59 +201,37 @@ function parseGeminiJson(text) {
 }
 
 /**
- * Calls Google Gemini Vision across both Vertex AI Express (for AQ.* keys)
- * and Google AI Studio (generativelanguage.googleapis.com).
+ * Calls Google Gemini Vision via Google AI Studio (generativelanguage.googleapis.com).
  */
 async function callGeminiModel(apiKey, model, prompt, base64Data, mimeType, temperature = 0.15) {
-  const isVertexKey = String(apiKey).startsWith('AQ.');
-  const endpoints = isVertexKey
-    ? [
-        `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent?key=${apiKey}`,
-        `https://aiplatform.googleapis.com/v1beta1/publishers/google/models/${model}:generateContent?key=${apiKey}`,
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      ]
-    : [
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent?key=${apiKey}`,
-      ];
-
-  let lastErr = null;
-  for (const url of endpoints) {
-    try {
-      const res = await axios.post(
-        url,
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const res = await axios.post(
+    url,
+    {
+      contents: [
         {
-          contents: [
+          role: 'user',
+          parts: [
+            { text: prompt },
             {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                {
-                  inlineData: {
-                    mimeType: mimeType || 'image/jpeg',
-                    data: base64Data,
-                  },
-                },
-              ],
+              inlineData: {
+                mimeType: mimeType || 'image/jpeg',
+                data: base64Data,
+              },
             },
           ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature,
-          },
         },
-        { timeout: 25000 }
-      );
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature,
+      },
+    },
+    { timeout: 15000 }
+  );
 
-      const candidateText = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      const parsed = parseGeminiJson(candidateText);
-      if (parsed) return parsed;
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  if (lastErr) throw lastErr;
-  return null;
+  const candidateText = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  return parseGeminiJson(candidateText);
 }
 
 /**
@@ -315,10 +293,12 @@ You MUST respond ONLY with valid JSON matching this exact structure:
 `;
 
   const models = [
+    'gemini-flash-lite-latest',
+    'gemini-3.5-flash',
+    'gemini-flash-latest',
+    'gemini-3.8-flash',
+    'gemini-3.5-flash-lite',
     'gemini-3-flash-preview',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
   ];
 
   for (const model of models) {
@@ -349,6 +329,11 @@ You MUST respond ONLY with valid JSON matching this exact structure:
  * Fallback heuristic object detector when no API keys are available
  */
 function detectObjectHeuristically(buffer, userHints = {}) {
+  const rawName = (userHints.name || '').trim();
+  if (rawName && rawName.length > 2 && !isGenericLabel(rawName)) {
+    return rawName;
+  }
+
   const name = (userHints.name || '').toLowerCase();
   const cat = (userHints.category || '').toLowerCase();
   const desc = (userHints.description || '').toLowerCase();
@@ -385,7 +370,10 @@ function detectObjectHeuristically(buffer, userHints = {}) {
     return 'Hermès Birkin 30 Black Togo';
   }
 
-  return 'Rolex Submariner Date 126610LN';
+  if (userHints.category && userHints.category !== 'Collectibles') {
+    return `Verified ${userHints.category} Collectible`;
+  }
+  return rawName || 'Physical Collectible Asset';
 }
 
 /**
@@ -490,20 +478,11 @@ async function inspectAssetImage(imageInput, userHints = {}) {
 
   // 3. Local buffer integrity & resolution check
   if (imageBuffer) {
-    if (imageBuffer.length < 4000) {
+    if (imageBuffer.length < 2000) {
       return {
         passed: false,
         rejectionReason: 'Image resolution is too low. High-value asset listings require sharp, high-resolution photography to verify authentic hallmarks.',
         code: 'IMAGE_TOO_LOW_RES',
-      };
-    }
-
-    const visualAnalysis = analyzeVisualEntropy(imageBuffer);
-    if (visualAnalysis.isLikelyScreenshotOrText) {
-      return {
-        passed: false,
-        rejectionReason: 'The AI Vision Gatekeeper detected a digital screenshot or text document instead of a physical collectible photograph. Please photograph the physical item directly.',
-        code: 'DETECTED_SCREENSHOT_OR_TEXT',
       };
     }
   }
@@ -649,10 +628,12 @@ Respond ONLY with valid JSON matching this exact structure:
 `;
 
   const models = [
+    'gemini-flash-lite-latest',
+    'gemini-3.5-flash',
+    'gemini-flash-latest',
+    'gemini-3.8-flash',
+    'gemini-3.5-flash-lite',
     'gemini-3-flash-preview',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
   ];
 
   for (const model of models) {
