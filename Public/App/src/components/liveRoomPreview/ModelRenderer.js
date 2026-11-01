@@ -699,7 +699,7 @@ const ModelRenderer = forwardRef(function ModelRenderer({
   }
 
   return (
-    <View style={StyleSheet.absoluteFill}>
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <WebView
         ref={webViewRef}
         originWhitelist={['*']}

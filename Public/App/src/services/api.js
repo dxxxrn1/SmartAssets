@@ -688,8 +688,26 @@ export async function getListingModelStatusApi(listingId, token = null) {
  * @param {string} listingId
  * @param {string} [token]
  */
-export async function getCatalogMatchesApi(listingId, token = null) {
-  return apiRequest(`/models/catalog/matches/${encodeURIComponent(listingId)}`, { method: "GET" }, token);
+export async function getCatalogMatchesApi(listingId, token = null, params = {}) {
+  let qs = "";
+  if (params && typeof params === "object") {
+    const q = [];
+    if (params.category) q.push(`category=${encodeURIComponent(params.category)}`);
+    if (params.title) q.push(`title=${encodeURIComponent(params.title)}`);
+    if (params.tags) q.push(`tags=${encodeURIComponent(Array.isArray(params.tags) ? params.tags.join(",") : params.tags)}`);
+    if (q.length > 0) qs = `?${q.join("&")}`;
+  }
+  try {
+    return await apiRequest(`/models/catalog/matches/${encodeURIComponent(listingId)}${qs}`, { method: "GET" }, token);
+  } catch (_) {
+    // Graceful fallback when remote listing is not in DB or deployed server is pending redeploy
+    return {
+      success: true,
+      listingId,
+      matches: [],
+      fallback: true,
+    };
+  }
 }
 
 /**
