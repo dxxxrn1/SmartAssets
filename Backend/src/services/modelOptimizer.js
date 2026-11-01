@@ -9,6 +9,10 @@
 
 const axios = require('axios');
 const { NodeIO } = require('@gltf-transform/core');
+let ALL_EXTENSIONS = [];
+try {
+  ALL_EXTENSIONS = require('@gltf-transform/extensions').ALL_EXTENSIONS;
+} catch (_) {}
 const { dedup, prune, textureCompress, simplify } = require('@gltf-transform/functions');
 const { MeshoptSimplifier } = require('meshoptimizer');
 const sharp = require('sharp');
@@ -63,6 +67,9 @@ async function optimizeGlbBuffer(inputBuffer, aggressive = false) {
   await MeshoptSimplifier.ready;
 
   const io = new NodeIO();
+  if (ALL_EXTENSIONS && ALL_EXTENSIONS.length > 0) {
+    io.registerExtensions(ALL_EXTENSIONS);
+  }
   const document = await io.readBinary(new Uint8Array(inputBuffer));
 
   // 1. Basic clean-up transforms

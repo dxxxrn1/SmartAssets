@@ -117,7 +117,11 @@
     "product_type": "Flight Helmet",
     "storage_bucket": "models",
     "storage_path": "catalog/flight_helmet.glb",
-    "source_glb_url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/FlightHelmet/glTF-Binary/FlightHelmet.glb",
+    "source_glb_url": "https://raw.githubusercontent.com/BabylonJS/MeshesLibrary/master/flightHelmet.glb",
+    "fallback_source_urls": [
+      "https://models.babylonjs.com/flightHelmet.glb",
+      "https://raw.githubusercontent.com/immersive-web/model-element/main/examples/assets/FlightHelmet.glb"
+    ],
     "thumbnail_url": null,
     "placement": "table",
     "width_cm": 34,
