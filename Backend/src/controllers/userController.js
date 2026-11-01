@@ -975,7 +975,7 @@ async function lodgeSupport(req, res) {
     }
 
     const supportService = require('../services/supportService');
-    const ticket = supportService.createTicket({
+    const ticket = await supportService.createTicket({
       userId,
       userEmail: req.user.email,
       userName: req.user.fullName || req.user.email?.split('@')[0],
@@ -1002,6 +1002,7 @@ async function getSupportTickets(req, res) {
   try {
     const userId = req.user.id;
     const supportService = require('../services/supportService');
+    await supportService.hydrateTicketsFromSupabase();
     const tickets = supportService.getUserTickets(userId);
 
     return res.status(200).json({
@@ -1550,6 +1551,30 @@ async function getBankAccount(req, res) {
   }
 }
 
+// ── GET /api/user/notifications ──────────────────────────────────────────────
+async function getNotifications(req, res) {
+  try {
+    const notificationService = require('../services/notificationService');
+    const notifications = await notificationService.getUserNotifications(req.user.id);
+    return res.status(200).json({ success: true, notifications, unreadCount: notifications.filter((item) => !item.read).length });
+  } catch (err) {
+    console.error('getNotifications error:', err);
+    return sendError(res, 503, 'Notifications are temporarily unavailable. Please try again.');
+  }
+}
+
+async function markNotificationRead(req, res) {
+  try {
+    const notificationService = require('../services/notificationService');
+    const updated = await notificationService.markNotificationAsRead(req.params.id, req.user.id);
+    if (!updated) return sendError(res, 404, 'Notification not found.');
+    return res.status(200).json({ success: true, id: req.params.id, read: true });
+  } catch (err) {
+    console.error('markNotificationRead error:', err);
+    return sendError(res, 503, 'Could not update this notification. Please try again.');
+  }
+}
+
 // ── GET /api/user/notifications/preferences ──────────────────────────────────
 async function getNotificationPreferences(req, res) {
   try {
@@ -1645,4 +1670,6 @@ module.exports = {
   getAnalytics,
   getNotificationPreferences,
   updateNotificationPreferences,
+  getNotifications,
+  markNotificationRead,
 };

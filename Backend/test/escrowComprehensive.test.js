@@ -15,6 +15,15 @@ const web3Service = require('../src/services/web3Service');
 const stripeService = require('../src/services/stripeService');
 const escrowService = require('../src/services/escrowService');
 const notificationService = require('../src/services/notificationService');
+// This suite verifies that escrow lifecycle handlers dispatch the expected events.
+// Durable notification storage and user isolation are covered by notificationService.test.js.
+const dispatchedNotifications = new Map();
+notificationService.sendNotification = async (notification) => {
+  const list = dispatchedNotifications.get(notification.userId) || [];
+  list.unshift({ ...notification, id: `test-${list.length}`, read: false });
+  dispatchedNotifications.set(notification.userId, list);
+};
+notificationService.getUserNotifications = async (userId) => dispatchedNotifications.get(userId) || [];
 
 async function runComprehensiveEscrowTests() {
   console.log('\n============================================================');

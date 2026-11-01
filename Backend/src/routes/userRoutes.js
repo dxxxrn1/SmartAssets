@@ -35,6 +35,8 @@ const {
   getBankAccount,
   getNotificationPreferences,
   updateNotificationPreferences,
+  getNotifications,
+  markNotificationRead,
 } = require('../controllers/userController');
 
 // All user routes are protected by requireAuth
@@ -59,6 +61,8 @@ router.get('/profile', getProfile);
 router.get('/analytics', getAnalytics);
 router.put('/profile', updateProfile);
 router.delete('/account', deleteAccount);
+router.get('/notifications', getNotifications);
+router.patch('/notifications/:id/read', markNotificationRead);
 router.get('/notifications/preferences', getNotificationPreferences);
 router.put('/notifications/preferences', updateNotificationPreferences);
 

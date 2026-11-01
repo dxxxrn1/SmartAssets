@@ -5,7 +5,7 @@ const complianceService = require('../src/services/complianceService');
 async function testProfileAndComplianceIntegration() {
   console.log('\n🧪 [TEST 1] Testing Support Ticket Creation...');
   const testUserId = 'test-user-' + Date.now();
-  const ticket = supportService.createTicket({
+  const ticket = await supportService.createTicket({
     userId: testUserId,
     userEmail: 'collector@luxuryassets.com',
     userName: 'Alexander Wright',

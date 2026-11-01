@@ -1231,6 +1231,16 @@ export async function getKycStatusApi(token) {
   return apiRequest("/users/kyc-status", { method: "GET" }, token);
 }
 
+/** Fetch the authenticated user's durable in-app notifications. */
+export async function getNotificationsApi(token) {
+  return apiRequest('/user/notifications', { method: 'GET' }, token);
+}
+
+/** Mark one of the authenticated user's notifications as read. */
+export async function markNotificationReadApi(id, token) {
+  return apiRequest(`/user/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH' }, token);
+}
+
 /**
  * Retrieve user's notification preferences.
  */

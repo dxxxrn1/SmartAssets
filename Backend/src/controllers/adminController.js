@@ -768,6 +768,7 @@ async function handleEscrowAction(req, res) {
  */
 async function getAdminTickets(_req, res) {
   try {
+    await supportService.hydrateTicketsFromSupabase();
     const tickets = supportService.getAllTickets();
     return res.json({ success: true, count: tickets.length, tickets });
   } catch (err) {
@@ -788,9 +789,12 @@ async function updateAdminTicket(req, res) {
     if (!id || !status) {
       return sendError(res, 400, 'Ticket ID and status ("Open" | "In Progress" | "In Review" | "Resolved") are required.');
     }
+    if (!['Open', 'In Progress', 'In Review', 'Resolved'].includes(status)) {
+      return sendError(res, 400, 'Unsupported support ticket status.');
+    }
 
     const note = resolutionNote || adminResponse || null;
-    const updated = supportService.updateTicketStatus(id, status, note);
+    const updated = await supportService.updateTicketStatus(id, status, note);
     if (!updated) {
       return sendError(res, 404, 'Support ticket not found.');
     }

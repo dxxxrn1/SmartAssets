@@ -1,122 +1,68 @@
 // ─── Notification Service ─────────────────────────────────────────────────────
-// Authoritative notification dispatcher for multi-party escrow transactions.
-// Notifies buyer, seller, and compliance administrators across every lifecycle milestone.
+// Durable notification persistence. User-facing reads and updates are always scoped
+// to the authenticated user; database failures are surfaced instead of hiding notices
+// in process memory that disappears on restart.
 
+const crypto = require('crypto');
 const supabase = require('../connection/supabaseClient');
 const auditLogService = require('./auditLogService');
 
-// In-memory runtime notifications buffer
-const notificationsMap = new Map(); // userId -> Notification[]
+function mapNotification(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    orderId: row.order_id || null,
+    metadata: row.metadata || {},
+    read: Boolean(row.read),
+    createdAt: row.created_at,
+  };
+}
 
-/**
- * Creates and dispatches a notification to a specific user.
- */
-async function sendNotification({
-  userId,
-  type,
-  title,
-  message,
-  orderId = null,
-  assetId = null,
-  metadata = {},
-}) {
-  const notifId = 'NOTIF-' + Math.floor(100000 + Math.random() * 900000);
-  const now = new Date().toISOString();
-
-  const notification = {
-    id: notifId,
-    userId,
+async function sendNotification({ userId, type, title, message, orderId = null, assetId = null, metadata = {} }) {
+  if (!userId) throw new Error('A recipient user ID is required for notifications.');
+  const id = crypto.randomUUID();
+  const { data, error } = await supabase.from('notifications').insert({
+    id,
+    user_id: userId,
     type,
     title,
     message,
-    orderId,
-    assetId,
-    metadata,
+    order_id: orderId,
+    metadata: { ...metadata, ...(assetId ? { assetId } : {}) },
     read: false,
-    createdAt: now,
-  };
-
-  // Add to in-memory map
-  if (userId) {
-    const userNotifs = notificationsMap.get(userId) || [];
-    userNotifs.unshift(notification);
-    if (userNotifs.length > 100) userNotifs.pop();
-    notificationsMap.set(userId, userNotifs);
+  }).select('*').single();
+  if (error) {
+    // Escrow notifications are supplementary to the escrow state transition. Never
+    // claim delivery or keep an in-memory copy when durable storage is unavailable.
+    console.error('[Notification] Durable insert failed:', error.message);
+    return null;
   }
-
-  // Also log to audit ledger
   auditLogService.logEvent({
-    eventType: `ESCROW_NOTIFICATION_${type.toUpperCase()}`,
-    actorId: userId || 'system',
-    category: 'Escrow',
-    description: `[Order #${orderId || 'N/A'}] ${title}: ${message}`,
+    eventType: `NOTIFICATION_${String(type || 'update').toUpperCase()}`,
+    actorId: userId,
+    category: 'Notification',
+    description: `${title}: ${message}`,
   });
-
-  // Try saving to Supabase if notifications table exists
-  try {
-    await supabase.from('notifications').insert({
-      id: notifId,
-      user_id: userId,
-      type,
-      title,
-      message,
-      order_id: orderId,
-      metadata,
-      read: false,
-      created_at: now,
-    });
-  } catch (_e) {
-    // If notifications table does not exist in schema, in-memory & audit log maintain fidelity
-  }
-
-  console.log(`🔔 [Notification] [${type}] User ${userId || 'System'}: ${title}`);
-  return notification;
+  return mapNotification(data);
 }
 
-/**
- * Retrieve notifications for a specific user.
- */
 async function getUserNotifications(userId) {
   if (!userId) return [];
-
-  try {
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(50);
-
-    if (!error && Array.isArray(data) && data.length > 0) {
-      return data;
-    }
-  } catch (_e) {}
-
-  return notificationsMap.get(userId) || [];
+  const { data, error } = await supabase.from('notifications').select('*')
+    .eq('user_id', userId).order('created_at', { ascending: false }).limit(50);
+  if (error) throw new Error(error.message || 'Notification database operation failed.');
+  return (data || []).map(mapNotification);
 }
 
-/**
- * Mark a notification as read.
- */
 async function markNotificationAsRead(notifId, userId) {
-  if (userId && notificationsMap.has(userId)) {
-    const list = notificationsMap.get(userId) || [];
-    const item = list.find((n) => n.id === notifId);
-    if (item) item.read = true;
-  }
-
-  try {
-    await supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('id', notifId);
-  } catch (_e) {}
-
-  return { success: true };
+  if (!notifId || !userId) return false;
+  const { data, error } = await supabase.from('notifications').update({ read: true })
+    .eq('id', notifId).eq('user_id', userId).select('id').maybeSingle();
+  if (error) throw new Error(error.message || 'Notification database operation failed.');
+  return Boolean(data);
 }
 
-module.exports = {
-  sendNotification,
-  getUserNotifications,
-  markNotificationAsRead,
-};
+module.exports = { sendNotification, getUserNotifications, markNotificationAsRead };
