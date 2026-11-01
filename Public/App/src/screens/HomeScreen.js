@@ -47,38 +47,47 @@ const formatZAR = (val, fallback = "R1,296,700") => {
 const formatGBP = formatZAR;
 
 // ── Browse Categories Data ───────────────────────────────────────────────────
+// ── Browse Categories Data ───────────────────────────────────────────────────
 const CATEGORY_CARDS = [
   {
     id: "watches",
     name: "Watches",
     categoryKey: "Watches",
     dotColor: "#38BDF8", // Cyan dot
-    image:
-      "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=600&fit=crop&q=80",
+    gradient: ["#0C4A6E", "#0369A1"],
+    image: require("../../assets/categories/watches.jpg"),
+    remoteImage:
+      "https://res.cloudinary.com/t4krhska/image/upload/v1793555669/smartassets/categories/watches.jpg",
   },
   {
     id: "art",
     name: "Fine Art",
     categoryKey: "Art",
     dotColor: "#A855F7", // Purple dot
-    image:
-      "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=600&fit=crop&q=80",
+    gradient: ["#581C87", "#7E22CE"],
+    image: require("../../assets/categories/art.jpg"),
+    remoteImage:
+      "https://res.cloudinary.com/t4krhska/image/upload/v1793555671/smartassets/categories/art.jpg",
   },
   {
     id: "cars",
     name: "Classic Cars",
     categoryKey: "Cars",
     dotColor: "#FB923C", // Orange dot
-    image:
-      "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=600&fit=crop&q=80",
+    gradient: ["#7C2D12", "#C2410C"],
+    image: require("../../assets/categories/cars.jpg"),
+    remoteImage:
+      "https://res.cloudinary.com/t4krhska/image/upload/v1793555672/smartassets/categories/cars.jpg",
   },
   {
     id: "wine",
     name: "Fine Wine",
     categoryKey: "Wine",
     dotColor: "#F472B6", // Pink dot
-    image:
-      "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&fit=crop&q=80",
+    gradient: ["#831843", "#BE185D"],
+    image: require("../../assets/categories/wine.jpg"),
+    remoteImage:
+      "https://res.cloudinary.com/t4krhska/image/upload/v1793555673/smartassets/categories/wine.jpg",
   },
 ];
 
@@ -1118,10 +1127,37 @@ export default function HomeScreen({ navigation }) {
                     })
                   }
                 >
+                  {cat.gradient && (
+                    <LinearGradient
+                      colors={cat.gradient}
+                      style={styles.categoryCardImage}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    />
+                  )}
                   <Image
-                    source={{ uri: cat.image }}
-                    style={StyleSheet.absoluteFillObject}
+                    source={
+                      typeof cat.image === "string"
+                        ? { uri: resolveImageUrl(cat.image) }
+                        : cat.image
+                    }
+                    defaultSource={
+                      typeof cat.image === "number" ? cat.image : undefined
+                    }
+                    style={styles.categoryCardImage}
                     resizeMode="cover"
+                  />
+                  {/* Subtle dark gradient overlay to give images depth & make text ultra-legible */}
+                  <LinearGradient
+                    colors={[
+                      "transparent",
+                      "rgba(15, 23, 42, 0.25)",
+                      "rgba(15, 23, 42, 0.75)",
+                    ]}
+                    style={[
+                      StyleSheet.absoluteFillObject,
+                      { pointerEvents: "none" },
+                    ]}
                   />
                   {/* Subtle dark frosted glass bar over bottom of each category image */}
                   <View style={styles.categoryFrostedBar}>
@@ -1920,6 +1956,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
     position: "relative",
+  },
+  categoryCardImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
   },
   categoryFrostedBar: {
     position: "absolute",

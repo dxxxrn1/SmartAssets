@@ -86,8 +86,10 @@ const MARKET_CATEGORY_CARDS = [
     categoryKey: "All",
     dotColor: "#6C47FF",
     defaultCount: "2,840 assets",
-    image:
-      "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80",
+    gradient: ["#2E1065", "#581C87"],
+    image: require("../../assets/categories/all.jpg"),
+    remoteImage:
+      "https://res.cloudinary.com/t4krhska/image/upload/v1793555676/smartassets/categories/all.jpg",
   },
   {
     id: "watches",
@@ -95,8 +97,10 @@ const MARKET_CATEGORY_CARDS = [
     categoryKey: "Watches",
     dotColor: "#38BDF8",
     defaultCount: "428 assets",
-    image:
-      "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80",
+    gradient: ["#0C4A6E", "#0369A1"],
+    image: require("../../assets/categories/watches.jpg"),
+    remoteImage:
+      "https://res.cloudinary.com/t4krhska/image/upload/v1793555669/smartassets/categories/watches.jpg",
   },
   {
     id: "art",
@@ -104,8 +108,10 @@ const MARKET_CATEGORY_CARDS = [
     categoryKey: "Art",
     dotColor: "#A855F7",
     defaultCount: "1,204 assets",
-    image:
-      "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=600&auto=format&fit=crop&q=80",
+    gradient: ["#581C87", "#7E22CE"],
+    image: require("../../assets/categories/art.jpg"),
+    remoteImage:
+      "https://res.cloudinary.com/t4krhska/image/upload/v1793555671/smartassets/categories/art.jpg",
   },
   {
     id: "cars",
@@ -113,8 +119,10 @@ const MARKET_CATEGORY_CARDS = [
     categoryKey: "Cars",
     dotColor: "#FB923C",
     defaultCount: "316 assets",
-    image:
-      "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=600&auto=format&fit=crop&q=80",
+    gradient: ["#7C2D12", "#C2410C"],
+    image: require("../../assets/categories/cars.jpg"),
+    remoteImage:
+      "https://res.cloudinary.com/t4krhska/image/upload/v1793555672/smartassets/categories/cars.jpg",
   },
   {
     id: "sneakers",
@@ -122,8 +130,10 @@ const MARKET_CATEGORY_CARDS = [
     categoryKey: "Sneakers",
     dotColor: "#10B981",
     defaultCount: "542 assets",
-    image:
-      "https://images.unsplash.com/photo-1552346154-21d32810aba3?w=600&auto=format&fit=crop&q=80",
+    gradient: ["#064E3B", "#047857"],
+    image: require("../../assets/categories/sneakers.jpg"),
+    remoteImage:
+      "https://res.cloudinary.com/t4krhska/image/upload/v1793555674/smartassets/categories/sneakers.jpg",
   },
   {
     id: "wine",
@@ -131,8 +141,10 @@ const MARKET_CATEGORY_CARDS = [
     categoryKey: "Wine",
     dotColor: "#F472B6",
     defaultCount: "892 assets",
-    image:
-      "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&auto=format&fit=crop&q=80",
+    gradient: ["#831843", "#BE185D"],
+    image: require("../../assets/categories/wine.jpg"),
+    remoteImage:
+      "https://res.cloudinary.com/t4krhska/image/upload/v1793555673/smartassets/categories/wine.jpg",
   },
   {
     id: "electronics",
@@ -140,8 +152,10 @@ const MARKET_CATEGORY_CARDS = [
     categoryKey: "Electronics",
     dotColor: "#6366F1",
     defaultCount: "215 assets",
-    image:
-      "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=600&auto=format&fit=crop&q=80",
+    gradient: ["#312E81", "#4338CA"],
+    image: require("../../assets/categories/electronics.jpg"),
+    remoteImage:
+      "https://res.cloudinary.com/t4krhska/image/upload/v1793555675/smartassets/categories/electronics.jpg",
   },
 ];
 
@@ -492,10 +506,38 @@ export default function SearchScreen({ navigation, route }) {
                     onPress={() => setActiveCategory(cat.categoryKey)}
                     activeOpacity={0.88}
                   >
+                    {cat.gradient && (
+                      <LinearGradient
+                        colors={cat.gradient}
+                        style={styles.categoryCardImage}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                      />
+                    )}
                     <Image
-                      source={{ uri: cat.image }}
-                      style={StyleSheet.absoluteFillObject}
+                      source={
+                        typeof cat.image === "string"
+                          ? { uri: resolveImageUrl(cat.image) }
+                          : cat.image
+                      }
+                      defaultSource={
+                        typeof cat.image === "number" ? cat.image : undefined
+                      }
+                      style={styles.categoryCardImage}
                       resizeMode="cover"
+                    />
+
+                    {/* Subtle dark gradient overlay to give images depth & make text ultra-legible */}
+                    <LinearGradient
+                      colors={[
+                        "transparent",
+                        "rgba(15, 23, 42, 0.25)",
+                        "rgba(15, 23, 42, 0.75)",
+                      ]}
+                      style={[
+                        StyleSheet.absoluteFillObject,
+                        { pointerEvents: "none" },
+                      ]}
                     />
 
                     {/* Active highlight badge matching dot color */}
@@ -873,6 +915,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 6,
     elevation: 3,
+  },
+  categoryCardImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
   },
   categoryCardActive: {
     borderWidth: 2.5,

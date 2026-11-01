@@ -158,7 +158,7 @@ async function apiRequest(endpoint, options = {}, token = null) {
     const isExtendedOp = timeoutMs > 10000;
     const candidateTimeoutMs =
       !isExtendedOp && candidates.length > 1 && isLocalOrLanApiUrl(base)
-        ? Math.min(timeoutMs, 5000)
+        ? Math.min(timeoutMs, 3500)
         : timeoutMs;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), candidateTimeoutMs);
@@ -1235,6 +1235,15 @@ export function resolveImageUrl(
   if (imageUri.includes(":5000/uploads/")) {
     const baseOrigin = API_BASE_URL.replace(/\/api\/?$/, "");
     return imageUri.replace(/^https?:\/\/[^/]+(:5000)?/, baseOrigin);
+  }
+
+  // Ensure Unsplash always serves universal JPEG on mobile devices instead of unsupported AVIF/WebP formats
+  if (imageUri.includes("images.unsplash.com")) {
+    let clean = imageUri.replace(/auto=format&?/g, "");
+    if (!clean.includes("fm=jpg") && !clean.includes("fm=jpeg")) {
+      clean = clean.includes("?") ? `${clean}&fm=jpg` : `${clean}?fm=jpg`;
+    }
+    return clean;
   }
 
   return imageUri;
