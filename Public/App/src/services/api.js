@@ -31,6 +31,7 @@ function getMetroLanBaseUrl() {
 }
 
 export const DEPLOYED_RENDER_API = "https://smartassets.onrender.com/api";
+const isProductionBuild = typeof __DEV__ !== "undefined" && !__DEV__;
 
 export function normalizeApiBaseUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== "string") return null;
@@ -51,28 +52,30 @@ function isLocalOrLanApiUrl(url) {
 
 // ── Base URL — defaults to live Render production backend ───────────────────
 export const getBaseUrl = () => {
-  // 1. Explicit environment variable takes precedence (set via EAS build profile or .env)
   const envUrl = normalizeApiBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
+
+  // 1. In standalone production APK builds, always target non-LAN envUrl or Render directly
+  if (isProductionBuild) {
+    if (envUrl && !isLocalOrLanApiUrl(envUrl)) return envUrl;
+    return DEPLOYED_RENDER_API;
+  }
+
+  // 2. In web development, prefer localhost:5000 first so Wi-Fi IP changes never block Web
+  if (Platform.OS === "web") {
+    if (envUrl && !isLocalOrLanApiUrl(envUrl)) return envUrl;
+    return "http://localhost:5000/api";
+  }
+
+  // 3. In local Expo Go development, prefer live Metro LAN IP first (auto-adapts to Wi-Fi changes)
+  const metroBase = getMetroLanBaseUrl();
+  if (metroBase) return metroBase;
+
+  // 4. Explicit environment variable fallback
   if (envUrl) {
     return envUrl;
   }
 
-  // 2. In standalone production APK builds, always target Render directly
-  const isProductionBuild = typeof __DEV__ !== "undefined" && !__DEV__;
-  if (isProductionBuild) {
-    return DEPLOYED_RENDER_API;
-  }
-
-  // 3. In web development, prefer localhost:5000
-  if (Platform.OS === "web") {
-    return "http://localhost:5000/api";
-  }
-
-  // 4. In local Expo Go development, try Metro LAN if available, otherwise Render
-  const metroBase = getMetroLanBaseUrl();
-  if (metroBase) return metroBase;
-
-  // 5. Default directly to the deployed Render backend (never default physical Android devices to 10.0.2.2)
+  // 5. Default directly to the deployed Render backend
   return DEPLOYED_RENDER_API;
 };
 
@@ -81,7 +84,6 @@ export let API_BASE_URL = getBaseUrl();
 export function getFallbackBaseUrls() {
   const prodUrl = DEPLOYED_RENDER_API;
   const envUrl = normalizeApiBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
-  const isProductionBuild = typeof __DEV__ !== "undefined" && !__DEV__;
 
   if (isProductionBuild) {
     const prodCandidates = [envUrl, prodUrl, API_BASE_URL].filter(
@@ -94,9 +96,9 @@ export function getFallbackBaseUrls() {
     return [
       ...new Set(
         [
-          envUrl,
           "http://localhost:5000/api",
           "http://127.0.0.1:5000/api",
+          envUrl,
           API_BASE_URL,
           prodUrl,
         ].filter(Boolean),
@@ -111,10 +113,10 @@ export function getFallbackBaseUrls() {
       : "http://localhost:5000/api";
 
   const candidates = [
-    envUrl,
-    metroLan,
-    androidEmu,
     API_BASE_URL,
+    metroLan,
+    envUrl,
+    androidEmu,
     prodUrl,
   ].filter(Boolean);
 

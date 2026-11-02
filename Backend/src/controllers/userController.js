@@ -647,7 +647,11 @@ async function deposit(req, res) {
         error: 'KYC Verification Required: You must upload and get all 3 verification documents (ID, Tax, Proof of Residence) approved before depositing funds.',
       });
     }
-    if (!bundle.hasApprovedBank && bundle.bank_account?.status !== 'approved') {
+    const hasApprovedBank =
+      Boolean(bundle.hasApprovedBank) ||
+      bundle.bank_account?.status === 'approved' ||
+      req.approvedBankAccount?.status === 'approved';
+    if (!hasApprovedBank) {
       return res.status(403).json({
         success: false,
         code: 'BANK_APPROVAL_REQUIRED',
@@ -1532,7 +1536,16 @@ async function getBankAccount(req, res) {
   try {
     const userId = req.user.id;
     const userEmail = req.user.email;
-    const bankAccount = complianceService.getUserBankAccount(userId, userEmail);
+    let bankAccount = complianceService.getUserBankAccount(userId, userEmail);
+
+    if (!bankAccount || bankAccount.status !== 'approved') {
+      try {
+        const bundle = await complianceService.getVerificationStatusBundle(userId, userEmail, req);
+        if (bundle?.bank_account) {
+          bankAccount = bundle.bank_account;
+        }
+      } catch (_) {}
+    }
 
     const sanitizedBank = bankAccount
       ? {
