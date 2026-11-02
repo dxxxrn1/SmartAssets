@@ -37,6 +37,7 @@ import {
   verifyWithdrawalChallengeApi,
   cancelWithdrawalChallengeApi,
   getBankAccountApi,
+  getVerificationStatusApi,
   cancelVaultWithdrawalApi,
   getVaultTransactionsApi,
   getMarketOracleApi,
@@ -77,7 +78,7 @@ export default function VaultScreen({ navigation, route }) {
     ? (screenWidth - 36 - 32) / 3
     : (screenWidth - 36 - 16) / 2;
 
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, updateUser } = useAuth();
   const [kycGatekeeperVisible, setKycGatekeeperVisible] = useState(false);
   const [gatekeeperRequireBankOnly, setGatekeeperRequireBankOnly] =
     useState(false);
@@ -552,16 +553,25 @@ export default function VaultScreen({ navigation, route }) {
         })
         .catch(() => {});
 
-      getBankAccountApi(token)
-        .then((bRes) => {
-          if (isMounted && bRes?.success && bRes.bank_account && updateUser) {
-            updateUser({
-              bankAccount: bRes.bank_account,
-              bankStatus: bRes.bank_account.status,
-            });
-          }
-        })
-        .catch(() => {});
+      Promise.all([
+        getBankAccountApi(token).catch(() => null),
+        getVerificationStatusApi(token).catch(() => null),
+      ]).then(([bRes, vRes]) => {
+        if (!isMounted || !updateUser) return;
+        const updates = {};
+        const bankObj = bRes?.bank_account || vRes?.bank_account || null;
+        const bankSt = bankObj?.status || bRes?.status || vRes?.bankStatus || null;
+        if (bankObj) updates.bankAccount = bankObj;
+        if (bankSt) updates.bankStatus = bankSt;
+        const verifSt = vRes?.verification_status || vRes?.kycStatus || null;
+        if (verifSt) {
+          updates.verification_status = verifSt;
+          updates.kycStatus = verifSt;
+        }
+        if (Object.keys(updates).length > 0) {
+          updateUser(updates);
+        }
+      });
 
       return () => {
         isMounted = false;
@@ -733,14 +743,55 @@ export default function VaultScreen({ navigation, route }) {
     setRefreshing(false);
   }, [token, personalItems, fractionalItems, processHoldingsIntoTabs]);
 
-  const handleDeposit = async () => {
-    const isVerified =
+  const verifyLiveComplianceAndBank = useCallback(async () => {
+    let isVerified =
       user?.verification_status === "verified" ||
       user?.kycStatus === "verified";
-    const hasApprovedBank =
+    let hasApprovedBank =
       user?.bankStatus === "approved" ||
-      user?.bankAccount?.status === "approved";
-    if (user && (!isVerified || !hasApprovedBank || user.isSuspended)) {
+      user?.bankAccount?.status === "approved" ||
+      user?.bankingDetails?.status === "approved";
+
+    if ((!isVerified || !hasApprovedBank) && token) {
+      try {
+        const [bankRes, verifRes] = await Promise.all([
+          getBankAccountApi(token).catch(() => null),
+          getVerificationStatusApi(token).catch(() => null),
+        ]);
+        const updates = {};
+        const vStatus =
+          verifRes?.verification_status || verifRes?.kycStatus || null;
+        if (vStatus === "verified") {
+          isVerified = true;
+          updates.verification_status = "verified";
+          updates.kycStatus = "verified";
+        }
+        const bankObj =
+          bankRes?.bank_account || verifRes?.bank_account || null;
+        const bStatus =
+          bankObj?.status || bankRes?.status || verifRes?.bankStatus || null;
+        if (bankObj) {
+          updates.bankAccount = bankObj;
+        }
+        if (bStatus) {
+          updates.bankStatus = bStatus;
+          if (bStatus === "approved") {
+            hasApprovedBank = true;
+          }
+        }
+        if (updateUser && Object.keys(updates).length > 0) {
+          updateUser(updates);
+        }
+      } catch (_) {}
+    }
+
+    return { isVerified, hasApprovedBank, isSuspended: Boolean(user?.isSuspended) };
+  }, [user, token, updateUser]);
+
+  const handleDeposit = async () => {
+    const { isVerified, hasApprovedBank, isSuspended } =
+      await verifyLiveComplianceAndBank();
+    if (user && (!isVerified || !hasApprovedBank || isSuspended)) {
       setGatekeeperRequireBankOnly(!hasApprovedBank && isVerified);
       setGatekeeperActionTitle("Deposit Funds");
       setKycGatekeeperVisible(true);
@@ -820,13 +871,9 @@ export default function VaultScreen({ navigation, route }) {
 
   // Step 1: Validate amount & load masked approved bank details for confirmation prompt
   const handleProceedToBankConfirmation = async () => {
-    const isVerified =
-      user?.verification_status === "verified" ||
-      user?.kycStatus === "verified";
-    const hasApprovedBank =
-      user?.bankStatus === "approved" ||
-      user?.bankAccount?.status === "approved";
-    if (user && (!isVerified || user.isSuspended)) {
+    const { isVerified, hasApprovedBank, isSuspended } =
+      await verifyLiveComplianceAndBank();
+    if (user && (!isVerified || isSuspended)) {
       setGatekeeperRequireBankOnly(false);
       setGatekeeperActionTitle("Withdraw Funds");
       setKycGatekeeperVisible(true);
@@ -1475,40 +1522,14 @@ export default function VaultScreen({ navigation, route }) {
                 <TouchableOpacity
                   style={styles.depositActionBtn}
                   onPress={async () => {
-                    const isVerified =
-                      user?.verification_status === "verified" ||
-                      user?.kycStatus === "verified";
-                    if (!isVerified || user?.isSuspended) {
+                    const { isVerified, hasApprovedBank, isSuspended } =
+                      await verifyLiveComplianceAndBank();
+                    if (!isVerified || isSuspended) {
                       setGatekeeperRequireBankOnly(false);
                       setGatekeeperActionTitle("Deposit Funds");
                       setKycGatekeeperVisible(true);
                       return;
                     }
-
-                    let hasApprovedBank =
-                      user?.bankStatus === "approved" ||
-                      user?.bankAccount?.status === "approved" ||
-                      user?.bankingDetails?.status === "approved";
-
-                    // Re-verify with backend if local state is not yet marked approved
-                    if (!hasApprovedBank && token) {
-                      try {
-                        const bankRes = await getBankAccountApi(token);
-                        if (
-                          bankRes?.success &&
-                          bankRes?.bank_account?.status === "approved"
-                        ) {
-                          hasApprovedBank = true;
-                          if (updateUser) {
-                            updateUser({
-                              bankAccount: bankRes.bank_account,
-                              bankStatus: "approved",
-                            });
-                          }
-                        }
-                      } catch (_) {}
-                    }
-
                     if (!hasApprovedBank) {
                       setGatekeeperRequireBankOnly(true);
                       setGatekeeperActionTitle("Deposit Funds");
@@ -1531,40 +1552,14 @@ export default function VaultScreen({ navigation, route }) {
                 <TouchableOpacity
                   style={styles.withdrawActionBtn}
                   onPress={async () => {
-                    const isVerified =
-                      user?.verification_status === "verified" ||
-                      user?.kycStatus === "verified";
-                    if (!isVerified || user?.isSuspended) {
+                    const { isVerified, hasApprovedBank, isSuspended } =
+                      await verifyLiveComplianceAndBank();
+                    if (!isVerified || isSuspended) {
                       setGatekeeperRequireBankOnly(false);
                       setGatekeeperActionTitle("Withdraw Funds");
                       setKycGatekeeperVisible(true);
                       return;
                     }
-
-                    let hasApprovedBank =
-                      user?.bankStatus === "approved" ||
-                      user?.bankAccount?.status === "approved" ||
-                      user?.bankingDetails?.status === "approved";
-
-                    // Re-verify with backend if local state is not yet marked approved
-                    if (!hasApprovedBank && token) {
-                      try {
-                        const bankRes = await getBankAccountApi(token);
-                        if (
-                          bankRes?.success &&
-                          bankRes?.bank_account?.status === "approved"
-                        ) {
-                          hasApprovedBank = true;
-                          if (updateUser) {
-                            updateUser({
-                              bankAccount: bankRes.bank_account,
-                              bankStatus: "approved",
-                            });
-                          }
-                        }
-                      } catch (_) {}
-                    }
-
                     if (!hasApprovedBank) {
                       setGatekeeperRequireBankOnly(true);
                       setGatekeeperActionTitle("Withdraw Funds");

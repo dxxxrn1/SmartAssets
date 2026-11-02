@@ -40,7 +40,7 @@ const ACCOUNT_TYPES = ["Cheque / Current", "Savings", "Transmission"];
 
 export default function BankDetailsScreen({ navigation }) {
   const { isDark } = useTheme();
-  const { user, token, updateProfileData } = useAuth();
+  const { user, token, updateUser } = useAuth();
   const t = useColors(isDark);
 
   const [loading, setLoading] = useState(true);
@@ -91,6 +91,20 @@ export default function BankDetailsScreen({ navigation }) {
         setAccountNumber(b.account_number || "");
         setBranchCode(b.branch_code || "250655");
         setAccountType(b.account_type || "Cheque / Current");
+        if (updateUser) {
+          updateUser({
+            bankAccount: b,
+            bankStatus: b.status || bankRes.status || "pending",
+            ...(verified
+              ? { verification_status: "verified", kycStatus: "verified" }
+              : {}),
+          });
+        }
+      } else if (verified && updateUser) {
+        updateUser({
+          verification_status: "verified",
+          kycStatus: "verified",
+        });
       }
     } catch (err) {
       console.warn("[BankDetailsScreen] fetch warning:", err.message);

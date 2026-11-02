@@ -945,7 +945,11 @@ function getUserBankAccount(userId, userEmail = null) {
     (b) => b.user_id === userId || (userEmail && (b.user_email?.toLowerCase() === userEmail?.toLowerCase() || b.userEmail?.toLowerCase() === userEmail?.toLowerCase()))
   );
   if (list.length === 0) return null;
-  list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  list.sort((a, b) => {
+    if (a.status === 'approved' && b.status !== 'approved') return -1;
+    if (b.status === 'approved' && a.status !== 'approved') return 1;
+    return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+  });
   const latest = list[0];
   return {
     ...latest,
@@ -1162,13 +1166,27 @@ async function getVerificationStatusBundle(userId, userEmail = null, req = null)
       }
     : null;
 
-  const verificationStatus = compliance.kycStatus || 'unverified';
+  let verificationStatus = compliance.kycStatus || 'unverified';
+  if (verificationStatus !== 'verified' && userId) {
+    try {
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('verification_status')
+        .eq('id', userId)
+        .maybeSingle();
+      if (prof?.verification_status === 'verified') {
+        verificationStatus = 'verified';
+      }
+    } catch (_) {}
+  }
   const isVerified = verificationStatus === 'verified';
   const hasApprovedBank = bankAccount?.status === 'approved';
 
   return {
     verification_status: verificationStatus,
     kycStatus: verificationStatus,
+    hasApprovedBank,
+    bankStatus: bankAccount?.status || 'not_submitted',
     accountStatus: compliance.accountStatus || 'active',
     isSuspended: !!compliance.isSuspended,
     rejectionReason: compliance.rejectionReason || null,

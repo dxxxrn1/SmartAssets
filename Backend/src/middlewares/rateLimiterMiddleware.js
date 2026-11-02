@@ -151,6 +151,7 @@ const financialLimiter = rateLimit({
   max: financialMax,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS',
   message: {
     success: false,
     code: 'RATE_LIMIT_EXCEEDED',
